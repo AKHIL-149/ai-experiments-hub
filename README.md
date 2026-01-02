@@ -148,8 +148,8 @@ ai-experiments-hub/
 
 - [x] Project 1: AI Text Generator
 - [x] Project 2: Prompt Playground
-- [x] Project 3: Smart Email Responder
-- [ ] Project 4: Personal Knowledge Assistant
+- [ ] Project 3: Smart Email Responder
+- [x] Project 4: Personal Knowledge Assistant
 - [ ] Project 5: AI Workflow Automation
 - [ ] Project 6: Code Documentation Generator
 - [ ] Project 7: Content Analyzer
