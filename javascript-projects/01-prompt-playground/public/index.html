@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt Playground</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Prompt Playground</h1>
+            <p class="subtitle">Test and compare prompts across different LLM models</p>
+        </header>
+
+        <main>
+            <section class="input-section">
+                <div class="form-group">
+                    <label for="prompt">Prompt</label>
+                    <textarea
+                        id="prompt"
+                        rows="6"
+                        placeholder="Enter your prompt here..."></textarea>
+                </div>
+
+                <div class="controls">
+                    <div class="form-group">
+                        <label for="model1">Model 1</label>
+                        <select id="model1">
+                            <option value="ollama:llama3.2">Ollama - Llama 3.2</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="model2">Model 2 (Optional)</label>
+                        <select id="model2">
+                            <option value="">None (single model)</option>
+                            <option value="ollama:llama3.2">Ollama - Llama 3.2</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="temperature">Temperature</label>
+                        <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="maxTokens">Max Tokens</label>
+                        <input type="number" id="maxTokens" value="500" min="50" max="2000" step="50">
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="generateBtn" class="btn-primary">Generate</button>
+                    <button id="savePromptBtn" class="btn-secondary">Save Prompt</button>
+                    <button id="clearBtn" class="btn-secondary">Clear</button>
+                </div>
+            </section>
+
+            <section class="results-section">
+                <div class="results-container" id="resultsContainer">
+                    <div class="result-panel" id="result1">
+                        <h3>Output 1</h3>
+                        <div class="model-name" id="modelName1"></div>
+                        <div class="output-content" id="output1">
+                            <p class="placeholder">Results will appear here...</p>
+                        </div>
+                        <div class="meta" id="meta1"></div>
+                    </div>
+
+                    <div class="result-panel" id="result2" style="display: none;">
+                        <h3>Output 2</h3>
+                        <div class="model-name" id="modelName2"></div>
+                        <div class="output-content" id="output2">
+                            <p class="placeholder">Results will appear here...</p>
+                        </div>
+                        <div class="meta" id="meta2"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="saved-prompts-section">
+                <h2>Saved Prompts</h2>
+                <div id="savedPromptsList" class="saved-prompts-list">
+                    <p class="placeholder">No saved prompts yet</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p>Generating...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
