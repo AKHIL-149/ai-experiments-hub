@@ -1,0 +1,15 @@
+Hello,
+
+I came across your AI experiments repository on GitHub and I'm really impressed with the projects you've built.
+
+I'm currently learning about LLMs and prompt engineering, and I was wondering if you could share some insights on how you approached building the RAG system in Project 4.
+
+Specifically, I'm curious about:
+1. How you chose your chunking strategy
+2. Which embedding model worked best for you
+3. Any challenges you faced with retrieval accuracy
+
+Any guidance would be greatly appreciated!
+
+Thanks,
+Jordan
