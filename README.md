@@ -138,9 +138,11 @@ ai-experiments-hub/
 ├── python-projects/
 │   ├── 01-text-generator/
 │   ├── 02-email-responder/
+│   ├── 04-rag-knowledge-assistant/
 │   └── ...
 └── javascript-projects/
-    ├── 01-prompt-playground/
+    ├── 03-prompt-playground/
+    ├── 05-workflow-automation/
     └── ...
 ```
 
@@ -150,7 +152,7 @@ ai-experiments-hub/
 - [x] Project 2: Prompt Playground
 - [x] Project 3: Smart Email Responder
 - [x] Project 4: Personal Knowledge Assistant
-- [ ] Project 5: AI Workflow Automation
+- [x] Project 5: AI Workflow Automation
 - [ ] Project 6: Code Documentation Generator
 - [ ] Project 7: Content Analyzer
 - [ ] Project 8: Voice Assistant

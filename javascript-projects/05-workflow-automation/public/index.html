@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Workflow Automation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🤖 AI Workflow Automation</h1>
+            <div class="health-status">
+                <span id="healthIndicator" class="status-indicator">●</span>
+                <span id="healthText">Checking...</span>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+            <button class="tab-btn" data-tab="history">Execution History</button>
+            <button class="tab-btn" data-tab="editor">Workflow Editor</button>
+            <button class="tab-btn" data-tab="monitor">Live Monitor</button>
+        </nav>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <div class="section">
+                <h2>Available Workflows</h2>
+                <div id="workflowsList" class="workflows-grid">
+                    <div class="loading">Loading workflows...</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Quick Execute</h2>
+                <div class="execute-form">
+                    <select id="workflowSelect" class="input">
+                        <option value="">Select a workflow...</option>
+                    </select>
+                    <textarea id="inputDataJson" class="input textarea" placeholder='Input data (JSON, optional)\nExample: {"key": "value"}'></textarea>
+                    <button id="executeBtn" class="btn btn-primary">Execute Workflow</button>
+                </div>
+                <div id="executeResult" class="result-box hidden"></div>
+            </div>
+        </div>
+
+        <!-- Execution History Tab -->
+        <div id="history" class="tab-content">
+            <div class="section">
+                <div class="section-header">
+                    <h2>Execution History</h2>
+                    <div class="filters">
+                        <select id="statusFilter" class="input-sm">
+                            <option value="">All Statuses</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                            <option value="running">Running</option>
+                        </select>
+                        <button id="refreshHistoryBtn" class="btn-sm">Refresh</button>
+                    </div>
+                </div>
+                <div id="executionsList" class="executions-list">
+                    <div class="loading">Loading executions...</div>
+                </div>
+            </div>
+
+            <!-- Execution Details Modal -->
+            <div id="executionModal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Execution Details</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="executionDetails"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workflow Editor Tab -->
+        <div id="editor" class="tab-content">
+            <div class="section">
+                <h2>Visual Workflow Editor</h2>
+                <div class="editor-toolbar">
+                    <button id="newWorkflowBtn" class="btn">New Workflow</button>
+                    <button id="saveWorkflowBtn" class="btn btn-primary">Save Workflow</button>
+                    <button id="loadWorkflowBtn" class="btn">Load Workflow</button>
+                </div>
+
+                <div class="editor-container">
+                    <div class="workflow-properties">
+                        <h3>Workflow Properties</h3>
+                        <input id="workflowId" class="input" placeholder="Workflow ID" />
+                        <input id="workflowName" class="input" placeholder="Workflow Name" />
+                        <textarea id="workflowDesc" class="input textarea" placeholder="Description"></textarea>
+                    </div>
+
+                    <div class="workflow-steps">
+                        <h3>Workflow Steps</h3>
+                        <div id="stepsList" class="steps-container">
+                            <div class="empty-state">No steps yet. Click "Add Step" to begin.</div>
+                        </div>
+                        <button id="addStepBtn" class="btn">+ Add Step</button>
+                    </div>
+                </div>
+
+                <div class="editor-preview">
+                    <h3>JSON Preview</h3>
+                    <pre id="jsonPreview" class="code-block">{}</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Monitor Tab -->
+        <div id="monitor" class="tab-content">
+            <div class="section">
+                <h2>Live Execution Monitor</h2>
+                <div class="monitor-controls">
+                    <input id="monitorExecutionId" class="input" placeholder="Execution ID to monitor" />
+                    <button id="startMonitorBtn" class="btn btn-primary">Start Monitoring</button>
+                    <button id="stopMonitorBtn" class="btn" disabled>Stop</button>
+                </div>
+
+                <div id="monitorStatus" class="monitor-status hidden">
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <label>Status:</label>
+                            <span id="monitorStatusValue" class="badge">-</span>
+                        </div>
+                        <div class="status-item">
+                            <label>Steps:</label>
+                            <span id="monitorStepsValue">-</span>
+                        </div>
+                        <div class="status-item">
+                            <label>Duration:</label>
+                            <span id="monitorDurationValue">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="monitorLogs" class="logs-container hidden">
+                    <h3>Execution Logs</h3>
+                    <div id="logsContent" class="logs-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

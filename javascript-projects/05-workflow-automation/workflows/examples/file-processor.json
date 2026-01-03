@@ -1,0 +1,31 @@
+{
+  "id": "file-processor",
+  "name": "File Processor Example",
+  "description": "Simple workflow that creates a file, reads it, and transforms it",
+  "steps": [
+    {
+      "id": "create_file",
+      "type": "agent",
+      "task": {
+        "instruction": "Create a text file at data/artifacts/sample.txt with the content: 'Hello from AI Workflow Automation! This is a test file.'"
+      },
+      "output": "file_created"
+    },
+    {
+      "id": "read_file",
+      "type": "agent",
+      "task": {
+        "instruction": "Read the contents of data/artifacts/sample.txt"
+      },
+      "output": "file_content"
+    },
+    {
+      "id": "analyze_content",
+      "type": "agent",
+      "task": {
+        "instruction": "Analyze the file content and count the number of words. Content: {{file_content}}"
+      },
+      "output": "analysis"
+    }
+  ]
+}
