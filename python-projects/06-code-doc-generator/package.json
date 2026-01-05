@@ -1,0 +1,16 @@
+{
+  "name": "code-doc-generator-js-parser",
+  "version": "0.1.0",
+  "description": "JavaScript/TypeScript parser helper for code documentation generator",
+  "main": "src/parsers/js_parser_helper.js",
+  "dependencies": {
+    "esprima": "^4.0.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "node src/parsers/js_parser_helper.js tests/fixtures/sample.js"
+  },
+  "keywords": ["parser", "javascript", "typescript", "ast"],
+  "author": "",
+  "license": "MIT"
+}
