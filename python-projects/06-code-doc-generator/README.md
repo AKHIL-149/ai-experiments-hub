@@ -4,7 +4,7 @@ An AI-powered code documentation generator that analyzes source code in multiple
 
 ## Project Status
 
-**Current Phase**: Phase 3 - AI Enhancement Layer ✅
+**Current Phase**: Phase 4 - Output Formatters ✅
 
 ### Completed Features
 
@@ -34,12 +34,20 @@ An AI-powered code documentation generator that analyzes source code in multiple
 - ✅ Two-level caching (AST + AI explanations)
 - ✅ Graceful degradation when LLM unavailable
 
+**Phase 4 - Output Formatters:**
+- ✅ Markdown formatter with table of contents
+- ✅ HTML formatter with Bootstrap 5 styling
+- ✅ JSON formatter for API reference
+- ✅ Docstring formatter for code enhancement
+- ✅ Batch processing support for multiple files
+- ✅ Syntax highlighting and collapsible sections (HTML)
+- ✅ Client-side search functionality (HTML)
+
 ### Upcoming Features
 
-- [ ] Multiple output formats (Markdown, HTML, JSON)
-- [ ] CLI interface
-- [ ] Web interface
-- [ ] Code enhancement with docstrings
+- [ ] CLI interface with command-line tool
+- [ ] Web interface with FastAPI
+- [ ] Python API (importable package)
 
 ## Quick Start
 
@@ -61,6 +69,9 @@ python3 tests/test_all_parsers.py
 
 # Test AI-enhanced documentation generation
 python3 tests/test_ai_enhancement.py
+
+# Test all output formatters (Markdown, HTML, JSON, Docstring)
+python3 tests/test_formatters.py
 
 # Or test individual parsers
 python3 tests/test_python_parser.py
@@ -95,7 +106,9 @@ The Python parser will work without any additional dependencies and will display
 - Functions with parameters, return types, and complexity
 - Classes with methods, attributes, and inheritance
 
-## Usage Example
+## Usage Examples
+
+### Basic Parsing
 
 ```python
 from src.parsers.python_parser import PythonParser
@@ -125,28 +138,122 @@ for cls in parsed.classes:
     print(f"  Attributes: {len(cls.attributes)}")
 ```
 
+### Generating Documentation
+
+```python
+from src.parsers.python_parser import PythonParser
+from src.core.llm_client import LLMClient
+from src.core.ai_explainer import AIExplainer
+from src.core.cache_manager import CacheManager
+from src.formatters import MarkdownFormatter, HTMLFormatter, JSONFormatter
+
+# Parse code
+parser = PythonParser()
+parsed = parser.parse_file('mycode.py')
+
+# Add AI enhancements (optional)
+llm = LLMClient(backend="ollama", model="llama3.2")
+cache = CacheManager()
+ai = AIExplainer(llm, cache)
+
+parsed.ai_summary = ai.generate_module_summary(parsed)
+for func in parsed.functions:
+    func.ai_explanation = ai.explain_function(func)
+
+# Generate Markdown documentation
+md_formatter = MarkdownFormatter(include_toc=True)
+md_formatter.format(parsed, 'output/docs.md')
+
+# Generate HTML documentation
+html_formatter = HTMLFormatter(theme="light", include_search=True)
+html_formatter.format(parsed, 'output/docs.html')
+
+# Generate JSON API reference
+json_formatter = JSONFormatter(pretty=True)
+json_formatter.format(parsed, 'output/api.json')
+```
+
+### Batch Processing
+
+```python
+from src.parsers.parser_registry import ParserRegistry
+from src.formatters import MarkdownFormatter
+
+# Auto-detect and parse multiple files
+registry = ParserRegistry()
+parsed_modules = []
+
+for file_path in ['file1.py', 'file2.js', 'File3.java']:
+    parser = registry.get_parser(file_path)
+    parsed = parser.parse_file(file_path)
+    parsed_modules.append(parsed)
+
+# Generate combined documentation
+formatter = MarkdownFormatter()
+formatter.format_batch(parsed_modules, 'output/project_docs.md')
+```
+
+### Enhancing Source Code with Docstrings
+
+```python
+from src.parsers.python_parser import PythonParser
+from src.core.ai_explainer import AIExplainer
+from src.formatters import DocstringFormatter
+
+# Parse and enhance
+parser = PythonParser()
+parsed = parser.parse_file('mycode.py')
+
+ai = AIExplainer()
+for func in parsed.functions:
+    func.ai_explanation = ai.explain_function(func)
+
+# Generate enhanced source code with docstrings
+docstring_formatter = DocstringFormatter(style="google")
+docstring_formatter.format(parsed, 'mycode_documented.py')
+```
+
 ## Project Structure
 
 ```
 06-code-doc-generator/
 ├── src/
 │   ├── parsers/
-│   │   ├── models.py           # Data models (ParsedModule, FunctionInfo, etc.)
-│   │   ├── base_parser.py      # Abstract base class for parsers
-│   │   ├── python_parser.py    # Python AST parser ✅
-│   │   └── parser_registry.py  # Auto-discovery and selection
-│   ├── core/                   # Core components (coming next)
-│   ├── formatters/             # Output formatters (coming next)
-│   └── utils/                  # Utility functions
+│   │   ├── models.py              # Data models (ParsedModule, FunctionInfo, etc.) ✅
+│   │   ├── base_parser.py         # Abstract base class for parsers ✅
+│   │   ├── python_parser.py       # Python AST parser ✅
+│   │   ├── javascript_parser.py   # JavaScript/TypeScript parser ✅
+│   │   ├── java_parser.py         # Java parser ✅
+│   │   ├── js_parser_helper.js    # Node.js helper for JS parsing ✅
+│   │   └── parser_registry.py     # Auto-discovery and selection ✅
+│   ├── core/
+│   │   ├── llm_client.py          # LLM interface (Ollama/Anthropic/OpenAI) ✅
+│   │   ├── ai_explainer.py        # AI-powered explanation generator ✅
+│   │   └── cache_manager.py       # Two-level caching system ✅
+│   ├── formatters/
+│   │   ├── base_formatter.py      # Abstract formatter interface ✅
+│   │   ├── markdown_formatter.py  # Markdown output generator ✅
+│   │   ├── html_formatter.py      # HTML output with Bootstrap 5 ✅
+│   │   ├── json_formatter.py      # JSON API reference ✅
+│   │   └── docstring_formatter.py # Code enhancement with docstrings ✅
+│   └── utils/                     # Utility functions (future)
 ├── tests/
 │   ├── fixtures/
-│   │   └── sample.py           # Test Python file
-│   └── test_python_parser.py   # Parser tests
+│   │   ├── sample.py              # Test Python file ✅
+│   │   ├── sample.js              # Test JavaScript file ✅
+│   │   └── Sample.java            # Test Java file ✅
+│   ├── test_python_parser.py      # Python parser tests ✅
+│   ├── test_all_parsers.py        # Multi-language tests ✅
+│   ├── test_ai_enhancement.py     # AI enhancement tests ✅
+│   └── test_formatters.py         # Formatter tests ✅
 ├── data/
-│   ├── cache/                  # AST and AI cache (future)
-│   └── output/                 # Generated documentation (future)
-├── requirements.txt
-└── .env.example
+│   ├── cache/
+│   │   ├── ast/                   # Parsed AST cache ✅
+│   │   └── ai/                    # AI explanation cache ✅
+│   └── output/                    # Generated documentation ✅
+├── requirements.txt                # Python dependencies ✅
+├── package.json                    # Node.js dependencies (for JS parsing) ✅
+└── .env.example                    # Environment configuration ✅
 ```
 
 ## Architecture
