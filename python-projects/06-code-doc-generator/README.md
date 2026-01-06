@@ -4,7 +4,7 @@ An AI-powered code documentation generator that analyzes source code in multiple
 
 ## Project Status
 
-**Current Phase**: Phase 4 - Output Formatters ✅
+**Current Phase**: Phase 5 - CLI Interface (In Progress)
 
 ### Completed Features
 
@@ -43,11 +43,18 @@ An AI-powered code documentation generator that analyzes source code in multiple
 - ✅ Syntax highlighting and collapsible sections (HTML)
 - ✅ Client-side search functionality (HTML)
 
+**Phase 5 - CLI Interface:**
+- ✅ `generate` command - Generate documentation from source code
+- ✅ `enhance` command - Add AI-generated docstrings to code
+- ✅ `analyze` command - Analyze code structure without generating docs
+- ✅ Main orchestrator (DocGenerator class)
+- ✅ Comprehensive error handling and validation
+- ⏳ `serve` command - Web UI (planned for Phase 7)
+
 ### Upcoming Features
 
-- [ ] CLI interface with command-line tool
-- [ ] Web interface with FastAPI
-- [ ] Python API (importable package)
+- [ ] Web interface with FastAPI (Phase 7)
+- [ ] Python API - Make package installable (Phase 6)
 
 ## Quick Start
 
@@ -57,36 +64,88 @@ An AI-powered code documentation generator that analyzes source code in multiple
 # Clone the repository
 cd ai-experiments-hub/python-projects/06-code-doc-generator
 
-# Install dependencies (optional for now - only needed for AI features later)
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Testing the Parsers
+### CLI Usage
+
+The tool provides four main commands:
+
+#### 1. Generate Documentation
+
+Generate comprehensive documentation from source code:
 
 ```bash
-# Test all parsers (Python, JavaScript, Java)
-python3 tests/test_all_parsers.py
+# Generate Markdown docs for a single file
+python doc_gen.py generate src/example.py
 
-# Test AI-enhanced documentation generation
-python3 tests/test_ai_enhancement.py
+# Generate multiple formats for a directory
+python doc_gen.py generate src/ --format markdown,html,json --output docs/
 
-# Test all output formatters (Markdown, HTML, JSON, Docstring)
-python3 tests/test_formatters.py
+# Generate with specific LLM provider
+python doc_gen.py generate src/ --provider anthropic --model claude-3-5-sonnet
 
-# Or test individual parsers
-python3 tests/test_python_parser.py
+# Generate without AI enhancement (template-based only)
+python doc_gen.py generate src/ --no-ai
+
+# Generate with verbose output
+python doc_gen.py generate src/ --format html --verbose
 ```
 
-**Note**: Additional dependencies for full functionality:
+#### 2. Enhance Code with Docstrings
+
+Add AI-generated docstrings directly to your source code:
+
 ```bash
-# For JavaScript/TypeScript support
+# Enhance a Python file
+python doc_gen.py enhance src/example.py
+
+# Specify output file and docstring style
+python doc_gen.py enhance src/example.py --output src/example_documented.py --style google
+
+# Use specific LLM provider
+python doc_gen.py enhance src/example.py --provider anthropic --model claude-3-5-sonnet
+```
+
+#### 3. Analyze Code Structure
+
+Inspect code structure without generating documentation:
+
+```bash
+# Analyze a file
+python doc_gen.py analyze src/example.py
+
+# Analyze entire directory with detailed output
+python doc_gen.py analyze src/ --details
+
+# Shows: file count, functions, classes, and optionally lists all names
+```
+
+#### 4. Web UI (Coming Soon)
+
+Start a web interface for interactive documentation generation:
+
+```bash
+python doc_gen.py serve --port 8000
+```
+
+### Additional Dependencies
+
+**For JavaScript/TypeScript support:**
+```bash
 npm install
+```
 
-# For Java support
+**For Java support:**
+```bash
 pip install javalang
+```
 
-# For AI features (choose one):
-# Option 1: Ollama (local, free) - Recommended for development
+**For AI features (choose one):**
+
+```bash
+# Option 1: Ollama (local, free) - Recommended
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2
 
@@ -99,12 +158,18 @@ pip install openai
 export OPENAI_API_KEY="your-key-here"
 ```
 
-The Python parser will work without any additional dependencies and will display:
-- Module docstring
-- All imports
-- Global variables with type hints
-- Functions with parameters, return types, and complexity
-- Classes with methods, attributes, and inheritance
+### Testing
+
+Run the test suite to verify functionality:
+
+```bash
+# Test all components
+python tests/test_all_parsers.py
+python tests/test_ai_enhancement.py
+python tests/test_formatters.py
+python tests/test_cli_generate.py
+python tests/test_cli_commands.py
+```
 
 ## Usage Examples
 
@@ -290,6 +355,113 @@ The Python parser extracts:
   - All methods (instance, static, class methods)
   - Decorators
 
+## CLI Command Reference
+
+### `generate` - Generate Documentation
+
+Generate documentation from source code in multiple formats.
+
+**Syntax:**
+```bash
+python doc_gen.py generate <input> [options]
+```
+
+**Options:**
+- `<input>` - File or directory to document (required)
+- `--format`, `-f` - Output format(s): markdown, html, json, docstring, all (default: markdown)
+- `--output`, `-o` - Output directory (default: ./data/output)
+- `--recursive`, `-r` - Recursively process directories (default: True)
+- `--no-recursive` - Do not process directories recursively
+- `--provider` - LLM provider: ollama, anthropic, openai (default: ollama)
+- `--model` - LLM model to use (uses provider default if not specified)
+- `--no-ai` - Disable AI enhancements (faster, template-based docs only)
+- `--no-cache` - Disable caching (forces fresh generation)
+- `--cache-dir` - Cache directory (default: ./data/cache)
+- `--verbose`, `-v` - Verbose output
+
+**Examples:**
+```bash
+# Single file, Markdown format
+python doc_gen.py generate src/example.py
+
+# Directory, multiple formats
+python doc_gen.py generate src/ --format markdown,html,json
+
+# With specific AI model
+python doc_gen.py generate src/ --provider anthropic --model claude-3-5-sonnet
+
+# Template-based (no AI)
+python doc_gen.py generate src/ --no-ai --format markdown
+```
+
+### `enhance` - Add Docstrings to Code
+
+Enhance source code with AI-generated docstrings.
+
+**Syntax:**
+```bash
+python doc_gen.py enhance <input> [options]
+```
+
+**Options:**
+- `<input>` - Source file to enhance (required, must be a file)
+- `--output`, `-o` - Output file path (default: <input>_documented)
+- `--style` - Docstring style: auto, google, numpy, jsdoc, javadoc (default: auto)
+- `--provider` - LLM provider: ollama, anthropic, openai (default: ollama)
+- `--model` - LLM model to use
+
+**Examples:**
+```bash
+# Enhance with auto output path
+python doc_gen.py enhance src/mycode.py
+
+# Specify output and style
+python doc_gen.py enhance src/mycode.py --output src/documented.py --style google
+
+# Use Anthropic Claude
+python doc_gen.py enhance src/mycode.py --provider anthropic
+```
+
+### `analyze` - Analyze Code Structure
+
+Analyze and display code structure without generating documentation.
+
+**Syntax:**
+```bash
+python doc_gen.py analyze <input> [options]
+```
+
+**Options:**
+- `<input>` - File or directory to analyze (required)
+- `--details` - Show detailed analysis (function/class names)
+
+**Examples:**
+```bash
+# Basic analysis
+python doc_gen.py analyze src/
+
+# Detailed analysis with function/class names
+python doc_gen.py analyze src/ --details
+```
+
+**Output includes:**
+- Total files, functions, classes
+- Breakdown by programming language
+- With `--details`: Lists all function and class names
+
+### `serve` - Web UI (Coming Soon)
+
+Start web interface for interactive documentation generation.
+
+**Syntax:**
+```bash
+python doc_gen.py serve [options]
+```
+
+**Options:**
+- `--host` - Host to bind (default: 127.0.0.1)
+- `--port`, `-p` - Port to bind (default: 8000)
+
 ## Development Roadmap
 
 ### Phase 1: Core Parsing Foundation ✅
@@ -303,33 +475,36 @@ The Python parser extracts:
 - Test fixtures for all languages
 - Graceful dependency handling
 
-### Phase 3: AI Enhancement ✅ (CURRENT)
+### Phase 3: AI Enhancement ✅
 - LLM client integration with multi-backend support
 - AI-powered explanations for functions/classes
 - Module summary generation
 - Parameter description enhancement
 - Multi-level caching (AST + AI)
 
-### Phase 4: Output Formatters
-- Markdown formatter
+### Phase 4: Output Formatters ✅
+- Markdown formatter with table of contents
 - HTML formatter with syntax highlighting
 - JSON API reference formatter
 - Docstring enhancement formatter
 
-### Phase 5: CLI Interface
-- `doc_gen.py generate` - Generate documentation
-- `doc_gen.py enhance` - Add docstrings to code
-- `doc_gen.py analyze` - Analyze code structure
-- `doc_gen.py serve` - Start web UI
+### Phase 5: CLI Interface ⏳ (CURRENT)
+- ✅ `doc_gen.py generate` - Generate documentation
+- ✅ `doc_gen.py enhance` - Add docstrings to code
+- ✅ `doc_gen.py analyze` - Analyze code structure
+- ✅ Main orchestrator and error handling
+- ⏳ `doc_gen.py serve` - Start web UI (Phase 7)
 
-### Phase 6: Python API
-- Make package installable
+### Phase 6: Python API (NEXT)
+- Make package installable with setup.py
 - Public API for programmatic use
+- Console script entry point
 
 ### Phase 7: Web Interface
 - FastAPI web server
 - Upload and generate docs
 - Preview and download
+- Implement `serve` command
 
 ## Testing
 

@@ -60,7 +60,7 @@ Examples:
         parser.add_argument(
             '--version',
             action='version',
-            version='%(prog)s 0.6.5'
+            version='%(prog)s 0.6.5.4'
         )
 
         # Create subparsers for commands
@@ -529,9 +529,29 @@ Examples:
             return str(Path(file_path).name)
 
     def handle_serve(self, args) -> int:
-        """Handle serve command (placeholder for 0.6.5.4)"""
-        print("⚠️  Serve command not yet implemented")
-        print("   This feature will be available in version 0.6.5.4")
+        """Handle serve command (placeholder for Phase 7)"""
+        print(f"🌐 Web UI Server\n")
+        print("⚠️  The web interface is not yet implemented.")
+        print("   This feature is planned for Phase 7 (Web Interface).\n")
+
+        print("📋 Planned Features:")
+        print("   • Upload code files through web interface")
+        print("   • Interactive documentation generation")
+        print("   • Real-time preview of generated docs")
+        print("   • Download documentation in multiple formats")
+        print("   • Syntax-highlighted code display\n")
+
+        print(f"🔧 Configuration:")
+        print(f"   Host: {args.host}")
+        print(f"   Port: {args.port}\n")
+
+        print("💡 In the meantime, use the CLI commands:")
+        print("   • python doc_gen.py generate <path>  - Generate documentation")
+        print("   • python doc_gen.py enhance <file>   - Add docstrings to code")
+        print("   • python doc_gen.py analyze <path>   - Analyze code structure\n")
+
+        print("📚 For more information, see: python doc_gen.py --help")
+
         return 0
 
     def _parse_formats(self, format_str: str) -> List[str]:
