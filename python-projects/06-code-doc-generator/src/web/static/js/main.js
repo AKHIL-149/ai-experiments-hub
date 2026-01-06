@@ -1,6 +1,6 @@
 /**
  * Code Documentation Generator - Main JavaScript
- * Version: 0.7.2
+ * Version: 0.7.3
  * Handles form submission, file upload, drag-and-drop, and API interactions
  */
 

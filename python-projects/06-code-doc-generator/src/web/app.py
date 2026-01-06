@@ -8,7 +8,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI, Request, Form
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
     from fastapi.middleware.cors import CORSMiddleware
@@ -22,12 +22,70 @@ except ImportError:
 
 from src.core import DocGenerator
 
+
+# Utility function for markdown to HTML conversion
+def markdown_to_html(markdown_text: str) -> str:
+    """
+    Convert markdown text to HTML.
+    Uses a simple regex-based approach if markdown library is not available.
+    """
+    try:
+        import markdown
+        return markdown.markdown(
+            markdown_text,
+            extensions=['extra', 'codehilite', 'toc', 'tables']
+        )
+    except ImportError:
+        # Fallback: simple regex-based conversion
+        import re
+
+        html = markdown_text
+
+        # Headers
+        html = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
+        html = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
+        html = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+
+        # Bold and italic
+        html = re.sub(r'\*\*\*(.+?)\*\*\*', r'<strong><em>\1</em></strong>', html)
+        html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+        html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+        html = re.sub(r'__(.+?)__', r'<strong>\1</strong>', html)
+        html = re.sub(r'_(.+?)_', r'<em>\1</em>', html)
+
+        # Code blocks
+        html = re.sub(r'```(\w+)?\n(.*?)\n```', r'<pre><code class="language-\1">\2</code></pre>',
+                     html, flags=re.DOTALL)
+
+        # Inline code
+        html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
+
+        # Links
+        html = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', html)
+
+        # Lists
+        html = re.sub(r'^\- (.+?)$', r'<li>\1</li>', html, flags=re.MULTILINE)
+        html = re.sub(r'(<li>.*?</li>)', r'<ul>\1</ul>', html, flags=re.DOTALL)
+
+        # Paragraphs
+        html = re.sub(r'\n\n', r'</p><p>', html)
+        html = '<p>' + html + '</p>'
+
+        # Clean up
+        html = html.replace('<p></p>', '')
+        html = html.replace('<p><h', '<h').replace('</h1></p>', '</h1>')
+        html = html.replace('</h2></p>', '</h2>').replace('</h3></p>', '</h3>')
+        html = html.replace('<p><pre>', '<pre>').replace('</pre></p>', '</pre>')
+        html = html.replace('<p><ul>', '<ul>').replace('</ul></p>', '</ul>')
+
+        return html
+
 # Initialize FastAPI app
 if FASTAPI_AVAILABLE:
     app = FastAPI(
         title="Code Documentation Generator",
         description="AI-powered code documentation generator with multi-language support",
-        version="0.7.2",
+        version="0.7.3",
         docs_url="/api/docs",
         redoc_url="/api/redoc"
     )
@@ -84,6 +142,52 @@ if FASTAPI_AVAILABLE:
                 </html>
                 """
             )
+
+    @app.post("/results", response_class=HTMLResponse)
+    async def show_results(
+        request: Request,
+        code: str = Form(...),
+        documentation: str = Form(...),
+        raw_documentation: str = Form(""),
+        format: str = Form("markdown"),
+        language: str = Form("python"),
+        ai_enhanced: bool = Form(False),
+        stats: str = Form("{}"),
+        metadata: str = Form("{}")
+    ):
+        """Display documentation results page"""
+        import json
+
+        # Parse JSON fields
+        try:
+            stats_data = json.loads(stats) if stats else {}
+        except:
+            stats_data = {}
+
+        try:
+            metadata_data = json.loads(metadata) if metadata else {}
+        except:
+            metadata_data = {}
+
+        # Convert markdown to HTML if needed
+        doc_html = documentation
+        if format == "markdown":
+            doc_html = markdown_to_html(documentation)
+
+        return templates.TemplateResponse(
+            "result.html",
+            {
+                "request": request,
+                "code": code,
+                "documentation": doc_html,
+                "raw_documentation": raw_documentation or documentation,
+                "format": format,
+                "language": language,
+                "ai_enhanced": ai_enhanced,
+                "stats": stats_data,
+                "metadata": metadata_data
+            }
+        )
 
     @app.on_event("startup")
     async def startup_event():

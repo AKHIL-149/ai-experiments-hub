@@ -37,10 +37,15 @@ if FASTAPI_AVAILABLE:
         
     class GenerateResponse(BaseModel):
         """Response model for generate endpoint"""
-        success: bool
+        status: str  # "success" or "error"
+        code: str
         documentation: str
+        raw_documentation: str
         format: str
         language: str
+        ai_enhanced: bool
+        stats: dict
+        metadata: dict
         error: Optional[str] = None
         
     class AnalyzeRequest(BaseModel):
@@ -82,7 +87,7 @@ if FASTAPI_AVAILABLE:
         """Health check endpoint"""
         return {
             "status": "healthy",
-            "version": "0.7.2",
+            "version": "0.7.3",
             "service": "code-doc-generator"
         }
     
@@ -143,9 +148,14 @@ if FASTAPI_AVAILABLE:
     ):
         """
         Generate documentation from code.
-        
+
         Accepts either file upload or direct code input.
         """
+        import time
+        from datetime import datetime
+
+        start_time = time.time()
+
         try:
             # Get code content
             if file:
@@ -164,12 +174,12 @@ if FASTAPI_AVAILABLE:
                 code_content = code
             else:
                 raise HTTPException(status_code=400, detail="No code provided")
-            
+
             # Create temporary file
             with tempfile.NamedTemporaryFile(mode='w', suffix=f'.{language}', delete=False) as tmp_file:
                 tmp_file.write(code_content)
                 tmp_path = tmp_file.name
-            
+
             try:
                 # Initialize generator
                 generator = DocGenerator(
@@ -178,7 +188,21 @@ if FASTAPI_AVAILABLE:
                     use_ai=use_ai,
                     enable_cache=True
                 )
-                
+
+                # First, analyze the code to get stats
+                from src.parsers.parser_registry import ParserRegistry
+                registry = ParserRegistry()
+                parser = registry.get_parser(tmp_path)
+                parsed = parser.parse_file(tmp_path)
+
+                # Calculate stats
+                stats = {
+                    "language": parsed.language,
+                    "functions": len(parsed.functions),
+                    "classes": len(parsed.classes),
+                    "lines": code_content.count('\n') + 1
+                }
+
                 # Create temporary output directory
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     # Generate documentation
@@ -188,30 +212,51 @@ if FASTAPI_AVAILABLE:
                         output_dir=tmp_dir,
                         recursive=False
                     )
-                    
+
                     if output_files:
                         # Read generated documentation
                         doc_content = Path(output_files[0]).read_text()
-                        
+
+                        # Calculate processing time
+                        processing_time = round(time.time() - start_time, 2)
+
+                        # Create metadata
+                        metadata = {
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "provider": provider.title(),
+                            "model": model or "Default",
+                            "processing_time": processing_time
+                        }
+
                         return GenerateResponse(
-                            success=True,
+                            status="success",
+                            code=code_content,
                             documentation=doc_content,
+                            raw_documentation=doc_content,
                             format=format,
-                            language=language
+                            language=language,
+                            ai_enhanced=use_ai,
+                            stats=stats,
+                            metadata=metadata
                         )
                     else:
                         raise Exception("No documentation generated")
-                        
+
             finally:
                 # Clean up temporary file
                 Path(tmp_path).unlink(missing_ok=True)
-                
+
         except Exception as e:
             return GenerateResponse(
-                success=False,
+                status="error",
+                code=code or "",
                 documentation="",
+                raw_documentation="",
                 format=format,
                 language=language,
+                ai_enhanced=use_ai,
+                stats={},
+                metadata={},
                 error=str(e)
             )
     
