@@ -1,0 +1,21 @@
+# Include documentation
+include README.md
+include LICENSE
+include .env.example
+
+# Include requirements files
+include requirements.txt
+include package.json
+
+# Include test fixtures
+recursive-include tests/fixtures *.py *.js *.java
+
+# Include JavaScript parser helper
+include src/parsers/js_parser_helper.js
+
+# Exclude cache and output directories
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
+prune data/cache
+prune data/output

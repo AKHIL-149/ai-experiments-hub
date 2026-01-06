@@ -4,7 +4,7 @@ An AI-powered code documentation generator that analyzes source code in multiple
 
 ## Project Status
 
-**Current Phase**: Phase 5 - CLI Interface (In Progress)
+**Current Phase**: Phase 6 - Python API ✅ (Complete)
 
 ### Completed Features
 
@@ -51,14 +51,47 @@ An AI-powered code documentation generator that analyzes source code in multiple
 - ✅ Comprehensive error handling and validation
 - ⏳ `serve` command - Web UI (planned for Phase 7)
 
+**Phase 6 - Python API:**
+- ✅ Package setup with setup.py and pyproject.toml
+- ✅ Console script entry points (doc-gen command)
+- ✅ Public API exports in src/__init__.py
+- ✅ Optional dependency groups (ai, web, utils, all)
+- ✅ MANIFEST.in for package data
+- ✅ Installation documentation
+
 ### Upcoming Features
 
 - [ ] Web interface with FastAPI (Phase 7)
-- [ ] Python API - Make package installable (Phase 6)
 
 ## Quick Start
 
 ### Installation
+
+**Option 1: Install as Package (Recommended)**
+
+```bash
+# Clone the repository
+cd ai-experiments-hub/python-projects/06-code-doc-generator
+
+# Install in development mode (editable)
+pip install -e .
+
+# Or install with all optional features
+pip install -e ".[all]"
+
+# Or install specific feature sets
+pip install -e ".[ai]"      # AI features only
+pip install -e ".[web]"     # Web interface only
+pip install -e ".[utils]"   # Utilities (progress bars, etc.)
+```
+
+After installation, you can import the package in Python:
+```python
+from src import DocGenerator, __version__
+print(__version__)  # 0.6.5.4
+```
+
+**Option 2: Direct CLI Usage (Recommended for CLI)**
 
 ```bash
 # Clone the repository
@@ -66,7 +99,13 @@ cd ai-experiments-hub/python-projects/06-code-doc-generator
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Run CLI directly
+python doc_gen.py --version
+python doc_gen.py generate src/
 ```
+
+**Note**: For CLI usage, use the direct Python execution method (`python doc_gen.py`). The package installation is primarily for programmatic API usage.
 
 ### CLI Usage
 
@@ -171,9 +210,69 @@ python tests/test_cli_generate.py
 python tests/test_cli_commands.py
 ```
 
+## Programmatic API Usage
+
+Once installed as a package, you can import and use the library in your Python code:
+
+### Quick Start
+
+```python
+from src import DocGenerator
+
+# Initialize generator
+generator = DocGenerator(
+    llm_provider='ollama',
+    model='llama3.2',
+    use_ai=True
+)
+
+# Generate documentation
+generator.generate_docs(
+    input_path='myproject/',
+    output_format='markdown',
+    output_dir='docs/'
+)
+```
+
+### Advanced Usage
+
+```python
+from src import (
+    DocGenerator,
+    ParserRegistry,
+    MarkdownFormatter,
+    HTMLFormatter
+)
+
+# Parse specific files
+registry = ParserRegistry()
+parser = registry.get_parser('example.py')
+parsed = parser.parse_file('example.py')
+
+# Use specific formatters
+md_formatter = MarkdownFormatter(include_toc=True)
+md_formatter.format(parsed, 'output.md')
+
+html_formatter = HTMLFormatter(theme='light', include_search=True)
+html_formatter.format(parsed, 'output.html')
+
+# Enhance code with docstrings
+generator = DocGenerator(use_ai=True)
+generator.enhance_code(
+    input_path='mycode.py',
+    output_path='mycode_documented.py',
+    style='google'
+)
+
+# Analyze code structure
+analysis = generator.analyze_structure('myproject/', show_details=True)
+print(f"Total functions: {analysis['total_functions']}")
+print(f"Total classes: {analysis['total_classes']}")
+```
+
 ## Usage Examples
 
-### Basic Parsing
+### Basic Parsing (Direct Module Usage)
 
 ```python
 from src.parsers.python_parser import PythonParser
@@ -488,19 +587,21 @@ python doc_gen.py serve [options]
 - JSON API reference formatter
 - Docstring enhancement formatter
 
-### Phase 5: CLI Interface ⏳ (CURRENT)
+### Phase 5: CLI Interface ✅
 - ✅ `doc_gen.py generate` - Generate documentation
 - ✅ `doc_gen.py enhance` - Add docstrings to code
 - ✅ `doc_gen.py analyze` - Analyze code structure
 - ✅ Main orchestrator and error handling
 - ⏳ `doc_gen.py serve` - Start web UI (Phase 7)
 
-### Phase 6: Python API (NEXT)
-- Make package installable with setup.py
-- Public API for programmatic use
-- Console script entry point
+### Phase 6: Python API ✅
+- ✅ Package installable with setup.py and pyproject.toml
+- ✅ Public API for programmatic use
+- ✅ Console script entry point (doc-gen command)
+- ✅ Optional dependency groups
+- ✅ Comprehensive installation documentation
 
-### Phase 7: Web Interface
+### Phase 7: Web Interface (NEXT)
 - FastAPI web server
 - Upload and generate docs
 - Preview and download

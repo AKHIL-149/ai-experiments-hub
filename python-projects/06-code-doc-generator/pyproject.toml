@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-doc-generator"
+dynamic = ["version"]
+description = "AI-powered code documentation generator with multi-language support"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "AI Experiments Hub"}
+]
+keywords = [
+    "documentation",
+    "code-analysis",
+    "ast",
+    "llm",
+    "ai",
+    "docstring",
+    "markdown",
+]
+
+[project.urls]
+Homepage = "https://github.com/AKHIL-149/ai-experiments-hub"
+Repository = "https://github.com/AKHIL-149/ai-experiments-hub/tree/main/python-projects/06-code-doc-generator"
+Issues = "https://github.com/AKHIL-149/ai-experiments-hub/issues"
+
+[tool.setuptools]
+packages = ["src"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "src.__version__"}
