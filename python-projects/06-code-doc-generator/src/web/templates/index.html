@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Code - Code Documentation Generator{% endblock %}
+
+{% block extra_css %}
+<style>
+    .upload-area {
+        border: 2px dashed #0d6efd;
+        border-radius: 8px;
+        padding: 3rem;
+        text-align: center;
+        background-color: #f8f9fa;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .upload-area:hover {
+        background-color: #e9ecef;
+        border-color: #0b5ed7;
+    }
+
+    .upload-area.dragover {
+        background-color: #cfe2ff;
+        border-color: #0b5ed7;
+        border-style: solid;
+    }
+
+    .upload-icon {
+        font-size: 4rem;
+        color: #0d6efd;
+        margin-bottom: 1rem;
+    }
+
+    .code-input {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.9rem;
+        min-height: 300px;
+    }
+
+    .example-code {
+        font-size: 0.85rem;
+        background-color: #f8f9fa;
+        border-left: 3px solid #0d6efd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-lg-12 text-center">
+            <h1 class="display-5 fw-bold text-primary">
+                <i class="bi bi-file-earmark-code-fill"></i>
+                AI-Powered Code Documentation Generator
+            </h1>
+            <p class="lead text-muted">
+                Generate comprehensive documentation for Python, JavaScript, and Java code using AST parsing and AI
+            </p>
+        </div>
+    </div>
+
+    <!-- Main Form -->
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-upload"></i> Upload or Paste Your Code
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="docGenForm" enctype="multipart/form-data">
+                        <!-- Upload Method Selection -->
+                        <div class="mb-4">
+                            <ul class="nav nav-tabs" id="inputTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="upload-tab" data-bs-toggle="tab"
+                                            data-bs-target="#upload-panel" type="button" role="tab">
+                                        <i class="bi bi-cloud-upload"></i> Upload File
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="paste-tab" data-bs-toggle="tab"
+                                            data-bs-target="#paste-panel" type="button" role="tab">
+                                        <i class="bi bi-code-slash"></i> Paste Code
+                                    </button>
+                                </li>
+                            </ul>
+
+                            <div class="tab-content mt-3" id="inputTabContent">
+                                <!-- File Upload Tab -->
+                                <div class="tab-pane fade show active" id="upload-panel" role="tabpanel">
+                                    <div class="upload-area" id="uploadArea">
+                                        <i class="bi bi-cloud-upload upload-icon"></i>
+                                        <h5>Drag and drop your code file here</h5>
+                                        <p class="text-muted">or click to browse</p>
+                                        <input type="file" id="fileInput" name="file" class="d-none"
+                                               accept=".py,.js,.ts,.java">
+                                        <div id="fileInfo" class="mt-3 d-none">
+                                            <span class="badge bg-success">
+                                                <i class="bi bi-file-earmark-check"></i>
+                                                <span id="fileName"></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Paste Code Tab -->
+                                <div class="tab-pane fade" id="paste-panel" role="tabpanel">
+                                    <textarea class="form-control code-input" id="codeInput" name="code"
+                                              placeholder="Paste your Python, JavaScript, or Java code here..."></textarea>
+                                    <small class="form-text text-muted">
+                                        <i class="bi bi-info-circle"></i>
+                                        Supports Python (.py), JavaScript/TypeScript (.js/.ts), and Java (.java)
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Configuration Options -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="languageSelect" class="form-label">
+                                    <i class="bi bi-code-square"></i> Language
+                                </label>
+                                <select class="form-select" id="languageSelect" name="language">
+                                    <option value="auto" selected>Auto-detect</option>
+                                    <option value="python">Python</option>
+                                    <option value="javascript">JavaScript</option>
+                                    <option value="typescript">TypeScript</option>
+                                    <option value="java">Java</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="formatSelect" class="form-label">
+                                    <i class="bi bi-file-earmark-text"></i> Output Format
+                                </label>
+                                <select class="form-select" id="formatSelect" name="format">
+                                    <option value="markdown" selected>Markdown</option>
+                                    <option value="html">HTML</option>
+                                    <option value="json">JSON API Reference</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- AI Configuration -->
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="useAI"
+                                           name="use_ai" checked>
+                                    <label class="form-check-label fw-bold" for="useAI">
+                                        <i class="bi bi-stars"></i> AI-Enhanced Documentation
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="card-body" id="aiOptions">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="providerSelect" class="form-label">LLM Provider</label>
+                                        <select class="form-select" id="providerSelect" name="provider">
+                                            <option value="ollama" selected>Ollama (Local)</option>
+                                            <option value="anthropic">Anthropic (Claude)</option>
+                                            <option value="openai">OpenAI (GPT)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="modelInput" class="form-label">
+                                            Model <small class="text-muted">(optional)</small>
+                                        </label>
+                                        <input type="text" class="form-control" id="modelInput"
+                                               name="model" placeholder="e.g., llama3.2, claude-3-5-sonnet">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg" id="generateBtn">
+                                <i class="bi bi-magic"></i> Generate Documentation
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Progress Indicator -->
+                    <div id="progressArea" class="mt-3 d-none">
+                        <div class="alert alert-info">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <div>
+                                    <strong>Processing your code...</strong>
+                                    <p class="mb-0 small" id="progressText">Parsing code structure</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Display -->
+                    <div id="errorArea" class="mt-3 d-none">
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <strong>Error:</strong> <span id="errorText"></span>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="row mt-5">
+        <div class="col-lg-10 mx-auto">
+            <h3 class="text-center mb-4">Features</h3>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card h-100 border-primary">
+                        <div class="card-body text-center">
+                            <i class="bi bi-cpu display-4 text-primary mb-3"></i>
+                            <h5 class="card-title">AST-Based Parsing</h5>
+                            <p class="card-text text-muted">
+                                Accurate code analysis using Abstract Syntax Trees for Python, JavaScript, and Java
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 border-primary">
+                        <div class="card-body text-center">
+                            <i class="bi bi-stars display-4 text-primary mb-3"></i>
+                            <h5 class="card-title">AI-Powered Explanations</h5>
+                            <p class="card-text text-muted">
+                                Generate human-friendly explanations using Ollama, Claude, or GPT
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 border-primary">
+                        <div class="card-body text-center">
+                            <i class="bi bi-file-earmark-text display-4 text-primary mb-3"></i>
+                            <h5 class="card-title">Multiple Formats</h5>
+                            <p class="card-text text-muted">
+                                Export as Markdown, HTML, or JSON API reference
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Examples -->
+    <div class="row mt-5">
+        <div class="col-lg-10 mx-auto">
+            <h3 class="text-center mb-4">Quick Examples</h3>
+            <div class="accordion" id="examplesAccordion">
+                <!-- Python Example -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#pythonExample">
+                            <i class="bi bi-file-earmark-code me-2"></i> Python Example
+                        </button>
+                    </h2>
+                    <div id="pythonExample" class="accordion-collapse collapse" data-bs-parent="#examplesAccordion">
+                        <div class="accordion-body">
+                            <pre class="example-code p-3 rounded"><code class="language-python">def calculate_fibonacci(n: int) -> list:
+    """Calculate Fibonacci sequence up to n terms."""
+    if n <= 0:
+        return []
+    elif n == 1:
+        return [0]
+
+    sequence = [0, 1]
+    for i in range(2, n):
+        sequence.append(sequence[i-1] + sequence[i-2])
+    return sequence
+
+class MathHelper:
+    """Helper class for mathematical operations."""
+
+    @staticmethod
+    def factorial(n: int) -> int:
+        if n <= 1:
+            return 1
+        return n * MathHelper.factorial(n - 1)</code></pre>
+                            <button class="btn btn-sm btn-outline-primary" onclick="useExample('python')">
+                                <i class="bi bi-arrow-up-circle"></i> Use This Example
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JavaScript Example -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#jsExample">
+                            <i class="bi bi-file-earmark-code me-2"></i> JavaScript Example
+                        </button>
+                    </h2>
+                    <div id="jsExample" class="accordion-collapse collapse" data-bs-parent="#examplesAccordion">
+                        <div class="accordion-body">
+                            <pre class="example-code p-3 rounded"><code class="language-javascript">class UserManager {
+    constructor(database) {
+        this.db = database;
+        this.users = new Map();
+    }
+
+    async createUser(name, email) {
+        const user = {
+            id: this.generateId(),
+            name: name,
+            email: email,
+            createdAt: new Date()
+        };
+
+        await this.db.save(user);
+        this.users.set(user.id, user);
+        return user;
+    }
+
+    generateId() {
+        return Math.random().toString(36).substr(2, 9);
+    }
+}</code></pre>
+                            <button class="btn btn-sm btn-outline-primary" onclick="useExample('javascript')">
+                                <i class="bi bi-arrow-up-circle"></i> Use This Example
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Java Example -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#javaExample">
+                            <i class="bi bi-file-earmark-code me-2"></i> Java Example
+                        </button>
+                    </h2>
+                    <div id="javaExample" class="accordion-collapse collapse" data-bs-parent="#examplesAccordion">
+                        <div class="accordion-body">
+                            <pre class="example-code p-3 rounded"><code class="language-java">public class StringUtil {
+    public static String reverse(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        StringBuilder reversed = new StringBuilder();
+        for (int i = input.length() - 1; i >= 0; i--) {
+            reversed.append(input.charAt(i));
+        }
+        return reversed.toString();
+    }
+
+    public static boolean isPalindrome(String text) {
+        String normalized = text.toLowerCase().replaceAll("\\s+", "");
+        return normalized.equals(reverse(normalized));
+    }
+}</code></pre>
+                            <button class="btn btn-sm btn-outline-primary" onclick="useExample('java')">
+                                <i class="bi bi-arrow-up-circle"></i> Use This Example
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Example code data
+const examples = {
+    python: `def calculate_fibonacci(n: int) -> list:
+    """Calculate Fibonacci sequence up to n terms."""
+    if n <= 0:
+        return []
+    elif n == 1:
+        return [0]
+
+    sequence = [0, 1]
+    for i in range(2, n):
+        sequence.append(sequence[i-1] + sequence[i-2])
+    return sequence
+
+class MathHelper:
+    """Helper class for mathematical operations."""
+
+    @staticmethod
+    def factorial(n: int) -> int:
+        if n <= 1:
+            return 1
+        return n * MathHelper.factorial(n - 1)`,
+
+    javascript: `class UserManager {
+    constructor(database) {
+        this.db = database;
+        this.users = new Map();
+    }
+
+    async createUser(name, email) {
+        const user = {
+            id: this.generateId(),
+            name: name,
+            email: email,
+            createdAt: new Date()
+        };
+
+        await this.db.save(user);
+        this.users.set(user.id, user);
+        return user;
+    }
+
+    generateId() {
+        return Math.random().toString(36).substr(2, 9);
+    }
+}`,
+
+    java: `public class StringUtil {
+    public static String reverse(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        StringBuilder reversed = new StringBuilder();
+        for (int i = input.length() - 1; i >= 0; i--) {
+            reversed.append(input.charAt(i));
+        }
+        return reversed.toString();
+    }
+
+    public static boolean isPalindrome(String text) {
+        String normalized = text.toLowerCase().replaceAll("\\\\s+", "");
+        return normalized.equals(reverse(normalized));
+    }
+}`
+};
+
+function useExample(language) {
+    // Switch to paste tab
+    const pasteTab = document.getElementById('paste-tab');
+    const pasteTabInstance = new bootstrap.Tab(pasteTab);
+    pasteTabInstance.show();
+
+    // Set code
+    document.getElementById('codeInput').value = examples[language];
+
+    // Set language
+    document.getElementById('languageSelect').value = language;
+
+    // Scroll to form
+    document.getElementById('docGenForm').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+{% endblock %}

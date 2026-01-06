@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation Results - Code Documentation Generator{% endblock %}
+
+{% block extra_css %}
+<style>
+    .result-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        min-height: 600px;
+    }
+
+    @media (max-width: 768px) {
+        .result-container {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .code-panel, .docs-panel {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .panel-header {
+        background-color: #0d6efd;
+        color: white;
+        padding: 1rem;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .panel-body {
+        padding: 1.5rem;
+        overflow-y: auto;
+        flex-grow: 1;
+        background-color: white;
+    }
+
+    .code-display {
+        margin: 0;
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+
+    .docs-content {
+        font-size: 0.95rem;
+        line-height: 1.8;
+    }
+
+    .docs-content h1, .docs-content h2, .docs-content h3 {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        color: #0d6efd;
+    }
+
+    .docs-content h1 {
+        font-size: 1.8rem;
+        border-bottom: 2px solid #0d6efd;
+        padding-bottom: 0.5rem;
+    }
+
+    .docs-content h2 {
+        font-size: 1.5rem;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.3rem;
+    }
+
+    .docs-content h3 {
+        font-size: 1.2rem;
+    }
+
+    .docs-content code {
+        background-color: #f8f9fa;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-size: 0.9em;
+        color: #d63384;
+    }
+
+    .docs-content pre {
+        background-color: #282c34;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+    }
+
+    .docs-content pre code {
+        color: #abb2bf;
+        background-color: transparent;
+        padding: 0;
+    }
+
+    .docs-content ul, .docs-content ol {
+        padding-left: 2rem;
+    }
+
+    .docs-content table {
+        width: 100%;
+        margin: 1rem 0;
+        border-collapse: collapse;
+    }
+
+    .docs-content table th,
+    .docs-content table td {
+        padding: 0.75rem;
+        border: 1px solid #dee2e6;
+        text-align: left;
+    }
+
+    .docs-content table th {
+        background-color: #f8f9fa;
+        font-weight: bold;
+    }
+
+    .copy-btn, .download-btn {
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .copy-btn:hover, .download-btn:hover {
+        transform: scale(1.1);
+    }
+
+    .stats-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .stat-item:last-child {
+        border-bottom: none;
+    }
+
+    .stat-label {
+        font-weight: 500;
+        opacity: 0.9;
+    }
+
+    .stat-value {
+        font-weight: bold;
+        font-size: 1.2rem;
+    }
+
+    .format-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-right: 0.5rem;
+    }
+
+    .format-markdown {
+        background-color: #e7f5ff;
+        color: #1971c2;
+    }
+
+    .format-html {
+        background-color: #fff3e0;
+        color: #e65100;
+    }
+
+    .format-json {
+        background-color: #f3e5f5;
+        color: #6a1b9a;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .json-viewer {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.85rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header with Stats -->
+    <div class="row mb-4">
+        <div class="col-lg-12">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="mb-0">
+                    <i class="bi bi-check-circle-fill text-success"></i>
+                    Documentation Generated Successfully
+                </h2>
+                <a href="/" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-left"></i> Generate Another
+                </a>
+            </div>
+
+            {% if stats %}
+            <div class="stats-card">
+                <h5 class="mb-3">
+                    <i class="bi bi-graph-up"></i> Analysis Summary
+                </h5>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <span class="stat-label">
+                                <i class="bi bi-file-earmark-code"></i> Language
+                            </span>
+                            <span class="stat-value">{{ stats.language|title }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <span class="stat-label">
+                                <i class="bi bi-braces"></i> Functions
+                            </span>
+                            <span class="stat-value">{{ stats.functions }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <span class="stat-label">
+                                <i class="bi bi-box"></i> Classes
+                            </span>
+                            <span class="stat-value">{{ stats.classes }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <span class="stat-label">
+                                <i class="bi bi-file-text"></i> Lines
+                            </span>
+                            <span class="stat-value">{{ stats.lines }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="row mb-3">
+        <div class="col-lg-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap">
+                        <div class="mb-2">
+                            <span class="format-badge format-{{ format }}">
+                                <i class="bi bi-file-earmark-text"></i> {{ format|upper }}
+                            </span>
+                            {% if ai_enhanced %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-stars"></i> AI-Enhanced
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary btn-sm" onclick="downloadDocs()">
+                                <i class="bi bi-download"></i> Download
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="copyToClipboard('docs')">
+                                <i class="bi bi-clipboard"></i> Copy Documentation
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="copyToClipboard('code')">
+                                <i class="bi bi-code"></i> Copy Code
+                            </button>
+                            {% if format == 'html' %}
+                            <button class="btn btn-outline-info btn-sm" onclick="openInNewTab()">
+                                <i class="bi bi-box-arrow-up-right"></i> Open HTML
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Split View: Code and Documentation -->
+    <div class="result-container">
+        <!-- Original Code Panel -->
+        <div class="code-panel">
+            <div class="panel-header">
+                <span>
+                    <i class="bi bi-file-earmark-code"></i> Original Code
+                </span>
+                <span class="copy-btn" onclick="copyToClipboard('code')" title="Copy code">
+                    <i class="bi bi-clipboard"></i>
+                </span>
+            </div>
+            <div class="panel-body">
+                <pre class="code-display"><code class="language-{{ language }}" id="codeContent">{{ code }}</code></pre>
+            </div>
+        </div>
+
+        <!-- Generated Documentation Panel -->
+        <div class="docs-panel">
+            <div class="panel-header">
+                <span>
+                    <i class="bi bi-book"></i> Generated Documentation
+                </span>
+                <span class="copy-btn" onclick="copyToClipboard('docs')" title="Copy documentation">
+                    <i class="bi bi-clipboard"></i>
+                </span>
+            </div>
+            <div class="panel-body">
+                {% if format == 'markdown' %}
+                    <div class="docs-content" id="docsContent">
+                        {{ documentation|safe }}
+                    </div>
+                {% elif format == 'html' %}
+                    <div class="docs-content" id="docsContent">
+                        {{ documentation|safe }}
+                    </div>
+                {% elif format == 'json' %}
+                    <pre class="json-viewer"><code class="language-json" id="docsContent">{{ documentation }}</code></pre>
+                {% else %}
+                    <div class="docs-content" id="docsContent">
+                        <pre><code>{{ documentation }}</code></pre>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Information -->
+    {% if metadata %}
+    <div class="row mt-4">
+        <div class="col-lg-12">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0">
+                        <i class="bi bi-info-circle"></i> Generation Details
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <small class="text-muted">Generated At</small>
+                            <p class="mb-0">{{ metadata.timestamp }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Provider</small>
+                            <p class="mb-0">{{ metadata.provider|title }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Model</small>
+                            <p class="mb-0">{{ metadata.model or 'Default' }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Processing Time</small>
+                            <p class="mb-0">{{ metadata.processing_time }}s</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Hidden data for downloads -->
+<div id="hiddenData" class="d-none">
+    <div id="rawDocs">{{ raw_documentation }}</div>
+    <div id="rawCode">{{ code }}</div>
+    <div id="formatType">{{ format }}</div>
+    <div id="languageType">{{ language }}</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Copy to clipboard functionality
+async function copyToClipboard(type) {
+    let content;
+    let message;
+
+    if (type === 'code') {
+        content = document.getElementById('codeContent').textContent;
+        message = 'Code copied to clipboard!';
+    } else if (type === 'docs') {
+        const format = document.getElementById('formatType').textContent;
+        if (format === 'json' || format === 'markdown') {
+            content = document.getElementById('rawDocs').textContent;
+        } else {
+            content = document.getElementById('docsContent').innerHTML;
+        }
+        message = 'Documentation copied to clipboard!';
+    }
+
+    try {
+        await navigator.clipboard.writeText(content);
+        showToast(message, 'success');
+    } catch (err) {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = content;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showToast(message, 'success');
+        } catch (e) {
+            showToast('Failed to copy to clipboard', 'error');
+        }
+        document.body.removeChild(textarea);
+    }
+}
+
+// Download documentation
+function downloadDocs() {
+    const format = document.getElementById('formatType').textContent;
+    const language = document.getElementById('languageType').textContent;
+    const content = document.getElementById('rawDocs').textContent;
+
+    let filename = `documentation.${format}`;
+    let mimeType = 'text/plain';
+
+    if (format === 'markdown') {
+        filename = `documentation.md`;
+        mimeType = 'text/markdown';
+    } else if (format === 'html') {
+        filename = `documentation.html`;
+        mimeType = 'text/html';
+    } else if (format === 'json') {
+        filename = `documentation.json`;
+        mimeType = 'application/json';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Downloaded as ${filename}`, 'success');
+}
+
+// Open HTML in new tab
+function openInNewTab() {
+    const content = document.getElementById('rawDocs').textContent;
+    const blob = new Blob([content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+}
+
+// Toast notification
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed top-0 start-50 translate-middle-x mt-3`;
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `
+        <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-circle'}-fill me-2"></i>
+        ${message}
+    `;
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => document.body.removeChild(toast), 300);
+    }, 2000);
+}
+
+// Syntax highlighting on page load
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof Prism !== 'undefined') {
+        Prism.highlightAll();
+    }
+});
+</script>
+{% endblock %}
