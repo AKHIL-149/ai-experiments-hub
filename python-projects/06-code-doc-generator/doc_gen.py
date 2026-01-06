@@ -60,7 +60,7 @@ Examples:
         parser.add_argument(
             '--version',
             action='version',
-            version='%(prog)s 0.6.5.4'
+            version='%(prog)s 0.7.1'
         )
 
         # Create subparsers for commands
@@ -529,30 +529,39 @@ Examples:
             return str(Path(file_path).name)
 
     def handle_serve(self, args) -> int:
-        """Handle serve command (placeholder for Phase 7)"""
-        print(f"🌐 Web UI Server\n")
-        print("⚠️  The web interface is not yet implemented.")
-        print("   This feature is planned for Phase 7 (Web Interface).\n")
+        """Handle serve command - Start FastAPI web server"""
+        try:
+            # Check if web dependencies are available
+            try:
+                from src.web import start_server
+            except ImportError as e:
+                print(f"❌ Error: Web interface dependencies not installed\n")
+                print("Install with one of the following:")
+                print("   pip install 'fastapi>=0.109.0' 'uvicorn>=0.27.0' 'jinja2>=3.1.0'")
+                print("   pip install -e '.[web]'")
+                print("   pip install -e '.[all]'\n")
+                print(f"Details: {str(e)}")
+                return 1
 
-        print("📋 Planned Features:")
-        print("   • Upload code files through web interface")
-        print("   • Interactive documentation generation")
-        print("   • Real-time preview of generated docs")
-        print("   • Download documentation in multiple formats")
-        print("   • Syntax-highlighted code display\n")
+            print(f"🚀 Code Documentation Generator v0.7.1\n")
+            print(f"Starting web server...")
+            print(f"   Host: {args.host}")
+            print(f"   Port: {args.port}\n")
 
-        print(f"🔧 Configuration:")
-        print(f"   Host: {args.host}")
-        print(f"   Port: {args.port}\n")
+            # Start the web server
+            return start_server(
+                host=args.host,
+                port=args.port,
+                reload=False,
+                log_level="info"
+            )
 
-        print("💡 In the meantime, use the CLI commands:")
-        print("   • python doc_gen.py generate <path>  - Generate documentation")
-        print("   • python doc_gen.py enhance <file>   - Add docstrings to code")
-        print("   • python doc_gen.py analyze <path>   - Analyze code structure\n")
-
-        print("📚 For more information, see: python doc_gen.py --help")
-
-        return 0
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Server stopped by user")
+            return 0
+        except Exception as e:
+            print(f"\n❌ Error starting server: {str(e)}")
+            return 1
 
     def _parse_formats(self, format_str: str) -> List[str]:
         """Parse format string into list of formats"""
