@@ -370,16 +370,163 @@ Examples:
             return 1
 
     def handle_enhance(self, args) -> int:
-        """Handle enhance command (placeholder for 0.6.5.3)"""
-        print("⚠️  Enhance command not yet implemented")
-        print("   This feature will be available in version 0.6.5.3")
-        return 0
+        """Handle enhance command"""
+        try:
+            print(f"🚀 Code Enhancement v0.6.5\n")
+
+            # Validate input
+            input_path = Path(args.input)
+            if not input_path.exists():
+                print(f"❌ Error: Input file not found: {args.input}")
+                return 1
+
+            if not input_path.is_file():
+                print(f"❌ Error: Input must be a file, not a directory: {args.input}")
+                return 1
+
+            # Display configuration
+            print("📋 Configuration:")
+            print(f"   Input:    {args.input}")
+            print(f"   Output:   {args.output or '<input>_documented'}")
+            print(f"   Style:    {args.style}")
+            print(f"   Provider: {args.provider}")
+            if args.model:
+                print(f"   Model:    {args.model}")
+            print()
+
+            # Initialize generator with AI
+            print("⚙️  Initializing AI enhancer...")
+            generator = DocGenerator(
+                llm_provider=args.provider,
+                model=args.model,
+                use_ai=True,  # Must have AI for enhancement
+                enable_cache=True
+            )
+
+            if not generator.use_ai:
+                print("❌ Error: AI features are required for code enhancement")
+                print("   Please ensure LLM provider is available and configured")
+                return 1
+
+            print("✓ AI enhancer ready")
+            print()
+
+            # Enhance code
+            print(f"✨ Enhancing code with AI-generated docstrings...")
+
+            output_path = generator.enhance_code(
+                input_path=args.input,
+                output_path=args.output,
+                style=args.style
+            )
+
+            # Display results
+            print()
+            print("✅ Code enhanced successfully!\n")
+
+            # Show file info
+            input_size = input_path.stat().st_size
+            output_size = Path(output_path).stat().st_size
+            size_increase = output_size - input_size
+
+            print("📁 Files:")
+            print(f"   • Input:  {input_path.name} ({format_file_size(input_size)})")
+            print(f"   • Output: {Path(output_path).name} ({format_file_size(output_size)})")
+            print(f"   • Added:  {format_file_size(size_increase)} of documentation")
+
+            print()
+            print(f"💾 Location: {Path(output_path).parent}")
+
+            # Show backup info
+            backup_file = Path(str(input_path) + '.backup')
+            if backup_file.exists():
+                print(f"📦 Backup:   {backup_file.name}")
+
+            return 0
+
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Enhancement cancelled by user")
+            return 1
+        except Exception as e:
+            print(f"\n❌ Error: {str(e)}")
+            return 1
 
     def handle_analyze(self, args) -> int:
-        """Handle analyze command (placeholder for 0.6.5.3)"""
-        print("⚠️  Analyze command not yet implemented")
-        print("   This feature will be available in version 0.6.5.3")
-        return 0
+        """Handle analyze command"""
+        try:
+            print(f"🔍 Code Structure Analyzer v0.6.5\n")
+
+            # Validate input
+            input_path = Path(args.input)
+            if not input_path.exists():
+                print(f"❌ Error: Input path not found: {args.input}")
+                return 1
+
+            print(f"📂 Analyzing: {args.input}\n")
+
+            # Initialize generator (no AI needed for analysis)
+            generator = DocGenerator(use_ai=False)
+
+            # Analyze structure
+            analysis = generator.analyze_structure(
+                args.input,
+                show_details=args.details
+            )
+
+            # Display summary
+            print("📊 Summary:")
+            print(f"   Total files:     {analysis['total_files']}")
+            print(f"   Total functions: {analysis['total_functions']}")
+            print(f"   Total classes:   {analysis['total_classes']}")
+            print()
+
+            # Display by language
+            if analysis['languages']:
+                print("📝 By Language:")
+                for lang, stats in analysis['languages'].items():
+                    print(f"\n   {lang.upper()}:")
+                    print(f"      Files:     {stats['file_count']}")
+                    print(f"      Functions: {stats['functions']}")
+                    print(f"      Classes:   {stats['classes']}")
+
+                    # Show detailed breakdown if requested
+                    if args.details and stats['files']:
+                        print(f"\n      Files:")
+                        for file_info in stats['files']:
+                            rel_path = self._get_display_path(file_info['path'], args.input)
+                            print(f"         • {rel_path}")
+                            print(f"           Functions: {file_info['functions']}, Classes: {file_info['classes']}")
+
+                            if 'function_names' in file_info and file_info['function_names']:
+                                print(f"           Functions: {', '.join(file_info['function_names'][:5])}")
+                                if len(file_info['function_names']) > 5:
+                                    print(f"              ... and {len(file_info['function_names']) - 5} more")
+
+                            if 'class_names' in file_info and file_info['class_names']:
+                                print(f"           Classes: {', '.join(file_info['class_names'][:5])}")
+                                if len(file_info['class_names']) > 5:
+                                    print(f"              ... and {len(file_info['class_names']) - 5} more")
+            else:
+                print("⚠️  No supported source files found")
+
+            print()
+            print("✅ Analysis complete!")
+
+            return 0
+
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Analysis cancelled by user")
+            return 1
+        except Exception as e:
+            print(f"\n❌ Error: {str(e)}")
+            return 1
+
+    def _get_display_path(self, file_path: str, base_path: str) -> str:
+        """Get relative path for display"""
+        try:
+            return str(Path(file_path).relative_to(Path(base_path).parent))
+        except ValueError:
+            return str(Path(file_path).name)
 
     def handle_serve(self, args) -> int:
         """Handle serve command (placeholder for 0.6.5.4)"""
