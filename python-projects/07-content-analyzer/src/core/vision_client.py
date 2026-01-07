@@ -151,11 +151,70 @@ class VisionClient:
         max_tokens: int,
         temperature: float
     ) -> str:
-        """Analyze images using Anthropic Claude.
+        """Analyze images using Anthropic Claude 3.5 Sonnet.
 
-        Note: This is a placeholder for Phase 2 implementation.
+        Args:
+            prompt: Text prompt
+            images: Base64-encoded images
+            max_tokens: Maximum tokens
+            temperature: Sampling temperature
+
+        Returns:
+            str: Model response
         """
-        raise NotImplementedError("Anthropic support coming in Phase 2")
+        try:
+            import anthropic
+        except ImportError:
+            raise ImportError(
+                "Anthropic library not installed. "
+                "Install with: pip install anthropic"
+            )
+
+        # Check for API key
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found in environment. "
+                "Set it in .env file or export ANTHROPIC_API_KEY=your_key"
+            )
+
+        client = anthropic.Anthropic(api_key=api_key)
+
+        # Build content blocks (Claude requires specific structure)
+        content_blocks = []
+
+        # Add images first
+        for img_base64 in images:
+            content_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": img_base64
+                }
+            })
+
+        # Add text prompt
+        content_blocks.append({
+            "type": "text",
+            "text": prompt
+        })
+
+        try:
+            message = client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{
+                    "role": "user",
+                    "content": content_blocks
+                }]
+            )
+
+            return message.content[0].text
+
+        except Exception as e:
+            raise Exception(f"Anthropic API error: {str(e)}")
 
     def _analyze_openai(
         self,
@@ -166,6 +225,57 @@ class VisionClient:
     ) -> str:
         """Analyze images using OpenAI GPT-4 Vision.
 
-        Note: This is a placeholder for Phase 2 implementation.
+        Args:
+            prompt: Text prompt
+            images: Base64-encoded images
+            max_tokens: Maximum tokens
+            temperature: Sampling temperature
+
+        Returns:
+            str: Model response
         """
-        raise NotImplementedError("OpenAI support coming in Phase 2")
+        try:
+            import openai
+        except ImportError:
+            raise ImportError(
+                "OpenAI library not installed. "
+                "Install with: pip install openai"
+            )
+
+        # Check for API key
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY not found in environment. "
+                "Set it in .env file or export OPENAI_API_KEY=your_key"
+            )
+
+        client = openai.OpenAI(api_key=api_key)
+
+        # Build content blocks (OpenAI format)
+        content_blocks = [{"type": "text", "text": prompt}]
+
+        # Add images as data URIs
+        for img_base64 in images:
+            content_blocks.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{img_base64}"
+                }
+            })
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{
+                    "role": "user",
+                    "content": content_blocks
+                }]
+            )
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            raise Exception(f"OpenAI API error: {str(e)}")

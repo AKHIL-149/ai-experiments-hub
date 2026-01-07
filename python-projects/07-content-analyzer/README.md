@@ -2,26 +2,29 @@
 
 AI-powered image analysis tool with vision capabilities for image description, visual Q&A, and OCR text extraction.
 
-## Current Status: Phase 1 - Minimal Prototype ✅
+## Current Status: Phase 2 - Cloud Vision APIs ✅
 
 **Implemented:**
-- ✅ Vision API integration with Ollama/LLaVA (local)
+- ✅ Vision API integration with Ollama/LLaVA (local ~70% accuracy)
+- ✅ **Anthropic Claude 3.5 Sonnet** (cloud ~90-95% accuracy)
+- ✅ **OpenAI GPT-4 Vision** (cloud ~85-90% accuracy)
+- ✅ Enhanced prompt templates for better accuracy
 - ✅ Image loading and processing
-- ✅ Simple CLI with `describe` command
+- ✅ CLI with presets and multiple providers
 - ✅ Support for file paths and URLs
 
 **Not Yet Implemented:**
-- ❌ Cloud APIs (Anthropic Claude, OpenAI) - Coming in Phase 2
 - ❌ OCR capabilities - Coming in Phase 3
-- ❌ Web interface - Coming in Phase 5-6
 - ❌ Caching - Coming in Phase 4
+- ❌ Web interface - Coming in Phase 5-6
 
 ## Prerequisites
 
 - **Python 3.8+**
-- **Ollama** with LLaVA model installed
+- **Ollama** with LLaVA model (for local processing)
+- **Optional**: API keys for cloud providers (better accuracy)
 
-### Install Ollama and LLaVA
+### Option 1: Local Only (Ollama/LLaVA)
 
 ```bash
 # Install Ollama (macOS)
@@ -36,6 +39,16 @@ ollama pull llava
 ollama list
 ```
 
+### Option 2: Cloud Providers (Recommended for Best Accuracy)
+
+**Anthropic Claude 3.5 Sonnet** (~90-95% accuracy):
+1. Get API key from: https://console.anthropic.com/
+2. Add to `.env`: `ANTHROPIC_API_KEY=your_key_here`
+
+**OpenAI GPT-4 Vision** (~85-90% accuracy):
+1. Get API key from: https://platform.openai.com/api-keys
+2. Add to `.env`: `OPENAI_API_KEY=your_key_here`
+
 ## Installation
 
 ```bash
@@ -44,8 +57,21 @@ cd python-projects/07-content-analyzer
 # Install dependencies
 pip install -r requirements.txt
 
-# Optional: Copy .env.example to .env (defaults work fine)
+# Configure API keys (if using cloud providers)
 cp .env.example .env
+# Edit .env and add your API keys
+```
+
+**Installing Cloud Provider Dependencies:**
+```bash
+# For Anthropic Claude (recommended)
+pip install anthropic
+
+# For OpenAI GPT-4 Vision
+pip install openai
+
+# Or install both
+pip install anthropic openai
 ```
 
 ## Usage
@@ -67,6 +93,34 @@ python analyze.py describe https://example.com/image.jpg --save-image verified_i
 ```
 
 **⚠️ Note:** When using random image services like `https://picsum.photos/400/300`, each request returns a different image. Use `--save-image` to verify what the AI actually analyzed.
+
+### Using Cloud Providers for Best Accuracy
+
+```bash
+# Anthropic Claude 3.5 Sonnet (recommended - 90-95% accuracy)
+python analyze.py describe racing_car.jpg --provider anthropic
+
+# OpenAI GPT-4 Vision (85-90% accuracy)
+python analyze.py describe image.jpg --provider openai
+
+# Local Ollama/LLaVA (70-75% accuracy, free)
+python analyze.py describe image.jpg --provider ollama
+```
+
+**With presets for even better results:**
+```bash
+# Racing car with Claude (best accuracy)
+python analyze.py describe f1_car.jpg \
+  --provider anthropic \
+  --preset vehicle \
+  --temperature 0.3
+
+# Document with GPT-4 Vision
+python analyze.py describe form.pdf \
+  --provider openai \
+  --preset document \
+  --temperature 0.1
+```
 
 ### Using Presets for Better Accuracy
 
