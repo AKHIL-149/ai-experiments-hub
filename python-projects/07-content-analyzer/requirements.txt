@@ -1,0 +1,6 @@
+# Content Analyzer - Phase 1 Minimal Dependencies
+
+# Core dependencies
+python-dotenv>=1.0.0     # Environment variable management
+Pillow>=10.0.0          # Image processing
+requests>=2.31.0        # HTTP requests for Ollama API and image downloads
