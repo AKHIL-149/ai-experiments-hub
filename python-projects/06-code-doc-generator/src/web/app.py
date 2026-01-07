@@ -85,7 +85,7 @@ if FASTAPI_AVAILABLE:
     app = FastAPI(
         title="Code Documentation Generator",
         description="AI-powered code documentation generator with multi-language support",
-        version="0.7.3",
+        version="0.7.4",
         docs_url="/api/docs",
         redoc_url="/api/redoc"
     )

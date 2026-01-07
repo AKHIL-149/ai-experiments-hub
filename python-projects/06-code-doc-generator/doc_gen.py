@@ -60,7 +60,7 @@ Examples:
         parser.add_argument(
             '--version',
             action='version',
-            version='%(prog)s 0.7.3'
+            version='%(prog)s 0.7.4'
         )
 
         # Create subparsers for commands
@@ -543,7 +543,7 @@ Examples:
                 print(f"Details: {str(e)}")
                 return 1
 
-            print(f"🚀 Code Documentation Generator v0.7.3\n")
+            print(f"🚀 Code Documentation Generator v0.7.4\n")
             print(f"Starting web server...")
             print(f"   Host: {args.host}")
             print(f"   Port: {args.port}\n")

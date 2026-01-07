@@ -87,7 +87,7 @@ if FASTAPI_AVAILABLE:
         """Health check endpoint"""
         return {
             "status": "healthy",
-            "version": "0.7.3",
+            "version": "0.7.4",
             "service": "code-doc-generator"
         }
     
@@ -175,8 +175,17 @@ if FASTAPI_AVAILABLE:
             else:
                 raise HTTPException(status_code=400, detail="No code provided")
 
+            # Map language to file extension
+            extension_map = {
+                'python': '.py',
+                'javascript': '.js',
+                'typescript': '.ts',
+                'java': '.java'
+            }
+            file_extension = extension_map.get(language, '.py')
+
             # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix=f'.{language}', delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(mode='w', suffix=file_extension, delete=False) as tmp_file:
                 tmp_file.write(code_content)
                 tmp_path = tmp_file.name
 
