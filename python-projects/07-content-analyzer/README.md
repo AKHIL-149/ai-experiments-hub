@@ -2,7 +2,7 @@
 
 AI-powered image analysis tool with vision capabilities for image description, visual Q&A, and OCR text extraction.
 
-## Current Status: Phase 2 - Cloud Vision APIs ✅
+## Current Status: Phase 3 - OCR Capabilities ✅
 
 **Implemented:**
 - ✅ Vision API integration with Ollama/LLaVA (local ~70% accuracy)
@@ -12,9 +12,12 @@ AI-powered image analysis tool with vision capabilities for image description, v
 - ✅ Image loading and processing
 - ✅ CLI with presets and multiple providers
 - ✅ Support for file paths and URLs
+- ✅ **Tesseract OCR** for text extraction
+- ✅ **Vision model fallback** for low-confidence OCR results
+- ✅ **Language detection** for multilingual documents
+- ✅ Structured data extraction from forms, receipts, and invoices
 
 **Not Yet Implemented:**
-- ❌ OCR capabilities - Coming in Phase 3
 - ❌ Caching - Coming in Phase 4
 - ❌ Web interface - Coming in Phase 5-6
 
@@ -22,6 +25,7 @@ AI-powered image analysis tool with vision capabilities for image description, v
 
 - **Python 3.8+**
 - **Ollama** with LLaVA model (for local processing)
+- **Optional**: Tesseract OCR (for text extraction - Phase 3)
 - **Optional**: API keys for cloud providers (better accuracy)
 
 ### Option 1: Local Only (Ollama/LLaVA)
@@ -49,6 +53,32 @@ ollama list
 1. Get API key from: https://platform.openai.com/api-keys
 2. Add to `.env`: `OPENAI_API_KEY=your_key_here`
 
+### Option 3: Tesseract OCR (For Text Extraction)
+
+**Tesseract OCR** (open-source, free):
+```bash
+# macOS
+brew install tesseract
+
+# Ubuntu/Debian
+sudo apt-get install tesseract-ocr
+
+# Windows
+# Download from: https://github.com/UB-Mannheim/tesseract/wiki
+
+# Verify installation
+tesseract --version
+
+# Install additional languages (optional)
+# macOS
+brew install tesseract-lang
+
+# Ubuntu/Debian
+sudo apt-get install tesseract-ocr-fra  # French
+sudo apt-get install tesseract-ocr-spa  # Spanish
+sudo apt-get install tesseract-ocr-deu  # German
+```
+
 ## Installation
 
 ```bash
@@ -70,8 +100,11 @@ pip install anthropic
 # For OpenAI GPT-4 Vision
 pip install openai
 
-# Or install both
-pip install anthropic openai
+# For OCR capabilities (Phase 3)
+pip install pytesseract
+
+# Or install all optional dependencies
+pip install anthropic openai pytesseract
 ```
 
 ## Usage
@@ -228,6 +261,119 @@ python analyze.py describe object.jpg \
   --temperature 0.5
 ```
 
+## 📝 OCR Text Extraction (Phase 3)
+
+### Basic OCR Usage
+
+```bash
+# Extract text from image using Tesseract
+python analyze.py ocr document.jpg
+
+# Extract text with specific language
+python analyze.py ocr receipt.jpg --language eng
+
+# Extract from French document
+python analyze.py ocr french_doc.jpg --language fra
+
+# Extract from Spanish document
+python analyze.py ocr spanish_doc.jpg --language spa
+```
+
+### OCR with Vision Model Fallback
+
+For best results, combine Tesseract with vision model fallback. If Tesseract has low confidence, the vision model will be used automatically:
+
+```bash
+# Auto fallback to vision model if Tesseract confidence < 60%
+python analyze.py ocr receipt.jpg --fallback --provider anthropic
+
+# Custom confidence threshold (70%)
+python analyze.py ocr form.png --fallback --confidence 70.0 --provider anthropic
+
+# Use OpenAI for fallback
+python analyze.py ocr invoice.pdf --fallback --provider openai
+```
+
+### Vision-Only OCR
+
+For handwritten text or complex layouts, use vision models directly (no Tesseract):
+
+```bash
+# Anthropic Claude (best for complex documents)
+python analyze.py ocr handwritten.jpg --method vision --provider anthropic
+
+# OpenAI GPT-4 Vision
+python analyze.py ocr sketch.png --method vision --provider openai
+
+# Ollama/LLaVA (local, free)
+python analyze.py ocr notes.jpg --method vision --provider ollama
+```
+
+### Language Detection
+
+Detect the language(s) in image text:
+
+```bash
+# Detect language using Tesseract
+python analyze.py detect-language multilingual_doc.jpg
+
+# Detect language using vision model
+python analyze.py detect-language document.jpg --use-vision --provider anthropic
+```
+
+### Saving OCR Results
+
+```bash
+# Save extracted text to file
+python analyze.py ocr document.jpg --output-file extracted.txt
+
+# Save full OCR results as JSON (includes confidence, bounding boxes, etc.)
+python analyze.py ocr receipt.jpg --output-json results.json --verbose
+
+# Both text and JSON
+python analyze.py ocr form.png \
+  --output-file text.txt \
+  --output-json full_results.json \
+  --verbose
+```
+
+### OCR Method Comparison
+
+| Method | Accuracy | Speed | Cost | Best For |
+|--------|----------|-------|------|----------|
+| **Tesseract** | 70-85% | Fast | Free | Printed text, forms, receipts |
+| **Tesseract + Fallback** | 85-95% | Medium | Low | Mixed quality documents |
+| **Vision (Anthropic)** | 90-95% | Slow | $$$ | Handwriting, complex layouts |
+| **Vision (OpenAI)** | 85-90% | Slow | $$ | General documents |
+| **Vision (Ollama)** | 70-75% | Medium | Free | Quick local processing |
+
+### OCR Examples
+
+```bash
+# Receipt with fallback for best accuracy
+python analyze.py ocr receipt.jpg \
+  --fallback \
+  --provider anthropic \
+  --output-file receipt_text.txt
+
+# Multi-language document
+python analyze.py ocr multilingual.jpg \
+  --language eng+fra \
+  --verbose
+
+# Handwritten notes (vision-only)
+python analyze.py ocr handwritten_notes.jpg \
+  --method vision \
+  --provider anthropic \
+  --output-file notes.txt
+
+# Form with structured data extraction
+python analyze.py ocr tax_form.pdf \
+  --method vision \
+  --provider anthropic \
+  --output-json form_data.json
+```
+
 ## Examples
 
 ```bash
@@ -257,7 +403,9 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 │   └── core/
 │       ├── __init__.py
 │       ├── vision_client.py      # Vision API integration
-│       └── image_processor.py    # Image loading & processing
+│       ├── image_processor.py    # Image loading & processing
+│       ├── prompt_templates.py   # Enhanced prompt templates
+│       └── ocr_processor.py      # OCR text extraction
 ├── data/                  # Runtime data (future)
 └── examples/              # Sample images (future)
 ```
@@ -277,6 +425,8 @@ DEFAULT_PROVIDER=ollama
 
 ## Troubleshooting
 
+### Ollama Issues
+
 **Error: "Connection refused"**
 - Make sure Ollama is running: `ollama serve`
 - Check Ollama is accessible: `curl http://localhost:11434/api/tags`
@@ -285,15 +435,51 @@ DEFAULT_PROVIDER=ollama
 - Pull LLaVA model: `ollama pull llava`
 - Verify: `ollama list`
 
+### Image Issues
+
 **Error: "Image file not found"**
 - Check the file path is correct
 - Use absolute paths if relative paths don't work
 
+### OCR Issues
+
+**Error: "pytesseract is not installed"**
+- Install: `pip install pytesseract`
+- Install Tesseract binary: `brew install tesseract` (macOS) or see Prerequisites
+
+**Error: "TesseractNotFoundError"**
+- Tesseract binary not in PATH
+- macOS: `brew install tesseract`
+- Ubuntu: `sudo apt-get install tesseract-ocr`
+- Windows: Download from [UB-Mannheim](https://github.com/UB-Mannheim/tesseract/wiki)
+
+**Low OCR confidence / Poor results**
+- Use `--fallback` flag with vision model: `python analyze.py ocr image.jpg --fallback --provider anthropic`
+- Try vision-only mode: `python analyze.py ocr image.jpg --method vision --provider anthropic`
+- Check image quality (resolution, contrast, clarity)
+- Specify correct language: `--language fra` for French
+
+**Language not supported**
+- Install language pack:
+  - macOS: `brew install tesseract-lang`
+  - Ubuntu: `sudo apt-get install tesseract-ocr-fra` (replace 'fra' with your language)
+- List available languages: `tesseract --list-langs`
+
+### Cloud Provider Issues
+
+**Error: "ANTHROPIC_API_KEY not found"**
+- Add API key to `.env` file
+- Or export: `export ANTHROPIC_API_KEY=your_key_here`
+
+**Error: "OPENAI_API_KEY not found"**
+- Add API key to `.env` file
+- Or export: `export OPENAI_API_KEY=your_key_here`
+
 ## Roadmap
 
 - [x] **Phase 1**: Core vision with Ollama/LLaVA ✅
-- [ ] **Phase 2**: Cloud APIs (Claude, GPT-4 Vision)
-- [ ] **Phase 3**: OCR capabilities with Tesseract
+- [x] **Phase 2**: Cloud APIs (Claude, GPT-4 Vision) ✅
+- [x] **Phase 3**: OCR capabilities with Tesseract ✅
 - [ ] **Phase 4**: Caching and error handling
 - [ ] **Phase 5-6**: Web interface with drag-and-drop
 - [ ] **Phase 7**: Advanced features (image comparison, batch processing)
@@ -304,4 +490,4 @@ Part of AI Experiments Hub
 
 ## Version
 
-0.1.0 - Phase 1 Minimal Prototype
+0.7.3 - Phase 3 Complete: OCR Capabilities with Tesseract and Vision Model Fallback

@@ -8,3 +8,6 @@ requests>=2.31.0        # HTTP requests for Ollama API and image downloads
 # Cloud AI Providers (Phase 2 - Optional)
 anthropic>=0.18.0       # Anthropic Claude API (~90% accuracy)
 openai>=1.12.0          # OpenAI GPT-4 Vision API
+
+# OCR Capabilities (Phase 3 - Optional)
+pytesseract>=0.3.10     # Tesseract OCR wrapper
