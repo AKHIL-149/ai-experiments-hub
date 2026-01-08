@@ -15,7 +15,9 @@ class VisionClient:
         self,
         backend: str = "ollama",
         model: Optional[str] = None,
-        api_url: Optional[str] = None
+        api_url: Optional[str] = None,
+        cache_manager: Optional[object] = None,
+        enable_cache: bool = True
     ):
         """Initialize vision client.
 
@@ -23,10 +25,14 @@ class VisionClient:
             backend: Provider name ('ollama', 'anthropic', 'openai')
             model: Model name (defaults per provider if None)
             api_url: API URL (for Ollama, defaults to localhost:11434)
+            cache_manager: CacheManager instance for response caching
+            enable_cache: Enable caching for API responses
         """
         self.backend = backend.lower()
         self.model = model or self._get_default_model()
         self.api_url = api_url or os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+        self.cache_manager = cache_manager
+        self.enable_cache = enable_cache and cache_manager is not None
 
     def _get_default_model(self) -> str:
         """Get default model for the backend."""
@@ -58,15 +64,45 @@ class VisionClient:
         # Convert all images to base64
         encoded_images = self._prepare_images(images)
 
+        # Compute image hash for caching
+        image_hash = None
+        if self.enable_cache:
+            # Combine all image data for hashing
+            combined_data = ''.join(encoded_images).encode('utf-8')
+            image_hash = self.cache_manager.compute_image_hash(combined_data)
+
+            # Check cache first
+            cached_response = self.cache_manager.get_response(
+                prompt=prompt,
+                image_hash=image_hash,
+                provider=self.backend,
+                model=self.model
+            )
+
+            if cached_response:
+                return cached_response
+
         # Route to appropriate backend
         if self.backend == 'ollama':
-            return self._analyze_ollama(prompt, encoded_images, max_tokens, temperature)
+            response = self._analyze_ollama(prompt, encoded_images, max_tokens, temperature)
         elif self.backend == 'anthropic':
-            return self._analyze_anthropic(prompt, encoded_images, max_tokens, temperature)
+            response = self._analyze_anthropic(prompt, encoded_images, max_tokens, temperature)
         elif self.backend == 'openai':
-            return self._analyze_openai(prompt, encoded_images, max_tokens, temperature)
+            response = self._analyze_openai(prompt, encoded_images, max_tokens, temperature)
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
+
+        # Save to cache
+        if self.enable_cache and image_hash:
+            self.cache_manager.save_response(
+                prompt=prompt,
+                image_hash=image_hash,
+                provider=self.backend,
+                model=self.model,
+                response=response
+            )
+
+        return response
 
     def _prepare_images(
         self,

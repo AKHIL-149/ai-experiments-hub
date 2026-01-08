@@ -12,6 +12,7 @@ from src.core.vision_client import VisionClient
 from src.core.image_processor import ImageProcessor
 from src.core.prompt_templates import get_prompt, list_templates
 from src.core.ocr_processor import OCRProcessor
+from src.core.cache_manager import CacheManager
 
 
 def describe_image(args):
@@ -21,11 +22,18 @@ def describe_image(args):
         args: Parsed command-line arguments
     """
     try:
+        # Initialize cache manager if enabled
+        cache_manager = None
+        if getattr(args, 'enable_cache', True):
+            cache_manager = CacheManager()
+
         # Initialize components
         print(f"Initializing vision client ({args.provider})...")
         vision_client = VisionClient(
             backend=args.provider,
-            model=args.model
+            model=args.model,
+            cache_manager=cache_manager,
+            enable_cache=getattr(args, 'enable_cache', True)
         )
 
         print(f"Loading image: {args.image}...")
@@ -258,6 +266,95 @@ def detect_language(args):
         return 1
 
 
+def cache_stats(args):
+    """Show cache statistics.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        cache_manager = CacheManager()
+        stats = cache_manager.get_stats()
+
+        print("\n📊 Cache Statistics:")
+        print("=" * 60)
+        print(f"Hits: {stats['hits']}")
+        print(f"Misses: {stats['misses']}")
+        print(f"Total Requests: {stats['total_requests']}")
+        print(f"Hit Rate: {stats['hit_rate_percent']}%")
+        print(f"Cache Saves: {stats['cache_saves']}")
+        print(f"Cache Size: {stats['cache_size_mb']} MB")
+
+        print("\n💰 Cost Savings (Estimated):")
+        print(f"Anthropic: ${stats['cost_savings']['anthropic']:.4f}")
+        print(f"OpenAI: ${stats['cost_savings']['openai']:.4f}")
+        print(f"Total: ${stats['cost_savings']['total']:.4f}")
+
+        if stats['last_cleanup']:
+            print(f"\nLast Cleanup: {stats['last_cleanup']}")
+
+        print("=" * 60)
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+
+def cache_cleanup(args):
+    """Clean up expired cache entries.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        cache_manager = CacheManager()
+
+        keep_hours = getattr(args, 'keep_hours', None)
+
+        print(f"\n🧹 Cleaning up cache...")
+        if keep_hours:
+            print(f"Keeping entries from last {keep_hours} hours")
+        else:
+            print("Removing expired entries")
+
+        removed = cache_manager.cleanup(keep_recent_hours=keep_hours)
+
+        print(f"✅ Removed {removed} cache entries")
+
+        # Show updated stats
+        stats = cache_manager.get_stats()
+        print(f"Cache size now: {stats['cache_size_mb']} MB")
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+
+def cache_clear(args):
+    """Clear all cache entries.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        cache_manager = CacheManager()
+
+        print("\n🗑️  Clearing all cache...")
+        cache_manager.clear()
+
+        print("✅ Cache cleared successfully")
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -447,6 +544,39 @@ Examples:
         help='Model name (defaults per provider)'
     )
 
+    # Cache stats command
+    cache_stats_parser = subparsers.add_parser(
+        'cache-stats',
+        help='Show cache statistics'
+    )
+
+    # Cache cleanup command
+    cache_cleanup_parser = subparsers.add_parser(
+        'cache-cleanup',
+        help='Clean up expired cache entries'
+    )
+    cache_cleanup_parser.add_argument(
+        '--keep-hours',
+        type=int,
+        default=None,
+        help='Keep entries from last N hours (default: remove expired only)'
+    )
+
+    # Cache clear command
+    cache_clear_parser = subparsers.add_parser(
+        'cache-clear',
+        help='Clear all cache entries'
+    )
+
+    # Add cache flag to describe command
+    describe_parser.add_argument(
+        '--no-cache',
+        dest='enable_cache',
+        action='store_false',
+        default=True,
+        help='Disable response caching'
+    )
+
     args = parser.parse_args()
 
     # Show help if no command provided
@@ -461,6 +591,12 @@ Examples:
         return ocr_text(args)
     elif args.command == 'detect-language':
         return detect_language(args)
+    elif args.command == 'cache-stats':
+        return cache_stats(args)
+    elif args.command == 'cache-cleanup':
+        return cache_cleanup(args)
+    elif args.command == 'cache-clear':
+        return cache_clear(args)
 
     return 0
 

@@ -2,7 +2,7 @@
 
 AI-powered image analysis tool with vision capabilities for image description, visual Q&A, and OCR text extraction.
 
-## Current Status: Phase 3 - OCR Capabilities ✅
+## Current Status: Phase 4 - Caching & Error Handling ✅
 
 **Implemented:**
 - ✅ Vision API integration with Ollama/LLaVA (local ~70% accuracy)
@@ -16,9 +16,12 @@ AI-powered image analysis tool with vision capabilities for image description, v
 - ✅ **Vision model fallback** for low-confidence OCR results
 - ✅ **Language detection** for multilingual documents
 - ✅ Structured data extraction from forms, receipts, and invoices
+- ✅ **Response caching** with image hash-based keys
+- ✅ **Cost tracking** for cloud API usage
+- ✅ **Retry logic** with exponential backoff
+- ✅ **Rate limiting** for API calls
 
 **Not Yet Implemented:**
-- ❌ Caching - Coming in Phase 4
 - ❌ Web interface - Coming in Phase 5-6
 
 ## Prerequisites
@@ -374,6 +377,104 @@ python analyze.py ocr tax_form.pdf \
   --output-json form_data.json
 ```
 
+## 💾 Caching & Cost Savings (Phase 4)
+
+### How Caching Works
+
+Content Analyzer automatically caches API responses based on:
+- Image content (SHA256 hash)
+- Text prompt
+- Provider and model
+
+**Benefits:**
+- ⚡ Instant responses for repeated queries
+- 💰 Significant cost savings on cloud APIs
+- 🌍 Reduced API usage and environmental impact
+
+**Default Settings:**
+- Cache TTL: 24 hours
+- Max cache size: 500 MB
+- Auto-cleanup when size limit reached
+
+### Cache Statistics
+
+View cache performance and cost savings:
+
+```bash
+# Show cache stats
+python analyze.py cache-stats
+```
+
+**Output:**
+```
+📊 Cache Statistics:
+============================================================
+Hits: 45
+Misses: 23
+Total Requests: 68
+Hit Rate: 66.18%
+Cache Saves: 45
+Cache Size: 12.5 MB
+
+💰 Cost Savings (Estimated):
+Anthropic: $0.1350
+OpenAI: $0.0450
+Total: $0.1800
+============================================================
+```
+
+### Cache Management
+
+```bash
+# Clean up expired cache entries
+python analyze.py cache-cleanup
+
+# Keep only recent entries (last 24 hours)
+python analyze.py cache-cleanup --keep-hours 24
+
+# Clear all cache
+python analyze.py cache-clear
+```
+
+### Disable Caching
+
+For testing or when you need fresh results:
+
+```bash
+# Disable cache for single request
+python analyze.py describe image.jpg --no-cache
+
+# All subsequent requests will still use cache by default
+python analyze.py describe image.jpg
+```
+
+### Cost Estimation
+
+The cache manager estimates costs based on:
+- **Anthropic Claude 3.5 Sonnet**: ~$3 per 1M tokens
+- **OpenAI GPT-4 Vision**: ~$10 per 1M tokens
+
+**Example savings:**
+- 100 cached requests with Anthropic: ~$0.30 saved
+- 500 cached requests with OpenAI: ~$5.00 saved
+
+### Cache Location
+
+Cache files are stored in:
+```
+07-content-analyzer/data/cache/
+├── responses/     # Cached API responses
+├── images/        # Processed images
+└── stats.json     # Cache statistics
+```
+
+### Best Practices
+
+1. **Regular Cleanup**: Run `cache-cleanup` weekly to remove old entries
+2. **Monitor Size**: Check `cache-stats` to ensure cache isn't growing too large
+3. **Fresh Results**: Use `--no-cache` when you need latest analysis
+4. **Cost Tracking**: Review cost savings monthly to quantify benefits
+
 ## Examples
 
 ```bash
@@ -405,8 +506,15 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 │       ├── vision_client.py      # Vision API integration
 │       ├── image_processor.py    # Image loading & processing
 │       ├── prompt_templates.py   # Enhanced prompt templates
-│       └── ocr_processor.py      # OCR text extraction
-├── data/                  # Runtime data (future)
+│       ├── ocr_processor.py      # OCR text extraction
+│       ├── cache_manager.py      # Response caching
+│       ├── retry_handler.py      # Retry logic with backoff
+│       └── rate_limiter.py       # API rate limiting
+├── data/
+│   └── cache/             # Cache storage
+│       ├── responses/     # Cached API responses
+│       ├── images/        # Processed images
+│       └── stats.json     # Cache statistics
 └── examples/              # Sample images (future)
 ```
 
@@ -480,7 +588,7 @@ DEFAULT_PROVIDER=ollama
 - [x] **Phase 1**: Core vision with Ollama/LLaVA ✅
 - [x] **Phase 2**: Cloud APIs (Claude, GPT-4 Vision) ✅
 - [x] **Phase 3**: OCR capabilities with Tesseract ✅
-- [ ] **Phase 4**: Caching and error handling
+- [x] **Phase 4**: Caching and error handling ✅
 - [ ] **Phase 5-6**: Web interface with drag-and-drop
 - [ ] **Phase 7**: Advanced features (image comparison, batch processing)
 
@@ -490,4 +598,4 @@ Part of AI Experiments Hub
 
 ## Version
 
-0.7.3 - Phase 3 Complete: OCR Capabilities with Tesseract and Vision Model Fallback
+0.7.4 - Phase 4 Complete: Caching, Cost Tracking, Retry Logic, and Rate Limiting
