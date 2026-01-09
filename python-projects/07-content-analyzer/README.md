@@ -2,7 +2,7 @@
 
 AI-powered image analysis tool with vision capabilities for image description, visual Q&A, and OCR text extraction.
 
-## Current Status: Phase 5 - Web Interface ✅
+## Current Status: Phase 6 - Advanced Features ✅
 
 **Implemented:**
 - ✅ Vision API integration with Ollama/LLaVA (local ~70% accuracy)
@@ -23,9 +23,10 @@ AI-powered image analysis tool with vision capabilities for image description, v
 - ✅ **Web Interface** with drag-and-drop
 - ✅ **REST API** with FastAPI
 - ✅ **Interactive UI** with Bootstrap 5
-
-**Not Yet Implemented:**
-- ❌ Advanced features (image comparison, batch processing)
+- ✅ **Image comparison** (structural and AI-powered)
+- ✅ **Batch processing** for multiple images
+- ✅ **Concurrent processing** with worker pools
+- ✅ **Export results** to JSON, CSV, and TXT formats
 
 ## Prerequisites
 
@@ -542,6 +543,155 @@ Cache files are stored in:
 3. **Fresh Results**: Use `--no-cache` when you need latest analysis
 4. **Cost Tracking**: Review cost savings monthly to quantify benefits
 
+## 🔄 Image Comparison (Phase 6)
+
+Compare two images to find similarities and differences.
+
+### Structural Comparison (Fast, Free)
+
+```bash
+# Basic structural comparison (dimensions, format, pixel hash)
+python analyze.py compare image1.jpg image2.jpg
+
+# Compare screenshots before/after changes
+python analyze.py compare before.png after.png --output-file comparison.json
+```
+
+### AI-Powered Comparison (Detailed)
+
+```bash
+# AI comparison with content mode
+python analyze.py compare photo1.jpg photo2.jpg --use-ai --mode content
+
+# Visual comparison (colors, lighting, composition)
+python analyze.py compare v1.jpg v2.jpg --use-ai --mode visual --provider anthropic
+
+# Detailed comparison with full analysis
+python analyze.py compare original.jpg edited.jpg \
+  --use-ai \
+  --mode detailed \
+  --provider anthropic \
+  --temperature 0.3 \
+  --output-file detailed_comparison.json
+```
+
+### Comparison Modes
+
+| Mode | Focus | Best For |
+|------|-------|----------|
+| **content** | Subject matter, what changed | Product photos, documents |
+| **visual** | Colors, lighting, composition | Design reviews, photo editing |
+| **detailed** | Comprehensive analysis | Quality control, forensics |
+
+### API Endpoint
+
+```bash
+# POST /api/compare
+curl -X POST http://localhost:8000/api/compare \
+  -F "file1=@image1.jpg" \
+  -F "file2=@image2.jpg" \
+  -F "use_ai=true" \
+  -F "mode=detailed"
+```
+
+## 📦 Batch Processing (Phase 6)
+
+Process multiple images concurrently for maximum efficiency.
+
+### Batch Vision Analysis
+
+```bash
+# Analyze multiple images from directory
+python analyze.py batch-describe --directory ./photos --preset object
+
+# Process specific images with custom prompt
+python analyze.py batch-describe \
+  --images photo1.jpg photo2.jpg photo3.jpg \
+  --prompt "Describe the main subject" \
+  --provider anthropic \
+  --workers 8
+
+# Batch with output to multiple formats
+python analyze.py batch-describe \
+  --directory ./products \
+  --preset object \
+  --output-json results.json \
+  --output-csv results.csv \
+  --output-txt results.txt \
+  --workers 4
+
+# Recursive directory search
+python analyze.py batch-describe \
+  --directory ./archives \
+  --pattern "*.jpg" \
+  --recursive \
+  --preset scene \
+  --workers 8
+```
+
+### Batch OCR
+
+```bash
+# OCR multiple documents
+python analyze.py batch-ocr --images doc1.jpg doc2.jpg doc3.jpg
+
+# Process directory with results export
+python analyze.py batch-ocr \
+  --directory ./receipts \
+  --method auto \
+  --fallback \
+  --provider anthropic \
+  --output-csv receipts.csv \
+  --workers 4
+
+# Batch OCR with vision models only
+python analyze.py batch-ocr \
+  --directory ./handwritten \
+  --method vision \
+  --provider anthropic \
+  --output-json results.json \
+  --workers 2
+
+# Multi-language batch OCR
+python analyze.py batch-ocr \
+  --images *.jpg \
+  --language eng+fra \
+  --confidence 70.0 \
+  --output-txt extracted_text.txt
+```
+
+### Performance Tips
+
+1. **Worker Count**:
+   - CPU-bound: Use `--workers` = CPU cores
+   - API-bound: Use `--workers` = 4-8 for best balance
+   - Higher workers = faster but more API costs
+
+2. **Caching**: Batch processing automatically uses cache
+3. **Export Formats**:
+   - **JSON**: Full structured data with metadata
+   - **CSV**: Spreadsheet-friendly for analysis
+   - **TXT**: Human-readable reports
+
+### API Endpoints
+
+```bash
+# POST /api/batch-analyze
+curl -X POST http://localhost:8000/api/batch-analyze \
+  -F "files=@img1.jpg" \
+  -F "files=@img2.jpg" \
+  -F "files=@img3.jpg" \
+  -F "preset=object" \
+  -F "workers=4"
+
+# POST /api/batch-ocr
+curl -X POST http://localhost:8000/api/batch-ocr \
+  -F "files=@doc1.jpg" \
+  -F "files=@doc2.jpg" \
+  -F "method=auto" \
+  -F "workers=4"
+```
+
 ## Examples
 
 ```bash
@@ -577,7 +727,9 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 │       ├── ocr_processor.py      # OCR text extraction
 │       ├── cache_manager.py      # Response caching
 │       ├── retry_handler.py      # Retry logic with backoff
-│       └── rate_limiter.py       # API rate limiting
+│       ├── rate_limiter.py       # API rate limiting
+│       ├── image_comparator.py   # Image comparison (Phase 6)
+│       └── batch_processor.py    # Batch processing (Phase 6)
 ├── templates/
 │   └── index.html         # Web UI
 ├── static/
@@ -662,7 +814,7 @@ DEFAULT_PROVIDER=ollama
 - [x] **Phase 3**: OCR capabilities with Tesseract ✅
 - [x] **Phase 4**: Caching and error handling ✅
 - [x] **Phase 5**: Web interface with drag-and-drop ✅
-- [ ] **Phase 6**: Advanced features (image comparison, batch processing)
+- [x] **Phase 6**: Advanced features (image comparison, batch processing) ✅
 
 ## License
 
@@ -670,4 +822,4 @@ Part of AI Experiments Hub
 
 ## Version
 
-0.7.5 - Phase 5 Complete: Web Interface with FastAPI, Drag-and-Drop, and Interactive UI
+0.7.6 - Phase 6 Complete: Image Comparison, Batch Processing, and Concurrent Execution

@@ -13,6 +13,8 @@ from src.core.image_processor import ImageProcessor
 from src.core.prompt_templates import get_prompt, list_templates
 from src.core.ocr_processor import OCRProcessor
 from src.core.cache_manager import CacheManager
+from src.core.image_comparator import ImageComparator
+from src.core.batch_processor import BatchProcessor
 
 
 def describe_image(args):
@@ -355,6 +357,341 @@ def cache_clear(args):
         return 1
 
 
+def compare_images(args):
+    """Compare two images.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        # Initialize components
+        print(f"Loading images...")
+        image_processor = ImageProcessor()
+        image1 = image_processor.load_image(args.image1)
+        image2 = image_processor.load_image(args.image2)
+
+        # Initialize vision client if needed
+        vision_client = None
+        if args.use_ai:
+            print(f"Initializing vision client ({args.provider}) for AI comparison...")
+            vision_client = VisionClient(
+                backend=args.provider,
+                model=args.model
+            )
+
+        # Initialize comparator
+        comparator = ImageComparator(vision_client=vision_client)
+
+        print(f"\n🔍 Comparing images...")
+        if args.use_ai:
+            print(f"Mode: {args.mode} (with AI analysis)")
+        else:
+            print("Mode: Structural comparison only")
+
+        result = comparator.compare_images(
+            image1=image1,
+            image2=image2,
+            mode=args.mode,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens
+        )
+
+        # Display results
+        print("\n✨ Comparison Results:")
+        print("=" * 60)
+
+        # Structural comparison
+        print("\n📊 Structural Analysis:")
+        print(f"Image 1: {result['structural']['image1']['dimensions']} | "
+              f"{result['structural']['image1']['format']} | "
+              f"{result['structural']['image1']['mode']}")
+        print(f"Image 2: {result['structural']['image2']['dimensions']} | "
+              f"{result['structural']['image2']['format']} | "
+              f"{result['structural']['image2']['mode']}")
+
+        print(f"\nIdentical: {'✅ Yes' if result['identical'] else '❌ No'}")
+        print(f"Same Dimensions: {'✅ Yes' if result['similar_dimensions'] else '❌ No'}")
+        print(f"Same Aspect Ratio: {'✅ Yes' if result['structural']['same_aspect_ratio'] else '❌ No'}")
+
+        if not result['identical']:
+            dim_diff = result['structural']['dimension_diff']
+            print(f"\nDimension Difference:")
+            print(f"  Width: {dim_diff['width_diff']}px ({dim_diff['width_ratio']:.2f}x)")
+            print(f"  Height: {dim_diff['height_diff']}px ({dim_diff['height_ratio']:.2f}x)")
+
+        # AI comparison
+        if result['ai_analysis'] and result['ai_analysis'].get('analysis'):
+            print(f"\n🤖 AI Analysis ({result['ai_analysis']['provider']}):")
+            print("-" * 60)
+            print(result['ai_analysis']['analysis'])
+            print("-" * 60)
+
+            if result['ai_analysis'].get('extracted_similarity') is not None:
+                print(f"\nAI Similarity Score: {result['ai_analysis']['extracted_similarity']}%")
+
+        print(f"\n📈 Overall Similarity Score: {result['similarity_score']}%")
+        print("=" * 60)
+
+        # Save to file if requested
+        if args.output_file:
+            output_path = Path(args.output_file)
+            import json
+            with open(output_path, 'w') as f:
+                json.dump(result, f, indent=2, default=str)
+            print(f"\n💾 Results saved to: {output_path}")
+
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"❌ Error: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def batch_describe(args):
+    """Batch describe multiple images.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        # Get image paths
+        image_paths = []
+        if args.images:
+            # Individual images specified
+            image_paths = args.images
+        elif args.directory:
+            # Directory specified
+            from glob import glob
+            pattern = args.pattern or "*.{jpg,jpeg,png,webp,gif,bmp}"
+            search_path = Path(args.directory) / pattern
+            image_paths = glob(str(search_path), recursive=args.recursive)
+
+        if not image_paths:
+            print("❌ No images found")
+            return 1
+
+        print(f"Found {len(image_paths)} images")
+
+        # Initialize cache manager if enabled
+        cache_manager = None
+        if getattr(args, 'enable_cache', True):
+            cache_manager = CacheManager()
+
+        # Initialize vision client
+        print(f"Initializing vision client ({args.provider})...")
+        vision_client = VisionClient(
+            backend=args.provider,
+            model=args.model,
+            cache_manager=cache_manager,
+            enable_cache=getattr(args, 'enable_cache', True)
+        )
+
+        # Load images
+        print("Loading images...")
+        image_processor = ImageProcessor()
+        images = []
+        image_names = []
+
+        for path in image_paths:
+            try:
+                img = image_processor.load_image(path)
+                images.append(img)
+                image_names.append(Path(path).name)
+            except Exception as e:
+                print(f"⚠️  Failed to load {path}: {e}")
+
+        if not images:
+            print("❌ No valid images loaded")
+            return 1
+
+        # Get prompt
+        prompt = get_prompt(
+            template_name=getattr(args, 'preset', None),
+            custom_prompt=args.prompt
+        )
+
+        # Initialize batch processor
+        batch_processor = BatchProcessor(
+            vision_client=vision_client,
+            max_workers=args.workers
+        )
+
+        # Progress callback
+        def progress(completed, total, result):
+            status = "✅" if result['success'] else "❌"
+            print(f"{status} [{completed}/{total}] {result['name']}")
+
+        print(f"\n🔍 Processing {len(images)} images...")
+        print(f"Workers: {args.workers}")
+        print(f"Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"Prompt: {prompt}")
+        print()
+
+        results = batch_processor.batch_analyze(
+            images=images,
+            image_names=image_names,
+            prompt=prompt,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            progress_callback=progress
+        )
+
+        # Display summary
+        print(f"\n✨ Batch Processing Complete:")
+        print("=" * 60)
+        print(f"Total Images: {results['total_images']}")
+        print(f"Successful: {results['successful']}")
+        print(f"Failed: {results['failed']}")
+        print(f"Total Time: {results['elapsed_time']:.2f}s")
+        print(f"Avg Time/Image: {results['avg_time_per_image']:.2f}s")
+        print("=" * 60)
+
+        # Export results
+        if args.output_json:
+            output_path = Path(args.output_json)
+            batch_processor.export_to_json(results, output_path)
+            print(f"\n💾 JSON results saved to: {output_path}")
+
+        if args.output_csv:
+            output_path = Path(args.output_csv)
+            batch_processor.export_to_csv(results, output_path, result_type='vision')
+            print(f"💾 CSV results saved to: {output_path}")
+
+        if args.output_txt:
+            output_path = Path(args.output_txt)
+            batch_processor.export_to_txt(results, output_path, result_type='vision')
+            print(f"💾 Text results saved to: {output_path}")
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def batch_ocr(args):
+    """Batch OCR multiple images.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        # Get image paths
+        image_paths = []
+        if args.images:
+            image_paths = args.images
+        elif args.directory:
+            from glob import glob
+            pattern = args.pattern or "*.{jpg,jpeg,png,webp,gif,bmp}"
+            search_path = Path(args.directory) / pattern
+            image_paths = glob(str(search_path), recursive=args.recursive)
+
+        if not image_paths:
+            print("❌ No images found")
+            return 1
+
+        print(f"Found {len(image_paths)} images")
+
+        # Initialize vision client for fallback if needed
+        vision_client = None
+        if args.fallback or args.method == 'vision':
+            print(f"Initializing vision client ({args.provider})...")
+            vision_client = VisionClient(
+                backend=args.provider,
+                model=args.model
+            )
+
+        # Initialize OCR processor
+        ocr_processor = OCRProcessor(
+            use_tesseract=(args.method != 'vision'),
+            vision_client=vision_client
+        )
+
+        # Load images
+        print("Loading images...")
+        image_processor = ImageProcessor()
+        images = []
+        image_names = []
+
+        for path in image_paths:
+            try:
+                img = image_processor.load_image(path)
+                images.append(img)
+                image_names.append(Path(path).name)
+            except Exception as e:
+                print(f"⚠️  Failed to load {path}: {e}")
+
+        if not images:
+            print("❌ No valid images loaded")
+            return 1
+
+        # Initialize batch processor
+        batch_processor = BatchProcessor(
+            ocr_processor=ocr_processor,
+            max_workers=args.workers
+        )
+
+        # Progress callback
+        def progress(completed, total, result):
+            status = "✅" if result['success'] else "❌"
+            print(f"{status} [{completed}/{total}] {result['name']}")
+
+        print(f"\n🔍 Processing {len(images)} images...")
+        print(f"Workers: {args.workers}")
+        print(f"Method: {args.method}")
+        print()
+
+        results = batch_processor.batch_ocr(
+            images=images,
+            image_names=image_names,
+            language=args.language,
+            method=args.method,
+            fallback_to_vision=args.fallback,
+            confidence_threshold=args.confidence,
+            progress_callback=progress
+        )
+
+        # Display summary
+        print(f"\n✨ Batch OCR Complete:")
+        print("=" * 60)
+        print(f"Total Images: {results['total_images']}")
+        print(f"Successful: {results['successful']}")
+        print(f"Failed: {results['failed']}")
+        print(f"Total Time: {results['elapsed_time']:.2f}s")
+        print(f"Avg Time/Image: {results['avg_time_per_image']:.2f}s")
+        print("=" * 60)
+
+        # Export results
+        if args.output_json:
+            output_path = Path(args.output_json)
+            batch_processor.export_to_json(results, output_path)
+            print(f"\n💾 JSON results saved to: {output_path}")
+
+        if args.output_csv:
+            output_path = Path(args.output_csv)
+            batch_processor.export_to_csv(results, output_path, result_type='ocr')
+            print(f"💾 CSV results saved to: {output_path}")
+
+        if args.output_txt:
+            output_path = Path(args.output_txt)
+            batch_processor.export_to_txt(results, output_path, result_type='ocr')
+            print(f"💾 Text results saved to: {output_path}")
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -388,6 +725,18 @@ Examples:
 
   # Detect language in image text
   python analyze.py detect-language document.jpg
+
+  # Compare two images (structural only)
+  python analyze.py compare image1.jpg image2.jpg
+
+  # Compare with AI analysis
+  python analyze.py compare before.jpg after.jpg --use-ai --mode detailed
+
+  # Batch describe multiple images
+  python analyze.py batch-describe --directory ./photos --preset object --workers 8
+
+  # Batch OCR documents
+  python analyze.py batch-ocr --images doc1.jpg doc2.jpg doc3.jpg --output-csv results.csv
         """
     )
 
@@ -568,6 +917,245 @@ Examples:
         help='Clear all cache entries'
     )
 
+    # Compare command
+    compare_parser = subparsers.add_parser(
+        'compare',
+        help='Compare two images'
+    )
+    compare_parser.add_argument(
+        'image1',
+        type=str,
+        help='Path to first image'
+    )
+    compare_parser.add_argument(
+        'image2',
+        type=str,
+        help='Path to second image'
+    )
+    compare_parser.add_argument(
+        '--use-ai',
+        action='store_true',
+        help='Use AI for semantic comparison'
+    )
+    compare_parser.add_argument(
+        '--mode',
+        choices=['content', 'visual', 'detailed'],
+        default='content',
+        help='Comparison mode (default: content)'
+    )
+    compare_parser.add_argument(
+        '--provider',
+        choices=['ollama', 'anthropic', 'openai'],
+        default='anthropic',
+        help='Vision provider for AI comparison (default: anthropic)'
+    )
+    compare_parser.add_argument(
+        '--model',
+        type=str,
+        default=None,
+        help='Model name (defaults per provider)'
+    )
+    compare_parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.3,
+        help='Sampling temperature (default: 0.3 for factual comparison)'
+    )
+    compare_parser.add_argument(
+        '--max-tokens',
+        type=int,
+        default=1000,
+        help='Maximum tokens in response (default: 1000)'
+    )
+    compare_parser.add_argument(
+        '--output-file',
+        type=str,
+        default=None,
+        help='Save comparison results to JSON file'
+    )
+
+    # Batch describe command
+    batch_describe_parser = subparsers.add_parser(
+        'batch-describe',
+        help='Batch describe multiple images'
+    )
+    batch_group = batch_describe_parser.add_mutually_exclusive_group(required=True)
+    batch_group.add_argument(
+        '--images',
+        nargs='+',
+        help='List of image paths'
+    )
+    batch_group.add_argument(
+        '--directory',
+        type=str,
+        help='Directory containing images'
+    )
+    batch_describe_parser.add_argument(
+        '--pattern',
+        type=str,
+        default=None,
+        help='Glob pattern for image files (default: *.{jpg,jpeg,png,webp,gif,bmp})'
+    )
+    batch_describe_parser.add_argument(
+        '--recursive',
+        action='store_true',
+        help='Search directory recursively'
+    )
+    batch_describe_parser.add_argument(
+        '--prompt',
+        type=str,
+        default=None,
+        help='Custom prompt for all images'
+    )
+    batch_describe_parser.add_argument(
+        '--preset',
+        choices=['vehicle', 'document', 'object', 'scene', 'person', 'technical', 'simple'],
+        default=None,
+        help='Use a preset prompt template'
+    )
+    batch_describe_parser.add_argument(
+        '--provider',
+        choices=['ollama', 'anthropic', 'openai'],
+        default='anthropic',
+        help='Vision provider (default: anthropic)'
+    )
+    batch_describe_parser.add_argument(
+        '--model',
+        type=str,
+        default=None,
+        help='Model name (defaults per provider)'
+    )
+    batch_describe_parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.7,
+        help='Sampling temperature (default: 0.7)'
+    )
+    batch_describe_parser.add_argument(
+        '--max-tokens',
+        type=int,
+        default=1000,
+        help='Maximum tokens per response (default: 1000)'
+    )
+    batch_describe_parser.add_argument(
+        '--workers',
+        type=int,
+        default=4,
+        help='Number of concurrent workers (default: 4)'
+    )
+    batch_describe_parser.add_argument(
+        '--output-json',
+        type=str,
+        default=None,
+        help='Save results to JSON file'
+    )
+    batch_describe_parser.add_argument(
+        '--output-csv',
+        type=str,
+        default=None,
+        help='Save results to CSV file'
+    )
+    batch_describe_parser.add_argument(
+        '--output-txt',
+        type=str,
+        default=None,
+        help='Save results to text file'
+    )
+    batch_describe_parser.add_argument(
+        '--no-cache',
+        dest='enable_cache',
+        action='store_false',
+        default=True,
+        help='Disable response caching'
+    )
+
+    # Batch OCR command
+    batch_ocr_parser = subparsers.add_parser(
+        'batch-ocr',
+        help='Batch OCR multiple images'
+    )
+    batch_ocr_group = batch_ocr_parser.add_mutually_exclusive_group(required=True)
+    batch_ocr_group.add_argument(
+        '--images',
+        nargs='+',
+        help='List of image paths'
+    )
+    batch_ocr_group.add_argument(
+        '--directory',
+        type=str,
+        help='Directory containing images'
+    )
+    batch_ocr_parser.add_argument(
+        '--pattern',
+        type=str,
+        default=None,
+        help='Glob pattern for image files (default: *.{jpg,jpeg,png,webp,gif,bmp})'
+    )
+    batch_ocr_parser.add_argument(
+        '--recursive',
+        action='store_true',
+        help='Search directory recursively'
+    )
+    batch_ocr_parser.add_argument(
+        '--method',
+        choices=['auto', 'tesseract', 'vision'],
+        default='auto',
+        help='OCR method (default: auto)'
+    )
+    batch_ocr_parser.add_argument(
+        '--language',
+        type=str,
+        default='eng',
+        help='Language code for OCR (default: eng)'
+    )
+    batch_ocr_parser.add_argument(
+        '--provider',
+        choices=['ollama', 'anthropic', 'openai'],
+        default='anthropic',
+        help='Vision provider for fallback (default: anthropic)'
+    )
+    batch_ocr_parser.add_argument(
+        '--model',
+        type=str,
+        default=None,
+        help='Model name (defaults per provider)'
+    )
+    batch_ocr_parser.add_argument(
+        '--fallback',
+        action='store_true',
+        help='Enable vision model fallback for low confidence'
+    )
+    batch_ocr_parser.add_argument(
+        '--confidence',
+        type=float,
+        default=60.0,
+        help='Minimum confidence threshold (default: 60.0)'
+    )
+    batch_ocr_parser.add_argument(
+        '--workers',
+        type=int,
+        default=4,
+        help='Number of concurrent workers (default: 4)'
+    )
+    batch_ocr_parser.add_argument(
+        '--output-json',
+        type=str,
+        default=None,
+        help='Save results to JSON file'
+    )
+    batch_ocr_parser.add_argument(
+        '--output-csv',
+        type=str,
+        default=None,
+        help='Save results to CSV file'
+    )
+    batch_ocr_parser.add_argument(
+        '--output-txt',
+        type=str,
+        default=None,
+        help='Save results to text file'
+    )
+
     # Add cache flag to describe command
     describe_parser.add_argument(
         '--no-cache',
@@ -597,6 +1185,12 @@ Examples:
         return cache_cleanup(args)
     elif args.command == 'cache-clear':
         return cache_clear(args)
+    elif args.command == 'compare':
+        return compare_images(args)
+    elif args.command == 'batch-describe':
+        return batch_describe(args)
+    elif args.command == 'batch-ocr':
+        return batch_ocr(args)
 
     return 0
 

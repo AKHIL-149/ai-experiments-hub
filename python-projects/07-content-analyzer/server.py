@@ -23,12 +23,14 @@ from src.core.image_processor import ImageProcessor
 from src.core.ocr_processor import OCRProcessor
 from src.core.cache_manager import CacheManager
 from src.core.prompt_templates import get_prompt, PROMPT_TEMPLATES
+from src.core.image_comparator import ImageComparator
+from src.core.batch_processor import BatchProcessor
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Content Analyzer API",
-    description="Vision AI image analysis with OCR capabilities",
-    version="0.7.5"
+    description="Vision AI image analysis with OCR, comparison, and batch processing",
+    version="0.7.6"
 )
 
 # Add CORS middleware
@@ -92,6 +94,25 @@ class OCRResponse(BaseModel):
     details: Optional[dict] = None
 
 
+class CompareResponse(BaseModel):
+    """Response model for image comparison."""
+    success: bool
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
+
+class BatchResponse(BaseModel):
+    """Response model for batch processing."""
+    success: bool
+    total_images: int = 0
+    successful: int = 0
+    failed: int = 0
+    results: List[dict] = []
+    errors: List[dict] = []
+    elapsed_time: float = 0
+    error: Optional[str] = None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the main HTML page."""
@@ -104,7 +125,7 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.7.5"}
+    return {"status": "healthy", "version": "0.7.6"}
 
 
 @app.get("/api/presets")
@@ -342,6 +363,239 @@ async def detect_language(
             "success": False,
             "error": str(e)
         }
+
+
+@app.post("/api/compare", response_model=CompareResponse)
+async def compare_images(
+    file1: UploadFile = File(...),
+    file2: UploadFile = File(...),
+    use_ai: bool = Form(False),
+    mode: str = Form("content"),
+    provider: str = Form("anthropic"),
+    model: Optional[str] = Form(None),
+    temperature: float = Form(0.3),
+    max_tokens: int = Form(1000)
+):
+    """Compare two images."""
+    try:
+        # Read and validate images
+        contents1 = await file1.read()
+        contents2 = await file2.read()
+        image1 = Image.open(BytesIO(contents1))
+        image2 = Image.open(BytesIO(contents2))
+
+        # Validate images
+        validation1 = image_processor.validate_image(image1)
+        validation2 = image_processor.validate_image(image2)
+
+        if not validation1['valid']:
+            return CompareResponse(
+                success=False,
+                error=f"Invalid image 1: {', '.join(validation1['errors'])}"
+            )
+        if not validation2['valid']:
+            return CompareResponse(
+                success=False,
+                error=f"Invalid image 2: {', '.join(validation2['errors'])}"
+            )
+
+        # Initialize vision client if needed
+        vision_client = None
+        if use_ai:
+            vision_client = VisionClient(
+                backend=provider,
+                model=model
+            )
+
+        # Initialize comparator
+        comparator = ImageComparator(vision_client=vision_client)
+
+        # Compare images
+        result = comparator.compare_images(
+            image1=image1,
+            image2=image2,
+            mode=mode,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+
+        return CompareResponse(
+            success=True,
+            result=result
+        )
+
+    except Exception as e:
+        return CompareResponse(
+            success=False,
+            error=str(e)
+        )
+
+
+@app.post("/api/batch-analyze", response_model=BatchResponse)
+async def batch_analyze(
+    files: List[UploadFile] = File(...),
+    prompt: Optional[str] = Form(None),
+    preset: Optional[str] = Form(None),
+    provider: str = Form("anthropic"),
+    model: Optional[str] = Form(None),
+    temperature: float = Form(0.7),
+    max_tokens: int = Form(1000),
+    workers: int = Form(4),
+    enable_cache: bool = Form(True)
+):
+    """Batch analyze multiple images."""
+    try:
+        # Read and validate images
+        images = []
+        image_names = []
+
+        for file in files:
+            try:
+                contents = await file.read()
+                image = Image.open(BytesIO(contents))
+
+                validation = image_processor.validate_image(image)
+                if validation['valid']:
+                    images.append(image)
+                    image_names.append(file.filename or f"image_{len(images)}")
+            except Exception as e:
+                # Skip invalid images
+                continue
+
+        if not images:
+            return BatchResponse(
+                success=False,
+                error="No valid images provided"
+            )
+
+        # Get prompt
+        final_prompt = get_prompt(
+            template_name=preset,
+            custom_prompt=prompt
+        )
+
+        # Initialize vision client with cache
+        client_cache = cache_manager if enable_cache else None
+        vision_client = VisionClient(
+            backend=provider,
+            model=model,
+            cache_manager=client_cache,
+            enable_cache=enable_cache
+        )
+
+        # Initialize batch processor
+        batch_processor = BatchProcessor(
+            vision_client=vision_client,
+            max_workers=workers
+        )
+
+        # Process images
+        results = batch_processor.batch_analyze(
+            images=images,
+            image_names=image_names,
+            prompt=final_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+
+        return BatchResponse(
+            success=True,
+            total_images=results['total_images'],
+            successful=results['successful'],
+            failed=results['failed'],
+            results=results['results'],
+            errors=results['errors'],
+            elapsed_time=results['elapsed_time']
+        )
+
+    except Exception as e:
+        return BatchResponse(
+            success=False,
+            error=str(e)
+        )
+
+
+@app.post("/api/batch-ocr", response_model=BatchResponse)
+async def batch_ocr(
+    files: List[UploadFile] = File(...),
+    method: str = Form("auto"),
+    language: str = Form("eng"),
+    provider: str = Form("anthropic"),
+    model: Optional[str] = Form(None),
+    fallback: bool = Form(True),
+    confidence: float = Form(60.0),
+    workers: int = Form(4)
+):
+    """Batch OCR multiple images."""
+    try:
+        # Read and validate images
+        images = []
+        image_names = []
+
+        for file in files:
+            try:
+                contents = await file.read()
+                image = Image.open(BytesIO(contents))
+
+                validation = image_processor.validate_image(image)
+                if validation['valid']:
+                    images.append(image)
+                    image_names.append(file.filename or f"image_{len(images)}")
+            except Exception as e:
+                # Skip invalid images
+                continue
+
+        if not images:
+            return BatchResponse(
+                success=False,
+                error="No valid images provided"
+            )
+
+        # Initialize vision client for fallback if needed
+        vision_client = None
+        if fallback or method == 'vision':
+            vision_client = VisionClient(
+                backend=provider,
+                model=model
+            )
+
+        # Initialize OCR processor
+        ocr_processor = OCRProcessor(
+            use_tesseract=(method != 'vision'),
+            vision_client=vision_client
+        )
+
+        # Initialize batch processor
+        batch_processor = BatchProcessor(
+            ocr_processor=ocr_processor,
+            max_workers=workers
+        )
+
+        # Process images
+        results = batch_processor.batch_ocr(
+            images=images,
+            image_names=image_names,
+            language=language,
+            method=method,
+            fallback_to_vision=fallback,
+            confidence_threshold=confidence
+        )
+
+        return BatchResponse(
+            success=True,
+            total_images=results['total_images'],
+            successful=results['successful'],
+            failed=results['failed'],
+            results=results['results'],
+            errors=results['errors'],
+            elapsed_time=results['elapsed_time']
+        )
+
+    except Exception as e:
+        return BatchResponse(
+            success=False,
+            error=str(e)
+        )
 
 
 if __name__ == "__main__":
