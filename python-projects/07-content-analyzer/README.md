@@ -2,7 +2,7 @@
 
 AI-powered image analysis tool with vision capabilities for image description, visual Q&A, and OCR text extraction.
 
-## Current Status: Phase 4 - Caching & Error Handling ✅
+## Current Status: Phase 5 - Web Interface ✅
 
 **Implemented:**
 - ✅ Vision API integration with Ollama/LLaVA (local ~70% accuracy)
@@ -20,9 +20,12 @@ AI-powered image analysis tool with vision capabilities for image description, v
 - ✅ **Cost tracking** for cloud API usage
 - ✅ **Retry logic** with exponential backoff
 - ✅ **Rate limiting** for API calls
+- ✅ **Web Interface** with drag-and-drop
+- ✅ **REST API** with FastAPI
+- ✅ **Interactive UI** with Bootstrap 5
 
 **Not Yet Implemented:**
-- ❌ Web interface - Coming in Phase 5-6
+- ❌ Advanced features (image comparison, batch processing)
 
 ## Prerequisites
 
@@ -108,9 +111,73 @@ pip install pytesseract
 
 # Or install all optional dependencies
 pip install anthropic openai pytesseract
+
+# For web interface (Phase 5)
+pip install fastapi uvicorn python-multipart
 ```
 
 ## Usage
+
+### 🌐 Web Interface (Recommended)
+
+Start the web server for an interactive, user-friendly experience:
+
+```bash
+# Start the web server
+python server.py
+
+# Or with custom host/port
+uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
+**Access the interface:**
+- 🌐 Web UI: http://localhost:8000
+- 📚 API Docs: http://localhost:8000/docs
+- 🔍 OpenAPI Spec: http://localhost:8000/redoc
+
+**Features:**
+- ✨ **Drag & Drop** image upload
+- 🎨 **Vision Analysis** with real-time results
+- 📄 **OCR Text Extraction** from images
+- 📊 **Cache Statistics** dashboard
+- 🎯 **Provider Selection** (Anthropic, OpenAI, Ollama)
+- 🔧 **Preset Templates** for better accuracy
+- 💾 **Caching** for faster responses
+- 📋 **Copy to Clipboard** functionality
+
+**Web API Endpoints:**
+```bash
+# Health check
+GET /api/health
+
+# Analyze image
+POST /api/analyze
+- File upload (multipart/form-data)
+- Parameters: provider, preset, temperature, max_tokens, enable_cache
+
+# Extract text (OCR)
+POST /api/ocr
+- File upload (multipart/form-data)
+- Parameters: method, language, provider, fallback, confidence
+
+# Detect language
+POST /api/detect-language
+- File upload (multipart/form-data)
+- Parameters: use_vision, provider
+
+# Cache statistics
+GET /api/cache/stats
+
+# Cache cleanup
+POST /api/cache/cleanup
+
+# Clear cache
+POST /api/cache/clear
+```
+
+### 💻 CLI (Command Line Interface)
+
+For automation and scripting:
 
 ### Basic Image Description
 
@@ -496,6 +563,7 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 ```
 07-content-analyzer/
 ├── analyze.py              # CLI entry point
+├── server.py               # Web server (FastAPI)
 ├── requirements.txt        # Dependencies
 ├── .env.example           # Configuration template
 ├── README.md              # This file
@@ -510,6 +578,10 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 │       ├── cache_manager.py      # Response caching
 │       ├── retry_handler.py      # Retry logic with backoff
 │       └── rate_limiter.py       # API rate limiting
+├── templates/
+│   └── index.html         # Web UI
+├── static/
+│   └── app.js             # Frontend JavaScript
 ├── data/
 │   └── cache/             # Cache storage
 │       ├── responses/     # Cached API responses
@@ -589,8 +661,8 @@ DEFAULT_PROVIDER=ollama
 - [x] **Phase 2**: Cloud APIs (Claude, GPT-4 Vision) ✅
 - [x] **Phase 3**: OCR capabilities with Tesseract ✅
 - [x] **Phase 4**: Caching and error handling ✅
-- [ ] **Phase 5-6**: Web interface with drag-and-drop
-- [ ] **Phase 7**: Advanced features (image comparison, batch processing)
+- [x] **Phase 5**: Web interface with drag-and-drop ✅
+- [ ] **Phase 6**: Advanced features (image comparison, batch processing)
 
 ## License
 
@@ -598,4 +670,4 @@ Part of AI Experiments Hub
 
 ## Version
 
-0.7.4 - Phase 4 Complete: Caching, Cost Tracking, Retry Logic, and Rate Limiting
+0.7.5 - Phase 5 Complete: Web Interface with FastAPI, Drag-and-Drop, and Interactive UI

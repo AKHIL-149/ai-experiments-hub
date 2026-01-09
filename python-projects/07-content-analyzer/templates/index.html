@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Analyzer - Vision AI Image Analysis</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem 0;
+        }
+
+        .container-custom {
+            max-width: 1400px;
+        }
+
+        .card {
+            border-radius: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border: none;
+        }
+
+        .drop-zone {
+            border: 3px dashed #cbd5e1;
+            border-radius: 1rem;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8fafc;
+        }
+
+        .drop-zone:hover {
+            border-color: var(--primary-color);
+            background: #f1f5f9;
+        }
+
+        .drop-zone.drag-over {
+            border-color: var(--success-color);
+            background: #ecfdf5;
+            transform: scale(1.02);
+        }
+
+        .preview-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .result-box {
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            min-height: 200px;
+            font-family: 'Georgia', serif;
+            line-height: 1.8;
+        }
+
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+        }
+
+        .btn-primary:hover {
+            background: #4338ca;
+        }
+
+        .spinner-border-custom {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-width: 0.2rem;
+        }
+
+        .badge-custom {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+        }
+
+        .nav-tabs .nav-link {
+            border: none;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .nav-tabs .nav-link.active {
+            background: white;
+            color: var(--primary-color);
+            border-bottom: 3px solid var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="container container-custom">
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="text-white fw-bold mb-2">
+                <i class="bi bi-eye"></i> Content Analyzer
+            </h1>
+            <p class="text-white-50">AI-Powered Vision Analysis & OCR</p>
+        </div>
+
+        <!-- Main Card -->
+        <div class="card">
+            <div class="card-body p-4">
+                <!-- Tabs -->
+                <ul class="nav nav-tabs mb-4" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#analyze-tab">
+                            <i class="bi bi-image"></i> Vision Analysis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#ocr-tab">
+                            <i class="bi bi-file-text"></i> OCR Text Extraction
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#stats-tab">
+                            <i class="bi bi-graph-up"></i> Cache Stats
+                        </a>
+                    </li>
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Vision Analysis Tab -->
+                    <div class="tab-pane fade show active" id="analyze-tab">
+                        <div class="row">
+                            <!-- Left Column - Upload & Settings -->
+                            <div class="col-lg-5">
+                                <!-- Drop Zone -->
+                                <div class="drop-zone" id="dropZone">
+                                    <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #cbd5e1;"></i>
+                                    <h5 class="mt-3">Drop image here or click to browse</h5>
+                                    <p class="text-muted">Supports JPG, PNG, WebP</p>
+                                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                                </div>
+
+                                <!-- Image Preview -->
+                                <div id="imagePreview" class="text-center" style="display: none;">
+                                    <img id="previewImg" class="preview-image" alt="Preview">
+                                    <button class="btn btn-sm btn-outline-danger mt-2" onclick="clearImage()">
+                                        <i class="bi bi-trash"></i> Remove
+                                    </button>
+                                </div>
+
+                                <!-- Settings -->
+                                <div class="mt-4">
+                                    <h6 class="mb-3"><i class="bi bi-gear"></i> Analysis Settings</h6>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Provider</label>
+                                        <select class="form-select" id="provider">
+                                            <option value="anthropic" selected>Anthropic Claude (90-95% accuracy)</option>
+                                            <option value="openai">OpenAI GPT-4 Vision (85-90% accuracy)</option>
+                                            <option value="ollama">Ollama/LLaVA (70-75% accuracy, free)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Preset</label>
+                                        <select class="form-select" id="preset">
+                                            <option value="">Default (General)</option>
+                                            <option value="vehicle">Vehicle (Cars, Racing)</option>
+                                            <option value="document">Document (Forms, Text)</option>
+                                            <option value="object">Object Identification</option>
+                                            <option value="scene">Scene (Landscape, Environment)</option>
+                                            <option value="person">Person (Portrait, People)</option>
+                                            <option value="technical">Technical Analysis</option>
+                                            <option value="simple">Simple (Quick Description)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Custom Prompt (Optional)</label>
+                                        <textarea class="form-control" id="customPrompt" rows="2"
+                                                  placeholder="e.g., What colors are in this image?"></textarea>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Temperature</label>
+                                            <input type="range" class="form-range" id="temperature"
+                                                   min="0" max="2" step="0.1" value="0.7">
+                                            <small class="text-muted">Current: <span id="tempValue">0.7</span></small>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Max Tokens</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="maxTokens" value="1000" min="100" max="4000">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" id="enableCache" checked>
+                                        <label class="form-check-label" for="enableCache">
+                                            Enable Caching (Faster & Cheaper)
+                                        </label>
+                                    </div>
+
+                                    <button class="btn btn-primary w-100" id="analyzeBtn" onclick="analyzeImage()">
+                                        <i class="bi bi-play-circle"></i> Analyze Image
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Right Column - Results -->
+                            <div class="col-lg-7">
+                                <h6 class="mb-3"><i class="bi bi-stars"></i> Analysis Results</h6>
+
+                                <div id="loadingSpinner" class="text-center py-5" style="display: none;">
+                                    <div class="spinner-border text-primary spinner-border-custom" role="status"></div>
+                                    <p class="mt-3 text-muted">Analyzing image...</p>
+                                </div>
+
+                                <div id="resultsContainer" style="display: none;">
+                                    <!-- Metadata -->
+                                    <div id="metadata" class="mb-3"></div>
+
+                                    <!-- Result Text -->
+                                    <div class="result-box" id="resultText">
+                                        No results yet. Upload an image to get started.
+                                    </div>
+
+                                    <!-- Copy Button -->
+                                    <button class="btn btn-outline-primary btn-sm mt-2" onclick="copyResults()">
+                                        <i class="bi bi-clipboard"></i> Copy to Clipboard
+                                    </button>
+                                </div>
+
+                                <div id="errorContainer" class="alert alert-danger" style="display: none;">
+                                    <i class="bi bi-exclamation-triangle"></i> <span id="errorText"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OCR Tab -->
+                    <div class="tab-pane fade" id="ocr-tab">
+                        <div class="row">
+                            <div class="col-lg-5">
+                                <!-- Drop Zone for OCR -->
+                                <div class="drop-zone" id="dropZoneOCR">
+                                    <i class="bi bi-file-text" style="font-size: 3rem; color: #cbd5e1;"></i>
+                                    <h5 class="mt-3">Drop document here</h5>
+                                    <p class="text-muted">Extract text from images</p>
+                                    <input type="file" id="fileInputOCR" accept="image/*" style="display: none;">
+                                </div>
+
+                                <div id="imagePreviewOCR" class="text-center" style="display: none;">
+                                    <img id="previewImgOCR" class="preview-image" alt="Preview">
+                                    <button class="btn btn-sm btn-outline-danger mt-2" onclick="clearImageOCR()">
+                                        <i class="bi bi-trash"></i> Remove
+                                    </button>
+                                </div>
+
+                                <!-- OCR Settings -->
+                                <div class="mt-4">
+                                    <h6 class="mb-3"><i class="bi bi-gear"></i> OCR Settings</h6>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Method</label>
+                                        <select class="form-select" id="ocrMethod">
+                                            <option value="auto">Auto (Tesseract + Vision Fallback)</option>
+                                            <option value="tesseract">Tesseract Only (Fast, Free)</option>
+                                            <option value="vision">Vision Model Only (Accurate)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Language</label>
+                                        <select class="form-select" id="ocrLanguage">
+                                            <option value="eng">English</option>
+                                            <option value="fra">French</option>
+                                            <option value="spa">Spanish</option>
+                                            <option value="deu">German</option>
+                                            <option value="ita">Italian</option>
+                                            <option value="por">Portuguese</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Provider (for vision fallback)</label>
+                                        <select class="form-select" id="ocrProvider">
+                                            <option value="anthropic">Anthropic Claude</option>
+                                            <option value="openai">OpenAI GPT-4 Vision</option>
+                                            <option value="ollama">Ollama/LLaVA</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" id="ocrFallback" checked>
+                                        <label class="form-check-label" for="ocrFallback">
+                                            Enable Vision Fallback
+                                        </label>
+                                    </div>
+
+                                    <button class="btn btn-primary w-100" id="ocrBtn" onclick="extractText()">
+                                        <i class="bi bi-file-text"></i> Extract Text
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="col-lg-7">
+                                <h6 class="mb-3"><i class="bi bi-file-earmark-text"></i> Extracted Text</h6>
+
+                                <div id="loadingSpinnerOCR" class="text-center py-5" style="display: none;">
+                                    <div class="spinner-border text-primary spinner-border-custom" role="status"></div>
+                                    <p class="mt-3 text-muted">Extracting text...</p>
+                                </div>
+
+                                <div id="ocrResultsContainer" style="display: none;">
+                                    <div id="ocrMetadata" class="mb-3"></div>
+                                    <div class="result-box" id="ocrResultText" style="font-family: 'Courier New', monospace;"></div>
+                                    <button class="btn btn-outline-primary btn-sm mt-2" onclick="copyOCRResults()">
+                                        <i class="bi bi-clipboard"></i> Copy Text
+                                    </button>
+                                </div>
+
+                                <div id="ocrErrorContainer" class="alert alert-danger" style="display: none;">
+                                    <i class="bi bi-exclamation-triangle"></i> <span id="ocrErrorText"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stats Tab -->
+                    <div class="tab-pane fade" id="stats-tab">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <h5 class="mb-4"><i class="bi bi-graph-up"></i> Cache Statistics</h5>
+
+                                <div id="statsLoading" class="text-center py-5">
+                                    <div class="spinner-border text-primary" role="status"></div>
+                                </div>
+
+                                <div id="statsContent" style="display: none;">
+                                    <div class="row">
+                                        <div class="col-md-3 mb-3">
+                                            <div class="stats-card">
+                                                <h6><i class="bi bi-check-circle"></i> Hit Rate</h6>
+                                                <h2 id="hitRate">0%</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3 mb-3">
+                                            <div class="stats-card">
+                                                <h6><i class="bi bi-arrow-up-circle"></i> Total Requests</h6>
+                                                <h2 id="totalRequests">0</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3 mb-3">
+                                            <div class="stats-card">
+                                                <h6><i class="bi bi-hdd"></i> Cache Size</h6>
+                                                <h2 id="cacheSize">0 MB</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3 mb-3">
+                                            <div class="stats-card">
+                                                <h6><i class="bi bi-piggy-bank"></i> Cost Savings</h6>
+                                                <h2 id="costSavings">$0.00</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="card mt-4">
+                                        <div class="card-body">
+                                            <h6 class="mb-3">Cache Management</h6>
+                                            <div class="d-flex gap-2">
+                                                <button class="btn btn-outline-warning" onclick="cleanupCache()">
+                                                    <i class="bi bi-broom"></i> Cleanup Expired
+                                                </button>
+                                                <button class="btn btn-outline-danger" onclick="clearCache()">
+                                                    <i class="bi bi-trash"></i> Clear All Cache
+                                                </button>
+                                                <button class="btn btn-outline-primary" onclick="refreshStats()">
+                                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-4">
+            <p class="text-white-50 small">
+                Content Analyzer v0.7.5 | Powered by Vision AI
+            </p>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Main JS -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
