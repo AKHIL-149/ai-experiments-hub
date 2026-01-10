@@ -30,7 +30,7 @@ from src.core.batch_processor import BatchProcessor
 app = FastAPI(
     title="Content Analyzer API",
     description="Vision AI image analysis with OCR, comparison, and batch processing",
-    version="0.7.6"
+    version="0.7.7"
 )
 
 # Add CORS middleware

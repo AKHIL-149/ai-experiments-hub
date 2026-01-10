@@ -142,6 +142,16 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#compare-tab">
+                            <i class="bi bi-arrow-left-right"></i> Image Comparison
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#batch-tab">
+                            <i class="bi bi-collection"></i> Batch Processing
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#stats-tab">
                             <i class="bi bi-graph-up"></i> Cache Stats
                         </a>
@@ -351,6 +361,264 @@
                         </div>
                     </div>
 
+                    <!-- Image Comparison Tab -->
+                    <div class="tab-pane fade" id="compare-tab">
+                        <div class="row">
+                            <div class="col-lg-5">
+                                <h6 class="mb-3"><i class="bi bi-images"></i> Select Images to Compare</h6>
+
+                                <!-- First Image -->
+                                <div class="mb-4">
+                                    <label class="form-label fw-bold">Image 1</label>
+                                    <div class="drop-zone" id="dropZoneCompare1">
+                                        <i class="bi bi-image" style="font-size: 2rem; color: #cbd5e1;"></i>
+                                        <h6 class="mt-2">Drop first image</h6>
+                                        <input type="file" id="fileInputCompare1" accept="image/*" style="display: none;">
+                                    </div>
+                                    <div id="imagePreviewCompare1" class="text-center" style="display: none;">
+                                        <img id="previewImgCompare1" class="preview-image" style="max-height: 200px;" alt="Image 1">
+                                        <button class="btn btn-sm btn-outline-danger mt-2" onclick="clearImageCompare1()">
+                                            <i class="bi bi-trash"></i> Remove
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Second Image -->
+                                <div class="mb-4">
+                                    <label class="form-label fw-bold">Image 2</label>
+                                    <div class="drop-zone" id="dropZoneCompare2">
+                                        <i class="bi bi-image" style="font-size: 2rem; color: #cbd5e1;"></i>
+                                        <h6 class="mt-2">Drop second image</h6>
+                                        <input type="file" id="fileInputCompare2" accept="image/*" style="display: none;">
+                                    </div>
+                                    <div id="imagePreviewCompare2" class="text-center" style="display: none;">
+                                        <img id="previewImgCompare2" class="preview-image" style="max-height: 200px;" alt="Image 2">
+                                        <button class="btn btn-sm btn-outline-danger mt-2" onclick="clearImageCompare2()">
+                                            <i class="bi bi-trash"></i> Remove
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Comparison Settings -->
+                                <div class="mb-3">
+                                    <label class="form-label">Comparison Mode</label>
+                                    <select class="form-select" id="compareMode">
+                                        <option value="content">Content (What changed?)</option>
+                                        <option value="visual">Visual (Colors, lighting)</option>
+                                        <option value="detailed">Detailed (Comprehensive)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="compareUseAI" checked>
+                                    <label class="form-check-label" for="compareUseAI">
+                                        Use AI for Semantic Comparison
+                                    </label>
+                                    <small class="d-block text-muted">
+                                        Unchecked = structural only (fast, free)
+                                    </small>
+                                </div>
+
+                                <div class="mb-3" id="compareProviderDiv">
+                                    <label class="form-label">AI Provider</label>
+                                    <select class="form-select" id="compareProvider">
+                                        <option value="anthropic">Anthropic Claude</option>
+                                        <option value="openai">OpenAI GPT-4 Vision</option>
+                                        <option value="ollama">Ollama/LLaVA</option>
+                                    </select>
+                                </div>
+
+                                <button class="btn btn-primary w-100" id="compareBtn" onclick="compareImages()">
+                                    <i class="bi bi-arrow-left-right"></i> Compare Images
+                                </button>
+                            </div>
+
+                            <div class="col-lg-7">
+                                <h6 class="mb-3"><i class="bi bi-bar-chart"></i> Comparison Results</h6>
+
+                                <div id="loadingSpinnerCompare" class="text-center py-5" style="display: none;">
+                                    <div class="spinner-border text-primary spinner-border-custom" role="status"></div>
+                                    <p class="mt-3 text-muted">Comparing images...</p>
+                                </div>
+
+                                <div id="compareResultsContainer" style="display: none;">
+                                    <!-- Similarity Score -->
+                                    <div class="card mb-3">
+                                        <div class="card-body text-center">
+                                            <h6 class="text-muted">Overall Similarity</h6>
+                                            <h1 class="display-4 text-primary" id="similarityScore">0%</h1>
+                                        </div>
+                                    </div>
+
+                                    <!-- Structural Info -->
+                                    <div class="card mb-3">
+                                        <div class="card-body">
+                                            <h6><i class="bi bi-info-circle"></i> Structural Analysis</h6>
+                                            <div id="structuralInfo"></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI Analysis -->
+                                    <div class="card" id="aiAnalysisCard" style="display: none;">
+                                        <div class="card-body">
+                                            <h6><i class="bi bi-robot"></i> AI Analysis</h6>
+                                            <div class="result-box" id="aiAnalysisText"></div>
+                                        </div>
+                                    </div>
+
+                                    <button class="btn btn-outline-primary btn-sm mt-2" onclick="copyCompareResults()">
+                                        <i class="bi bi-clipboard"></i> Copy Results
+                                    </button>
+                                </div>
+
+                                <div id="compareErrorContainer" class="alert alert-danger" style="display: none;">
+                                    <i class="bi bi-exclamation-triangle"></i> <span id="compareErrorText"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Batch Processing Tab -->
+                    <div class="tab-pane fade" id="batch-tab">
+                        <div class="row">
+                            <div class="col-lg-5">
+                                <h6 class="mb-3"><i class="bi bi-images"></i> Select Multiple Images</h6>
+
+                                <!-- Multi-file Upload -->
+                                <div class="drop-zone" id="dropZoneBatch">
+                                    <i class="bi bi-collection" style="font-size: 3rem; color: #cbd5e1;"></i>
+                                    <h5 class="mt-3">Drop multiple images here</h5>
+                                    <p class="text-muted">Or click to select files</p>
+                                    <input type="file" id="fileInputBatch" accept="image/*" multiple style="display: none;">
+                                </div>
+
+                                <!-- Selected Files List -->
+                                <div id="batchFilesList" class="mt-3" style="display: none;">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="fw-bold"><span id="batchFileCount">0</span> files selected</span>
+                                        <button class="btn btn-sm btn-outline-danger" onclick="clearBatchFiles()">
+                                            Clear All
+                                        </button>
+                                    </div>
+                                    <div id="batchFilesContainer" class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                                    </div>
+                                </div>
+
+                                <!-- Batch Settings -->
+                                <div class="mt-4">
+                                    <h6 class="mb-3"><i class="bi bi-gear"></i> Batch Settings</h6>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Operation</label>
+                                        <select class="form-select" id="batchOperation">
+                                            <option value="analyze">Vision Analysis</option>
+                                            <option value="ocr">OCR Text Extraction</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3" id="batchPresetDiv">
+                                        <label class="form-label">Preset</label>
+                                        <select class="form-select" id="batchPreset">
+                                            <option value="">Default</option>
+                                            <option value="vehicle">Vehicle</option>
+                                            <option value="document">Document</option>
+                                            <option value="object">Object</option>
+                                            <option value="scene">Scene</option>
+                                            <option value="person">Person</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Provider</label>
+                                        <select class="form-select" id="batchProvider">
+                                            <option value="anthropic">Anthropic Claude</option>
+                                            <option value="openai">OpenAI GPT-4 Vision</option>
+                                            <option value="ollama">Ollama/LLaVA</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Workers (Concurrent)</label>
+                                        <input type="number" class="form-control" id="batchWorkers" value="4" min="1" max="10">
+                                        <small class="text-muted">More workers = faster but higher API costs</small>
+                                    </div>
+
+                                    <button class="btn btn-primary w-100" id="batchBtn" onclick="processBatch()">
+                                        <i class="bi bi-play-circle"></i> Process Batch
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="col-lg-7">
+                                <h6 class="mb-3"><i class="bi bi-list-check"></i> Batch Results</h6>
+
+                                <div id="loadingSpinnerBatch" class="text-center py-5" style="display: none;">
+                                    <div class="spinner-border text-primary spinner-border-custom" role="status"></div>
+                                    <p class="mt-3 text-muted">Processing <span id="batchProgress">0/0</span> images...</p>
+                                    <div class="progress mt-2" style="height: 10px;">
+                                        <div id="batchProgressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                    </div>
+                                </div>
+
+                                <div id="batchResultsContainer" style="display: none;">
+                                    <!-- Summary Stats -->
+                                    <div class="row mb-3">
+                                        <div class="col-4">
+                                            <div class="card text-center">
+                                                <div class="card-body py-2">
+                                                    <small class="text-muted">Total</small>
+                                                    <h4 class="mb-0" id="batchTotal">0</h4>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="card text-center">
+                                                <div class="card-body py-2">
+                                                    <small class="text-success">Success</small>
+                                                    <h4 class="mb-0 text-success" id="batchSuccess">0</h4>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="card text-center">
+                                                <div class="card-body py-2">
+                                                    <small class="text-danger">Failed</small>
+                                                    <h4 class="mb-0 text-danger" id="batchFailed">0</h4>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <small class="text-muted">
+                                            Processing time: <strong id="batchElapsedTime">0s</strong>
+                                        </small>
+                                    </div>
+
+                                    <!-- Results List -->
+                                    <div class="card">
+                                        <div class="card-body" style="max-height: 400px; overflow-y: auto;" id="batchResultsList">
+                                        </div>
+                                    </div>
+
+                                    <!-- Download Options -->
+                                    <div class="d-flex gap-2 mt-3">
+                                        <button class="btn btn-outline-primary btn-sm" onclick="downloadBatchJSON()">
+                                            <i class="bi bi-file-earmark-code"></i> Download JSON
+                                        </button>
+                                        <button class="btn btn-outline-success btn-sm" onclick="downloadBatchCSV()">
+                                            <i class="bi bi-file-earmark-spreadsheet"></i> Download CSV
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div id="batchErrorContainer" class="alert alert-danger" style="display: none;">
+                                    <i class="bi bi-exclamation-triangle"></i> <span id="batchErrorText"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Stats Tab -->
                     <div class="tab-pane fade" id="stats-tab">
                         <div class="row">
@@ -416,7 +684,7 @@
         <!-- Footer -->
         <div class="text-center mt-4">
             <p class="text-white-50 small">
-                Content Analyzer v0.7.5 | Powered by Vision AI
+                Content Analyzer v0.7.7 | Powered by Vision AI
             </p>
         </div>
     </div>

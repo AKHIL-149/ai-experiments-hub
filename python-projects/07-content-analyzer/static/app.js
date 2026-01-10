@@ -376,3 +376,402 @@ async function clearCache() {
         alert('Failed to clear cache: ' + error.message);
     }
 }
+
+// ============================================================================
+// IMAGE COMPARISON FUNCTIONS
+// ============================================================================
+
+let selectedFileCompare1 = null;
+let selectedFileCompare2 = null;
+
+// Setup comparison drop zones on page load
+document.addEventListener('DOMContentLoaded', function() {
+    setupComparisonDropZones();
+    setupBatchDropZone();
+});
+
+function setupComparisonDropZones() {
+    // First image
+    const dropZone1 = document.getElementById('dropZoneCompare1');
+    const fileInput1 = document.getElementById('fileInputCompare1');
+
+    dropZone1.addEventListener('click', () => fileInput1.click());
+    dropZone1.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone1.classList.add('drag-over');
+    });
+    dropZone1.addEventListener('dragleave', () => {
+        dropZone1.classList.remove('drag-over');
+    });
+    dropZone1.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone1.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            handleFileSelectCompare1(file);
+        }
+    });
+    fileInput1.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            handleFileSelectCompare1(file);
+        }
+    });
+
+    // Second image
+    const dropZone2 = document.getElementById('dropZoneCompare2');
+    const fileInput2 = document.getElementById('fileInputCompare2');
+
+    dropZone2.addEventListener('click', () => fileInput2.click());
+    dropZone2.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone2.classList.add('drag-over');
+    });
+    dropZone2.addEventListener('dragleave', () => {
+        dropZone2.classList.remove('drag-over');
+    });
+    dropZone2.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone2.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            handleFileSelectCompare2(file);
+        }
+    });
+    fileInput2.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            handleFileSelectCompare2(file);
+        }
+    });
+}
+
+function handleFileSelectCompare1(file) {
+    selectedFileCompare1 = file;
+    const dropZone = document.getElementById('dropZoneCompare1');
+    const imagePreview = document.getElementById('imagePreviewCompare1');
+    const previewImg = document.getElementById('previewImgCompare1');
+
+    dropZone.style.display = 'none';
+    imagePreview.style.display = 'block';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        previewImg.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function handleFileSelectCompare2(file) {
+    selectedFileCompare2 = file;
+    const dropZone = document.getElementById('dropZoneCompare2');
+    const imagePreview = document.getElementById('imagePreviewCompare2');
+    const previewImg = document.getElementById('previewImgCompare2');
+
+    dropZone.style.display = 'none';
+    imagePreview.style.display = 'block';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        previewImg.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearImageCompare1() {
+    selectedFileCompare1 = null;
+    document.getElementById('dropZoneCompare1').style.display = 'block';
+    document.getElementById('imagePreviewCompare1').style.display = 'none';
+    document.getElementById('fileInputCompare1').value = '';
+}
+
+function clearImageCompare2() {
+    selectedFileCompare2 = null;
+    document.getElementById('dropZoneCompare2').style.display = 'block';
+    document.getElementById('imagePreviewCompare2').style.display = 'none';
+    document.getElementById('fileInputCompare2').value = '';
+}
+
+async function compareImages() {
+    if (!selectedFileCompare1 || !selectedFileCompare2) {
+        alert('Please select both images to compare');
+        return;
+    }
+
+    const compareBtn = document.getElementById('compareBtn');
+    const loadingSpinner = document.getElementById('loadingSpinnerCompare');
+    const resultsContainer = document.getElementById('compareResultsContainer');
+    const errorContainer = document.getElementById('compareErrorContainer');
+
+    // Show loading
+    compareBtn.disabled = true;
+    loadingSpinner.style.display = 'block';
+    resultsContainer.style.display = 'none';
+    errorContainer.style.display = 'none';
+
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('file1', selectedFileCompare1);
+    formData.append('file2', selectedFileCompare2);
+    formData.append('use_ai', document.getElementById('compareUseAI').checked);
+    formData.append('mode', document.getElementById('compareMode').value);
+    formData.append('provider', document.getElementById('compareProvider').value);
+
+    try {
+        const response = await fetch('/api/compare', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            displayComparisonResults(data.result);
+            resultsContainer.style.display = 'block';
+        } else {
+            document.getElementById('compareErrorText').textContent = data.error;
+            errorContainer.style.display = 'block';
+        }
+    } catch (error) {
+        document.getElementById('compareErrorText').textContent = 'Network error: ' + error.message;
+        errorContainer.style.display = 'block';
+    } finally {
+        compareBtn.disabled = false;
+        loadingSpinner.style.display = 'none';
+    }
+}
+
+function displayComparisonResults(result) {
+    // Similarity score
+    document.getElementById('similarityScore').textContent = result.similarity_score + '%';
+
+    // Structural info
+    const structural = result.structural;
+    const structuralHTML = `
+        <p><strong>Image 1:</strong> ${structural.image1.dimensions} | ${structural.image1.format}</p>
+        <p><strong>Image 2:</strong> ${structural.image2.dimensions} | ${structural.image2.format}</p>
+        <p><strong>Identical:</strong> ${result.identical ? '✅ Yes' : '❌ No'}</p>
+        <p><strong>Same Dimensions:</strong> ${result.similar_dimensions ? '✅ Yes' : '❌ No'}</p>
+        <p><strong>Same Aspect Ratio:</strong> ${structural.same_aspect_ratio ? '✅ Yes' : '❌ No'}</p>
+    `;
+    document.getElementById('structuralInfo').innerHTML = structuralHTML;
+
+    // AI analysis if available
+    if (result.ai_analysis && result.ai_analysis.analysis) {
+        document.getElementById('aiAnalysisText').textContent = result.ai_analysis.analysis;
+        document.getElementById('aiAnalysisCard').style.display = 'block';
+    } else {
+        document.getElementById('aiAnalysisCard').style.display = 'none';
+    }
+}
+
+function copyCompareResults() {
+    const result = document.getElementById('similarityScore').textContent + '\n\n';
+    const structural = document.getElementById('structuralInfo').textContent;
+    const aiAnalysis = document.getElementById('aiAnalysisText').textContent || '';
+
+    const fullText = result + structural + '\n\n' + aiAnalysis;
+
+    navigator.clipboard.writeText(fullText).then(() => {
+        alert('Comparison results copied to clipboard!');
+    });
+}
+
+// ============================================================================
+// BATCH PROCESSING FUNCTIONS
+// ============================================================================
+
+let selectedBatchFiles = [];
+
+function setupBatchDropZone() {
+    const dropZone = document.getElementById('dropZoneBatch');
+    const fileInput = document.getElementById('fileInputBatch');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        if (files.length > 0) {
+            handleBatchFilesSelect(files);
+        }
+    });
+    fileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length > 0) {
+            handleBatchFilesSelect(files);
+        }
+    });
+}
+
+function handleBatchFilesSelect(files) {
+    selectedBatchFiles = files;
+    document.getElementById('batchFileCount').textContent = files.length;
+    document.getElementById('batchFilesList').style.display = 'block';
+
+    const container = document.getElementById('batchFilesContainer');
+    container.innerHTML = '';
+
+    files.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'small mb-1';
+        fileItem.textContent = `${index + 1}. ${file.name}`;
+        container.appendChild(fileItem);
+    });
+}
+
+function clearBatchFiles() {
+    selectedBatchFiles = [];
+    document.getElementById('batchFilesList').style.display = 'none';
+    document.getElementById('fileInputBatch').value = '';
+    document.getElementById('batchResultsContainer').style.display = 'none';
+}
+
+async function processBatch() {
+    if (selectedBatchFiles.length === 0) {
+        alert('Please select images to process');
+        return;
+    }
+
+    const batchBtn = document.getElementById('batchBtn');
+    const loadingSpinner = document.getElementById('loadingSpinnerBatch');
+    const resultsContainer = document.getElementById('batchResultsContainer');
+    const errorContainer = document.getElementById('batchErrorContainer');
+
+    // Show loading
+    batchBtn.disabled = true;
+    loadingSpinner.style.display = 'block';
+    resultsContainer.style.display = 'none';
+    errorContainer.style.display = 'none';
+
+    // Prepare form data
+    const formData = new FormData();
+    selectedBatchFiles.forEach(file => {
+        formData.append('files', file);
+    });
+
+    const operation = document.getElementById('batchOperation').value;
+    const provider = document.getElementById('batchProvider').value;
+    const workers = document.getElementById('batchWorkers').value;
+
+    formData.append('provider', provider);
+    formData.append('workers', workers);
+
+    let endpoint = '/api/batch-analyze';
+
+    if (operation === 'analyze') {
+        const preset = document.getElementById('batchPreset').value;
+        if (preset) formData.append('preset', preset);
+    } else {
+        endpoint = '/api/batch-ocr';
+    }
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            displayBatchResults(data);
+            resultsContainer.style.display = 'block';
+        } else {
+            document.getElementById('batchErrorText').textContent = data.error;
+            errorContainer.style.display = 'block';
+        }
+    } catch (error) {
+        document.getElementById('batchErrorText').textContent = 'Network error: ' + error.message;
+        errorContainer.style.display = 'block';
+    } finally {
+        batchBtn.disabled = false;
+        loadingSpinner.style.display = 'none';
+    }
+}
+
+let currentBatchResults = null;
+
+function displayBatchResults(data) {
+    currentBatchResults = data;
+
+    // Summary stats
+    document.getElementById('batchTotal').textContent = data.total_images;
+    document.getElementById('batchSuccess').textContent = data.successful;
+    document.getElementById('batchFailed').textContent = data.failed;
+    document.getElementById('batchElapsedTime').textContent = data.elapsed_time.toFixed(2) + 's';
+
+    // Results list
+    const resultsList = document.getElementById('batchResultsList');
+    resultsList.innerHTML = '';
+
+    data.results.forEach((result, index) => {
+        const resultItem = document.createElement('div');
+        resultItem.className = 'border-bottom pb-2 mb-2';
+
+        let resultText = '';
+        if (result.text) {
+            // OCR result
+            resultText = result.text.substring(0, 200) + (result.text.length > 200 ? '...' : '');
+        } else if (result.result) {
+            // Vision analysis result
+            resultText = result.result.substring(0, 200) + (result.result.length > 200 ? '...' : '');
+        }
+
+        resultItem.innerHTML = `
+            <small class="text-muted">${index + 1}. ${result.name}</small>
+            <p class="mb-0 small">${resultText}</p>
+        `;
+        resultsList.appendChild(resultItem);
+    });
+
+    // Errors if any
+    if (data.errors && data.errors.length > 0) {
+        data.errors.forEach((error, index) => {
+            const errorItem = document.createElement('div');
+            errorItem.className = 'border-bottom pb-2 mb-2 text-danger';
+            errorItem.innerHTML = `
+                <small>❌ ${error.name}</small>
+                <p class="mb-0 small">${error.error}</p>
+            `;
+            resultsList.appendChild(errorItem);
+        });
+    }
+}
+
+function downloadBatchJSON() {
+    if (!currentBatchResults) return;
+
+    const dataStr = JSON.stringify(currentBatchResults, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `batch_results_${Date.now()}.json`;
+    link.click();
+}
+
+function downloadBatchCSV() {
+    if (!currentBatchResults) return;
+
+    let csv = 'Index,Name,Result\n';
+
+    currentBatchResults.results.forEach((result, index) => {
+        const text = (result.text || result.result || '').replace(/"/g, '""');
+        csv += `${index + 1},"${result.name}","${text}"\n`;
+    });
+
+    const dataBlob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `batch_results_${Date.now()}.csv`;
+    link.click();
+}
