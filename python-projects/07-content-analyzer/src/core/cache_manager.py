@@ -77,7 +77,7 @@ class CacheManager:
         """
         if isinstance(data, dict):
             data = json.dumps(data, sort_keys=True)
-        elif isinstance(data, str):
+        if isinstance(data, str):
             data = data.encode('utf-8')
 
         return hashlib.sha256(data).hexdigest()

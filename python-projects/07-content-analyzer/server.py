@@ -125,7 +125,7 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.7.6"}
+    return {"status": "healthy", "version": "0.7.7"}
 
 
 @app.get("/api/presets")
@@ -191,7 +191,7 @@ async def analyze_image(
     provider: str = Form("anthropic"),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.7),
-    max_tokens: int = Form(1000),
+    max_tokens: int = Form(300),
     enable_cache: bool = Form(True)
 ):
     """Analyze image with vision AI."""
@@ -374,7 +374,7 @@ async def compare_images(
     provider: str = Form("anthropic"),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.3),
-    max_tokens: int = Form(1000)
+    max_tokens: int = Form(300)
 ):
     """Compare two images."""
     try:
@@ -439,7 +439,7 @@ async def batch_analyze(
     provider: str = Form("anthropic"),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.7),
-    max_tokens: int = Form(1000),
+    max_tokens: int = Form(300),
     workers: int = Form(4),
     enable_cache: bool = Form(True)
 ):
