@@ -20,7 +20,10 @@
                     <span class="status-dot"></span>
                     <span class="status-text">Ready</span>
                 </div>
-                <button class="btn-icon" id="settingsBtn" title="Settings">⚙️</button>
+                <div class="status-actions">
+                    <button class="btn-icon" id="conversationsBtn" title="Conversations (Ctrl+H)">💬</button>
+                    <button class="btn-icon" id="settingsBtn" title="Settings">⚙️</button>
+                </div>
             </div>
 
             <!-- Recording Button -->
@@ -80,16 +83,22 @@
                     <summary>💡 How to use</summary>
                     <div class="help-content">
                         <ol>
-                            <li>Click and hold "Push to Talk" button</li>
+                            <li>Click and hold "Push to Talk" button (or press Spacebar)</li>
                             <li>Speak your question or command</li>
                             <li>Release button to send audio</li>
                             <li>Wait for transcription and response</li>
                         </ol>
+                        <p><strong>Keyboard Shortcuts:</strong></p>
+                        <ul>
+                            <li><kbd>Space</kbd> - Push to talk (hold and release)</li>
+                            <li><kbd>Ctrl+H</kbd> or <kbd>Cmd+H</kbd> - View conversations</li>
+                        </ul>
                         <p><strong>Tips:</strong></p>
                         <ul>
                             <li>Speak clearly and at normal pace</li>
                             <li>Minimize background noise</li>
                             <li>Try natural conversation - ask follow-ups!</li>
+                            <li>Use the 💬 button to manage conversations</li>
                         </ul>
                     </div>
                 </details>
@@ -112,6 +121,7 @@
         <p class="loading-text" id="loadingText">Processing...</p>
     </div>
 
+    <script src="conversation-manager-ui.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

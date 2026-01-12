@@ -26,6 +26,14 @@ class VoiceAssistant {
         this.audioStream = null;
         this.conversationId = null;
 
+        // Phase 4: Audio visualization
+        this.audioContext = null;
+        this.analyser = null;
+        this.visualizerAnimationId = null;
+
+        // Phase 4: Conversation manager
+        this.conversationManager = null;
+
         // Settings
         this.settings = {
             voice: 'alloy',
@@ -47,6 +55,12 @@ class VoiceAssistant {
 
         // Set up event listeners
         this.setupEventListeners();
+
+        // Phase 4: Initialize conversation manager UI
+        if (window.ConversationManagerUI) {
+            this.conversationManager = new ConversationManagerUI();
+            this.setupConversationManagerListeners();
+        }
 
         // Check server health
         await this.checkHealth();
@@ -82,6 +96,16 @@ class VoiceAssistant {
             this.stopRecording();
         });
 
+        // Phase 4: Conversations button
+        const conversationsBtn = document.getElementById('conversationsBtn');
+        if (conversationsBtn) {
+            conversationsBtn.addEventListener('click', () => {
+                if (this.conversationManager) {
+                    this.conversationManager.toggle();
+                }
+            });
+        }
+
         // Settings
         this.settingsBtn.addEventListener('click', () => this.openSettings());
         this.closeSettingsBtn.addEventListener('click', () => this.closeSettings());
@@ -93,6 +117,64 @@ class VoiceAssistant {
             this.settings.speed = parseFloat(e.target.value);
             this.saveSettings();
         });
+
+        // Phase 4: Keyboard shortcuts
+        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    }
+
+    /**
+     * Phase 4: Set up conversation manager listeners
+     */
+    setupConversationManagerListeners() {
+        // Listen for conversation events
+        window.addEventListener('conversationCreated', (e) => {
+            this.conversationId = e.detail.conversationId;
+            this.conversationBox.innerHTML = '';
+            this.addMessage('assistant', 'New conversation started. How can I help you?');
+        });
+
+        window.addEventListener('conversationLoaded', (e) => {
+            this.conversationId = e.detail.conversationId;
+            this.conversationBox.innerHTML = '';
+
+            // Display loaded messages
+            e.detail.messages.forEach(msg => {
+                this.addMessage(msg.role, msg.content);
+            });
+        });
+    }
+
+    /**
+     * Phase 4: Handle keyboard shortcuts
+     */
+    handleKeyDown(e) {
+        // Spacebar for push-to-talk (when not in input field)
+        if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT') {
+            e.preventDefault();
+            if (!this.isRecording && !this.loadingOverlay.classList.contains('hidden')) {
+                return; // Don't start recording while processing
+            }
+            this.startRecording();
+        }
+
+        // Ctrl/Cmd + H for conversation history
+        if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+            e.preventDefault();
+            if (this.conversationManager) {
+                this.conversationManager.toggle();
+            }
+        }
+    }
+
+    /**
+     * Phase 4: Handle keyboard release
+     */
+    handleKeyUp(e) {
+        if (e.code === 'Space' && this.isRecording) {
+            e.preventDefault();
+            this.stopRecording();
+        }
     }
 
     /**
@@ -149,6 +231,9 @@ class VoiceAssistant {
                 this.processRecording();
             };
 
+            // Phase 4: Setup real-time audio visualization
+            this.setupAudioVisualization(this.audioStream);
+
             // Start recording
             this.mediaRecorder.start();
             this.isRecording = true;
@@ -177,6 +262,9 @@ class VoiceAssistant {
         this.mediaRecorder.stop();
         this.isRecording = false;
 
+        // Phase 4: Stop audio visualization
+        this.stopAudioVisualization();
+
         // Stop audio stream
         if (this.audioStream) {
             this.audioStream.getTracks().forEach(track => track.stop());
@@ -186,6 +274,86 @@ class VoiceAssistant {
         // Update UI
         this.recordBtn.classList.remove('recording');
         this.audioVisualizer.classList.remove('active');
+    }
+
+    /**
+     * Phase 4: Setup real-time audio visualization
+     */
+    setupAudioVisualization(stream) {
+        try {
+            // Create audio context
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Create analyser node
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 256;
+            this.analyser.smoothingTimeConstant = 0.8;
+
+            // Connect stream to analyser
+            const source = this.audioContext.createMediaStreamSource(stream);
+            source.connect(this.analyser);
+
+            // Start visualization loop
+            this.animateVisualizer();
+        } catch (error) {
+            console.error('Failed to setup audio visualization:', error);
+        }
+    }
+
+    /**
+     * Phase 4: Animate audio visualizer with real frequency data
+     */
+    animateVisualizer() {
+        if (!this.isRecording || !this.analyser) return;
+
+        const bufferLength = this.analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        this.analyser.getByteFrequencyData(dataArray);
+
+        // Get visualizer bars
+        const bars = this.audioVisualizer.querySelectorAll('.visualizer-bar');
+
+        // Calculate average amplitude for each bar
+        const barCount = bars.length;
+        const samplesPerBar = Math.floor(bufferLength / barCount);
+
+        for (let i = 0; i < barCount; i++) {
+            let sum = 0;
+            for (let j = 0; j < samplesPerBar; j++) {
+                sum += dataArray[i * samplesPerBar + j];
+            }
+            const average = sum / samplesPerBar;
+
+            // Map amplitude (0-255) to height (10-30px)
+            const height = Math.max(10, Math.min(30, (average / 255) * 30));
+            bars[i].style.height = `${height}px`;
+        }
+
+        // Continue animation
+        this.visualizerAnimationId = requestAnimationFrame(() => this.animateVisualizer());
+    }
+
+    /**
+     * Phase 4: Stop audio visualization
+     */
+    stopAudioVisualization() {
+        if (this.visualizerAnimationId) {
+            cancelAnimationFrame(this.visualizerAnimationId);
+            this.visualizerAnimationId = null;
+        }
+
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+
+        this.analyser = null;
+
+        // Reset visualizer bars
+        const bars = this.audioVisualizer.querySelectorAll('.visualizer-bar');
+        bars.forEach(bar => {
+            bar.style.height = '10px';
+        });
     }
 
     /**
@@ -280,6 +448,11 @@ class VoiceAssistant {
                 const data = await response.json();
                 this.conversationId = data.conversationId;
                 console.log('✓ Created conversation:', this.conversationId);
+
+                // Phase 4: Notify conversation manager
+                if (this.conversationManager) {
+                    this.conversationManager.setCurrentConversation(this.conversationId);
+                }
             }
         } catch (error) {
             console.error('Failed to create conversation:', error);
