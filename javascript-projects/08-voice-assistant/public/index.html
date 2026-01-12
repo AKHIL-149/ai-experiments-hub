@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant | AI Experiments Hub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎤 Voice Assistant</h1>
+            <p class="subtitle">Speech-to-text and text-to-speech powered by OpenAI</p>
+        </header>
+
+        <main>
+            <!-- Status Section -->
+            <div class="status-section">
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Ready</span>
+                </div>
+                <button class="btn-icon" id="settingsBtn" title="Settings">⚙️</button>
+            </div>
+
+            <!-- Recording Button -->
+            <div class="recording-section">
+                <button class="btn-record" id="recordBtn">
+                    <div class="btn-icon-large">🎙️</div>
+                    <div class="btn-text">Push to Talk</div>
+                </button>
+                <div class="audio-visualizer" id="audioVisualizer">
+                    <div class="visualizer-bar"></div>
+                    <div class="visualizer-bar"></div>
+                    <div class="visualizer-bar"></div>
+                    <div class="visualizer-bar"></div>
+                    <div class="visualizer-bar"></div>
+                </div>
+            </div>
+
+            <!-- Conversation Display -->
+            <div class="conversation-section">
+                <h3>Conversation</h3>
+                <div class="conversation-box" id="conversationBox">
+                    <div class="message-placeholder">
+                        Click "Push to Talk" to start speaking
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Panel -->
+            <div class="settings-panel hidden" id="settingsPanel">
+                <h3>Settings</h3>
+                <div class="setting-group">
+                    <label for="voiceSelect">Voice:</label>
+                    <select id="voiceSelect">
+                        <option value="alloy">Alloy</option>
+                        <option value="echo">Echo</option>
+                        <option value="fable">Fable</option>
+                        <option value="onyx">Onyx</option>
+                        <option value="nova">Nova</option>
+                        <option value="shimmer">Shimmer</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <label for="speedSelect">Speed:</label>
+                    <select id="speedSelect">
+                        <option value="0.75">0.75x</option>
+                        <option value="1.0" selected>1.0x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                    </select>
+                </div>
+                <button class="btn-secondary" id="closeSettingsBtn">Close</button>
+            </div>
+
+            <!-- Help Section -->
+            <div class="help-section">
+                <details>
+                    <summary>💡 How to use</summary>
+                    <div class="help-content">
+                        <ol>
+                            <li>Click and hold "Push to Talk" button</li>
+                            <li>Speak your question or command</li>
+                            <li>Release button to send audio</li>
+                            <li>Wait for transcription and response</li>
+                        </ol>
+                        <p><strong>Tips:</strong></p>
+                        <ul>
+                            <li>Speak clearly and at normal pace</li>
+                            <li>Minimize background noise</li>
+                            <li>Try natural conversation - ask follow-ups!</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
+        </main>
+
+        <footer>
+            <p>Part of <strong>AI Experiments Hub</strong> | Project 8</p>
+            <div class="footer-links">
+                <a href="/api/health" target="_blank">Health Check</a>
+                <span>•</span>
+                <a href="https://github.com/yourusername/ai-experiments-hub" target="_blank">GitHub</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p class="loading-text" id="loadingText">Processing...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
