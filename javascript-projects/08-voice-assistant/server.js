@@ -7,6 +7,7 @@ require('dotenv').config();
 const OpenAIService = require('./src/OpenAIService');
 const AudioProcessor = require('./src/AudioProcessor');
 const VoiceCommandHandler = require('./src/VoiceCommandHandler');
+const ConversationManager = require('./src/ConversationManager');
 
 // Initialize Express app
 const app = express();
@@ -31,6 +32,7 @@ app.use(express.static('public'));
 let openAIService;
 let audioProcessor;
 let commandHandler;
+let conversationManager;
 
 try {
   openAIService = new OpenAIService(process.env.OPENAI_API_KEY, {
@@ -48,8 +50,15 @@ try {
     path.join(__dirname, 'commands/commands.json')
   );
 
+  conversationManager = new ConversationManager({
+    storageDir: process.env.CONVERSATIONS_DIR || './data/conversations',
+    maxConversationLength: parseInt(process.env.MAX_CONVERSATION_LENGTH) || 50,
+    contextWindow: parseInt(process.env.CONTEXT_WINDOW) || 10
+  });
+
   console.log('✓ Services initialized');
   console.log(`✓ Loaded ${Object.keys(commandHandler.listCommands()).length} voice commands`);
+  console.log(`✓ Conversation manager ready`);
 } catch (error) {
   console.error('Failed to initialize services:', error.message);
   process.exit(1);
@@ -169,7 +178,7 @@ app.post('/api/synthesize', async (req, res) => {
  */
 app.post('/api/command', async (req, res) => {
   try {
-    const { transcript } = req.body;
+    const { transcript, conversationId } = req.body;
 
     if (!transcript) {
       return res.status(400).json({
@@ -178,6 +187,11 @@ app.post('/api/command', async (req, res) => {
     }
 
     console.log(`Processing command: "${transcript}"`);
+
+    // Add user message to conversation
+    if (conversationId) {
+      conversationManager.addMessage(conversationId, 'user', transcript);
+    }
 
     // Parse command using VoiceCommandHandler
     const parsedCommand = await commandHandler.parseCommand(transcript);
@@ -198,25 +212,38 @@ app.post('/api/command', async (req, res) => {
 
       console.log(`✓ Command result: ${result.success ? 'Success' : 'Failed'}`);
     } else {
-      // No command recognized - use AI chat as fallback
-      console.log('ℹ No command recognized, using AI fallback');
+      // No command recognized - use AI chat with conversation context
+      console.log('ℹ No command recognized, using AI fallback with context');
 
       const messages = [
         {
           role: 'system',
           content: 'You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words.'
-        },
-        {
-          role: 'user',
-          content: transcript
         }
       ];
+
+      // Add conversation context if available
+      if (conversationId) {
+        const context = conversationManager.getContext(conversationId);
+        messages.push(...context);
+      } else {
+        // No context, just add current message
+        messages.push({
+          role: 'user',
+          content: transcript
+        });
+      }
 
       const chatResult = await openAIService.generateResponse(messages);
       responseText = chatResult.response;
     }
 
     console.log(`✓ Response: "${responseText.substring(0, 50)}..."`);
+
+    // Add assistant response to conversation
+    if (conversationId) {
+      conversationManager.addMessage(conversationId, 'assistant', responseText);
+    }
 
     // Generate audio response
     const audioResult = await audioProcessor.generateAudioResponse(responseText);
@@ -228,7 +255,8 @@ app.post('/api/command', async (req, res) => {
       command: transcript,
       response: responseText,
       audio: audioResult.audioBuffer.toString('base64'),
-      audioFormat: 'mp3'
+      audioFormat: 'mp3',
+      conversationId: conversationId
     });
   } catch (error) {
     console.error('Command processing error:', error.message);
@@ -266,6 +294,139 @@ app.get('/api/commands', (req, res) => {
 });
 
 /**
+ * Create new conversation
+ */
+app.post('/api/conversations', (req, res) => {
+  try {
+    const { userId } = req.body;
+    const result = conversationManager.createConversation(userId);
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get conversation history
+ */
+app.get('/api/conversations/:id', (req, res) => {
+  try {
+    const conversationId = req.params.id;
+    const limit = parseInt(req.query.limit) || null;
+
+    const history = conversationManager.getHistory(conversationId, limit);
+    const info = conversationManager.getConversationInfo(conversationId);
+
+    if (!info) {
+      return res.status(404).json({
+        error: 'Conversation not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      conversation: info,
+      messages: history
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * List all conversations
+ */
+app.get('/api/conversations', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const conversations = conversationManager.listConversations(limit);
+
+    res.json({
+      success: true,
+      conversations: conversations
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Delete conversation
+ */
+app.delete('/api/conversations/:id', (req, res) => {
+  try {
+    const conversationId = req.params.id;
+    const deleted = conversationManager.deleteConversation(conversationId);
+
+    if (deleted) {
+      res.json({
+        success: true,
+        message: 'Conversation deleted'
+      });
+    } else {
+      res.status(404).json({
+        error: 'Conversation not found'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Clear conversation messages
+ */
+app.post('/api/conversations/:id/clear', (req, res) => {
+  try {
+    const conversationId = req.params.id;
+    const cleared = conversationManager.clearMessages(conversationId);
+
+    if (cleared) {
+      res.json({
+        success: true,
+        message: 'Conversation cleared'
+      });
+    } else {
+      res.status(404).json({
+        error: 'Conversation not found'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get conversation statistics
+ */
+app.get('/api/conversations/stats', (req, res) => {
+  try {
+    const stats = conversationManager.getStats();
+    res.json({
+      success: true,
+      stats: stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
  * Clean up old temp files
  */
 app.post('/api/cleanup', (req, res) => {
@@ -285,10 +446,12 @@ app.post('/api/cleanup', (req, res) => {
   }
 });
 
-// Periodic cleanup of temp files
+// Periodic cleanup of temp files and conversations
 setInterval(() => {
   const cleanupInterval = parseInt(process.env.CLEANUP_INTERVAL_MS) || 3600000;
   audioProcessor.cleanupOldFiles(cleanupInterval);
+  conversationManager.cleanupOldConversations(7 * 24 * 60 * 60 * 1000); // 7 days
+  conversationManager.unloadInactive(30 * 60 * 1000); // 30 minutes
 }, 3600000); // Run every hour
 
 // Error handling middleware

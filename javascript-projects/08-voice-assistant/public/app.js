@@ -24,6 +24,7 @@ class VoiceAssistant {
         this.mediaRecorder = null;
         this.audioChunks = [];
         this.audioStream = null;
+        this.conversationId = null;
 
         // Settings
         this.settings = {
@@ -49,6 +50,9 @@ class VoiceAssistant {
 
         // Check server health
         await this.checkHealth();
+
+        // Create conversation session
+        await this.createConversation();
 
         // Load saved settings
         this.loadSettings();
@@ -258,6 +262,31 @@ class VoiceAssistant {
     }
 
     /**
+     * Create conversation session
+     */
+    async createConversation() {
+        try {
+            const response = await fetch('/api/conversations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: 'default'
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.conversationId = data.conversationId;
+                console.log('✓ Created conversation:', this.conversationId);
+            }
+        } catch (error) {
+            console.error('Failed to create conversation:', error);
+        }
+    }
+
+    /**
      * Get response from assistant
      */
     async getResponse(transcript) {
@@ -267,7 +296,8 @@ class VoiceAssistant {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                transcript: transcript
+                transcript: transcript,
+                conversationId: this.conversationId
             })
         });
 

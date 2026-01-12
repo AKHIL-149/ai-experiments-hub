@@ -12,7 +12,7 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 - ⚡ **Real-time Processing** - Fast audio transcription and synthesis
 - 🎨 **Modern UI** - Clean, responsive interface with visual feedback
 
-### Phase 2: Voice Commands ✅ (Current)
+### Phase 2: Voice Commands ✅
 - 🎯 **Pattern Matching** - Intelligent command recognition with fuzzy matching
 - 🤖 **8 Built-in Commands** - Time, date, jokes, calculations, timers, weather, help, greetings
 - 📝 **Parameterized Commands** - Extract values from voice input (e.g., "timer for 5 minutes")
@@ -20,8 +20,15 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 - 📋 **Extensible Registry** - Easy-to-add custom commands via JSON configuration
 - 🎭 **Natural Language** - Understands variations and natural phrasing
 
+### Phase 3: Conversation Memory ✅ (Current)
+- 🧠 **Context Tracking** - Remembers conversation history across messages
+- 💾 **Persistent Storage** - Conversations saved to disk and survive restarts
+- 🔄 **Session Management** - Automatic conversation creation and management
+- 📊 **Multi-turn Dialogue** - Maintains context for follow-up questions
+- 🗂️ **Conversation API** - Full CRUD operations on conversations
+- 🧹 **Automatic Cleanup** - Old conversations cleaned up periodically
+
 ### Upcoming Features
-- **Phase 3**: Conversation context and memory
 - **Phase 4**: Real-time streaming and audio visualization
 - **Phase 5**: Local model integration (Whisper.cpp)
 
@@ -121,11 +128,12 @@ If a command isn't recognized, the assistant falls back to conversational AI mod
 ├── src/                        # Backend modules
 │   ├── OpenAIService.js        # OpenAI API wrapper
 │   ├── AudioProcessor.js       # Audio coordination
-│   └── VoiceCommandHandler.js  # Command recognition & execution
+│   ├── VoiceCommandHandler.js  # Command recognition & execution
+│   └── ConversationManager.js  # Context & history management
 ├── commands/                   # Voice commands
 │   └── commands.json           # Command registry & patterns
 └── data/                       # Persistent storage
-    ├── conversations/          # Conversation history (Phase 3)
+    ├── conversations/          # Conversation history
     └── audio-cache/            # Temporary audio files
 ```
 
@@ -154,10 +162,10 @@ Returns: Audio stream (audio/mpeg)
 ### Process Voice Command
 ```
 POST /api/command
-Body: { transcript }
-Returns: { understood, commandRecognized, command, response, audio, audioFormat }
+Body: { transcript, conversationId? }
+Returns: { understood, commandRecognized, command, response, audio, audioFormat, conversationId }
 ```
-Processes transcribed text through command handler or AI fallback.
+Processes transcribed text through command handler or AI fallback. Maintains conversation context if conversationId is provided.
 
 ### Get Available Voices
 ```
@@ -171,6 +179,47 @@ GET /api/commands
 Returns: { commands: [{ id, name, description, category, examples }] }
 ```
 Lists all registered voice commands with examples.
+
+### Conversation Management
+
+**Create Conversation**
+```
+POST /api/conversations
+Body: { userId? }
+Returns: { success, conversationId, createdAt }
+```
+
+**Get Conversation History**
+```
+GET /api/conversations/:id
+Query: ?limit=10
+Returns: { success, conversation, messages }
+```
+
+**List All Conversations**
+```
+GET /api/conversations
+Query: ?limit=50
+Returns: { success, conversations }
+```
+
+**Delete Conversation**
+```
+DELETE /api/conversations/:id
+Returns: { success, message }
+```
+
+**Clear Conversation Messages**
+```
+POST /api/conversations/:id/clear
+Returns: { success, message }
+```
+
+**Get Conversation Statistics**
+```
+GET /api/conversations/stats
+Returns: { success, stats }
+```
 
 ## Configuration
 
@@ -258,11 +307,25 @@ ALLOWED_ORIGINS=http://localhost:3000
 - [x] AI fallback for unrecognized commands
 - [x] GET /api/commands endpoint
 
-### Phase 3: Conversation Memory
-- [ ] Context tracking
-- [ ] Multi-turn dialogue
-- [ ] History persistence
-- [ ] Session management
+### Phase 3 Complete ✅
+- [x] Context tracking with configurable window size
+- [x] Multi-turn dialogue with conversation history
+- [x] History persistence to disk (JSON files)
+- [x] Session management and auto-creation
+- [x] Conversation CRUD API endpoints
+- [x] Automatic cleanup of old conversations
+- [x] In-memory caching for active conversations
+
+### Phase 4: Real-time Streaming (Next)
+- [ ] WebSocket integration
+- [ ] Streaming transcription
+- [ ] Push-to-talk and voice activation
+- [ ] Audio waveform visualization
+
+### Phase 5: Local Models (Future)
+- [ ] Whisper.cpp integration
+- [ ] Local TTS engine
+- [ ] Hybrid mode toggle
 
 ## Security Notes
 
