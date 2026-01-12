@@ -1,0 +1,110 @@
+{
+  "time": {
+    "name": "Get Current Time",
+    "patterns": [
+      "what time is it",
+      "what's the time",
+      "tell me the time",
+      "current time",
+      "time now"
+    ],
+    "handler": "getTime",
+    "description": "Returns the current time",
+    "category": "utility"
+  },
+  "date": {
+    "name": "Get Current Date",
+    "patterns": [
+      "what date is it",
+      "what's the date",
+      "tell me the date",
+      "today's date",
+      "what day is it"
+    ],
+    "handler": "getDate",
+    "description": "Returns the current date",
+    "category": "utility"
+  },
+  "joke": {
+    "name": "Tell a Joke",
+    "patterns": [
+      "tell me a joke",
+      "make me laugh",
+      "say something funny",
+      "joke",
+      "funny"
+    ],
+    "handler": "tellJoke",
+    "description": "Tells a random joke",
+    "category": "entertainment"
+  },
+  "calculate": {
+    "name": "Calculate Math Expression",
+    "patterns": [
+      "calculate {expression}",
+      "what is {expression}",
+      "solve {expression}",
+      "compute {expression}",
+      "{num1} plus {num2}",
+      "{num1} minus {num2}",
+      "{num1} times {num2}",
+      "{num1} divided by {num2}"
+    ],
+    "handler": "calculate",
+    "description": "Performs mathematical calculations",
+    "category": "utility"
+  },
+  "timer": {
+    "name": "Set Timer",
+    "patterns": [
+      "set a timer for {duration}",
+      "start a timer for {duration}",
+      "timer {duration}",
+      "countdown {duration}",
+      "remind me in {duration}"
+    ],
+    "handler": "setTimer",
+    "description": "Sets a countdown timer",
+    "category": "utility"
+  },
+  "weather": {
+    "name": "Get Weather",
+    "patterns": [
+      "what's the weather",
+      "weather",
+      "weather forecast",
+      "how's the weather",
+      "is it raining"
+    ],
+    "handler": "getWeather",
+    "description": "Gets current weather information",
+    "category": "information"
+  },
+  "help": {
+    "name": "Show Help",
+    "patterns": [
+      "help",
+      "what can you do",
+      "commands",
+      "show commands",
+      "available commands"
+    ],
+    "handler": "showHelp",
+    "description": "Lists available commands",
+    "category": "system"
+  },
+  "greeting": {
+    "name": "Greeting",
+    "patterns": [
+      "hello",
+      "hi",
+      "hey",
+      "good morning",
+      "good afternoon",
+      "good evening"
+    ],
+    "handler": "greeting",
+    "description": "Responds to greetings",
+    "category": "conversation"
+  }
+}

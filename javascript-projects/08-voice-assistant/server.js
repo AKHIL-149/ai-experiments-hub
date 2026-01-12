@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const OpenAIService = require('./src/OpenAIService');
 const AudioProcessor = require('./src/AudioProcessor');
+const VoiceCommandHandler = require('./src/VoiceCommandHandler');
 
 // Initialize Express app
 const app = express();
@@ -29,6 +30,7 @@ app.use(express.static('public'));
 // Initialize services
 let openAIService;
 let audioProcessor;
+let commandHandler;
 
 try {
   openAIService = new OpenAIService(process.env.OPENAI_API_KEY, {
@@ -42,7 +44,12 @@ try {
     maxAudioSizeMB: parseInt(process.env.MAX_AUDIO_SIZE_MB) || 25
   });
 
-  console.log('✓ OpenAI service initialized');
+  commandHandler = new VoiceCommandHandler(
+    path.join(__dirname, 'commands/commands.json')
+  );
+
+  console.log('✓ Services initialized');
+  console.log(`✓ Loaded ${Object.keys(commandHandler.listCommands()).length} voice commands`);
 } catch (error) {
   console.error('Failed to initialize services:', error.message);
   process.exit(1);
@@ -158,11 +165,11 @@ app.post('/api/synthesize', async (req, res) => {
 });
 
 /**
- * Process voice command (combines transcribe + chat + TTS)
+ * Process voice command (combines transcribe + command + TTS)
  */
 app.post('/api/command', async (req, res) => {
   try {
-    const { transcript, conversationId } = req.body;
+    const { transcript } = req.body;
 
     if (!transcript) {
       return res.status(400).json({
@@ -172,22 +179,42 @@ app.post('/api/command', async (req, res) => {
 
     console.log(`Processing command: "${transcript}"`);
 
-    // For Phase 1, use simple chat completion
-    // In Phase 2, this will use VoiceCommandHandler
-    const messages = [
-      {
-        role: 'system',
-        content: 'You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words.'
-      },
-      {
-        role: 'user',
-        content: transcript
-      }
-    ];
+    // Parse command using VoiceCommandHandler
+    const parsedCommand = await commandHandler.parseCommand(transcript);
 
-    // Generate text response
-    const chatResult = await openAIService.generateResponse(messages);
-    const responseText = chatResult.response;
+    let responseText;
+    let commandRecognized = false;
+
+    if (parsedCommand.command && parsedCommand.confidence >= 0.7) {
+      // Execute recognized command
+      console.log(`✓ Recognized command: ${parsedCommand.name} (${(parsedCommand.confidence * 100).toFixed(0)}% confidence)`);
+
+      const result = await commandHandler.executeCommand(parsedCommand, {
+        originalTranscript: transcript
+      });
+
+      responseText = result.response;
+      commandRecognized = true;
+
+      console.log(`✓ Command result: ${result.success ? 'Success' : 'Failed'}`);
+    } else {
+      // No command recognized - use AI chat as fallback
+      console.log('ℹ No command recognized, using AI fallback');
+
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words.'
+        },
+        {
+          role: 'user',
+          content: transcript
+        }
+      ];
+
+      const chatResult = await openAIService.generateResponse(messages);
+      responseText = chatResult.response;
+    }
 
     console.log(`✓ Response: "${responseText.substring(0, 50)}..."`);
 
@@ -197,6 +224,7 @@ app.post('/api/command', async (req, res) => {
     // Return both text and audio
     res.json({
       understood: true,
+      commandRecognized: commandRecognized,
       command: transcript,
       response: responseText,
       audio: audioResult.audioBuffer.toString('base64'),
@@ -217,6 +245,24 @@ app.post('/api/command', async (req, res) => {
 app.get('/api/voices', (req, res) => {
   const voices = openAIService.getAvailableVoices();
   res.json({ voices });
+});
+
+/**
+ * Get available voice commands
+ */
+app.get('/api/commands', (req, res) => {
+  const commands = commandHandler.listCommands();
+
+  // Format commands for frontend display
+  const formattedCommands = Object.entries(commands).map(([id, cmd]) => ({
+    id: id,
+    name: cmd.name,
+    description: cmd.description,
+    category: cmd.category,
+    examples: cmd.patterns.slice(0, 2) // Show first 2 patterns as examples
+  }));
+
+  res.json({ commands: formattedCommands });
 });
 
 /**

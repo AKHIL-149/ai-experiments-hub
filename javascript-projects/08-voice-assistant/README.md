@@ -4,7 +4,7 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 
 ## Features
 
-### Phase 1: Core MVP (Current)
+### Phase 1: Core MVP ✅
 - 🎤 **Voice Recording** - Browser-based audio capture with push-to-talk
 - 🗣️ **Speech-to-Text** - OpenAI Whisper API for accurate transcription
 - 🔊 **Text-to-Speech** - Natural voice responses with multiple voice options
@@ -12,8 +12,15 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 - ⚡ **Real-time Processing** - Fast audio transcription and synthesis
 - 🎨 **Modern UI** - Clean, responsive interface with visual feedback
 
+### Phase 2: Voice Commands ✅ (Current)
+- 🎯 **Pattern Matching** - Intelligent command recognition with fuzzy matching
+- 🤖 **8 Built-in Commands** - Time, date, jokes, calculations, timers, weather, help, greetings
+- 📝 **Parameterized Commands** - Extract values from voice input (e.g., "timer for 5 minutes")
+- 🔄 **AI Fallback** - Seamless fallback to conversational AI for unrecognized commands
+- 📋 **Extensible Registry** - Easy-to-add custom commands via JSON configuration
+- 🎭 **Natural Language** - Understands variations and natural phrasing
+
 ### Upcoming Features
-- **Phase 2**: Voice command processing with custom commands
 - **Phase 3**: Conversation context and memory
 - **Phase 4**: Real-time streaming and audio visualization
 - **Phase 5**: Local model integration (Whisper.cpp)
@@ -71,6 +78,34 @@ Click the ⚙️ icon to customize:
 - **Voice**: Choose from 6 different voices (alloy, echo, fable, onyx, nova, shimmer)
 - **Speed**: Adjust playback speed (0.75x - 1.5x)
 
+### Voice Commands
+
+The assistant recognizes these built-in commands (speak naturally - variations are understood):
+
+**Utility Commands:**
+- 🕐 "What time is it?" - Get current time
+- 📅 "What's the date?" - Get current date
+- 🧮 "Calculate 25 times 4" - Perform math calculations
+- ⏲️ "Set a timer for 5 minutes" - Start countdown timer
+
+**Information:**
+- 🌤️ "What's the weather?" - Get weather info (placeholder - API integration needed)
+
+**Entertainment:**
+- 😄 "Tell me a joke" - Random joke
+
+**System:**
+- ❓ "Help" or "What can you do?" - List available commands
+- 👋 "Hello" or "Hi" - Greeting response
+
+**Natural Language Examples:**
+- "What is 50 plus 32?"
+- "Timer for 10 minutes"
+- "Calculate 100 divided by 4"
+- "Good morning"
+
+If a command isn't recognized, the assistant falls back to conversational AI mode.
+
 ## Project Structure
 
 ```
@@ -85,8 +120,10 @@ Click the ⚙️ icon to customize:
 │   └── app.js                  # Frontend logic
 ├── src/                        # Backend modules
 │   ├── OpenAIService.js        # OpenAI API wrapper
-│   └── AudioProcessor.js       # Audio coordination
-├── commands/                   # Voice commands (Phase 2)
+│   ├── AudioProcessor.js       # Audio coordination
+│   └── VoiceCommandHandler.js  # Command recognition & execution
+├── commands/                   # Voice commands
+│   └── commands.json           # Command registry & patterns
 └── data/                       # Persistent storage
     ├── conversations/          # Conversation history (Phase 3)
     └── audio-cache/            # Temporary audio files
@@ -118,14 +155,22 @@ Returns: Audio stream (audio/mpeg)
 ```
 POST /api/command
 Body: { transcript }
-Returns: { understood, command, response, audio, audioFormat }
+Returns: { understood, commandRecognized, command, response, audio, audioFormat }
 ```
+Processes transcribed text through command handler or AI fallback.
 
 ### Get Available Voices
 ```
 GET /api/voices
 Returns: { voices: [...] }
 ```
+
+### Get Available Commands
+```
+GET /api/commands
+Returns: { commands: [{ id, name, description, category, examples }] }
+```
+Lists all registered voice commands with examples.
 
 ## Configuration
 
@@ -205,11 +250,13 @@ ALLOWED_ORIGINS=http://localhost:3000
 - [x] Web interface
 - [x] Settings management
 
-### Phase 2: Voice Commands (Next)
-- [ ] Command pattern matching
-- [ ] Intent recognition
-- [ ] Custom command handlers
-- [ ] Command registry system
+### Phase 2 Complete ✅
+- [x] Command pattern matching with fuzzy logic
+- [x] Intent recognition and parameter extraction
+- [x] 8 custom command handlers
+- [x] Command registry system (JSON)
+- [x] AI fallback for unrecognized commands
+- [x] GET /api/commands endpoint
 
 ### Phase 3: Conversation Memory
 - [ ] Context tracking
