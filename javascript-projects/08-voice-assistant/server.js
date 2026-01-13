@@ -8,6 +8,7 @@ const OpenAIService = require('./src/OpenAIService');
 const AudioProcessor = require('./src/AudioProcessor');
 const VoiceCommandHandler = require('./src/VoiceCommandHandler');
 const ConversationManager = require('./src/ConversationManager');
+const ServiceManager = require('./src/ServiceManager');
 
 // Initialize Express app
 const app = express();
@@ -29,19 +30,28 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // Initialize services
-let openAIService;
+let serviceManager;
 let audioProcessor;
 let commandHandler;
 let conversationManager;
 
 try {
-  openAIService = new OpenAIService(process.env.OPENAI_API_KEY, {
+  // Phase 5: Initialize ServiceManager for cloud/local/hybrid mode
+  serviceManager = new ServiceManager({
+    mode: process.env.SERVICE_MODE || 'cloud',
+    openaiApiKey: process.env.OPENAI_API_KEY,
     whisperModel: process.env.WHISPER_MODEL || 'whisper-1',
     ttsModel: process.env.TTS_MODEL || 'tts-1',
-    ttsVoice: process.env.TTS_VOICE || 'alloy'
+    ttsVoice: process.env.TTS_VOICE || 'alloy',
+    whisperPath: process.env.WHISPER_CPP_PATH || 'whisper',
+    whisperModelPath: process.env.WHISPER_MODEL_PATH || './models/ggml-base.en.bin',
+    whisperThreads: parseInt(process.env.WHISPER_THREADS) || 4,
+    ttsEngine: process.env.TTS_ENGINE || 'espeak',
+    ttsSpeed: parseInt(process.env.TTS_SPEED) || 175,
+    fallbackToCloud: process.env.FALLBACK_TO_CLOUD !== 'false'
   });
 
-  audioProcessor = new AudioProcessor(openAIService, {
+  audioProcessor = new AudioProcessor(serviceManager, {
     tempDir: process.env.AUDIO_TEMP_DIR || './data/audio-cache',
     maxAudioSizeMB: parseInt(process.env.MAX_AUDIO_SIZE_MB) || 25
   });
@@ -57,6 +67,7 @@ try {
   });
 
   console.log('✓ Services initialized');
+  console.log(`✓ Service mode: ${serviceManager.getMode()}`);
   console.log(`✓ Loaded ${Object.keys(commandHandler.listCommands()).length} voice commands`);
   console.log(`✓ Conversation manager ready`);
 } catch (error) {
@@ -78,12 +89,13 @@ app.get('/', (req, res) => {
  */
 app.get('/api/health', async (req, res) => {
   try {
-    const openaiConnected = await openAIService.testConnection();
+    const serviceStatus = serviceManager.getStatus();
     const tempStats = audioProcessor.getTempDirStats();
 
     res.json({
       status: 'ok',
-      openai: openaiConnected ? 'connected' : 'disconnected',
+      mode: serviceStatus.mode,
+      services: serviceStatus,
       timestamp: new Date().toISOString(),
       tempCache: tempStats
     });
@@ -234,7 +246,7 @@ app.post('/api/command', async (req, res) => {
         });
       }
 
-      const chatResult = await openAIService.generateResponse(messages);
+      const chatResult = await serviceManager.generateResponse(messages);
       responseText = chatResult.response;
     }
 
@@ -271,7 +283,7 @@ app.post('/api/command', async (req, res) => {
  * Get available TTS voices
  */
 app.get('/api/voices', (req, res) => {
-  const voices = openAIService.getAvailableVoices();
+  const voices = serviceManager.getAvailableVoices();
   res.json({ voices });
 });
 
@@ -418,6 +430,50 @@ app.get('/api/conversations/stats', (req, res) => {
     res.json({
       success: true,
       stats: stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Phase 5: Get service mode and status
+ */
+app.get('/api/service/status', (req, res) => {
+  try {
+    const status = serviceManager.getStatus();
+    res.json({
+      success: true,
+      ...status
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Phase 5: Set service mode
+ */
+app.post('/api/service/mode', (req, res) => {
+  try {
+    const { mode } = req.body;
+
+    if (!mode || !['cloud', 'local', 'hybrid'].includes(mode)) {
+      return res.status(400).json({
+        error: 'Invalid mode. Use: cloud, local, or hybrid'
+      });
+    }
+
+    serviceManager.setMode(mode);
+
+    res.json({
+      success: true,
+      mode: serviceManager.getMode(),
+      status: serviceManager.getStatus()
     });
   } catch (error) {
     res.status(500).json({

@@ -18,6 +18,7 @@ class VoiceAssistant {
         this.closeSettingsBtn = document.getElementById('closeSettingsBtn');
         this.voiceSelect = document.getElementById('voiceSelect');
         this.speedSelect = document.getElementById('speedSelect');
+        this.serviceModeSelect = document.getElementById('serviceModeSelect');
 
         // State
         this.isRecording = false;
@@ -118,6 +119,13 @@ class VoiceAssistant {
             this.saveSettings();
         });
 
+        // Phase 5: Service mode
+        if (this.serviceModeSelect) {
+            this.serviceModeSelect.addEventListener('change', (e) => {
+                this.changeServiceMode(e.target.value);
+            });
+        }
+
         // Phase 4: Keyboard shortcuts
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
         document.addEventListener('keyup', (e) => this.handleKeyUp(e));
@@ -185,14 +193,92 @@ class VoiceAssistant {
             const response = await fetch('/api/health');
             const data = await response.json();
 
-            if (data.status === 'ok' && data.openai === 'connected') {
+            if (data.status === 'ok') {
                 this.updateStatus('Ready', 'ready');
+                // Phase 5: Update service status UI
+                this.updateServiceStatus(data.services);
             } else {
                 this.updateStatus('Server issue', 'error');
             }
         } catch (error) {
             console.error('Health check failed:', error);
             this.updateStatus('Disconnected', 'error');
+        }
+    }
+
+    /**
+     * Phase 5: Update service status display
+     */
+    updateServiceStatus(services) {
+        if (!services) return;
+
+        // Update cloud status
+        const cloudBadge = document.getElementById('cloudStatus');
+        if (cloudBadge) {
+            if (services.cloud && services.cloud.available) {
+                cloudBadge.textContent = '✓ Available';
+                cloudBadge.className = 'status-badge status-ok';
+            } else {
+                cloudBadge.textContent = '✗ Unavailable';
+                cloudBadge.className = 'status-badge status-error';
+            }
+        }
+
+        // Update local Whisper status
+        const whisperBadge = document.getElementById('localWhisperStatus');
+        if (whisperBadge) {
+            if (services.local && services.local.whisper && services.local.whisper.available) {
+                whisperBadge.textContent = '✓ Available';
+                whisperBadge.className = 'status-badge status-ok';
+            } else {
+                whisperBadge.textContent = '✗ Unavailable';
+                whisperBadge.className = 'status-badge status-error';
+            }
+        }
+
+        // Update local TTS status
+        const ttsBadge = document.getElementById('localTTSStatus');
+        if (ttsBadge) {
+            if (services.local && services.local.tts && services.local.tts.available) {
+                ttsBadge.textContent = '✓ Available';
+                ttsBadge.className = 'status-badge status-ok';
+            } else {
+                ttsBadge.textContent = '✗ Unavailable';
+                ttsBadge.className = 'status-badge status-error';
+            }
+        }
+
+        // Update service mode selector
+        if (this.serviceModeSelect && services.mode) {
+            this.serviceModeSelect.value = services.mode;
+        }
+    }
+
+    /**
+     * Phase 5: Change service mode
+     */
+    async changeServiceMode(mode) {
+        try {
+            const response = await fetch('/api/service/mode', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ mode })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`✓ Service mode changed to: ${data.mode}`);
+                this.updateServiceStatus(data.status);
+                this.updateStatus(`Mode: ${mode}`, 'ready');
+                setTimeout(() => this.updateStatus('Ready', 'ready'), 2000);
+            } else {
+                throw new Error('Failed to change service mode');
+            }
+        } catch (error) {
+            console.error('Error changing service mode:', error);
+            this.showError('Failed to change service mode: ' + error.message);
         }
     }
 

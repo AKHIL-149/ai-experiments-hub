@@ -659,6 +659,62 @@ kbd {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+/* Phase 5: Service Status Display */
+.service-status {
+    margin-top: 20px;
+    padding: 15px;
+    background: var(--bg-color);
+    border-radius: 8px;
+}
+
+.service-status h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.status-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.status-items .status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-items .status-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.status-badge {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.status-badge.status-ok {
+    background: rgba(82, 196, 26, 0.1);
+    color: var(--success-color);
+}
+
+.status-badge.status-error {
+    background: rgba(245, 34, 45, 0.1);
+    color: var(--error-color);
+}
+
+.setting-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* Utility Classes */
 .hidden {
     display: none !important;

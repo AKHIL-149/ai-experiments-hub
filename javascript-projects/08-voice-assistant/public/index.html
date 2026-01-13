@@ -54,6 +54,18 @@
             <!-- Settings Panel -->
             <div class="settings-panel hidden" id="settingsPanel">
                 <h3>Settings</h3>
+
+                <!-- Phase 5: Service Mode Selection -->
+                <div class="setting-group">
+                    <label for="serviceModeSelect">Service Mode:</label>
+                    <select id="serviceModeSelect">
+                        <option value="cloud">Cloud (OpenAI)</option>
+                        <option value="local">Local (Whisper.cpp + espeak)</option>
+                        <option value="hybrid">Hybrid (Local with Cloud fallback)</option>
+                    </select>
+                    <small class="setting-hint">Requires local models for local/hybrid modes</small>
+                </div>
+
                 <div class="setting-group">
                     <label for="voiceSelect">Voice:</label>
                     <select id="voiceSelect">
@@ -74,6 +86,26 @@
                         <option value="1.5">1.5x</option>
                     </select>
                 </div>
+
+                <!-- Phase 5: Service Status Display -->
+                <div class="service-status" id="serviceStatus">
+                    <h4>Service Status</h4>
+                    <div class="status-items">
+                        <div class="status-item">
+                            <span class="status-label">Cloud:</span>
+                            <span class="status-badge" id="cloudStatus">...</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Local Whisper:</span>
+                            <span class="status-badge" id="localWhisperStatus">...</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Local TTS:</span>
+                            <span class="status-badge" id="localTTSStatus">...</span>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn-secondary" id="closeSettingsBtn">Close</button>
             </div>
 

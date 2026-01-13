@@ -28,7 +28,7 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 - 🗂️ **Conversation API** - Full CRUD operations on conversations
 - 🧹 **Automatic Cleanup** - Old conversations cleaned up periodically
 
-### Phase 4: Enhanced UX ✅ (Current)
+### Phase 4: Enhanced UX ✅
 - 📊 **Real-time Visualization** - Live audio frequency visualization using Web Audio API
 - ⌨️ **Keyboard Shortcuts** - Spacebar for push-to-talk, Ctrl+H for conversation history
 - 💬 **Conversation Manager** - Visual UI to browse, load, and delete conversations
@@ -36,8 +36,13 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 - 🎯 **Active Indicators** - Visual feedback for current conversation
 - 🔄 **Quick Switching** - Seamlessly switch between conversations
 
-### Upcoming Features
-- **Phase 5**: Local model integration (Whisper.cpp)
+### Phase 5: Local Models ✅ (Current)
+- 🏠 **Local STT** - Offline speech-to-text with Whisper.cpp
+- 🔊 **Local TTS** - Offline text-to-speech with espeak/piper/festival
+- 🔀 **Hybrid Mode** - Smart fallback between local and cloud services
+- 🎛️ **Mode Switching** - Runtime toggle between cloud, local, and hybrid modes
+- 📊 **Service Status** - Real-time display of available services
+- 💾 **No API Costs** - Run completely offline with local models
 
 ## Quick Start
 
@@ -119,6 +124,83 @@ The assistant recognizes these built-in commands (speak naturally - variations a
 - "Good morning"
 
 If a command isn't recognized, the assistant falls back to conversational AI mode.
+
+## Phase 5: Local Model Setup
+
+### Cloud Mode (Default)
+Works out of the box with OpenAI API key. No additional setup required.
+
+### Local Mode Setup
+
+**1. Install Whisper.cpp (for STT)**
+
+```bash
+# Clone whisper.cpp
+git clone https://github.com/ggerganov/whisper.cpp
+cd whisper.cpp
+
+# Build
+make
+
+# Download a model (base.en recommended for balance of speed/accuracy)
+bash ./models/download-ggml-model.sh base.en
+
+# Copy to your project
+cp main /path/to/08-voice-assistant/whisper
+cp models/ggml-base.en.bin /path/to/08-voice-assistant/models/
+```
+
+**2. Install Local TTS**
+
+**Option A: espeak (Recommended - lightweight)**
+```bash
+# Linux
+sudo apt-get install espeak
+
+# macOS
+brew install espeak
+
+# Test
+espeak "Hello world"
+```
+
+**Option B: Piper (Better quality)**
+```bash
+# Download from https://github.com/rhasspy/piper/releases
+wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_x86_64.tar.gz
+tar -xzf piper_linux_x86_64.tar.gz
+
+# Download a voice model
+wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+```
+
+**Option C: Festival**
+```bash
+# Linux
+sudo apt-get install festival
+
+# macOS
+brew install festival
+```
+
+**3. Update .env**
+```bash
+SERVICE_MODE=local  # or 'hybrid' for automatic fallback
+WHISPER_CPP_PATH=/path/to/whisper
+WHISPER_MODEL_PATH=./models/ggml-base.en.bin
+TTS_ENGINE=espeak
+```
+
+### Hybrid Mode (Recommended)
+Best of both worlds - uses local models when available, falls back to cloud if needed:
+
+```bash
+SERVICE_MODE=hybrid
+FALLBACK_TO_CLOUD=true
+```
+
+### Switching Modes at Runtime
+Use the settings panel (⚙️) in the UI to switch between cloud, local, and hybrid modes without restarting the server.
 
 ## Project Structure
 
