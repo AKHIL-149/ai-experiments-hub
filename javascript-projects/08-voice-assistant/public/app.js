@@ -19,6 +19,9 @@ class VoiceAssistant {
         this.voiceSelect = document.getElementById('voiceSelect');
         this.speedSelect = document.getElementById('speedSelect');
         this.serviceModeSelect = document.getElementById('serviceModeSelect');
+        this.handsfreeToggle = document.getElementById('handsfreeToggle');
+        this.sensitivitySlider = document.getElementById('sensitivitySlider');
+        this.sensitivityValue = document.getElementById('sensitivityValue');
 
         // State
         this.isRecording = false;
@@ -35,10 +38,17 @@ class VoiceAssistant {
         // Phase 4: Conversation manager
         this.conversationManager = null;
 
+        // Phase 6: Voice Activation Detection
+        this.vad = null;
+        this.isHandsfreeMode = false;
+        this.vadStream = null;
+
         // Settings
         this.settings = {
             voice: 'alloy',
-            speed: 1.0
+            speed: 1.0,
+            handsfree: false,
+            vadSensitivity: 0.3
         };
 
         this.init();
@@ -81,20 +91,25 @@ class VoiceAssistant {
      */
     setupEventListeners() {
         // Recording button (mousedown/mouseup for push-to-talk)
-        this.recordBtn.addEventListener('mousedown', () => this.startRecording());
-        this.recordBtn.addEventListener('mouseup', () => this.stopRecording());
+        // Phase 6: Disable push-to-talk when in hands-free mode
+        this.recordBtn.addEventListener('mousedown', () => {
+            if (!this.isHandsfreeMode) this.startRecording();
+        });
+        this.recordBtn.addEventListener('mouseup', () => {
+            if (!this.isHandsfreeMode && this.isRecording) this.stopRecording();
+        });
         this.recordBtn.addEventListener('mouseleave', () => {
-            if (this.isRecording) this.stopRecording();
+            if (!this.isHandsfreeMode && this.isRecording) this.stopRecording();
         });
 
         // Touch support for mobile
         this.recordBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            this.startRecording();
+            if (!this.isHandsfreeMode) this.startRecording();
         });
         this.recordBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
-            this.stopRecording();
+            if (!this.isHandsfreeMode && this.isRecording) this.stopRecording();
         });
 
         // Phase 4: Conversations button
@@ -123,6 +138,26 @@ class VoiceAssistant {
         if (this.serviceModeSelect) {
             this.serviceModeSelect.addEventListener('change', (e) => {
                 this.changeServiceMode(e.target.value);
+            });
+        }
+
+        // Phase 6: Hands-free mode
+        if (this.handsfreeToggle) {
+            this.handsfreeToggle.addEventListener('change', (e) => {
+                this.toggleHandsfreeMode(e.target.checked);
+            });
+        }
+
+        // Phase 6: VAD sensitivity
+        if (this.sensitivitySlider) {
+            this.sensitivitySlider.addEventListener('input', (e) => {
+                const sensitivity = parseFloat(e.target.value);
+                this.settings.vadSensitivity = sensitivity;
+                this.sensitivityValue.textContent = `${Math.round(sensitivity * 100)}%`;
+                if (this.vad) {
+                    this.vad.setSensitivity(sensitivity);
+                }
+                this.saveSettings();
             });
         }
 
@@ -157,8 +192,8 @@ class VoiceAssistant {
      * Phase 4: Handle keyboard shortcuts
      */
     handleKeyDown(e) {
-        // Spacebar for push-to-talk (when not in input field)
-        if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT') {
+        // Spacebar for push-to-talk (when not in input field and not in hands-free mode)
+        if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT' && !this.isHandsfreeMode) {
             e.preventDefault();
             if (!this.isRecording && !this.loadingOverlay.classList.contains('hidden')) {
                 return; // Don't start recording while processing
@@ -179,7 +214,8 @@ class VoiceAssistant {
      * Phase 4: Handle keyboard release
      */
     handleKeyUp(e) {
-        if (e.code === 'Space' && this.isRecording) {
+        // Phase 6: Don't stop recording on spacebar if in hands-free mode
+        if (e.code === 'Space' && this.isRecording && !this.isHandsfreeMode) {
             e.preventDefault();
             this.stopRecording();
         }
@@ -280,6 +316,105 @@ class VoiceAssistant {
             console.error('Error changing service mode:', error);
             this.showError('Failed to change service mode: ' + error.message);
         }
+    }
+
+    /**
+     * Phase 6: Toggle hands-free mode
+     */
+    async toggleHandsfreeMode(enabled) {
+        this.isHandsfreeMode = enabled;
+        this.settings.handsfree = enabled;
+        this.saveSettings();
+
+        if (enabled) {
+            try {
+                // Request microphone access for VAD
+                this.vadStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 16000
+                    }
+                });
+
+                // Initialize VAD
+                if (!this.vad) {
+                    this.vad = new VoiceActivationDetector({
+                        sensitivity: this.settings.vadSensitivity,
+                        minSpeechDuration: 300,
+                        silenceDuration: 1000,
+                        onSpeechStart: () => this.handleVADSpeechStart(),
+                        onSpeechEnd: () => this.handleVADSpeechEnd(),
+                        onVolumeChange: (volume) => this.handleVADVolumeChange(volume)
+                    });
+                }
+
+                await this.vad.initialize(this.vadStream);
+                this.vad.start();
+
+                // Update UI
+                this.updateStatus('Hands-free active', 'ready');
+                this.recordBtn.querySelector('.btn-text').textContent = 'Speak Anytime';
+                this.recordBtn.classList.add('handsfree-mode');
+                this.audioVisualizer.classList.add('active');
+
+                console.log('✓ Hands-free mode enabled');
+            } catch (error) {
+                console.error('Failed to enable hands-free mode:', error);
+                this.showError('Failed to enable hands-free mode: ' + error.message);
+                this.handsfreeToggle.checked = false;
+                this.isHandsfreeMode = false;
+            }
+        } else {
+            // Disable hands-free mode
+            if (this.vad) {
+                this.vad.stop();
+            }
+
+            if (this.vadStream) {
+                this.vadStream.getTracks().forEach(track => track.stop());
+                this.vadStream = null;
+            }
+
+            // Update UI
+            this.updateStatus('Ready', 'ready');
+            this.recordBtn.querySelector('.btn-text').textContent = 'Push to Talk';
+            this.recordBtn.classList.remove('handsfree-mode');
+            this.audioVisualizer.classList.remove('active');
+
+            console.log('✓ Hands-free mode disabled');
+        }
+    }
+
+    /**
+     * Phase 6: Handle VAD speech start
+     */
+    handleVADSpeechStart() {
+        console.log('VAD: Speech detected, starting recording');
+        this.startRecording();
+    }
+
+    /**
+     * Phase 6: Handle VAD speech end
+     */
+    handleVADSpeechEnd() {
+        console.log('VAD: Speech ended, stopping recording');
+        this.stopRecording();
+    }
+
+    /**
+     * Phase 6: Handle VAD volume change (for visualization)
+     */
+    handleVADVolumeChange(volume) {
+        if (!this.isHandsfreeMode || !this.audioVisualizer) return;
+
+        // Update visualizer to show VAD volume
+        const bars = this.audioVisualizer.querySelectorAll('.visualizer-bar');
+        bars.forEach((bar, index) => {
+            const multiplier = (index + 1) * 0.8;
+            const height = Math.min(volume * multiplier * 100, 100);
+            bar.style.height = `${height}%`;
+        });
     }
 
     /**
@@ -699,6 +834,15 @@ class VoiceAssistant {
                 this.settings = JSON.parse(saved);
                 this.voiceSelect.value = this.settings.voice;
                 this.speedSelect.value = this.settings.speed;
+
+                // Phase 6: Load hands-free settings
+                if (this.handsfreeToggle && this.settings.handsfree !== undefined) {
+                    this.handsfreeToggle.checked = this.settings.handsfree;
+                }
+                if (this.sensitivitySlider && this.settings.vadSensitivity !== undefined) {
+                    this.sensitivitySlider.value = this.settings.vadSensitivity;
+                    this.sensitivityValue.textContent = `${Math.round(this.settings.vadSensitivity * 100)}%`;
+                }
             } catch (error) {
                 console.error('Failed to load settings:', error);
             }

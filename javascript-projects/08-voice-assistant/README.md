@@ -36,13 +36,21 @@ AI-powered voice assistant with speech-to-text and text-to-speech capabilities u
 - 🎯 **Active Indicators** - Visual feedback for current conversation
 - 🔄 **Quick Switching** - Seamlessly switch between conversations
 
-### Phase 5: Local Models ✅ (Current)
+### Phase 5: Local Models ✅
 - 🏠 **Local STT** - Offline speech-to-text with Whisper.cpp
 - 🔊 **Local TTS** - Offline text-to-speech with espeak/piper/festival
 - 🔀 **Hybrid Mode** - Smart fallback between local and cloud services
 - 🎛️ **Mode Switching** - Runtime toggle between cloud, local, and hybrid modes
 - 📊 **Service Status** - Real-time display of available services
 - 💾 **No API Costs** - Run completely offline with local models
+
+### Phase 6: Voice Activation Detection ✅ (Current)
+- 🎙️ **Hands-free Mode** - Automatic recording without push-to-talk
+- 🔊 **Voice Activity Detection** - Smart detection of speech vs silence
+- 🎚️ **Adjustable Sensitivity** - Fine-tune detection threshold for your environment
+- 👁️ **Visual Feedback** - Real-time visualization of voice activity levels
+- ⚡ **Automatic Start/Stop** - Recording starts when you speak, stops after silence
+- 🎨 **Mode Indicators** - Clear visual distinction between push-to-talk and hands-free
 
 ## Quick Start
 
@@ -202,6 +210,38 @@ FALLBACK_TO_CLOUD=true
 ### Switching Modes at Runtime
 Use the settings panel (⚙️) in the UI to switch between cloud, local, and hybrid modes without restarting the server.
 
+## Phase 6: Hands-free Mode
+
+### Using Voice Activation Detection
+
+**What is Hands-free Mode?**
+Instead of holding a button to talk (push-to-talk), hands-free mode automatically detects when you start speaking and stops recording after you finish.
+
+**How to Enable:**
+
+1. **Open Settings** - Click the ⚙️ icon
+2. **Enable Hands-free Mode** - Check the "Hands-free Mode" checkbox
+3. **Adjust Sensitivity** - Use the slider to set detection threshold
+   - Lower = more sensitive (picks up quieter sounds, may trigger on background noise)
+   - Higher = less sensitive (requires louder speech, ignores background noise)
+4. **Start Speaking** - Just talk naturally, recording starts automatically
+5. **Stop Speaking** - Pause for 1 second, recording stops and processes
+
+**Visual Feedback:**
+- Button changes to purple gradient when hands-free is active
+- Visualizer bars show real-time voice activity level
+- Button text changes to "Speak Anytime"
+
+**Sensitivity Tips:**
+- **Quiet environment**: 20-40% sensitivity works well
+- **Noisy environment**: 50-70% sensitivity to avoid false triggers
+- **Very noisy**: Consider using push-to-talk mode instead
+
+**Troubleshooting:**
+- **Not detecting speech**: Lower sensitivity
+- **Triggering on background noise**: Raise sensitivity
+- **Recording stops too early**: System detects 1 second of silence - speak continuously
+
 ## Project Structure
 
 ```
@@ -214,13 +254,16 @@ Use the settings panel (⚙️) in the UI to switch between cloud, local, and hy
 │   ├── index.html                  # UI
 │   ├── styles.css                  # Styling
 │   ├── app.js                      # Main frontend logic
+│   ├── voice-activation-detector.js # Voice activity detection (Phase 6)
 │   └── conversation-manager-ui.js  # Conversation manager component
 ├── src/                            # Backend modules
+│   ├── ServiceManager.js           # Service mode manager (Phase 5)
 │   ├── OpenAIService.js            # OpenAI API wrapper
+│   ├── LocalWhisperService.js      # Local Whisper.cpp wrapper (Phase 5)
+│   ├── LocalTTSService.js          # Local TTS wrapper (Phase 5)
 │   ├── AudioProcessor.js           # Audio coordination
 │   ├── VoiceCommandHandler.js      # Command recognition & execution
-│   ├── ConversationManager.js      # Context & history management
-│   └── VoiceActivationDetector.js  # Voice activity detection (Phase 4)
+│   └── ConversationManager.js      # Context & history management
 ├── commands/                       # Voice commands
 │   └── commands.json               # Command registry & patterns
 └── data/                           # Persistent storage
@@ -416,11 +459,20 @@ ALLOWED_ORIGINS=http://localhost:3000
 - [x] Conversation statistics display
 - [x] Delete and load conversation actions
 
-### Phase 5: Local Models (Future)
-- [ ] Whisper.cpp integration
-- [ ] Local TTS engine
-- [ ] Hybrid mode toggle
-- [ ] Voice activation detection (hands-free mode)
+### Phase 5 Complete ✅
+- [x] Whisper.cpp integration
+- [x] Local TTS engines (espeak, piper, festival)
+- [x] ServiceManager for cloud/local/hybrid switching
+- [x] Runtime mode toggle API
+- [x] Service status display
+
+### Phase 6 Complete ✅
+- [x] Voice activation detection (VAD) using Web Audio API
+- [x] Hands-free mode toggle
+- [x] Adjustable sensitivity slider
+- [x] Real-time volume visualization in hands-free mode
+- [x] Automatic recording start/stop based on speech detection
+- [x] Visual feedback for hands-free mode active state
 
 ## Security Notes
 

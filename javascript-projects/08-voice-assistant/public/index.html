@@ -66,6 +66,22 @@
                     <small class="setting-hint">Requires local models for local/hybrid modes</small>
                 </div>
 
+                <!-- Phase 6: Hands-free Mode -->
+                <div class="setting-group">
+                    <label for="handsfreeToggle">
+                        <input type="checkbox" id="handsfreeToggle">
+                        Hands-free Mode
+                    </label>
+                    <small class="setting-hint">Automatically detect and record when you speak</small>
+                </div>
+
+                <!-- Phase 6: VAD Sensitivity -->
+                <div class="setting-group">
+                    <label for="sensitivitySlider">Voice Sensitivity:</label>
+                    <input type="range" id="sensitivitySlider" min="0.1" max="0.8" step="0.1" value="0.3">
+                    <small class="setting-hint" id="sensitivityValue">30%</small>
+                </div>
+
                 <div class="setting-group">
                     <label for="voiceSelect">Voice:</label>
                     <select id="voiceSelect">
@@ -114,11 +130,19 @@
                 <details>
                     <summary>💡 How to use</summary>
                     <div class="help-content">
+                        <p><strong>Push-to-Talk Mode:</strong></p>
                         <ol>
                             <li>Click and hold "Push to Talk" button (or press Spacebar)</li>
                             <li>Speak your question or command</li>
                             <li>Release button to send audio</li>
                             <li>Wait for transcription and response</li>
+                        </ol>
+                        <p><strong>Hands-free Mode:</strong></p>
+                        <ol>
+                            <li>Enable "Hands-free Mode" in settings</li>
+                            <li>Just start speaking - recording starts automatically</li>
+                            <li>Stop speaking - recording ends after 1 second of silence</li>
+                            <li>Adjust sensitivity if needed for your environment</li>
                         </ol>
                         <p><strong>Keyboard Shortcuts:</strong></p>
                         <ul>
@@ -153,6 +177,7 @@
         <p class="loading-text" id="loadingText">Processing...</p>
     </div>
 
+    <script src="voice-activation-detector.js"></script>
     <script src="conversation-manager-ui.js"></script>
     <script src="app.js"></script>
 </body>
