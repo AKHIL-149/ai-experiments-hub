@@ -53,7 +53,8 @@ class ServiceManager {
     try {
       this.localTTSService = new LocalTTSService({
         engine: options.ttsEngine || 'espeak',
-        voice: options.ttsVoice || 'en',
+        // Don't pass ttsVoice - let LocalTTSService use its own defaults (en for espeak)
+        // options.ttsVoice is for OpenAI voices (alloy, echo, etc) which don't work with espeak
         speed: options.ttsSpeed || 175
       });
     } catch (error) {
@@ -70,6 +71,17 @@ class ServiceManager {
   async transcribeAudio(audioInput, options = {}) {
     const useLocal = this.shouldUseLocal('stt');
 
+    // Pure local mode - no fallback
+    if (this.mode === 'local') {
+      if (this.localWhisperService && this.localWhisperService.available()) {
+        console.log('Using local Whisper for transcription (local mode)');
+        return await this.localWhisperService.transcribeAudio(audioInput, options);
+      } else {
+        throw new Error('Local Whisper not available. Cannot transcribe in local mode.');
+      }
+    }
+
+    // Hybrid or cloud mode with fallback
     try {
       if (useLocal && this.localWhisperService && this.localWhisperService.available()) {
         console.log('Using local Whisper for transcription');
@@ -81,8 +93,8 @@ class ServiceManager {
         throw new Error('No transcription service available');
       }
     } catch (error) {
-      // Fallback to cloud if local fails
-      if (useLocal && this.fallbackToCloud && this.cloudService) {
+      // Fallback to cloud if local fails (only in hybrid mode)
+      if (useLocal && this.fallbackToCloud && this.mode === 'hybrid' && this.cloudService) {
         console.warn('Local transcription failed, falling back to cloud:', error.message);
         return await this.cloudService.transcribeAudio(audioInput, options);
       }
@@ -99,10 +111,27 @@ class ServiceManager {
   async synthesizeSpeech(text, options = {}) {
     const useLocal = this.shouldUseLocal('tts');
 
+    // Pure local mode - no fallback
+    if (this.mode === 'local') {
+      if (this.localTTSService && this.localTTSService.available()) {
+        console.log('Using local TTS for synthesis (local mode)');
+        // Remove cloud-specific options (like OpenAI voice names) for local TTS
+        const localOptions = { ...options };
+        delete localOptions.voice; // espeak uses default voice
+        return await this.localTTSService.synthesizeSpeech(text, localOptions);
+      } else {
+        throw new Error('Local TTS not available. Cannot synthesize in local mode.');
+      }
+    }
+
+    // Hybrid or cloud mode with fallback
     try {
       if (useLocal && this.localTTSService && this.localTTSService.available()) {
         console.log('Using local TTS for synthesis');
-        return await this.localTTSService.synthesizeSpeech(text, options);
+        // Remove cloud-specific options (like OpenAI voice names) for local TTS
+        const localOptions = { ...options };
+        delete localOptions.voice; // espeak uses default voice
+        return await this.localTTSService.synthesizeSpeech(text, localOptions);
       } else if (this.cloudService) {
         console.log('Using cloud (OpenAI) for synthesis');
         return await this.cloudService.synthesizeSpeech(text, options);
@@ -110,8 +139,8 @@ class ServiceManager {
         throw new Error('No TTS service available');
       }
     } catch (error) {
-      // Fallback to cloud if local fails
-      if (useLocal && this.fallbackToCloud && this.cloudService) {
+      // Fallback to cloud if local fails (only in hybrid mode)
+      if (useLocal && this.fallbackToCloud && this.mode === 'hybrid' && this.cloudService) {
         console.warn('Local TTS failed, falling back to cloud:', error.message);
         return await this.cloudService.synthesizeSpeech(text, options);
       }
@@ -120,12 +149,22 @@ class ServiceManager {
   }
 
   /**
-   * Generate chat response (always uses cloud)
+   * Generate chat response
    * @param {Array} messages - Chat messages
    * @param {Object} options - Generation options
    * @returns {Promise<Object>} - { response, usage }
    */
   async generateResponse(messages, options = {}) {
+    // In local mode, return a helpful message instead of using cloud AI
+    if (this.mode === 'local') {
+      console.log('ℹ Local mode: AI chat not available, returning command-only message');
+      return {
+        response: "I can help you with voice commands like: What time is it? Tell me a joke. Calculate 5 plus 3. Set a timer. Say 'help' to hear all available commands.",
+        usage: null
+      };
+    }
+
+    // In cloud or hybrid mode, use cloud service
     if (!this.cloudService) {
       throw new Error('Cloud service required for chat responses');
     }

@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -79,15 +79,82 @@ class LocalWhisperService {
     }
 
     let audioPath;
+    let wavPath;
     let cleanupRequired = false;
 
     // Handle Buffer input
     if (Buffer.isBuffer(audioInput)) {
-      audioPath = path.join('/tmp', `whisper_${Date.now()}.wav`);
-      fs.writeFileSync(audioPath, audioInput);
+      // Save WebM buffer to temp file
+      const webmPath = path.join('/tmp', `whisper_input_${Date.now()}.webm`);
+      fs.writeFileSync(webmPath, audioInput);
+      console.log(`📝 Saved WebM audio: ${webmPath} (${(audioInput.length / 1024).toFixed(2)} KB)`);
+
+      // Convert WebM to WAV using ffmpeg
+      wavPath = path.join('/tmp', `whisper_${Date.now()}.wav`);
+      try {
+        console.log(`🔄 Converting WebM to WAV: ${webmPath} → ${wavPath}`);
+        const ffmpegOutput = execSync(
+          `/opt/homebrew/bin/ffmpeg -i "${webmPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${wavPath}" -y 2>&1`,
+          { encoding: 'utf8' }
+        );
+        console.log(`✓ FFmpeg conversion complete`);
+
+        // Check if output file was created
+        if (!fs.existsSync(wavPath)) {
+          throw new Error('WAV file was not created by ffmpeg');
+        }
+
+        const wavStats = fs.statSync(wavPath);
+        console.log(`✓ WAV file created: ${wavPath} (${(wavStats.size / 1024).toFixed(2)} KB)`);
+
+        fs.unlinkSync(webmPath); // Clean up WebM file
+      } catch (error) {
+        console.error(`❌ FFmpeg conversion failed:`, error.message);
+        if (fs.existsSync(webmPath)) fs.unlinkSync(webmPath);
+        throw new Error(`Audio conversion failed: ${error.message}`);
+      }
+
+      audioPath = wavPath;
       cleanupRequired = true;
+    } else if (typeof audioInput === 'string') {
+      // Handle file path input
+      const inputPath = audioInput;
+
+      // Check if it's a WebM file that needs conversion
+      if (inputPath.endsWith('.webm')) {
+        console.log(`📁 Input is WebM file: ${inputPath}`);
+
+        // Convert WebM to WAV using ffmpeg
+        wavPath = path.join('/tmp', `whisper_${Date.now()}.wav`);
+        try {
+          console.log(`🔄 Converting WebM to WAV: ${inputPath} → ${wavPath}`);
+          execSync(
+            `/opt/homebrew/bin/ffmpeg -i "${inputPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${wavPath}" -y 2>&1`,
+            { encoding: 'utf8' }
+          );
+          console.log(`✓ FFmpeg conversion complete`);
+
+          // Check if output file was created
+          if (!fs.existsSync(wavPath)) {
+            throw new Error('WAV file was not created by ffmpeg');
+          }
+
+          const wavStats = fs.statSync(wavPath);
+          console.log(`✓ WAV file created: ${wavPath} (${(wavStats.size / 1024).toFixed(2)} KB)`);
+
+          audioPath = wavPath;
+          cleanupRequired = true;
+        } catch (error) {
+          console.error(`❌ FFmpeg conversion failed:`, error.message);
+          throw new Error(`Audio conversion failed: ${error.message}`);
+        }
+      } else {
+        // Already a WAV file or other supported format
+        console.log(`📁 Input file: ${inputPath}`);
+        audioPath = inputPath;
+      }
     } else {
-      audioPath = audioInput;
+      throw new Error('Invalid audio input type. Expected Buffer or file path string.');
     }
 
     const startTime = Date.now();
@@ -130,42 +197,72 @@ class LocalWhisperService {
         args.push('--translate');
       }
 
+      console.log(`🎤 Running Whisper with args:`, args.join(' '));
+
       let output = '';
       let errorOutput = '';
 
       const process = spawn(this.whisperPath, args);
 
       process.stdout.on('data', (data) => {
-        output += data.toString();
+        const chunk = data.toString();
+        output += chunk;
+        console.log(`[Whisper stdout]: ${chunk.trim()}`);
       });
 
       process.stderr.on('data', (data) => {
-        errorOutput += data.toString();
+        const chunk = data.toString();
+        errorOutput += chunk;
+        console.log(`[Whisper stderr]: ${chunk.trim()}`);
       });
 
       process.on('error', (error) => {
+        console.error(`❌ Whisper process error:`, error.message);
         reject(new Error(`Whisper process error: ${error.message}`));
       });
 
       process.on('close', (code) => {
+        console.log(`🏁 Whisper process exited with code: ${code}`);
+
         if (code !== 0) {
+          console.error(`❌ Whisper failed with error output:`, errorOutput);
           reject(new Error(`Whisper failed (exit code ${code}): ${errorOutput}`));
           return;
         }
 
-        // Extract transcribed text from output
-        const text = this.extractTextFromOutput(output);
+        // Whisper with --output-txt writes to a .txt file
+        const txtFilePath = `${audioPath}.txt`;
 
-        if (!text) {
-          reject(new Error('No transcription output'));
-          return;
+        try {
+          if (fs.existsSync(txtFilePath)) {
+            console.log(`📄 Reading transcription from: ${txtFilePath}`);
+            const text = fs.readFileSync(txtFilePath, 'utf8').trim();
+
+            // Clean up the txt file
+            fs.unlinkSync(txtFilePath);
+
+            if (!text) {
+              console.error(`❌ Text file is empty`);
+              reject(new Error('No transcription output'));
+              return;
+            }
+
+            console.log(`✓ Transcription successful: "${text}"`);
+            resolve(text);
+          } else {
+            console.error(`❌ Output text file not found: ${txtFilePath}`);
+            console.log(`📄 Raw stdout (${output.length} chars):`, output.substring(0, 500));
+            reject(new Error('No transcription output file created'));
+          }
+        } catch (error) {
+          console.error(`❌ Failed to read transcription file:`, error.message);
+          reject(new Error(`Failed to read transcription: ${error.message}`));
         }
-
-        resolve(text);
       });
 
       // Timeout after 60 seconds
       setTimeout(() => {
+        console.error(`⏱️  Whisper transcription timeout after 60 seconds`);
         process.kill();
         reject(new Error('Whisper transcription timeout'));
       }, 60000);
