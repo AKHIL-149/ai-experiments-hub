@@ -39,16 +39,27 @@ try {
   // Phase 5: Initialize ServiceManager for cloud/local/hybrid mode
   serviceManager = new ServiceManager({
     mode: process.env.SERVICE_MODE || 'cloud',
+    fallbackToCloud: process.env.FALLBACK_TO_CLOUD !== 'false',
+
+    // Cloud config
     openaiApiKey: process.env.OPENAI_API_KEY,
     whisperModel: process.env.WHISPER_MODEL || 'whisper-1',
     ttsModel: process.env.TTS_MODEL || 'tts-1',
     ttsVoice: process.env.TTS_VOICE || 'alloy',
+
+    // Local Whisper config
     whisperPath: process.env.WHISPER_CPP_PATH || 'whisper',
     whisperModelPath: process.env.WHISPER_MODEL_PATH || './models/ggml-base.en.bin',
     whisperThreads: parseInt(process.env.WHISPER_THREADS) || 4,
+
+    // Local TTS config
     ttsEngine: process.env.TTS_ENGINE || 'espeak',
     ttsSpeed: parseInt(process.env.TTS_SPEED) || 175,
-    fallbackToCloud: process.env.FALLBACK_TO_CLOUD !== 'false'
+
+    // Phase 5.5: Local LLM config
+    llmBaseURL: process.env.LLM_BASE_URL || 'http://localhost:11434',
+    llmModel: process.env.LLM_MODEL || 'llama3.2:3b',
+    llmTimeout: parseInt(process.env.LLM_TIMEOUT) || 30000
   });
 
   audioProcessor = new AudioProcessor(serviceManager, {
@@ -56,8 +67,10 @@ try {
     maxAudioSizeMB: parseInt(process.env.MAX_AUDIO_SIZE_MB) || 25
   });
 
+  // Phase 5.5: Pass LLM service to command handler
   commandHandler = new VoiceCommandHandler(
-    path.join(__dirname, 'commands/commands.json')
+    path.join(__dirname, 'commands/commands.json'),
+    { llmService: serviceManager.localLLMService }
   );
 
   conversationManager = new ConversationManager({

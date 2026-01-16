@@ -5,10 +5,11 @@ const path = require('path');
  * Voice Command Handler - Pattern matching and command execution
  */
 class VoiceCommandHandler {
-  constructor(commandRegistryPath) {
+  constructor(commandRegistryPath, options = {}) {
     this.commandRegistryPath = commandRegistryPath || path.join(__dirname, '../commands/commands.json');
     this.commands = this.loadCommands();
     this.timers = new Map(); // Store active timers
+    this.llmService = options.llmService || null; // NEW: Inject LLM service
   }
 
   /**
@@ -248,6 +249,30 @@ class VoiceCommandHandler {
    */
   async calculate(params, context) {
     try {
+      const transcript = context.originalTranscript || '';
+
+      // If LocalLLMService is available, use it for parsing
+      if (this.llmService && this.llmService.available()) {
+        console.log('Using LLM to parse math expression');
+        try {
+          const result = await this.llmService.parseMathExpression(transcript);
+
+          return {
+            success: true,
+            response: `The result is ${result.result}.`,
+            data: {
+              expression: result.expression,
+              result: result.result,
+              method: 'llm-parsed'
+            }
+          };
+        } catch (llmError) {
+          console.warn('LLM math parsing failed, falling back to pattern matching:', llmError.message);
+          // Fall through to pattern-based fallback
+        }
+      }
+
+      // Fallback to original pattern-based parsing
       let expression = params.expression;
 
       // Handle natural language math
@@ -256,15 +281,15 @@ class VoiceCommandHandler {
         const num2 = parseFloat(params.num2);
 
         // Determine operation from original transcript
-        const transcript = context.originalTranscript?.toLowerCase() || '';
+        const transcriptLower = transcript.toLowerCase();
 
-        if (transcript.includes('plus') || transcript.includes('add')) {
+        if (transcriptLower.includes('plus') || transcriptLower.includes('add')) {
           expression = `${num1} + ${num2}`;
-        } else if (transcript.includes('minus') || transcript.includes('subtract')) {
+        } else if (transcriptLower.includes('minus') || transcriptLower.includes('subtract')) {
           expression = `${num1} - ${num2}`;
-        } else if (transcript.includes('times') || transcript.includes('multiply')) {
+        } else if (transcriptLower.includes('times') || transcriptLower.includes('multiply')) {
           expression = `${num1} * ${num2}`;
-        } else if (transcript.includes('divided by') || transcript.includes('divide')) {
+        } else if (transcriptLower.includes('divided by') || transcriptLower.includes('divide')) {
           expression = `${num1} / ${num2}`;
         }
       }
@@ -284,10 +309,11 @@ class VoiceCommandHandler {
       return {
         success: true,
         response: `The result is ${result}.`,
-        data: { expression, result }
+        data: { expression, result, method: 'pattern-matched' }
       };
 
     } catch (error) {
+      console.error('Calculate error:', error.message);
       return {
         success: false,
         response: "I couldn't calculate that. Please try a simple math expression.",

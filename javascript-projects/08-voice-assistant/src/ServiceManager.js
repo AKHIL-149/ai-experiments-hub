@@ -1,6 +1,7 @@
 const OpenAIService = require('./OpenAIService');
 const LocalWhisperService = require('./LocalWhisperService');
 const LocalTTSService = require('./LocalTTSService');
+const LocalLLMService = require('./LocalLLMService');
 
 /**
  * Service Manager - Handles switching between cloud and local AI services
@@ -15,6 +16,7 @@ class ServiceManager {
     this.cloudService = null;
     this.localWhisperService = null;
     this.localTTSService = null;
+    this.localLLMService = null;
 
     this.initializeServices(options);
   }
@@ -59,6 +61,19 @@ class ServiceManager {
       });
     } catch (error) {
       console.warn('Failed to initialize local TTS:', error.message);
+    }
+
+    // Local LLM service
+    if (this.mode === 'local' || this.mode === 'hybrid') {
+      try {
+        this.localLLMService = new LocalLLMService({
+          model: options.llmModel || 'llama3.2:3b',
+          baseURL: options.llmBaseURL || 'http://localhost:11434',
+          timeout: options.llmTimeout || 30000
+        });
+      } catch (error) {
+        console.warn('Failed to initialize local LLM:', error.message);
+      }
     }
   }
 
@@ -155,21 +170,29 @@ class ServiceManager {
    * @returns {Promise<Object>} - { response, usage }
    */
   async generateResponse(messages, options = {}) {
-    // In local mode, return a helpful message instead of using cloud AI
-    if (this.mode === 'local') {
-      console.log('ℹ Local mode: AI chat not available, returning command-only message');
-      return {
-        response: "I can help you with voice commands like: What time is it? Tell me a joke. Calculate 5 plus 3. Set a timer. Say 'help' to hear all available commands.",
-        usage: null
-      };
+    // Try local LLM first in local/hybrid mode
+    if ((this.mode === 'local' || this.mode === 'hybrid') &&
+        this.localLLMService &&
+        this.localLLMService.available()) {
+      console.log('Using local LLM for response generation');
+      try {
+        return await this.localLLMService.generateResponse(messages, options);
+      } catch (error) {
+        console.error('Local LLM failed:', error.message);
+        // In pure local mode, don't fallback
+        if (this.mode === 'local') {
+          throw new Error('Local LLM failed and no cloud fallback available in local mode');
+        }
+      }
     }
 
-    // In cloud or hybrid mode, use cloud service
-    if (!this.cloudService) {
-      throw new Error('Cloud service required for chat responses');
+    // Fallback to cloud in hybrid mode, or use cloud in cloud mode
+    if (this.cloudService) {
+      console.log('Using cloud (OpenAI) for response generation');
+      return await this.cloudService.generateResponse(messages, options);
     }
 
-    return await this.cloudService.generateResponse(messages, options);
+    throw new Error('No AI service available for response generation');
   }
 
   /**
@@ -236,6 +259,10 @@ class ServiceManager {
         tts: {
           available: this.localTTSService ? this.localTTSService.available() : false,
           info: this.localTTSService ? this.localTTSService.getInfo() : null
+        },
+        llm: {
+          available: this.localLLMService ? this.localLLMService.available() : false,
+          info: this.localLLMService ? this.localLLMService.getInfo() : null
         }
       },
       fallbackEnabled: this.fallbackToCloud
