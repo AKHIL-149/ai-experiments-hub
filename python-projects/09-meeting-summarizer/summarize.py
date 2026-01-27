@@ -25,6 +25,8 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from core.audio_processor import AudioProcessor
 from core.transcription_service import TranscriptionService
 from core.cache_manager import CacheManager
+from core.llm_client import LLMClient
+from core.meeting_analyzer import MeetingAnalyzer
 
 # Initialize colorama
 colorama_init(autoreset=True)
@@ -344,6 +346,150 @@ def cmd_validate(args, config):
         return 1
 
 
+def cmd_analyze(args, config):
+    """Analyze meeting: transcribe + summarize + extract actions"""
+    print_banner()
+
+    audio_path = args.audio_file
+
+    if not Path(audio_path).exists():
+        print_error(f"Audio file not found: {audio_path}")
+        return 1
+
+    try:
+        # Initialize components
+        print_info("Initializing analysis pipeline...")
+
+        audio_processor = AudioProcessor(max_size_mb=config['max_audio_size_mb'])
+
+        cache_manager = None
+        if config['enable_cache']:
+            cache_manager = CacheManager(
+                cache_dir=config['cache_dir'],
+                transcription_ttl_days=config['transcription_ttl_days'],
+                summary_ttl_days=config['summary_ttl_days']
+            )
+
+        transcription_service = TranscriptionService(
+            backend=config['transcription_backend'],
+            api_key=config['openai_api_key'],
+            model=config['whisper_model'],
+            cache_manager=cache_manager,
+            audio_processor=audio_processor,
+            whisper_cpp_path=config['whisper_cpp_path'],
+            whisper_model_path=config['whisper_model_path']
+        )
+
+        # Initialize LLM client
+        llm_provider = os.getenv('LLM_PROVIDER', 'openai')
+        llm_model = os.getenv('LLM_MODEL')
+
+        if llm_provider == 'openai':
+            api_key = config['openai_api_key']
+        elif llm_provider == 'anthropic':
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+        else:
+            api_key = None
+
+        llm_client = LLMClient(
+            backend=llm_provider,
+            model=llm_model,
+            api_key=api_key
+        )
+
+        # Initialize meeting analyzer
+        meeting_analyzer = MeetingAnalyzer(
+            transcription_service=transcription_service,
+            llm_client=llm_client,
+            cache_manager=cache_manager,
+            audio_processor=audio_processor
+        )
+
+        # Validate audio
+        print_info(f"Validating audio file: {audio_path}")
+        validation = audio_processor.validate_audio(audio_path)
+
+        if not validation['valid']:
+            print_error("Audio validation failed:")
+            for error in validation['errors']:
+                print(f"  - {error}")
+            return 1
+
+        # Show file info
+        metadata = audio_processor.get_metadata(audio_path)
+        print_info(f"Duration: {metadata['duration_seconds']:.1f}s ({metadata['duration_seconds']/60:.1f} min)")
+        print_info(f"Format: {metadata['format']}")
+
+        # Run analysis
+        print_info("Starting full meeting analysis...")
+        print()
+
+        result = meeting_analyzer.analyze_meeting(
+            audio_path,
+            summary_level=args.level,
+            extract_actions=not args.no_actions,
+            extract_topics=not args.no_topics,
+            language=args.language
+        )
+
+        # Display results
+        print(f"{Fore.CYAN}{'='*60}")
+        print(f"Analysis Complete")
+        print(f"{'='*60}{Style.RESET_ALL}")
+        print()
+
+        print(f"{Fore.YELLOW}Summary:{Style.RESET_ALL}")
+        print(result['summary']['text'])
+        print()
+
+        if result.get('topics'):
+            print(f"{Fore.YELLOW}Key Topics:{Style.RESET_ALL}")
+            for i, topic in enumerate(result['topics'], 1):
+                print(f"  {i}. {topic}")
+            print()
+
+        if result.get('actions'):
+            actions = result['actions']
+            print(f"{Fore.YELLOW}Action Items: {actions['total_actions']}{Style.RESET_ALL}")
+            for action in actions['action_items'][:5]:  # Show first 5
+                print(f"  • {action['description']}")
+                print(f"    Assignee: {action.get('assignee', 'Unassigned')}")
+            if actions['total_actions'] > 5:
+                print(f"  ... and {actions['total_actions'] - 5} more")
+            print()
+
+        # Statistics
+        stats = result['statistics']
+        print(f"{Fore.GREEN}Statistics:{Style.RESET_ALL}")
+        print(f"  Processing Time: {stats['processing_time_seconds']:.1f}s")
+        print(f"  Total Cost: ${stats['total_cost_usd']:.4f}")
+        print(f"  Cache Hits: {stats['cache_hits']}")
+        print()
+
+        # Save report
+        output_dir = Path(config['output_dir'])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_format = args.format or config['default_output_format']
+        output_file = output_dir / f"{Path(audio_path).stem}_analysis.{output_format}"
+
+        print_info(f"Generating {output_format} report...")
+        report = meeting_analyzer.generate_report(
+            result,
+            format=output_format,
+            output_path=str(output_file)
+        )
+
+        print_success(f"Report saved to: {output_file}")
+
+        return 0
+
+    except Exception as e:
+        print_error(f"Analysis failed: {str(e)}")
+        logger.exception("Analysis error")
+        return 1
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
@@ -399,6 +545,42 @@ def main():
         help='Path to audio file'
     )
 
+    # Analyze command (Phase 2)
+    analyze_parser = subparsers.add_parser(
+        'analyze',
+        help='Full meeting analysis: transcribe + summarize + extract actions'
+    )
+    analyze_parser.add_argument(
+        'audio_file',
+        help='Path to audio file'
+    )
+    analyze_parser.add_argument(
+        '--level',
+        choices=['brief', 'standard', 'detailed'],
+        default='standard',
+        help='Summary detail level'
+    )
+    analyze_parser.add_argument(
+        '--language',
+        help='Language code (e.g., en, es, fr)',
+        default=None
+    )
+    analyze_parser.add_argument(
+        '--format',
+        choices=['markdown', 'json', 'html', 'txt'],
+        help='Output format (default: from config)'
+    )
+    analyze_parser.add_argument(
+        '--no-actions',
+        action='store_true',
+        help='Skip action item extraction'
+    )
+    analyze_parser.add_argument(
+        '--no-topics',
+        action='store_true',
+        help='Skip topic extraction'
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -416,6 +598,8 @@ def main():
         return cmd_cache_stats(args, config)
     elif args.command == 'validate':
         return cmd_validate(args, config)
+    elif args.command == 'analyze':
+        return cmd_analyze(args, config)
     else:
         print_error(f"Unknown command: {args.command}")
         return 1

@@ -1,9 +1,10 @@
-# Meeting Summarizer - Phase 1: Core Foundation
+# Meeting Summarizer - Phases 1 & 2 Complete
 
-AI-powered meeting transcription with intelligent caching. Transform audio recordings into accurate text transcripts using OpenAI Whisper or local Whisper.cpp.
+AI-powered meeting transcription, summarization, and action item extraction. Transform audio recordings into comprehensive meeting reports with intelligent caching for cost optimization.
 
-## Phase 1 Features
+## Features
 
+### Phase 1: Core Foundation ✅
 - ✅ Multi-format audio support (MP3, WAV, WebM, M4A, OGG, FLAC)
 - ✅ Cloud transcription via OpenAI Whisper API
 - ✅ Local transcription via Whisper.cpp (offline mode)
@@ -11,6 +12,15 @@ AI-powered meeting transcription with intelligent caching. Transform audio recor
 - ✅ Two-level caching system (70%+ cost savings)
 - ✅ Cost estimation and tracking
 - ✅ CLI interface with progress tracking
+
+### Phase 2: AI Summarization & Action Extraction ✅
+- ✅ AI-powered summarization (OpenAI, Anthropic, Ollama)
+- ✅ Map-reduce strategy for long transcripts
+- ✅ Multi-level summaries (brief, standard, detailed)
+- ✅ Automatic action item extraction
+- ✅ Decision tracking
+- ✅ Key topic identification
+- ✅ Multiple output formats (Markdown, JSON, HTML, TXT)
 
 ## Quick Start
 
@@ -41,24 +51,56 @@ Create a `.env` file from the example:
 cp .env.example .env
 ```
 
-Edit `.env` and add your OpenAI API key:
+Edit `.env` and add your API keys:
 
 ```bash
-# Required for OpenAI Whisper backend
+# Transcription Backend
+TRANSCRIPTION_BACKEND=openai
 OPENAI_API_KEY=your_openai_key_here
 
-# Or configure local Whisper.cpp (optional)
-TRANSCRIPTION_BACKEND=whisper-cpp
-WHISPER_CPP_PATH=./whisper.cpp/main
-WHISPER_CPP_MODEL=./models/ggml-medium.bin
+# Summarization Backend (Phase 2)
+LLM_PROVIDER=openai               # or anthropic, ollama
+LLM_MODEL=gpt-4o-mini
+# ANTHROPIC_API_KEY=your_key_here # if using Anthropic
+
+# Or use local models (free, offline)
+# LLM_PROVIDER=ollama
+# OLLAMA_MODEL=llama3.2
 ```
 
 ### 3. Basic Usage
 
-**Transcribe a meeting:**
+**Analyze a meeting (Phase 2 - Full Pipeline):**
+
+```bash
+python summarize.py analyze meeting.mp3
+# Output: Transcript + Summary + Action Items + Topics
+```
+
+**Transcribe only (Phase 1):**
 
 ```bash
 python summarize.py transcribe meeting.mp3
+```
+
+**Analyze with custom summary level:**
+
+```bash
+python summarize.py analyze meeting.mp3 --level brief
+# Options: brief, standard, detailed
+```
+
+**Analyze with specific output format:**
+
+```bash
+python summarize.py analyze meeting.mp3 --format json
+# Options: markdown (default), json, html, txt
+```
+
+**Analyze without action extraction:**
+
+```bash
+python summarize.py analyze meeting.mp3 --no-actions
 ```
 
 **Transcribe with language specification:**
@@ -73,12 +115,6 @@ python summarize.py transcribe meeting.mp3 --language en
 python summarize.py transcribe long_meeting.mp3 --chunked
 ```
 
-**Save output as JSON:**
-
-```bash
-python summarize.py transcribe meeting.mp3 --json
-```
-
 **Validate audio file:**
 
 ```bash
@@ -86,12 +122,6 @@ python summarize.py validate meeting.mp3
 ```
 
 **View cache statistics:**
-
-```bash
-python summarize.py cache-stats
-```
-
-**Clean up expired cache entries:**
 
 ```bash
 python summarize.py cache-stats --cleanup
@@ -372,13 +402,92 @@ sudo apt-get install ffmpeg
 python summarize.py transcribe long_meeting.mp3 --chunked
 ```
 
-## Coming in Phase 2
+## Phase 2 Examples
 
-- 🔄 AI-powered summarization (OpenAI, Anthropic, Ollama)
-- 🔄 Action item extraction
-- 🔄 Multi-level summaries (brief, standard, detailed)
-- 🔄 Participant identification
-- 🔄 Topic detection and segmentation
+### Example 1: Quick Meeting Summary
+
+```bash
+$ python summarize.py analyze standup.mp3 --level brief
+
+╔════════════════════════════════════════╗
+║   Meeting Summarizer - Phase 1        ║
+║   Audio Transcription with Caching    ║
+╚════════════════════════════════════════╝
+
+ℹ Initializing analysis pipeline...
+ℹ Validating audio file: standup.mp3
+ℹ Duration: 300.5s (5.0 min)
+ℹ Format: mp3
+ℹ Starting full meeting analysis...
+
+============================================================
+Analysis Complete
+============================================================
+
+Summary:
+Daily standup covering sprint progress. Team completed 3 tickets,
+blocked on API integration. Decision made to escalate blocker to
+platform team. Next standup scheduled for tomorrow 9 AM.
+
+Key Topics:
+  1. Sprint Progress Review
+  2. API Integration Blocker
+  3. Platform Team Escalation
+
+Action Items: 2
+  • Escalate API integration issue to platform team
+    Assignee: Alice
+  • Update ticket status in Jira
+    Assignee: Bob
+
+Statistics:
+  Processing Time: 45.2s
+  Total Cost: $0.0234
+  Cache Hits: 0
+
+✓ Report saved to: ./data/output/standup_analysis.markdown
+```
+
+### Example 2: Detailed Analysis with All Features
+
+```bash
+$ python summarize.py analyze quarterly_review.mp3 --level detailed
+
+============================================================
+Analysis Complete
+============================================================
+
+Summary:
+[Comprehensive 3-paragraph summary with context, decisions,
+and action items integrated throughout...]
+
+Key Topics:
+  1. Q4 Revenue Performance
+  2. Customer Retention Metrics
+  3. Product Roadmap 2025
+  4. Team Expansion Plans
+  5. Budget Allocation
+
+Action Items: 8
+  • Finalize Q1 hiring plan
+    Assignee: HR Team
+  • Review product roadmap with stakeholders
+    Assignee: Product Lead
+  ... and 6 more
+
+Decisions Made: 4
+  1. Approved 15% budget increase for engineering
+  2. Moved product launch from Feb to March
+  3. Approved 3 new engineering hires
+  4. Decided to sunset legacy dashboard
+
+Statistics:
+  Processing Time: 120.8s
+  Total Cost: $0.1245
+  Cache Hits: 1
+
+✓ Report saved to: ./data/output/quarterly_review_analysis.markdown
+```
 
 ## Coming in Phase 3
 
@@ -410,10 +519,10 @@ python-projects/09-meeting-summarizer/
 │   │   ├── audio_processor.py      # Audio operations ✅
 │   │   ├── transcription_service.py # Transcription ✅
 │   │   ├── cache_manager.py        # Caching ✅
-│   │   ├── summarizer.py           # Phase 2
-│   │   ├── action_extractor.py     # Phase 2
-│   │   ├── meeting_analyzer.py     # Phase 2
-│   │   └── llm_client.py           # Phase 2
+│   │   ├── llm_client.py           # Unified LLM interface ✅
+│   │   ├── summarizer.py           # AI summarization ✅
+│   │   ├── action_extractor.py     # Action item extraction ✅
+│   │   └── meeting_analyzer.py     # Main orchestrator ✅
 │   └── utils/
 │       ├── __init__.py             ✅
 │       ├── audio_utils.py          # Phase 3
@@ -436,10 +545,58 @@ python-projects/09-meeting-summarizer/
     └── test_*.py                   # Phase 5
 ```
 
+## Phase 2 Components
+
+### LLM Client ([llm_client.py](src/core/llm_client.py))
+Unified interface for multiple LLM providers:
+- **OpenAI**: GPT-4, GPT-4o-mini
+- **Anthropic**: Claude 3.5 Sonnet, Claude 3 Haiku
+- **Ollama**: Local models (llama3.2, phi3, qwen, gemma2)
+
+Automatic cost estimation and token tracking for all providers.
+
+### Summarizer ([summarizer.py](src/core/summarizer.py))
+AI-powered summarization with map-reduce strategy:
+- **Direct summarization**: For transcripts <4000 words
+- **Map-reduce**: Splits long transcripts into chunks, summarizes each, then combines
+- **Multi-level**: Brief (2-3 paragraphs), Standard (balanced), Detailed (comprehensive)
+- **Topic extraction**: Identifies key discussion points
+
+### Action Extractor ([action_extractor.py](src/core/action_extractor.py))
+Extracts structured information from transcripts:
+- **Action Items**: Tasks with assignees, due dates, priorities
+- **Decisions**: What was decided with context and impact
+- **Follow-ups**: Items requiring future attention
+- **JSON output**: Structured data for integration
+- **Validation**: Checks completeness of extracted items
+
+### Meeting Analyzer ([meeting_analyzer.py](src/core/meeting_analyzer.py))
+Main orchestrator managing the full pipeline:
+- Coordinates transcription → summarization → action extraction
+- Manages two-level caching at each stage
+- Generates reports in multiple formats
+- Tracks cost and performance statistics
+
+## Coming in Phase 3
+
+- 🔄 Batch processing for multiple files
+- 🔄 Parallel chunk processing
+- 🔄 Progress tracking and cancellation
+- 🔄 Resume interrupted processing
+- 🔄 Speaker diarization (identify individual speakers)
+
+## Coming in Phase 4
+
+- 🔄 FastAPI web server
+- 🔄 Web UI for uploads
+- 🔄 Real-time progress via WebSocket
+- 🔄 Report download endpoints
+- 🔄 Calendar/Slack integration
+
 ## License
 
 Part of the AI Experiments Hub repository.
 
 ## Contributing
 
-This is Phase 1 of the Meeting Summarizer project. Future phases will add summarization, action item extraction, and web interface capabilities.
+Phases 1 & 2 complete. Phase 3 will add batch processing and speaker diarization. Phase 4 will add web interface.
