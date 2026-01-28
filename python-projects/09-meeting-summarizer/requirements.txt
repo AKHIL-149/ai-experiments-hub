@@ -15,11 +15,12 @@ tqdm>=4.66.0
 colorama>=0.4.6
 markdown>=3.5.0
 
-# Web Framework (optional - for Phase 4)
+# Web Framework (Phase 4)
 fastapi>=0.104.0
 uvicorn>=0.24.0
 python-multipart>=0.0.6
 Jinja2>=3.1.0
+websockets>=12.0
 
 # Development
 pytest>=7.4.0

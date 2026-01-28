@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Summarizer - AI-Powered Transcription & Analysis</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Meeting Summarizer</h1>
+            <p class="subtitle">AI-powered meeting transcription, summarization, and action item extraction</p>
+        </header>
+
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <div class="card">
+                <h2>Upload Meeting Audio</h2>
+                <p class="help-text">Supported formats: MP3, WAV, WebM, M4A, OGG, FLAC</p>
+
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Drag and drop your audio file here</p>
+                    <p class="help-text">or</p>
+                    <button class="btn btn-primary" id="selectFileBtn">Select File</button>
+                    <input type="file" id="fileInput" accept=".mp3,.wav,.webm,.m4a,.ogg,.flac" style="display: none;">
+                </div>
+
+                <div id="fileInfo" class="file-info" style="display: none;">
+                    <p><strong>Selected:</strong> <span id="fileName"></span></p>
+                    <p><strong>Size:</strong> <span id="fileSize"></span></p>
+                </div>
+            </div>
+
+            <!-- Options -->
+            <div class="card options-card">
+                <h3>Analysis Options</h3>
+
+                <div class="form-group">
+                    <label for="summaryLevel">Summary Level</label>
+                    <select id="summaryLevel" class="form-control">
+                        <option value="brief">Brief - 2-3 paragraphs</option>
+                        <option value="standard" selected>Standard - Balanced detail</option>
+                        <option value="detailed">Detailed - Comprehensive</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="outputFormat">Output Format</label>
+                    <select id="outputFormat" class="form-control">
+                        <option value="markdown" selected>Markdown</option>
+                        <option value="json">JSON</option>
+                        <option value="html">HTML</option>
+                        <option value="txt">Plain Text</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="language">Language (optional)</label>
+                    <input type="text" id="language" class="form-control" placeholder="e.g., en, es, fr">
+                </div>
+
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="extractActions" checked>
+                        Extract action items
+                    </label>
+                    <label>
+                        <input type="checkbox" id="extractTopics" checked>
+                        Extract key topics
+                    </label>
+                </div>
+
+                <button class="btn btn-success btn-large" id="analyzeBtn" disabled>
+                    Start Analysis
+                </button>
+            </div>
+        </section>
+
+        <!-- Progress Section -->
+        <section id="progressSection" class="progress-section" style="display: none;">
+            <div class="card">
+                <h2>Processing</h2>
+
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                    <p class="progress-text" id="progressText">0%</p>
+                </div>
+
+                <div class="progress-stages">
+                    <div class="stage" id="stage-validation">
+                        <span class="stage-icon">⏳</span>
+                        <span class="stage-name">Validation</span>
+                    </div>
+                    <div class="stage" id="stage-transcription">
+                        <span class="stage-icon">⏳</span>
+                        <span class="stage-name">Transcription</span>
+                    </div>
+                    <div class="stage" id="stage-summarization">
+                        <span class="stage-icon">⏳</span>
+                        <span class="stage-name">Summarization</span>
+                    </div>
+                    <div class="stage" id="stage-action_extraction">
+                        <span class="stage-icon">⏳</span>
+                        <span class="stage-name">Action Extraction</span>
+                    </div>
+                    <div class="stage" id="stage-report_generation">
+                        <span class="stage-icon">⏳</span>
+                        <span class="stage-name">Report Generation</span>
+                    </div>
+                </div>
+
+                <div class="status-message" id="statusMessage"></div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="resultsSection" class="results-section" style="display: none;">
+            <div class="card">
+                <h2>Analysis Complete</h2>
+
+                <div class="result-actions">
+                    <button class="btn btn-primary" id="downloadBtn">
+                        Download Report
+                    </button>
+                    <button class="btn btn-secondary" id="newAnalysisBtn">
+                        New Analysis
+                    </button>
+                </div>
+
+                <div class="result-stats">
+                    <div class="stat">
+                        <div class="stat-label">Processing Time</div>
+                        <div class="stat-value" id="processingTime">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Estimated Cost</div>
+                        <div class="stat-value" id="estimatedCost">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Cache Hits</div>
+                        <div class="stat-value" id="cacheHits">-</div>
+                    </div>
+                </div>
+
+                <div class="result-preview">
+                    <h3>Summary</h3>
+                    <div id="summaryPreview" class="preview-text"></div>
+
+                    <h3>Key Topics</h3>
+                    <ul id="topicsList" class="topics-list"></ul>
+
+                    <h3>Action Items</h3>
+                    <div id="actionsCount" class="actions-count"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Error Section -->
+        <section id="errorSection" class="error-section" style="display: none;">
+            <div class="card error-card">
+                <h2>Error</h2>
+                <p id="errorMessage"></p>
+                <button class="btn btn-secondary" id="retryBtn">Try Again</button>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Meeting Summarizer v4.0.0 | Powered by AI</p>
+            <p>
+                <a href="/api/health" target="_blank">API Health</a> |
+                <a href="/api/jobs" target="_blank">View Jobs</a>
+            </p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
