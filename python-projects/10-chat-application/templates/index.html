@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Authentication View -->
+    <div id="auth-view" class="auth-container">
+        <div class="auth-box">
+            <h1>Chat Application</h1>
+
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form">
+                <h2>Login</h2>
+                <input type="text" id="login-username" placeholder="Username" autocomplete="username">
+                <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+                <button id="login-submit" class="btn-primary">Login</button>
+                <p class="auth-switch">
+                    Don't have an account?
+                    <a href="#" id="show-register">Register</a>
+                </p>
+            </div>
+
+            <!-- Register Form -->
+            <div id="register-form" class="auth-form" style="display: none;">
+                <h2>Register</h2>
+                <input type="text" id="register-username" placeholder="Username (3-50 chars)" autocomplete="username">
+                <input type="email" id="register-email" placeholder="Email" autocomplete="email">
+                <input type="password" id="register-password" placeholder="Password (min 8 chars)" autocomplete="new-password">
+                <button id="register-submit" class="btn-primary">Register</button>
+                <p class="auth-switch">
+                    Already have an account?
+                    <a href="#" id="show-login">Login</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat View -->
+    <div id="chat-view" class="chat-container" style="display: none;">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Conversations</h2>
+                <button id="new-conversation-btn" class="btn-new" title="New Conversation">+</button>
+            </div>
+            <div id="conversation-list" class="conversation-list"></div>
+            <div class="sidebar-footer">
+                <span id="current-username"></span>
+                <button id="logout-btn" class="btn-logout">Logout</button>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-chat">
+            <div class="chat-header">
+                <h3 id="conversation-title">Select a conversation</h3>
+            </div>
+            <div id="message-container" class="message-container"></div>
+            <div class="chat-input-container">
+                <textarea id="user-input" placeholder="Type your message..." rows="3"></textarea>
+                <button id="send-button" class="btn-send">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
