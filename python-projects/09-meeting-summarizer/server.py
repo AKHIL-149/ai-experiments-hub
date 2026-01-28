@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Meeting Summarizer Web Server - Phase 4
+Meeting Summarizer Web Server - Phases 4 & 5
 
-FastAPI web server with real-time progress tracking via WebSocket.
+FastAPI web server with real-time progress, database persistence,
+video support, and advanced features.
 
 Usage:
     python server.py
@@ -35,7 +36,11 @@ from core.transcription_service import TranscriptionService
 from core.cache_manager import CacheManager
 from core.llm_client import LLMClient
 from core.meeting_analyzer import MeetingAnalyzer
+from core.database import DatabaseManager, Job
 from utils.progress_tracker import ProgressTracker, ProcessingStage
+from utils.video_processor import VideoProcessor
+from utils.speaker_diarization import create_speaker_diarization
+from utils.summary_templates import SummaryTemplateManager
 
 # Load environment
 load_dotenv()
@@ -51,7 +56,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Meeting Summarizer API",
     description="AI-powered meeting transcription and summarization",
-    version="4.0.0"
+    version="5.0.0"
 )
 
 # CORS middleware
@@ -72,8 +77,24 @@ templates_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 templates = Jinja2Templates(directory=str(templates_dir))
 
-# Global job storage (in production, use Redis or database)
+# Phase 5: Database persistence
+db_url = os.getenv('DATABASE_URL', None)  # Default: SQLite in data/database.db
+db_manager = DatabaseManager(db_url)
+
+# Phase 5: Video processor
+video_processor = VideoProcessor()
+
+# Phase 5: Speaker diarization (optional)
+hf_token = os.getenv('HF_AUTH_TOKEN')
+speaker_diarizer = create_speaker_diarization(hf_token) if hf_token else None
+
+# Phase 5: Summary templates
+template_manager = SummaryTemplateManager(custom_templates_dir='./templates/custom')
+
+# Job storage (in-memory for Phase 4, can be migrated to database in future)
 active_jobs: Dict[str, Dict] = {}
+
+# WebSocket connections (still in-memory for real-time)
 websocket_connections: Dict[str, List[WebSocket]] = {}
 
 # Configuration

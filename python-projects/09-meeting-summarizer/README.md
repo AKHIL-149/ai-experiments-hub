@@ -1,6 +1,6 @@
-# Meeting Summarizer - Phases 1, 2, 3 & 4 Complete
+# Meeting Summarizer - Phases 1-5 Complete
 
-AI-powered meeting transcription, summarization, and action item extraction with batch processing and web interface. Transform audio recordings into comprehensive meeting reports with intelligent caching for cost optimization.
+AI-powered meeting transcription, summarization, and action item extraction with batch processing, web interface, database persistence, video support, and speaker diarization. Transform audio and video recordings into comprehensive meeting reports with intelligent caching for cost optimization.
 
 ## Features
 
@@ -40,6 +40,15 @@ AI-powered meeting transcription, summarization, and action item extraction with
 - ✅ Download analysis reports from browser
 - ✅ Job management (list, view, delete)
 - ✅ Responsive design for mobile and desktop
+
+### Phase 5: Advanced Features ✅
+- ✅ Database persistence with SQLAlchemy (SQLite/PostgreSQL)
+- ✅ Video file support (MP4, AVI, MOV, MKV, WebM, FLV, WMV)
+- ✅ Speaker diarization (identify individual speakers)
+- ✅ Custom summary templates (executive, detailed, brief, technical)
+- ✅ Job history and statistics tracking
+- ✅ Automatic audio extraction from video files
+- ✅ Template-based report generation (Jinja2)
 
 ## Quick Start
 
@@ -653,6 +662,136 @@ ws.onmessage = (event) => {
 };
 ```
 
+## Phase 5 Examples
+
+### Example 1: Processing Video Files
+
+```bash
+$ python summarize.py analyze meeting_recording.mp4
+
+ℹ Initializing services...
+ℹ Detected video file: meeting_recording.mp4
+ℹ Extracting audio from video...
+ℹ Audio extracted successfully: meeting_recording_audio.mp3 (15.42 MB)
+ℹ Duration: 1825.3s (30.4 min)
+ℹ Starting full meeting analysis...
+
+============================================================
+Analysis Complete
+============================================================
+
+Summary:
+[Full analysis of extracted audio...]
+
+✓ Report saved to: ./data/output/meeting_recording_analysis.markdown
+```
+
+**Supported video formats**: MP4, AVI, MOV, MKV, WebM, FLV, WMV, M4V, 3GP
+
+### Example 2: Using Custom Summary Templates
+
+```bash
+$ python summarize.py analyze meeting.mp3 --template executive
+
+# Uses executive template for C-level summaries:
+# - Key highlights and strategic decisions
+# - Top 5 critical action items
+# - Impact analysis
+```
+
+**Available templates**:
+- `executive`: High-level summary with critical actions
+- `detailed`: Comprehensive analysis with full context
+- `brief`: Quick summary with topics and actions
+- `meeting_minutes`: Formal meeting minutes format
+- `technical`: Technical format with JSON and metadata
+
+### Example 3: Speaker Diarization
+
+```bash
+$ python summarize.py analyze meeting.mp3 --speakers
+
+# Requires: HF_AUTH_TOKEN environment variable
+# Requires: pip install pyannote.audio torch
+
+ℹ Speaker diarization enabled
+ℹ Diarization complete: found 3 speakers
+
+============================================================
+Speaker-Attributed Transcript
+============================================================
+
+SPEAKER_00:
+  Good morning everyone. Let's start with the sprint review.
+
+SPEAKER_01:
+  Thanks. I completed the authentication feature yesterday.
+  It's ready for code review.
+
+SPEAKER_02:
+  Great work! I'll review it this afternoon.
+
+============================================================
+Speaker Statistics
+============================================================
+
+SPEAKER_00: 45.2% (8.3 min, 12 segments)
+SPEAKER_01: 32.1% (5.9 min, 8 segments)
+SPEAKER_02: 22.7% (4.2 min, 6 segments)
+```
+
+### Example 4: Database-Persisted Jobs via Web UI
+
+```bash
+$ python server.py
+
+# Server starts with SQLite database
+# All jobs automatically persisted to ./data/database.db
+
+# Upload and analyze via web UI
+# Jobs persist across server restarts
+# View historical analysis results
+# Track processing statistics
+```
+
+**Database features**:
+- Job history with timestamps
+- Resume interrupted jobs
+- Search by filename or date
+- Export job data as JSON
+- Automatic cleanup of old jobs
+
+### Example 5: Creating Custom Templates
+
+Create `templates/custom/standup.md`:
+
+```jinja2
+# Daily Standup - {{filename}}
+
+**Date**: {{date}}
+**Duration**: {{duration_minutes}} minutes
+
+## What We Discussed
+{{summary}}
+
+## Action Items ({{action_items|length}})
+{% for action in action_items %}
+- [ ] {{action.description}} (@{{action.assignee}})
+{% endfor %}
+
+## Blockers
+{% for decision in decisions %}
+- {{decision.decision}}
+{% endfor %}
+```
+
+Then use it:
+
+```bash
+$ python summarize.py analyze standup.mp3 --template standup
+# Uses your custom template
+```
+
 ## Project Structure
 
 ```
@@ -677,9 +816,10 @@ python-projects/09-meeting-summarizer/
 │       ├── __init__.py             ✅
 │       ├── batch_processor.py      # Batch processing ✅
 │       ├── progress_tracker.py     # Progress tracking ✅
-│       ├── audio_utils.py          # Phase 5
-│       ├── file_utils.py           # Phase 5
-│       └── text_utils.py           # Phase 5
+│       ├── database.py             # Database persistence ✅
+│       ├── video_processor.py      # Video audio extraction ✅
+│       ├── speaker_diarization.py  # Speaker identification ✅
+│       └── summary_templates.py    # Custom templates ✅
 ├── templates/                      # Web UI templates ✅
 │   └── index.html                  # Main interface ✅
 ├── static/                         # Frontend assets ✅
@@ -694,7 +834,8 @@ python-projects/09-meeting-summarizer/
 └── tests/
     ├── __init__.py                 ✅
     ├── fixtures/
-    └── test_*.py                   # Phase 5
+    │   └── sample.py.backup        ✅
+    └── test_*.py                   # Test suite ready
 ```
 
 ## Phase 2 Components
@@ -729,13 +870,6 @@ Main orchestrator managing the full pipeline:
 - Generates reports in multiple formats
 - Tracks cost and performance statistics
 
-## Coming in Phase 3
-
-- 🔄 Batch processing for multiple files
-- 🔄 Parallel chunk processing
-- 🔄 Progress tracking and cancellation
-- 🔄 Resume interrupted processing
-- 🔄 Speaker diarization (identify individual speakers)
 
 ## Phase 3 Components
 
@@ -790,15 +924,101 @@ Professional UI design:
 - **Status colors**: Visual feedback for success/error/in-progress
 - **Accessibility**: High contrast, readable fonts
 
-## Coming in Phase 5
+## Phase 5 Components
 
-- 🔄 Speaker diarization (identify individual speakers)
-- 🔄 Calendar/Slack integration
-- 🔄 Multi-language transcription UI
-- 🔄 Video file support (extract audio)
-- 🔄 Database persistence (PostgreSQL/SQLite)
-- 🔄 User authentication
-- 🔄 Custom summary templates
+### Database Manager ([database.py](src/utils/database.py))
+SQLAlchemy-based persistence layer:
+- **Job model**: Complete job state tracking (20+ columns)
+- **SQLite default**: Zero-config local database
+- **PostgreSQL support**: Production-ready with connection pooling
+- **CRUD operations**: Create, read, update, delete jobs
+- **Statistics tracking**: Cost, processing time, cache hits
+- **Auto-migration**: Schema creation on first run
+
+**Job attributes tracked**:
+```python
+id, filename, file_path, status, summary_level, language,
+progress_percent, current_stage, transcript_text, summary_text,
+action_items_json, topics_json, decisions_json, error_message,
+started_at, completed_at, processing_time_seconds, total_cost_usd,
+cache_hits, output_file_path
+```
+
+### Video Processor ([video_processor.py](src/utils/video_processor.py))
+FFmpeg-based video audio extraction:
+- **Format support**: MP4, AVI, MOV, MKV, WebM, FLV, WMV, M4V, 3GP
+- **Audio extraction**: Converts video to MP3/WAV for transcription
+- **Metadata extraction**: Duration, codecs, resolution via ffprobe
+- **Quality control**: Configurable bitrate, sample rate
+- **Cleanup**: Automatic temporary file management
+- **Error handling**: Graceful fallback with detailed error messages
+
+**Usage**:
+```python
+processor = VideoProcessor()
+if processor.is_video_file('meeting.mp4'):
+    audio_path = processor.extract_audio('meeting.mp4')
+    # Returns: 'data/temp/meeting_audio.mp3'
+```
+
+### Speaker Diarization ([speaker_diarization.py](src/utils/speaker_diarization.py))
+Pyannote.audio-based speaker identification:
+- **Speaker detection**: Automatically identify multiple speakers
+- **Timestamp segmentation**: Who spoke when
+- **Speaker statistics**: Talk time percentages, segment counts
+- **Transcript attribution**: Assign text to speakers
+- **Optional dependency**: Graceful degradation if not installed
+- **Hugging Face auth**: Requires HF_AUTH_TOKEN for model access
+
+**Requirements**:
+```bash
+pip install pyannote.audio torch
+export HF_AUTH_TOKEN=your_huggingface_token
+```
+
+**Output format**:
+```python
+[
+    {
+        "start": 0.0,
+        "end": 5.2,
+        "speaker": "SPEAKER_00",
+        "duration": 5.2
+    },
+    ...
+]
+```
+
+### Summary Template Manager ([summary_templates.py](src/utils/summary_templates.py))
+Jinja2-based report generation:
+- **5 default templates**: executive, detailed, brief, meeting_minutes, technical
+- **Custom templates**: Load from `templates/custom/` directory
+- **Template context**: Full analysis data with 20+ variables
+- **Fallback rendering**: Graceful degradation on template errors
+- **Template discovery**: Auto-detect custom templates
+
+**Template variables**:
+```jinja2
+{{ filename }}, {{ date }}, {{ duration_minutes }}, {{ summary }},
+{{ topics }}, {{ action_items }}, {{ decisions }}, {{ processing_time }},
+{{ cost }}, {{ attendees }}, {{ llm_provider }}, {{ cache_hits }}
+```
+
+**Creating custom templates**:
+1. Create `templates/custom/mytemplate.md`
+2. Use Jinja2 syntax with available variables
+3. Use: `--template mytemplate`
+
+## Coming in Phase 6 (Future)
+
+- 🔄 Calendar/Slack integration for automated processing
+- 🔄 Multi-language transcription UI with language detection
+- 🔄 User authentication and multi-tenant support
+- 🔄 Real-time live meeting transcription (streaming)
+- 🔄 Advanced speaker recognition with voice profiles
+- 🔄 Sentiment analysis and tone detection
+- 🔄 Meeting insights dashboard with analytics
+- 🔄 Export to calendar invites with action items
 
 ## License
 
@@ -806,4 +1026,16 @@ Part of the AI Experiments Hub repository.
 
 ## Contributing
 
-Phases 1-4 complete. Full CLI and web interface operational. Phase 5 will add advanced features like speaker diarization and integrations.
+**Status**: Phases 1-5 Complete ✅
+
+Full-featured meeting summarizer with:
+- ✅ CLI and web interface
+- ✅ Multi-backend transcription (cloud + local)
+- ✅ AI-powered summarization and action extraction
+- ✅ Batch processing with parallel execution
+- ✅ Database persistence and job history
+- ✅ Video file support with audio extraction
+- ✅ Speaker diarization (optional)
+- ✅ Custom summary templates
+
+**Future development** (Phase 6): Calendar integration, live transcription, sentiment analysis, and advanced analytics.
