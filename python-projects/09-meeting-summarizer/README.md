@@ -1,6 +1,6 @@
-# Meeting Summarizer - Phases 1 & 2 Complete
+# Meeting Summarizer - Phases 1, 2 & 3 Complete
 
-AI-powered meeting transcription, summarization, and action item extraction. Transform audio recordings into comprehensive meeting reports with intelligent caching for cost optimization.
+AI-powered meeting transcription, summarization, and action item extraction with batch processing. Transform audio recordings into comprehensive meeting reports with intelligent caching for cost optimization.
 
 ## Features
 
@@ -21,6 +21,15 @@ AI-powered meeting transcription, summarization, and action item extraction. Tra
 - ✅ Decision tracking
 - ✅ Key topic identification
 - ✅ Multiple output formats (Markdown, JSON, HTML, TXT)
+
+### Phase 3: Batch Processing & Advanced Features ✅
+- ✅ Batch processing for multiple files
+- ✅ Parallel file processing with configurable workers
+- ✅ Progress tracking with real-time updates
+- ✅ Cancellation support for long-running jobs
+- ✅ Resume capability for interrupted processing
+- ✅ Batch report generation with statistics
+- ✅ Automatic audio file discovery (recursive search)
 
 ## Quick Start
 
@@ -101,6 +110,20 @@ python summarize.py analyze meeting.mp3 --format json
 
 ```bash
 python summarize.py analyze meeting.mp3 --no-actions
+```
+
+**Batch process multiple files (Phase 3):**
+
+```bash
+python summarize.py batch ./meetings --recursive
+# Process all audio files in directory and subdirectories
+```
+
+**Batch with custom settings:**
+
+```bash
+python summarize.py batch ./meetings --workers 8 --level brief --save-individual
+# Use 8 parallel workers, brief summaries, save individual reports
 ```
 
 **Transcribe with language specification:**
@@ -489,12 +512,65 @@ Statistics:
 ✓ Report saved to: ./data/output/quarterly_review_analysis.markdown
 ```
 
-## Coming in Phase 3
+## Phase 3 Examples
 
-- 🔄 Batch processing for multiple files
-- 🔄 Parallel chunk processing
-- 🔄 Progress tracking and cancellation
-- 🔄 Resume interrupted processing
+### Example 1: Batch Processing Multiple Meetings
+
+```bash
+$ python summarize.py batch ./meetings --recursive --workers 4
+
+╔════════════════════════════════════════╗
+║   Meeting Summarizer - Phase 1        ║
+║   Audio Transcription with Caching    ║
+╚════════════════════════════════════════╝
+
+ℹ Initializing batch processor...
+ℹ Searching for audio files in: ./meetings
+ℹ Found 12 audio file(s)
+
+ℹ Processing 12 files with 4 workers...
+
+Processing files: 100%|███████████████| 12/12 [03:45<00:00,  3.21s/file]
+
+============================================================
+Batch Processing Complete
+============================================================
+
+Summary:
+  Total Files: 12
+  Successful: 11
+  Failed: 1
+  Processing Time: 225.3s
+  Total Cost: $1.2450
+
+Errors:
+  • corrupted_meeting.mp3: Audio validation failed: Invalid format
+
+ℹ Generating batch report...
+✓ Batch report saved to: ./data/output/batch_report.md
+```
+
+### Example 2: Batch with Individual Reports
+
+```bash
+$ python summarize.py batch ./meetings --save-individual --level brief
+
+# Processes all files and saves individual analysis reports
+# Output:
+#   - meeting1_analysis.markdown
+#   - meeting2_analysis.markdown
+#   - ...
+#   - batch_report.md (summary of all)
+```
+
+### Example 3: Parallel Processing with Custom Workers
+
+```bash
+$ python summarize.py batch ./archive --workers 8 --format json
+
+# Use 8 parallel workers for faster processing
+# Output format: JSON for programmatic access
+```
 
 ## Coming in Phase 4
 
@@ -525,9 +601,11 @@ python-projects/09-meeting-summarizer/
 │   │   └── meeting_analyzer.py     # Main orchestrator ✅
 │   └── utils/
 │       ├── __init__.py             ✅
-│       ├── audio_utils.py          # Phase 3
-│       ├── file_utils.py           # Phase 3
-│       └── text_utils.py           # Phase 3
+│       ├── batch_processor.py      # Batch processing ✅
+│       ├── progress_tracker.py     # Progress tracking ✅
+│       ├── audio_utils.py          # Phase 4
+│       ├── file_utils.py           # Phase 4
+│       └── text_utils.py           # Phase 4
 ├── templates/                      # Phase 4
 │   └── index.html
 ├── static/                         # Phase 4
@@ -585,6 +663,24 @@ Main orchestrator managing the full pipeline:
 - 🔄 Resume interrupted processing
 - 🔄 Speaker diarization (identify individual speakers)
 
+## Phase 3 Components
+
+### Batch Processor ([batch_processor.py](src/utils/batch_processor.py))
+Parallel processing for multiple audio files:
+- **Parallel execution**: ProcessPoolExecutor with configurable workers
+- **Progress tracking**: Real-time tqdm progress bars
+- **Error handling**: Continue on error, collect failed files
+- **Batch reports**: Markdown summary with statistics
+- **Auto-discovery**: Find audio files recursively in directories
+
+### Progress Tracker ([progress_tracker.py](src/utils/progress_tracker.py))
+State management and resume capability:
+- **Real-time tracking**: Progress updates with callbacks
+- **State persistence**: JSON-based checkpoint system
+- **Resume support**: Load previous state and continue
+- **Cancellation**: Interrupt processing gracefully
+- **Stage tracking**: Monitor pipeline stages (validation → transcription → summarization → actions)
+
 ## Coming in Phase 4
 
 - 🔄 FastAPI web server
@@ -592,6 +688,7 @@ Main orchestrator managing the full pipeline:
 - 🔄 Real-time progress via WebSocket
 - 🔄 Report download endpoints
 - 🔄 Calendar/Slack integration
+- 🔄 Speaker diarization
 
 ## License
 

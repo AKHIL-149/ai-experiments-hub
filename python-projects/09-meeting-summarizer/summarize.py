@@ -27,6 +27,8 @@ from core.transcription_service import TranscriptionService
 from core.cache_manager import CacheManager
 from core.llm_client import LLMClient
 from core.meeting_analyzer import MeetingAnalyzer
+from utils.batch_processor import BatchProcessor
+from utils.progress_tracker import ProgressTracker, ProcessingStage
 
 # Initialize colorama
 colorama_init(autoreset=True)
@@ -346,6 +348,56 @@ def cmd_validate(args, config):
         return 1
 
 
+def _create_meeting_analyzer(config):
+    """Helper to create meeting analyzer instance"""
+    audio_processor = AudioProcessor(max_size_mb=config['max_audio_size_mb'])
+
+    cache_manager = None
+    if config['enable_cache']:
+        cache_manager = CacheManager(
+            cache_dir=config['cache_dir'],
+            transcription_ttl_days=config['transcription_ttl_days'],
+            summary_ttl_days=config['summary_ttl_days']
+        )
+
+    transcription_service = TranscriptionService(
+        backend=config['transcription_backend'],
+        api_key=config['openai_api_key'],
+        model=config['whisper_model'],
+        cache_manager=cache_manager,
+        audio_processor=audio_processor,
+        whisper_cpp_path=config['whisper_cpp_path'],
+        whisper_model_path=config['whisper_model_path']
+    )
+
+    # Initialize LLM client
+    llm_provider = os.getenv('LLM_PROVIDER', 'openai')
+    llm_model = os.getenv('LLM_MODEL')
+
+    if llm_provider == 'openai':
+        api_key = config['openai_api_key']
+    elif llm_provider == 'anthropic':
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+    else:
+        api_key = None
+
+    llm_client = LLMClient(
+        backend=llm_provider,
+        model=llm_model,
+        api_key=api_key
+    )
+
+    # Initialize meeting analyzer
+    meeting_analyzer = MeetingAnalyzer(
+        transcription_service=transcription_service,
+        llm_client=llm_client,
+        cache_manager=cache_manager,
+        audio_processor=audio_processor
+    )
+
+    return meeting_analyzer, audio_processor
+
+
 def cmd_analyze(args, config):
     """Analyze meeting: transcribe + summarize + extract actions"""
     print_banner()
@@ -359,51 +411,7 @@ def cmd_analyze(args, config):
     try:
         # Initialize components
         print_info("Initializing analysis pipeline...")
-
-        audio_processor = AudioProcessor(max_size_mb=config['max_audio_size_mb'])
-
-        cache_manager = None
-        if config['enable_cache']:
-            cache_manager = CacheManager(
-                cache_dir=config['cache_dir'],
-                transcription_ttl_days=config['transcription_ttl_days'],
-                summary_ttl_days=config['summary_ttl_days']
-            )
-
-        transcription_service = TranscriptionService(
-            backend=config['transcription_backend'],
-            api_key=config['openai_api_key'],
-            model=config['whisper_model'],
-            cache_manager=cache_manager,
-            audio_processor=audio_processor,
-            whisper_cpp_path=config['whisper_cpp_path'],
-            whisper_model_path=config['whisper_model_path']
-        )
-
-        # Initialize LLM client
-        llm_provider = os.getenv('LLM_PROVIDER', 'openai')
-        llm_model = os.getenv('LLM_MODEL')
-
-        if llm_provider == 'openai':
-            api_key = config['openai_api_key']
-        elif llm_provider == 'anthropic':
-            api_key = os.getenv('ANTHROPIC_API_KEY')
-        else:
-            api_key = None
-
-        llm_client = LLMClient(
-            backend=llm_provider,
-            model=llm_model,
-            api_key=api_key
-        )
-
-        # Initialize meeting analyzer
-        meeting_analyzer = MeetingAnalyzer(
-            transcription_service=transcription_service,
-            llm_client=llm_client,
-            cache_manager=cache_manager,
-            audio_processor=audio_processor
-        )
+        meeting_analyzer, audio_processor = _create_meeting_analyzer(config)
 
         # Validate audio
         print_info(f"Validating audio file: {audio_path}")
@@ -487,6 +495,126 @@ def cmd_analyze(args, config):
     except Exception as e:
         print_error(f"Analysis failed: {str(e)}")
         logger.exception("Analysis error")
+        return 1
+
+
+def cmd_batch(args, config):
+    """Batch process multiple audio files from a directory"""
+    print_banner()
+
+    directory = args.directory
+
+    if not Path(directory).exists():
+        print_error(f"Directory not found: {directory}")
+        return 1
+
+    if not Path(directory).is_dir():
+        print_error(f"Not a directory: {directory}")
+        return 1
+
+    try:
+        # Initialize batch processor
+        print_info("Initializing batch processor...")
+        batch_processor = BatchProcessor(
+            max_workers=args.workers,
+            show_progress=True,
+            continue_on_error=True
+        )
+
+        # Find audio files
+        print_info(f"Searching for audio files in: {directory}")
+        audio_files = batch_processor.find_audio_files(
+            directory,
+            recursive=args.recursive
+        )
+
+        if not audio_files:
+            print_warning("No audio files found")
+            return 0
+
+        print_info(f"Found {len(audio_files)} audio file(s)")
+        print()
+
+        # Define process function using meeting analyzer
+        def process_single_file(audio_path):
+            """Process a single audio file"""
+            meeting_analyzer, _ = _create_meeting_analyzer(config)
+            return meeting_analyzer.analyze_meeting(
+                audio_path,
+                summary_level=args.level,
+                extract_actions=not args.no_actions,
+                extract_topics=not args.no_topics,
+                language=args.language
+            )
+
+        # Process batch
+        print_info(f"Processing {len(audio_files)} files with {args.workers} workers...")
+        print()
+
+        batch_result = batch_processor.process_files(
+            audio_files,
+            process_single_file
+        )
+
+        # Display summary
+        print()
+        print(f"{Fore.CYAN}{'='*60}")
+        print(f"Batch Processing Complete")
+        print(f"{'='*60}{Style.RESET_ALL}")
+        print()
+
+        print(f"{Fore.GREEN}Summary:{Style.RESET_ALL}")
+        print(f"  Total Files: {batch_result['total_files']}")
+        print(f"  Successful: {batch_result['successful']}")
+        print(f"  Failed: {batch_result['failed']}")
+        print(f"  Processing Time: {batch_result['processing_time_seconds']:.1f}s")
+        print(f"  Total Cost: ${batch_result['total_cost_usd']:.4f}")
+        print()
+
+        # Show errors if any
+        if batch_result['errors']:
+            print(f"{Fore.YELLOW}Errors:{Style.RESET_ALL}")
+            for error in batch_result['errors'][:5]:  # Show first 5
+                print(f"  • {Path(error['file']).name}: {error['error']}")
+            if len(batch_result['errors']) > 5:
+                print(f"  ... and {len(batch_result['errors']) - 5} more errors")
+            print()
+
+        # Save batch report
+        output_dir = Path(config['output_dir'])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        report_path = output_dir / 'batch_report.md'
+        print_info("Generating batch report...")
+        batch_processor.generate_batch_report(batch_result, str(report_path))
+        print_success(f"Batch report saved to: {report_path}")
+
+        # Save individual reports
+        if args.save_individual:
+            print_info("Saving individual reports...")
+            output_format = args.format or config['default_output_format']
+
+            for result_item in batch_result['results']:
+                if result_item['status'] == 'success':
+                    audio_file = result_item['file']
+                    result = result_item['result']
+
+                    output_file = output_dir / f"{Path(audio_file).stem}_analysis.{output_format}"
+
+                    meeting_analyzer, _ = _create_meeting_analyzer(config)
+                    meeting_analyzer.generate_report(
+                        result,
+                        format=output_format,
+                        output_path=str(output_file)
+                    )
+
+            print_success(f"Saved {batch_result['successful']} individual reports")
+
+        return 0 if batch_result['failed'] == 0 else 1
+
+    except Exception as e:
+        print_error(f"Batch processing failed: {str(e)}")
+        logger.exception("Batch processing error")
         return 1
 
 
@@ -581,6 +709,58 @@ def main():
         help='Skip topic extraction'
     )
 
+    # Batch command (Phase 3)
+    batch_parser = subparsers.add_parser(
+        'batch',
+        help='Batch process multiple audio files from a directory'
+    )
+    batch_parser.add_argument(
+        'directory',
+        help='Directory containing audio files'
+    )
+    batch_parser.add_argument(
+        '--recursive',
+        action='store_true',
+        help='Search subdirectories recursively'
+    )
+    batch_parser.add_argument(
+        '--level',
+        choices=['brief', 'standard', 'detailed'],
+        default='standard',
+        help='Summary detail level'
+    )
+    batch_parser.add_argument(
+        '--language',
+        help='Language code (e.g., en, es, fr)',
+        default=None
+    )
+    batch_parser.add_argument(
+        '--format',
+        choices=['markdown', 'json', 'html', 'txt'],
+        help='Output format for individual reports (default: from config)'
+    )
+    batch_parser.add_argument(
+        '--no-actions',
+        action='store_true',
+        help='Skip action item extraction'
+    )
+    batch_parser.add_argument(
+        '--no-topics',
+        action='store_true',
+        help='Skip topic extraction'
+    )
+    batch_parser.add_argument(
+        '--workers',
+        type=int,
+        default=4,
+        help='Number of parallel workers (default: 4)'
+    )
+    batch_parser.add_argument(
+        '--save-individual',
+        action='store_true',
+        help='Save individual analysis reports for each file'
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -600,6 +780,8 @@ def main():
         return cmd_validate(args, config)
     elif args.command == 'analyze':
         return cmd_analyze(args, config)
+    elif args.command == 'batch':
+        return cmd_batch(args, config)
     else:
         print_error(f"Unknown command: {args.command}")
         return 1
