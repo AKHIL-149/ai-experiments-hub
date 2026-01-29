@@ -517,55 +517,48 @@ async def generate_image(
         try:
             # Check provider
             if request.provider == 'stable-diffusion':
-                # Try to connect to local Stable Diffusion WebUI
-                sd_url = os.getenv('STABLE_DIFFUSION_URL', 'http://127.0.0.1:7860')
-
+                # Use local Stable Diffusion (diffusers library)
                 try:
-                    import requests
-                    response = requests.post(
-                        f"{sd_url}/sdapi/v1/txt2img",
-                        json={
-                            "prompt": request.prompt,
-                            "width": request.width,
-                            "height": request.height,
-                            "steps": 20,
-                            "cfg_scale": 7
-                        },
-                        timeout=60
+                    from src.local_sd_service import get_service
+                    import uuid
+                    from pathlib import Path
+
+                    # Get or create the SD service
+                    sd_service = get_service()
+
+                    # Generate image
+                    image = sd_service.generate_image(
+                        prompt=request.prompt,
+                        width=request.width,
+                        height=request.height,
+                        steps=20
                     )
 
-                    if response.status_code == 200:
-                        import base64
-                        result = response.json()
-                        image_data = result['images'][0]
+                    # Save image to static directory
+                    image_id = str(uuid.uuid4())
+                    images_dir = Path("static/generated_images")
+                    images_dir.mkdir(exist_ok=True)
 
-                        # Save image to static directory
-                        import uuid
-                        from pathlib import Path
+                    image_path = images_dir / f"{image_id}.png"
+                    image.save(image_path, format='PNG')
 
-                        image_id = str(uuid.uuid4())
-                        images_dir = Path("static/generated_images")
-                        images_dir.mkdir(exist_ok=True)
+                    return {
+                        "success": True,
+                        "image_url": f"/static/generated_images/{image_id}.png",
+                        "prompt": request.prompt,
+                        "provider": "local-stable-diffusion"
+                    }
 
-                        image_path = images_dir / f"{image_id}.png"
-                        with open(image_path, 'wb') as f:
-                            f.write(base64.b64decode(image_data))
-
-                        return {
-                            "success": True,
-                            "image_url": f"/static/generated_images/{image_id}.png",
-                            "prompt": request.prompt
-                        }
-                    else:
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Stable Diffusion API error: {response.status_code}"
-                        )
-
-                except requests.exceptions.ConnectionError:
+                except ImportError as e:
                     raise HTTPException(
                         status_code=503,
-                        detail="Stable Diffusion not available. Install and run Stable Diffusion WebUI at http://127.0.0.1:7860"
+                        detail="Stable Diffusion dependencies not installed. Run: pip install diffusers transformers accelerate"
+                    )
+                except Exception as e:
+                    print(f"Local SD error: {str(e)}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Image generation failed: {str(e)}"
                     )
 
             elif request.provider == 'dall-e':
