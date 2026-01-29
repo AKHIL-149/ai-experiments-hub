@@ -58,6 +58,7 @@
         <div class="main-chat">
             <div class="chat-header">
                 <h3 id="conversation-title">Select a conversation</h3>
+                <button id="settings-btn" class="btn-settings" title="Conversation Settings" style="display: none;">⚙️</button>
             </div>
             <div id="message-container" class="message-container"></div>
             <div class="chat-input-container">
@@ -67,6 +68,79 @@
         </div>
     </div>
 
+    <!-- New Conversation Modal -->
+    <div id="new-conversation-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>New Conversation</h2>
+                <button class="modal-close" id="new-conv-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="new-conv-provider">LLM Provider</label>
+                    <select id="new-conv-provider" class="form-select">
+                        <option value="ollama" selected>Ollama (Local)</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="new-conv-model">Model</label>
+                    <select id="new-conv-model" class="form-select">
+                        <option value="llama3.2:3b">llama3.2:3b</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="new-conv-system-prompt">System Prompt (optional)</label>
+                    <textarea id="new-conv-system-prompt" class="form-textarea" rows="3" placeholder="You are a helpful assistant..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="new-conv-cancel" class="btn-secondary">Cancel</button>
+                <button id="new-conv-create" class="btn-primary">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Conversation Settings</h2>
+                <button class="modal-close" id="settings-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="settings-title">Title</label>
+                    <input type="text" id="settings-title" class="form-input" placeholder="Conversation title">
+                </div>
+                <div class="form-group">
+                    <label for="settings-provider">LLM Provider</label>
+                    <select id="settings-provider" class="form-select">
+                        <option value="ollama">Ollama (Local)</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="settings-model">Model</label>
+                    <select id="settings-model" class="form-select">
+                        <option value="llama3.2:3b">llama3.2:3b</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="settings-system-prompt">System Prompt</label>
+                    <textarea id="settings-system-prompt" class="form-textarea" rows="4" placeholder="You are a helpful assistant..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="settings-cancel" class="btn-secondary">Cancel</button>
+                <button id="settings-save" class="btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/app.js"></script>
+    <script src="/static/phase4-enhancements.js"></script>
 </body>
 </html>
