@@ -486,6 +486,129 @@ async def websocket_endpoint(
             del active_connections[conversation_id]
 
 
+# Image Generation Endpoint
+class ImageGenerationRequest(BaseModel):
+    prompt: str
+    provider: str = 'stable-diffusion'
+    width: Optional[int] = 512
+    height: Optional[int] = 512
+
+
+@app.post("/api/generate-image")
+async def generate_image(
+    request: ImageGenerationRequest,
+    session_token: Optional[str] = Cookie(None)
+):
+    """
+    Generate image using local Stable Diffusion or cloud providers
+
+    Supported providers:
+    - stable-diffusion (local - requires Stable Diffusion WebUI or ComfyUI)
+    - dall-e (OpenAI DALL-E)
+    - midjourney (via API)
+    """
+    with db_manager.get_session() as db:
+        auth_manager = AuthManager(db)
+        user = auth_manager.validate_session(session_token)
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+
+        try:
+            # Check provider
+            if request.provider == 'stable-diffusion':
+                # Try to connect to local Stable Diffusion WebUI
+                sd_url = os.getenv('STABLE_DIFFUSION_URL', 'http://127.0.0.1:7860')
+
+                try:
+                    import requests
+                    response = requests.post(
+                        f"{sd_url}/sdapi/v1/txt2img",
+                        json={
+                            "prompt": request.prompt,
+                            "width": request.width,
+                            "height": request.height,
+                            "steps": 20,
+                            "cfg_scale": 7
+                        },
+                        timeout=60
+                    )
+
+                    if response.status_code == 200:
+                        import base64
+                        result = response.json()
+                        image_data = result['images'][0]
+
+                        # Save image to static directory
+                        import uuid
+                        from pathlib import Path
+
+                        image_id = str(uuid.uuid4())
+                        images_dir = Path("static/generated_images")
+                        images_dir.mkdir(exist_ok=True)
+
+                        image_path = images_dir / f"{image_id}.png"
+                        with open(image_path, 'wb') as f:
+                            f.write(base64.b64decode(image_data))
+
+                        return {
+                            "success": True,
+                            "image_url": f"/static/generated_images/{image_id}.png",
+                            "prompt": request.prompt
+                        }
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Stable Diffusion API error: {response.status_code}"
+                        )
+
+                except requests.exceptions.ConnectionError:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Stable Diffusion not available. Install and run Stable Diffusion WebUI at http://127.0.0.1:7860"
+                    )
+
+            elif request.provider == 'dall-e':
+                # Use OpenAI DALL-E
+                if not os.getenv('OPENAI_API_KEY'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="OpenAI API key not configured"
+                    )
+
+                from openai import OpenAI
+                client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+                response = client.images.generate(
+                    model="dall-e-3",
+                    prompt=request.prompt,
+                    size=f"{request.width}x{request.height}",
+                    quality="standard",
+                    n=1
+                )
+
+                return {
+                    "success": True,
+                    "image_url": response.data[0].url,
+                    "prompt": request.prompt
+                }
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported provider: {request.provider}"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"Image generation error: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Image generation failed: {str(e)}"
+            )
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

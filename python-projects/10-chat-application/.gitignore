@@ -49,3 +49,9 @@ htmlcov/
 *.backup
 temp/
 tmp/
+
+# Generated images
+static/generated_images/*.png
+static/generated_images/*.jpg
+static/generated_images/*.jpeg
+!static/generated_images/.gitkeep
