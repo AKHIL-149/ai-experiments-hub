@@ -70,11 +70,13 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 
 ### Phase 4: Production Systems
 
-**10. Chat Application** (Full-stack)
+**10. Chat Application** (Full-stack) ✅
 - Complete chat interface with history
 - User authentication and sessions
 - WebSocket streaming
 - Database integration
+- Voice input (real-time speech-to-text)
+- Image generation (Stable Diffusion + DALL-E)
 
 **11. Research Assistant** (Python)
 - Advanced RAG with web search
