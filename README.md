@@ -58,10 +58,11 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - OCR and image understanding
 - Local: LLaVA | Cloud: Claude 3
 
-**8. Voice Assistant** (JavaScript)
+**8. Voice Assistant** (JavaScript) ⚠️ In Progress
 - Speech-to-text and text-to-speech
 - Voice command processing
 - Local: Whisper.cpp | Cloud: OpenAI Whisper
+- _Note: Needs attention for better logical reasoning_
 
 **9. Meeting Summarizer** (Python)
 - Audio transcription pipeline
@@ -70,13 +71,14 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 
 ### Phase 4: Production Systems
 
-**10. Chat Application** (Full-stack) ✅
+**10. Chat Application** (Full-stack) ⚠️ In Progress
 - Complete chat interface with history
 - User authentication and sessions
 - WebSocket streaming
 - Database integration
 - Voice input (real-time speech-to-text)
 - Image generation (Stable Diffusion + DALL-E)
+- _Note: Core features working, image generation may take time on first run (~10min model download)_
 
 **11. Research Assistant** (Python)
 - Advanced RAG with web search
