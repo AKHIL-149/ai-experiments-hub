@@ -199,10 +199,181 @@ def cmd_whoami(args):
 
 
 def cmd_query(args):
-    """Perform research query (Phase 2+)."""
-    print("✗ Research query command not yet implemented (Phase 2)")
-    print("  Coming soon: web search, ArXiv, and document synthesis")
-    sys.exit(1)
+    """Perform research query (Phase 3)."""
+    print("=== Research Query ===\n")
+
+    # Validate session
+    session_file = Path.home() / '.research_session'
+
+    if not session_file.exists():
+        print("✗ No active session. Please login first.")
+        print("  Run: python research.py login")
+        sys.exit(1)
+
+    token = session_file.read_text().strip()
+
+    # Initialize managers
+    db_manager, auth_manager = init_managers()
+    db_session = db_manager.get_session()
+
+    try:
+        # Validate session
+        valid, user, error = auth_manager.validate_session(db_session, token)
+
+        if not valid:
+            print(f"✗ Session invalid: {error}")
+            session_file.unlink()
+            sys.exit(1)
+
+        print(f"User: {user.username}")
+        print(f"Query: {args.query_text}\n")
+
+        # Parse source options
+        sources = [s.strip().lower() for s in args.sources.split(',')]
+        search_web = 'web' in sources
+        search_arxiv = 'arxiv' in sources
+        search_documents = 'documents' in sources
+
+        print(f"Sources: {', '.join(sources)}")
+        print(f"Max results: {args.max_results}")
+        print(f"Citation style: {args.citations}")
+        print()
+
+        # Initialize research components
+        print("Initializing research components...")
+
+        from src.core.web_search_client import WebSearchClient
+        from src.core.arxiv_client import ArXivClient
+        from src.core.llm_client import LLMClient
+        from src.core.research_orchestrator import ResearchOrchestrator
+        from src.services.cache_manager import CacheManager
+        from src.utils.report_generator import ReportGenerator
+
+        # Initialize cache manager
+        cache_dir = os.getenv('CACHE_DIR', './data/cache')
+        cache_enabled = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
+        cache_manager = CacheManager(cache_dir=cache_dir, enable_cache=cache_enabled)
+
+        # Initialize web search client
+        web_client = None
+        if search_web:
+            web_client = WebSearchClient(
+                provider='duckduckgo',
+                cache_manager=cache_manager
+            )
+
+        # Initialize ArXiv client
+        arxiv_client = None
+        if search_arxiv:
+            arxiv_cache_dir = os.getenv('ARXIV_CACHE_DIR', './data/papers')
+            arxiv_client = ArXivClient(cache_dir=arxiv_cache_dir)
+
+        # Initialize LLM client
+        llm_provider = os.getenv('LLM_PROVIDER', 'ollama').lower()
+        llm_model = os.getenv('LLM_MODEL')
+        llm_api_key = os.getenv('OPENAI_API_KEY') if llm_provider == 'openai' else os.getenv('ANTHROPIC_API_KEY')
+
+        llm_client = LLMClient(
+            provider=llm_provider,
+            model=llm_model,
+            api_key=llm_api_key
+        )
+
+        # Initialize embedding model (optional)
+        embedding_model = None
+        try:
+            from sentence_transformers import SentenceTransformer
+            embedding_model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
+            print(f"Loading embedding model: {embedding_model_name}")
+            embedding_model = SentenceTransformer(embedding_model_name)
+        except Exception as e:
+            print(f"Warning: Failed to load embedding model: {e}")
+            print("Continuing without semantic similarity (using keyword matching)")
+
+        # Initialize research orchestrator
+        database_url = os.getenv('DATABASE_URL', 'sqlite:///./data/database.db')
+        orchestrator = ResearchOrchestrator(
+            db_path=database_url,
+            web_search_client=web_client,
+            arxiv_client=arxiv_client,
+            llm_client=llm_client,
+            embedding_model=embedding_model,
+            cache_manager=cache_manager
+        )
+
+        print("✓ Components initialized\n")
+
+        # Conduct research
+        print("Starting research...\n")
+
+        results = orchestrator.conduct_research(
+            user_id=user.id,
+            query=args.query_text,
+            search_web=search_web,
+            search_arxiv=search_arxiv,
+            search_documents=search_documents,
+            max_sources=args.max_results,
+            citation_style=args.citations
+        )
+
+        # Display results
+        print("\n" + "="*80)
+        print("RESEARCH RESULTS")
+        print("="*80 + "\n")
+
+        print(f"Query ID: {results['query_id']}\n")
+
+        print("Summary:")
+        print("-" * 80)
+        print(results['summary'])
+        print()
+
+        if results['findings']:
+            print(f"\nFindings ({len(results['findings'])}):")
+            print("-" * 80)
+            for i, finding in enumerate(results['findings'], 1):
+                print(f"\n{i}. {finding['text']}")
+                print(f"   Type: {finding['type']} | Confidence: {finding['confidence']:.2f} | Sources: {finding['sources']}")
+
+        if results.get('stats'):
+            stats = results['stats']
+            print(f"\n\nStatistics:")
+            print("-" * 80)
+            print(f"Total sources found: {stats.get('total_sources', 0)}")
+            print(f"Unique sources: {stats.get('unique_sources', 0)}")
+            print(f"Sources used: {stats.get('used_sources', 0)}")
+            print(f"Findings generated: {stats.get('findings', 0)}")
+            print(f"Average confidence: {stats.get('avg_confidence', 0):.2f}")
+            print(f"Processing time: {stats.get('processing_time', 0):.1f}s")
+
+        # Generate report
+        if args.output:
+            print(f"\n\nGenerating {args.format} report...")
+
+            output_dir = os.getenv('OUTPUT_DIR', './data/output')
+            report_gen = ReportGenerator(output_dir=output_dir)
+
+            # Use custom filename if provided
+            filename = Path(args.output).stem if args.output else None
+
+            report_path = report_gen.generate_report(
+                research_data=results,
+                format=args.format,
+                filename=filename
+            )
+
+            print(f"✓ Report saved to: {report_path}")
+
+        print("\n✓ Research complete!")
+
+    except Exception as e:
+        print(f"\n✗ Research failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+    finally:
+        db_session.close()
 
 
 def main():
@@ -227,11 +398,13 @@ Examples:
   # Logout
   python research.py logout
 
-  # Research query (Phase 2+)
+  # Research query (Phase 3)
   python research.py query "quantum computing applications" --sources web,arxiv
+  python research.py query "climate change impacts" --sources web,arxiv --output report --format html
 
 Phase 1 Status: ✓ Authentication & Database
-Phase 2 Status: 🚧 Research Operations (coming soon)
+Phase 2 Status: ✓ Web Search, ArXiv, Citations, Caching
+Phase 3 Status: ✓ Synthesis, Deduplication, Ranking, Report Generation
         """
     )
 
