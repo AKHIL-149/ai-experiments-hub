@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Assistant - AI-Powered Multi-Source Research</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Auth View -->
+    <div id="auth-view" class="view">
+        <div class="auth-container">
+            <h1>Research Assistant</h1>
+            <p class="subtitle">AI-Powered Multi-Source Research with Citations</p>
+
+            <div id="login-form" class="auth-form">
+                <h2>Login</h2>
+                <input type="text" id="login-username" placeholder="Username" autocomplete="username">
+                <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+                <button id="login-btn">Login</button>
+                <p class="form-switch">
+                    Don't have an account? <a href="#" id="show-register">Register</a>
+                </p>
+            </div>
+
+            <div id="register-form" class="auth-form" style="display: none;">
+                <h2>Register</h2>
+                <input type="text" id="register-username" placeholder="Username" autocomplete="username">
+                <input type="email" id="register-email" placeholder="Email" autocomplete="email">
+                <input type="password" id="register-password" placeholder="Password" autocomplete="new-password">
+                <button id="register-btn">Register</button>
+                <p class="form-switch">
+                    Already have an account? <a href="#" id="show-login">Login</a>
+                </p>
+            </div>
+
+            <div id="auth-error" class="error" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Main View -->
+    <div id="main-view" class="view" style="display: none;">
+        <!-- Header -->
+        <header>
+            <div class="header-content">
+                <h1>Research Assistant</h1>
+                <div class="user-info">
+                    <span id="username-display"></span>
+                    <button id="logout-btn">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <h2>Research History</h2>
+                <button id="new-research-btn" class="primary-btn">+ New Research</button>
+                <div id="research-list" class="research-list">
+                    <!-- Research queries will be loaded here -->
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="content">
+                <!-- New Research Form -->
+                <div id="new-research-view" class="content-view">
+                    <h2>New Research Query</h2>
+                    <div class="research-form">
+                        <label for="research-query">Research Question</label>
+                        <textarea
+                            id="research-query"
+                            placeholder="Enter your research question..."
+                            rows="3"
+                        ></textarea>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Sources</label>
+                                <div class="checkbox-group">
+                                    <label>
+                                        <input type="checkbox" id="source-web" checked>
+                                        Web Search
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="source-arxiv" checked>
+                                        ArXiv Papers
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="source-documents">
+                                        My Documents
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="max-sources">Max Sources</label>
+                                <input type="number" id="max-sources" value="20" min="5" max="50">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="citation-style">Citation Style</label>
+                                <select id="citation-style">
+                                    <option value="APA">APA</option>
+                                    <option value="MLA">MLA</option>
+                                    <option value="Chicago">Chicago</option>
+                                    <option value="IEEE">IEEE</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button id="start-research-btn" class="primary-btn">Start Research</button>
+                    </div>
+
+                    <!-- Progress -->
+                    <div id="research-progress" class="progress-container" style="display: none;">
+                        <h3>Research in Progress...</h3>
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <p id="progress-status">Initializing...</p>
+                    </div>
+                </div>
+
+                <!-- Research Results View -->
+                <div id="results-view" class="content-view" style="display: none;">
+                    <div class="results-header">
+                        <h2 id="results-query"></h2>
+                        <div class="results-actions">
+                            <button id="download-markdown-btn" class="action-btn">Download MD</button>
+                            <button id="download-html-btn" class="action-btn">Download HTML</button>
+                            <button id="download-json-btn" class="action-btn">Download JSON</button>
+                        </div>
+                    </div>
+
+                    <div class="results-meta">
+                        <span id="results-confidence" class="meta-badge"></span>
+                        <span id="results-sources" class="meta-badge"></span>
+                        <span id="results-time" class="meta-badge"></span>
+                    </div>
+
+                    <!-- Summary -->
+                    <div class="results-section">
+                        <h3>Summary</h3>
+                        <div id="results-summary" class="summary-text"></div>
+                    </div>
+
+                    <!-- Findings -->
+                    <div class="results-section">
+                        <h3>Key Findings</h3>
+                        <div id="results-findings" class="findings-list"></div>
+                    </div>
+
+                    <!-- Sources -->
+                    <div class="results-section">
+                        <h3>Sources</h3>
+                        <div id="results-sources-list" class="sources-list"></div>
+                    </div>
+
+                    <!-- Citations -->
+                    <div class="results-section">
+                        <h3>References</h3>
+                        <div id="results-citations" class="citations-list"></div>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="empty-view" class="content-view empty-state">
+                    <h2>Welcome to Research Assistant</h2>
+                    <p>Start a new research query to synthesize information from multiple sources.</p>
+                    <button id="new-research-empty-btn" class="primary-btn">+ New Research</button>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

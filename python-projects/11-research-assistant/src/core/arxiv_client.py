@@ -69,7 +69,7 @@ class ArXivClient:
         self,
         query: str,
         max_results: int = 10,
-        sort_by: arxiv.SortCriterion = arxiv.SortCriterion.Relevance,
+        sort_by = None,  # arxiv.SortCriterion, defaults to Relevance
         extract_text: bool = True
     ) -> List[ArXivPaper]:
         """
@@ -85,6 +85,10 @@ class ArXivClient:
             List of ArXivPaper objects
         """
         papers = []
+
+        # Set default sort criterion if not provided
+        if sort_by is None:
+            sort_by = arxiv.SortCriterion.Relevance
 
         try:
             search = arxiv.Search(
