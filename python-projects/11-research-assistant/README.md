@@ -5,27 +5,29 @@ An advanced AI-powered research assistant that combines document-based RAG (Retr
 ## Status
 
 **Phase 1**: ✅ Complete - Database & Authentication
-**Phase 2**: 🚧 In Progress - ArXiv Integration & Citations
+**Phase 2**: ✅ Complete - ArXiv Integration & Citations
 **Phase 3**: 📋 Planned - Advanced Synthesis
 **Phase 4**: 📋 Planned - Web Interface
 **Phase 5**: 📋 Planned - Production Features
 
 ## Features
 
-### Current (Phase 1)
+### Current (Phase 1 & 2)
 - ✅ **Multi-user authentication** with session management
 - ✅ **Database persistence** using SQLAlchemy (6 tables)
 - ✅ **Secure password hashing** with bcrypt (12 rounds)
 - ✅ **Session-based auth** with 30-day TTL
+- ✅ **Web search client** with DuckDuckGo integration
+- ✅ **ArXiv client** for academic paper search and PDF extraction
+- ✅ **Citation manager** supporting APA, MLA, Chicago, IEEE formats
+- ✅ **3-level cache manager** for cost optimization
+- ✅ **LLM client** supporting Ollama, OpenAI, Anthropic
 
 ### Planned
-- 🚧 **Multi-source research**: Web + ArXiv + Documents
-- 🚧 **Intelligent synthesis**: Cross-source deduplication, authority ranking
-- 🚧 **Citation management**: APA, MLA, Chicago, IEEE formats
-- 🚧 **Confidence scoring**: Strict verification (3+ sources, ≥0.8 confidence)
-- 🚧 **3-level caching**: 60-75% cost savings
-- 🚧 **Real-time progress**: WebSocket streaming
-- 🚧 **Multiple export formats**: Markdown, HTML, PDF, JSON
+- 📋 **Multi-source synthesis**: Cross-source deduplication, authority ranking
+- 📋 **Confidence scoring**: Strict verification (3+ sources, ≥0.8 confidence)
+- 📋 **Real-time progress**: WebSocket streaming
+- 📋 **Multiple export formats**: Markdown, HTML, PDF, JSON
 
 ## Project Structure
 
