@@ -26,7 +26,8 @@ class LLMClient:
         provider: str = 'ollama',
         model: Optional[str] = None,
         api_key: Optional[str] = None,
-        api_url: Optional[str] = None
+        api_url: Optional[str] = None,
+        cost_tracker: Optional[Any] = None
     ):
         """
         Initialize LLM client.
@@ -36,11 +37,13 @@ class LLMClient:
             model: Model name (provider-specific)
             api_key: API key for cloud providers
             api_url: API URL (for Ollama)
+            cost_tracker: Optional CostTracker instance for usage tracking
         """
         self.provider = provider.lower()
         self.model = model
         self.api_key = api_key
         self.api_url = api_url or os.getenv('OLLAMA_API_URL', 'http://localhost:11434')
+        self.cost_tracker = cost_tracker
 
         # Set default models
         if not self.model:
@@ -157,9 +160,23 @@ class LLMClient:
             response.raise_for_status()
             data = response.json()
 
+            input_tokens = data.get('prompt_eval_count', 0)
+            output_tokens = data.get('eval_count', 0)
+
+            # Track cost
+            if self.cost_tracker:
+                self.cost_tracker.track_llm_call(
+                    provider='ollama',
+                    model=self.model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
+
             return {
                 'content': data['message']['content'],
-                'tokens': data.get('eval_count', 0) + data.get('prompt_eval_count', 0),
+                'tokens': input_tokens + output_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
                 'cost': 0.0  # Local, free
             }
 
@@ -183,14 +200,29 @@ class LLMClient:
             )
 
             content = response.choices[0].message.content
-            tokens = response.usage.total_tokens
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            total_tokens = response.usage.total_tokens
 
-            # Estimate cost (rough approximation)
-            cost = self._estimate_openai_cost(tokens)
+            # Track cost
+            cost = 0.0
+            if self.cost_tracker:
+                cost_record = self.cost_tracker.track_llm_call(
+                    provider='openai',
+                    model=self.model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
+                cost = cost_record['total_cost']
+            else:
+                # Fallback estimation
+                cost = self._estimate_openai_cost(total_tokens)
 
             return {
                 'content': content,
-                'tokens': tokens,
+                'tokens': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
                 'cost': cost
             }
 
@@ -228,17 +260,29 @@ class LLMClient:
             )
 
             content = response.content[0].text
-            tokens = response.usage.input_tokens + response.usage.output_tokens
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+            total_tokens = input_tokens + output_tokens
 
-            # Estimate cost
-            cost = self._estimate_anthropic_cost(
-                response.usage.input_tokens,
-                response.usage.output_tokens
-            )
+            # Track cost
+            cost = 0.0
+            if self.cost_tracker:
+                cost_record = self.cost_tracker.track_llm_call(
+                    provider='anthropic',
+                    model=self.model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
+                cost = cost_record['total_cost']
+            else:
+                # Fallback estimation
+                cost = self._estimate_anthropic_cost(input_tokens, output_tokens)
 
             return {
                 'content': content,
-                'tokens': tokens,
+                'tokens': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
                 'cost': cost
             }
 

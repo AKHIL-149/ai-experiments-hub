@@ -35,6 +35,8 @@ from src.core.llm_client import LLMClient
 from src.core.research_orchestrator import ResearchOrchestrator
 from src.services.cache_manager import CacheManager
 from src.utils.report_generator import ReportGenerator
+from src.utils.usage_analytics import UsageAnalytics
+from src.utils.cost_tracker import CostTracker
 
 # Load environment variables
 load_dotenv()
@@ -84,6 +86,10 @@ output_dir = os.getenv('OUTPUT_DIR', './data/output')
 # Global research orchestrator (will be initialized per request with user-specific settings)
 llm_provider = os.getenv('LLM_PROVIDER', 'ollama').lower()
 llm_model = os.getenv('LLM_MODEL')
+
+# Initialize analytics and cost tracking (Phase 5)
+usage_analytics = UsageAnalytics(db_manager)
+cost_tracker = CostTracker(log_file=os.getenv('COST_LOG_FILE', './data/costs.jsonl'))
 
 # WebSocket connection registry
 ws_connections: Dict[str, WebSocket] = {}
@@ -442,6 +448,87 @@ async def download_research(
         filename=report_path.name,
         media_type='application/octet-stream'
     )
+
+
+# Analytics endpoints (Phase 5)
+
+@app.get("/api/analytics/usage")
+async def get_usage_stats(
+    days: int = 30,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Get usage statistics for current user."""
+    user = get_current_user(session_token)
+
+    try:
+        stats = usage_analytics.get_user_stats(user.id, days=days)
+        return stats
+    except Exception as e:
+        logging.error(f"Failed to get usage stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/analytics/costs")
+async def get_cost_analysis(
+    days: int = 30,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Get cost analysis for current user."""
+    user = get_current_user(session_token)
+
+    try:
+        costs = usage_analytics.get_cost_analysis(user.id, days=days)
+        return costs
+    except Exception as e:
+        logging.error(f"Failed to get cost analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/analytics/sources")
+async def get_source_effectiveness(
+    days: int = 30,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Get source effectiveness analysis."""
+    user = get_current_user(session_token)
+
+    try:
+        effectiveness = usage_analytics.get_source_effectiveness(user.id, days=days)
+        return effectiveness
+    except Exception as e:
+        logging.error(f"Failed to get source effectiveness: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/analytics/performance")
+async def get_performance_metrics(
+    days: int = 30,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Get system-wide performance metrics (admin only for now)."""
+    user = get_current_user(session_token)
+
+    try:
+        metrics = usage_analytics.get_performance_metrics(days=days)
+        return metrics
+    except Exception as e:
+        logging.error(f"Failed to get performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/analytics/session-costs")
+async def get_session_costs(
+    session_token: Optional[str] = Cookie(None)
+):
+    """Get current session cost breakdown."""
+    user = get_current_user(session_token)
+
+    try:
+        breakdown = cost_tracker.get_session_breakdown()
+        return breakdown
+    except Exception as e:
+        logging.error(f"Failed to get session costs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # WebSocket endpoint

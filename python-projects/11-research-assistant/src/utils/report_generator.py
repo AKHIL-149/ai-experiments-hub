@@ -6,6 +6,7 @@ Generates research reports in multiple formats:
 - HTML (.html)
 - JSON (.json)
 - PDF (.pdf) - optional, requires weasyprint
+- DOCX (.docx) - optional, requires python-docx
 """
 
 import logging
@@ -41,7 +42,7 @@ class ReportGenerator:
 
         Args:
             research_data: Research results dictionary
-            format: Output format ('markdown', 'html', 'json', 'pdf')
+            format: Output format ('markdown', 'html', 'json', 'pdf', 'docx')
             filename: Optional custom filename (without extension)
 
         Returns:
@@ -67,6 +68,8 @@ class ReportGenerator:
             return self._generate_json(research_data, filename)
         elif format == 'pdf':
             return self._generate_pdf(research_data, filename)
+        elif format == 'docx' or format == 'doc':
+            return self._generate_docx(research_data, filename)
         else:
             raise ValueError(f"Unsupported format: {format}")
 
@@ -280,6 +283,97 @@ class ReportGenerator:
         logging.info(f"Generated PDF report: {output_path}")
         return output_path
 
+    def _generate_docx(
+        self,
+        data: Dict[str, Any],
+        filename: str
+    ) -> Path:
+        """Generate DOCX report (requires python-docx)."""
+        try:
+            from docx import Document
+            from docx.shared import RGBColor
+        except ImportError:
+            logging.error("DOCX generation requires python-docx: pip install python-docx")
+            raise ValueError("DOCX generation not available (install python-docx)")
+
+        output_path = self.output_dir / f"{filename}.docx"
+
+        # Create document
+        doc = Document()
+
+        # Title
+        title = doc.add_heading(f"Research Report: {data['query']}", level=1)
+        title_format = title.runs[0].font
+        title_format.color.rgb = RGBColor(44, 62, 80)
+
+        # Metadata
+        doc.add_heading('Metadata', level=2)
+        metadata_para = doc.add_paragraph()
+        metadata_para.add_run(f"Query ID: ").bold = True
+        metadata_para.add_run(f"{data.get('query_id', 'N/A')}\n")
+        metadata_para.add_run("Generated: ").bold = True
+        metadata_para.add_run(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+        if 'stats' in data:
+            stats = data['stats']
+            metadata_para.add_run("Sources Used: ").bold = True
+            metadata_para.add_run(f"{stats.get('used_sources', 0)}\n")
+            metadata_para.add_run("Findings: ").bold = True
+            metadata_para.add_run(f"{stats.get('findings', 0)}\n")
+            metadata_para.add_run("Average Confidence: ").bold = True
+            metadata_para.add_run(f"{stats.get('avg_confidence', 0):.2f}\n")
+            metadata_para.add_run("Processing Time: ").bold = True
+            metadata_para.add_run(f"{stats.get('processing_time', 0):.1f}s\n")
+
+        # Summary
+        doc.add_heading('Summary', level=2)
+        summary_para = doc.add_paragraph(data.get('summary', 'No summary available.'))
+        summary_para.style = 'Intense Quote'
+
+        # Findings
+        if data.get('findings'):
+            doc.add_heading('Key Findings', level=2)
+            for i, finding in enumerate(data['findings'], 1):
+                doc.add_heading(f"{i}. {finding.get('type', 'Finding').title()}", level=3)
+                doc.add_paragraph(finding.get('text', ''))
+
+                meta_para = doc.add_paragraph()
+                meta_para.add_run("Confidence: ").bold = True
+                confidence_run = meta_para.add_run(f"{finding.get('confidence', 0):.2f}")
+                confidence_run.font.color.rgb = RGBColor(46, 204, 113)
+                meta_para.add_run(" | ")
+                meta_para.add_run("Sources: ").bold = True
+                meta_para.add_run(f"{finding.get('sources', 0)}")
+
+        # Sources
+        if data.get('sources'):
+            doc.add_heading('Sources', level=2)
+            for i, source in enumerate(data['sources'], 1):
+                source_para = doc.add_paragraph(style='List Number')
+                source_para.add_run(source.get('title', 'Untitled')).bold = True
+
+                if source.get('url'):
+                    source_para.add_run(f" - ")
+                    url_run = source_para.add_run(source['url'])
+                    url_run.font.color.rgb = RGBColor(52, 152, 219)
+
+                source_para.add_run(f" ({source.get('type', 'unknown')})")
+
+                if 'composite_score' in source:
+                    source_para.add_run(f" - Score: {source['composite_score']:.2f}")
+
+        # Citations
+        if data.get('citations'):
+            doc.add_heading('References', level=2)
+            for i, citation in enumerate(data['citations'], 1):
+                doc.add_paragraph(citation, style='List Number')
+
+        # Save document
+        doc.save(str(output_path))
+
+        logging.info(f"Generated DOCX report: {output_path}")
+        return output_path
+
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitize filename for filesystem."""
         # Remove or replace invalid characters
@@ -411,8 +505,24 @@ class ReportGenerator:
         except ImportError:
             pass
 
+        # Check if DOCX generation is available
+        docx_available = False
+        try:
+            import docx
+            docx_available = True
+        except ImportError:
+            pass
+
+        # Build supported formats list
+        formats = ['markdown', 'html', 'json']
+        if pdf_available:
+            formats.append('pdf')
+        if docx_available:
+            formats.append('docx')
+
         return {
             'output_dir': str(self.output_dir),
-            'supported_formats': ['markdown', 'html', 'json', 'pdf'] if pdf_available else ['markdown', 'html', 'json'],
-            'pdf_available': pdf_available
+            'supported_formats': formats,
+            'pdf_available': pdf_available,
+            'docx_available': docx_available
         }
