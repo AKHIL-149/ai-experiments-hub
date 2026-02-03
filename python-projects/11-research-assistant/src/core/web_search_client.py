@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     DUCKDUCKGO_AVAILABLE = True
 except ImportError:
     DUCKDUCKGO_AVAILABLE = False
-    logging.warning("duckduckgo-search not installed. Web search will not work.")
+    logging.warning("ddgs not installed. Web search will not work. Install with: pip install ddgs")
 
 from bs4 import BeautifulSoup
 import requests

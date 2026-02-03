@@ -22,19 +22,19 @@ sentence-transformers==2.2.2
 chromadb==0.4.18
 
 # Web Search
-duckduckgo-search==3.9.6
+ddgs>=1.0.0
 
 # ArXiv
 arxiv==2.1.0
 
 # PDF Processing
-PyMuPDF==1.23.8
-pdfplumber==0.10.3
+PyMuPDF>=1.23.0
+pdfplumber>=0.10.0
 
 # HTML Processing
-beautifulsoup4==4.12.2
-trafilatura==1.6.2
-readability-lxml==0.8.1
+beautifulsoup4>=4.12.0
+trafilatura>=1.7.0
+readability-lxml>=0.8.0
 
 # Citations
 citeproc-py==0.6.0
