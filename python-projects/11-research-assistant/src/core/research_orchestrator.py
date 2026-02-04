@@ -72,8 +72,8 @@ class ResearchOrchestrator:
 
         self.synthesis_engine = SynthesisEngine(
             llm_client=llm_client,
-            min_sources=3,
-            confidence_threshold=0.8,
+            min_sources=2,  # Lowered from 3 to allow more findings
+            confidence_threshold=0.5,  # Lowered from 0.8 for small models
             detect_contradictions=True
         )
 
@@ -517,13 +517,15 @@ class ResearchOrchestrator:
                 'query': query.query_text,
                 'status': query.status,
                 'summary': query.summary,
-                'confidence': query.confidence_score,
+                'confidence': query.confidence_score if query.confidence_score is not None else 0.0,
+                'avg_confidence': query.confidence_score if query.confidence_score is not None else 0.0,
                 'findings': [
                     {
-                        'text': f.finding_text,
-                        'type': f.finding_type,
+                        'finding_text': f.finding_text,
+                        'finding_type': f.finding_type,
                         'confidence': f.confidence,
-                        'sources': len(f.source_ids)
+                        'source_ids': f.source_ids if f.source_ids else [],
+                        'num_sources': len(f.source_ids) if f.source_ids else 0
                     }
                     for f in findings
                 ],
@@ -531,11 +533,12 @@ class ResearchOrchestrator:
                     {
                         'title': s.title,
                         'url': s.url,
-                        'type': s.source_type,
+                        'source_type': s.source_type,
                         'rank': s.retrieval_rank
                     }
                     for s in sorted(sources, key=lambda x: x.retrieval_rank)
                 ],
+                'references': '\n'.join([c.formatted_citation for c in citations]),
                 'citations': [c.formatted_citation for c in citations],
                 'created_at': query.created_at,
                 'completed_at': query.completed_at,

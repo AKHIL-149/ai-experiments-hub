@@ -408,6 +408,10 @@ class CitationManager:
 
         formatted_citations = []
         for citation in citations:
+            # Extract known fields and pass remaining as kwargs
+            extra_fields = {k: v for k, v in citation.items()
+                          if k not in ['source_type', 'title', 'authors', 'url', 'published_date']}
+
             formatted = self.generate_citation(
                 source_type=citation.get('source_type', 'web'),
                 title=citation.get('title', 'Untitled'),
@@ -415,7 +419,7 @@ class CitationManager:
                 url=citation.get('url'),
                 published_date=citation.get('published_date'),
                 style=citation_style,
-                **citation
+                **extra_fields
             )
             formatted_citations.append(formatted)
 

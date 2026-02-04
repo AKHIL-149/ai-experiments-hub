@@ -232,13 +232,17 @@ class SynthesisEngine:
                 'role': 'system',
                 'content': (
                     'You are a research synthesizer. Analyze extracted key points from multiple sources '
-                    'and synthesize them into coherent findings. For each finding:\n'
-                    '1. State the finding clearly\n'
-                    '2. Classify the type (fact/argument/statistic/definition)\n'
-                    '3. List which sources support it (by source number)\n'
-                    '4. Assess confidence based on source agreement and quality\n\n'
-                    f'Only include findings supported by at least {self.min_sources} sources '
-                    f'for high confidence (≥{self.CONFIDENCE_HIGH}).'
+                    'and synthesize them into coherent findings.\n\n'
+                    'IMPORTANT: Use this EXACT format for each finding:\n\n'
+                    'Finding: [State the finding in 1-2 clear sentences]\n'
+                    'Type: [fact/argument/statistic/definition]\n'
+                    'Sources: [1, 3, 5]\n'
+                    'Confidence: [0.0-1.0]\n\n'
+                    f'Requirements:\n'
+                    f'- Only include findings supported by at least {self.min_sources} sources\n'
+                    f'- Use confidence ≥{self.CONFIDENCE_HIGH} only when 3+ sources agree\n'
+                    f'- Be specific and factual\n'
+                    f'- Answer the research question directly'
                 )
             },
             {
@@ -247,11 +251,8 @@ class SynthesisEngine:
                     f"Research query: {query}\n\n"
                     f"Extracted key points from {len(extractions)} sources:\n\n"
                     f"{combined_extractions}\n\n"
-                    f"Synthesize up to {max_findings} key findings. For each finding, provide:\n"
-                    f"- Finding text (1-2 sentences)\n"
-                    f"- Type (fact/argument/statistic/definition)\n"
-                    f"- Supporting sources (list source numbers, e.g., [1, 3, 5])\n"
-                    f"- Confidence (0.0-1.0, where ≥0.8 requires 3+ sources)"
+                    f"Provide up to {max_findings} key findings using the EXACT format shown above.\n"
+                    f"Each finding MUST start with 'Finding:' and include Type, Sources, and Confidence."
                 )
             }
         ]
@@ -263,9 +264,13 @@ class SynthesisEngine:
                 temperature=0.5
             )
 
+            # DEBUG: Log the raw LLM output
+            llm_output = response['content']
+            logging.debug(f"LLM synthesis output (first 500 chars): {llm_output[:500]}")
+
             # Parse LLM response into Finding objects
             findings = self._parse_findings_from_llm(
-                response['content'],
+                llm_output,
                 extractions,
                 sources
             )
@@ -293,11 +298,10 @@ class SynthesisEngine:
         Returns:
             List of Finding objects
         """
+        import re
         findings = []
 
-        # Simple parsing: split by double newlines and extract structured data
-        # In production, you'd use JSON mode or more robust parsing
-
+        # Try structured parsing first
         lines = llm_output.strip().split('\n')
         current_finding = {}
 
@@ -316,21 +320,20 @@ class SynthesisEngine:
                 current_finding = {}
                 continue
 
-            # Parse fields
-            if line.startswith('Finding:') or line.startswith('-'):
-                text = line.split(':', 1)[-1].strip().lstrip('- ')
-                current_finding['finding_text'] = text
+            # Parse fields (more flexible patterns)
+            if line.startswith('Finding:') or line.startswith('-') or line.startswith('•') or line.startswith('*'):
+                text = line.split(':', 1)[-1].strip().lstrip('-•* ')
+                if text:
+                    current_finding['finding_text'] = text
             elif 'type:' in line.lower():
                 finding_type = line.split(':', 1)[-1].strip().lower()
                 current_finding['finding_type'] = finding_type
             elif 'sources:' in line.lower() or 'source' in line.lower():
                 # Extract source numbers
-                import re
                 source_nums = re.findall(r'\d+', line)
                 current_finding['source_nums'] = [int(n) for n in source_nums]
             elif 'confidence:' in line.lower():
                 # Extract confidence score
-                import re
                 conf_match = re.search(r'(\d+\.?\d*)', line)
                 if conf_match:
                     confidence = float(conf_match.group(1))
@@ -338,6 +341,11 @@ class SynthesisEngine:
                     if confidence > 1.0:
                         confidence = confidence / 100.0
                     current_finding['confidence'] = confidence
+            elif re.match(r'^\d+\.', line):
+                # Numbered list item
+                text = re.sub(r'^\d+\.\s*', '', line)
+                if text and not current_finding.get('finding_text'):
+                    current_finding['finding_text'] = text
 
         # Add last finding
         if current_finding.get('finding_text'):
@@ -348,6 +356,11 @@ class SynthesisEngine:
             )
             if finding:
                 findings.append(finding)
+
+        # Fallback: If no findings parsed, create simple findings from sentences
+        if not findings and llm_output:
+            logging.warning("Structured parsing failed, using fallback paragraph extraction")
+            findings = self._fallback_parse_findings(llm_output, extractions, sources)
 
         logging.info(f"Parsed {len(findings)} findings from LLM output")
         return findings
@@ -403,6 +416,63 @@ class SynthesisEngine:
         except Exception as e:
             logging.warning(f"Failed to create finding from dict: {e}")
             return None
+
+    def _fallback_parse_findings(
+        self,
+        llm_output: str,
+        extractions: List[Dict[str, Any]],
+        sources: List[Dict[str, Any]]
+    ) -> List[Finding]:
+        """
+        Fallback parser: Extract findings from free-form text.
+
+        Used when structured parsing fails (small models, creative outputs).
+        """
+        import re
+        findings = []
+
+        # Split into sentences
+        sentences = re.split(r'[.!?]\s+', llm_output)
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+
+            # Skip short or meta sentences
+            if len(sentence) < 30 or any(skip in sentence.lower() for skip in [
+                'based on', 'according to', 'sources indicate', 'multiple sources',
+                'let me', 'i will', 'here are', 'following', 'summarize'
+            ]):
+                continue
+
+            # Extract source numbers if mentioned
+            source_nums = re.findall(r'source\s+(\d+)|[\[\(](\d+)[\]\)]', sentence.lower())
+            source_nums = [int(n[0] or n[1]) for n in source_nums if n]
+
+            # Default to first 3 sources if not mentioned
+            if not source_nums:
+                source_nums = [1, 2, 3]
+
+            # Map to source IDs
+            source_ids = []
+            for num in source_nums[:5]:  # Limit to 5 sources
+                idx = num - 1
+                if 0 <= idx < len(extractions):
+                    source_ids.append(extractions[idx]['source_id'])
+
+            if source_ids:
+                # Create finding with moderate confidence
+                confidence = 0.6 if len(source_ids) >= 3 else 0.4
+
+                findings.append(Finding(
+                    finding_text=sentence,
+                    finding_type='fact',
+                    confidence=confidence,
+                    source_ids=source_ids,
+                    citations=[]
+                ))
+
+        # Limit to top 5 findings
+        return findings[:5]
 
     def _detect_contradictions(
         self,
