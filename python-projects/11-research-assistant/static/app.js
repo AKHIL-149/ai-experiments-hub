@@ -284,9 +284,12 @@ class ResearchApp {
         document.getElementById('results-query').textContent = this.currentResearch.query;
 
         // Meta
-        if (this.currentResearch.confidence !== null) {
+        const confidence = this.currentResearch.confidence || this.currentResearch.avg_confidence || 0;
+        if (confidence && !isNaN(confidence)) {
             document.getElementById('results-confidence').textContent =
-                `Confidence: ${(this.currentResearch.confidence * 100).toFixed(0)}%`;
+                `Confidence: ${(confidence * 100).toFixed(0)}%`;
+        } else {
+            document.getElementById('results-confidence').textContent = `Confidence: N/A`;
         }
 
         document.getElementById('results-sources').textContent =
@@ -297,8 +300,8 @@ class ResearchApp {
                 `${this.currentResearch.processing_time.toFixed(1)}s`;
         }
 
-        // Summary
-        document.getElementById('results-summary').textContent = this.currentResearch.summary;
+        // Summary (with formatted structure)
+        this.renderFormattedSummary(this.currentResearch.summary);
 
         // Findings
         const findingsContainer = document.getElementById('results-findings');
@@ -308,12 +311,17 @@ class ResearchApp {
             this.currentResearch.findings.forEach(finding => {
                 const item = document.createElement('div');
                 item.className = 'finding-item';
+                const findingText = finding.finding_text || finding.text || 'No text';
+                const findingType = finding.finding_type || finding.type || 'unknown';
+                const numSources = finding.num_sources || finding.sources || 0;
+                const confidence = finding.confidence || 0;
+
                 item.innerHTML = `
-                    <div class="finding-text">${finding.text}</div>
+                    <div class="finding-text">${findingText}</div>
                     <div class="finding-meta">
-                        <span><strong>Type:</strong> ${finding.type}</span>
-                        <span><strong>Confidence:</strong> ${(finding.confidence * 100).toFixed(0)}%</span>
-                        <span><strong>Sources:</strong> ${finding.sources}</span>
+                        <span><strong>Type:</strong> ${findingType}</span>
+                        <span><strong>Confidence:</strong> ${(confidence * 100).toFixed(0)}%</span>
+                        <span><strong>Sources:</strong> ${numSources}</span>
                     </div>
                 `;
                 findingsContainer.appendChild(item);
@@ -351,6 +359,37 @@ class ResearchApp {
         } else {
             citationsContainer.innerHTML = '<p>No citations available.</p>';
         }
+    }
+
+    renderFormattedSummary(summaryText) {
+        const container = document.getElementById('results-summary');
+        if (!summaryText) {
+            container.innerHTML = '<p>No summary available.</p>';
+            return;
+        }
+
+        // Parse summary with markdown-style formatting
+        const formatted = summaryText
+            // Bold headers (lines starting with **)
+            .replace(/^\*\*(.+?)\*\*/gm, '<h3>$1</h3>')
+            // Bold inline text
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            // Convert source references to styled spans
+            .replace(/\(source[s]?:?\s*(\d+(?:,\s*\d+)*)\)/gi, '<span class="source-ref">(Sources: $1)</span>')
+            .replace(/\(source[s]?:?\s*(\d+)\)/gi, '<span class="source-ref">(Source: $1)</span>')
+            // Paragraphs
+            .split('\n\n')
+            .map(para => para.trim())
+            .filter(para => para.length > 0)
+            .map(para => {
+                if (para.startsWith('<h3>')) {
+                    return para;
+                }
+                return `<p>${para}</p>`;
+            })
+            .join('\n');
+
+        container.innerHTML = formatted;
     }
 
     async downloadReport(format) {
