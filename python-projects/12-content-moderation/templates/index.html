@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Moderation System</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <!-- Authentication View -->
+    <div id="auth-view" class="auth-container">
+        <div class="auth-box">
+            <h1>Content Moderation System</h1>
+            <p class="subtitle">AI-powered content safety platform</p>
+
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form">
+                <h2>Login</h2>
+                <div class="form-group">
+                    <input type="text" id="login-username" placeholder="Username" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+                </div>
+                <button id="login-submit" class="btn-primary">Login</button>
+                <div id="login-error" class="error-message" style="display: none;"></div>
+                <p class="auth-switch">
+                    Don't have an account?
+                    <a href="#" id="show-register">Register</a>
+                </p>
+            </div>
+
+            <!-- Register Form -->
+            <div id="register-form" class="auth-form" style="display: none;">
+                <h2>Register</h2>
+                <div class="form-group">
+                    <input type="text" id="register-username" placeholder="Username (3-50 chars)" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <input type="email" id="register-email" placeholder="Email" autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="register-password" placeholder="Password (min 8 chars)" autocomplete="new-password">
+                </div>
+                <button id="register-submit" class="btn-primary">Register</button>
+                <div id="register-error" class="error-message" style="display: none;"></div>
+                <p class="auth-switch">
+                    Already have an account?
+                    <a href="#" id="show-login">Login</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application View -->
+    <div id="app-view" class="app-container" style="display: none;">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Content Moderation</h2>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="submit">
+                    Submit Content
+                </button>
+                <button class="nav-item" data-view="my-content">
+                    My Content
+                </button>
+                <button class="nav-item moderator-only" data-view="queue" style="display: none;">
+                    Review Queue
+                </button>
+                <button class="nav-item admin-only" data-view="admin" style="display: none;">
+                    Admin Panel
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <span id="current-username"></span>
+                    <span id="user-role" class="role-badge"></span>
+                </div>
+                <button id="logout-btn" class="btn-logout">Logout</button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Submit Content View -->
+            <div id="submit-view" class="content-view">
+                <div class="view-header">
+                    <h2>Submit Content for Moderation</h2>
+                    <p>Submit text, images, or videos for AI-powered content moderation</p>
+                </div>
+
+                <div class="submit-container">
+                    <div class="content-type-selector">
+                        <button class="type-btn active" data-type="text">Text</button>
+                        <button class="type-btn" data-type="image">Image</button>
+                        <button class="type-btn" data-type="video">Video</button>
+                    </div>
+
+                    <!-- Text Submission -->
+                    <div id="text-submit" class="submit-form">
+                        <div class="form-group">
+                            <label for="text-content">Text Content</label>
+                            <textarea id="text-content" rows="6" placeholder="Enter text to moderate..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="text-priority">Priority</label>
+                            <select id="text-priority">
+                                <option value="0">Normal</option>
+                                <option value="5">High</option>
+                                <option value="10">Critical</option>
+                            </select>
+                        </div>
+                        <button id="submit-text-btn" class="btn-primary">Submit for Moderation</button>
+                    </div>
+
+                    <!-- Image Submission -->
+                    <div id="image-submit" class="submit-form" style="display: none;">
+                        <div class="form-group">
+                            <label for="image-file">Image File</label>
+                            <input type="file" id="image-file" accept="image/jpeg,image/jpg,image/png,image/gif,image/webp">
+                            <div class="file-info">Max size: 100MB</div>
+                        </div>
+                        <div id="image-preview" class="image-preview" style="display: none;">
+                            <img id="image-preview-img" src="" alt="Preview">
+                        </div>
+                        <div class="form-group">
+                            <label for="image-priority">Priority</label>
+                            <select id="image-priority">
+                                <option value="0">Normal</option>
+                                <option value="5">High</option>
+                                <option value="10">Critical</option>
+                            </select>
+                        </div>
+                        <button id="submit-image-btn" class="btn-primary">Submit for Moderation</button>
+                    </div>
+
+                    <!-- Video Submission -->
+                    <div id="video-submit" class="submit-form" style="display: none;">
+                        <div class="form-group">
+                            <label for="video-file">Video File</label>
+                            <input type="file" id="video-file" accept="video/mp4,video/mov,video/avi,video/webm">
+                            <div class="file-info">Max size: 100MB</div>
+                        </div>
+                        <div id="video-preview" class="video-preview" style="display: none;">
+                            <video id="video-preview-player" controls></video>
+                        </div>
+                        <div class="form-group">
+                            <label for="video-priority">Priority</label>
+                            <select id="video-priority">
+                                <option value="0">Normal</option>
+                                <option value="5">High</option>
+                                <option value="10">Critical</option>
+                            </select>
+                        </div>
+                        <button id="submit-video-btn" class="btn-primary">Submit for Moderation</button>
+                    </div>
+
+                    <div id="submit-success" class="success-message" style="display: none;">
+                        Content submitted successfully!
+                    </div>
+                    <div id="submit-error" class="error-message" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- My Content View -->
+            <div id="my-content-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>My Submitted Content</h2>
+                    <div class="filter-controls">
+                        <select id="content-status-filter">
+                            <option value="">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="processing">Processing</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="flagged">Flagged</option>
+                        </select>
+                        <button id="refresh-content-btn" class="btn-secondary">Refresh</button>
+                    </div>
+                </div>
+
+                <div id="content-list" class="content-list">
+                    <div class="loading">Loading content...</div>
+                </div>
+            </div>
+
+            <!-- Review Queue View (Moderators Only) -->
+            <div id="queue-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>Review Queue</h2>
+                    <div class="stats-summary" id="queue-stats">
+                        <div class="stat">
+                            <span class="stat-label">Pending:</span>
+                            <span class="stat-value" id="stat-pending">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Flagged:</span>
+                            <span class="stat-value" id="stat-flagged">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Processing:</span>
+                            <span class="stat-value" id="stat-processing">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="queue-list" class="content-list">
+                    <div class="loading">Loading queue...</div>
+                </div>
+            </div>
+
+            <!-- Admin Panel View (Admins Only) -->
+            <div id="admin-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>Admin Panel</h2>
+                </div>
+
+                <div class="admin-tabs">
+                    <button class="tab-btn active" data-tab="users">Users</button>
+                    <button class="tab-btn" data-tab="settings">Settings</button>
+                </div>
+
+                <div id="admin-users-tab" class="admin-tab-content">
+                    <div id="users-list" class="users-list">
+                        <div class="loading">Loading users...</div>
+                    </div>
+                </div>
+
+                <div id="admin-settings-tab" class="admin-tab-content" style="display: none;">
+                    <p>Settings panel coming soon...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content Detail Modal -->
+    <div id="content-modal" class="modal" style="display: none;">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2>Content Details</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="content-detail"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary modal-close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
