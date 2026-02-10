@@ -9,6 +9,8 @@ from typing import Optional, List
 import uvicorn
 import os
 import hashlib
+import logging
+from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -17,6 +19,8 @@ from src.core.database import (
     ContentType, ContentStatus, ViolationCategory
 )
 from src.core.auth_manager import AuthManager, UserRole
+from src.services.classification_service import get_classification_service
+from src.utils.file_handler import get_file_handler
 
 # Load environment
 load_dotenv()
@@ -284,12 +288,12 @@ async def submit_content(
     user: User = Depends(get_current_user)
 ):
     """
-    Submit content for moderation
+    Submit content for moderation (Phase 2: With NSFW detection & classification)
 
     Supports:
-    - Text content (text_content field)
-    - Image upload (file field)
-    - Video upload (file field)
+    - Text content (text_content field) - LLM classification
+    - Image upload (file field) - NSFW detection + Vision classification
+    - Video upload (file field) - Placeholder (Phase 3)
     """
     with db_manager.get_session() as db:
         # Validate content type
@@ -301,41 +305,39 @@ async def submit_content(
                 detail=f"Invalid content_type. Must be: {', '.join([ct.value for ct in ContentType])}"
             )
 
+        # Initialize services
+        file_handler = get_file_handler()
+        classification_service = get_classification_service()
+
+        file_path = None
+        file_hash = None
+        thumbnail_path = None
+
         # Validate input based on content type
         if content_type_enum == ContentType.TEXT:
             if not text_content or not text_content.strip():
                 raise HTTPException(status_code=400, detail="text_content is required for text submissions")
-            file_path = None
-            file_hash = None
 
         elif content_type_enum in [ContentType.IMAGE, ContentType.VIDEO]:
             if not file:
                 raise HTTPException(status_code=400, detail="file is required for image/video submissions")
 
-            # Check file size
-            file_size = 0
-            file_data = bytearray()
-            for chunk in file.file:
-                chunk_data = chunk if isinstance(chunk, bytes) else chunk.encode()
-                file_data.extend(chunk_data)
-                file_size += len(chunk_data)
+            # Read file data
+            file_data = await file.read()
 
-                if file_size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File too large. Maximum size: {MAX_UPLOAD_SIZE_MB}MB"
-                    )
+            # Save file using file handler
+            success, saved_path, saved_hash, error = file_handler.save_upload(
+                file_data=file_data,
+                filename=file.filename or 'unknown',
+                user_id=user.id,
+                content_type=content_type
+            )
 
-            # Save file
-            file_ext = Path(file.filename).suffix if file.filename else '.bin'
-            file_name = f"{user.id}_{ContentType(content_type).value}_{os.urandom(8).hex()}{file_ext}"
-            file_path_obj = UPLOAD_DIR / file_name
+            if not success:
+                raise HTTPException(status_code=400, detail=error)
 
-            with open(file_path_obj, 'wb') as f:
-                f.write(file_data)
-
-            file_path = str(file_path_obj)
-            file_hash = calculate_file_hash(file_path_obj)
+            file_path = saved_path
+            file_hash = saved_hash
 
             # Check for duplicate
             existing = db.query(ContentItem).filter(
@@ -344,13 +346,19 @@ async def submit_content(
 
             if existing:
                 # Delete uploaded file
-                file_path_obj.unlink()
+                file_handler.delete_file(file_path)
                 return {
                     "success": True,
                     "content": existing.to_dict(),
                     "duplicate": True,
                     "message": "Duplicate content detected. Returning existing submission."
                 }
+
+            # Generate thumbnail for images
+            if content_type_enum == ContentType.IMAGE:
+                success, thumb_path, error = file_handler.generate_thumbnail(file_path)
+                if success:
+                    thumbnail_path = thumb_path
 
         else:
             raise HTTPException(status_code=400, detail="Unsupported content type")
@@ -362,7 +370,7 @@ async def submit_content(
             text_content=text_content,
             file_path=file_path,
             file_hash=file_hash,
-            status=ContentStatus.PENDING,
+            status=ContentStatus.PROCESSING,  # Changed from PENDING
             priority=priority or 0
         )
 
@@ -370,14 +378,62 @@ async def submit_content(
         db.commit()
         db.refresh(content_item)
 
-        # TODO: Enqueue moderation job (Phase 4)
-        # For now, content is just stored as PENDING
+        # Phase 2: Immediate classification (synchronous for now)
+        try:
+            classification_result = classification_service.classify_content(
+                content_type=content_type,
+                text_content=text_content,
+                file_path=file_path
+            )
 
-        return {
-            "success": True,
-            "content": content_item.to_dict(),
-            "message": "Content submitted for moderation"
-        }
+            # Create classification record
+            classification = Classification(
+                content_id=content_item.id,
+                category=ViolationCategory(classification_result['category']),
+                confidence=classification_result['confidence'],
+                is_violation=classification_result['is_violation'],
+                provider=classification_result['provider'],
+                model_name=classification_result['model'],
+                reasoning=classification_result['reasoning'],
+                processing_time_ms=classification_result['processing_time_ms'],
+                cost=classification_result['cost']
+            )
+
+            db.add(classification)
+
+            # Apply moderation policy
+            new_status = classification_service.apply_moderation_policy(classification_result)
+            content_item.status = ContentStatus(new_status)
+            content_item.moderated_at = datetime.utcnow()
+
+            db.commit()
+            db.refresh(content_item)
+            db.refresh(classification)
+
+            # Prepare response
+            content_dict = content_item.to_dict()
+            content_dict['classification'] = classification.to_dict()
+            content_dict['thumbnail_path'] = thumbnail_path
+
+            return {
+                "success": True,
+                "content": content_dict,
+                "message": f"Content classified as {classification_result['category']} (confidence: {classification_result['confidence']:.2f})"
+            }
+
+        except Exception as e:
+            # Classification failed, mark as flagged for manual review
+            logging.error(f"Classification failed for content {content_item.id}: {e}")
+            content_item.status = ContentStatus.FLAGGED
+            db.commit()
+            db.refresh(content_item)
+
+            return {
+                "success": True,
+                "content": content_item.to_dict(),
+                "message": "Content submitted but classification failed. Flagged for manual review.",
+                "error": str(e)
+            }
 
 
 @app.get("/api/content/{content_id}")
@@ -642,6 +698,6 @@ async def get_moderation_stats(
 
 
 if __name__ == "__main__":
-    port = int(os.getenv('PORT', 8000))
+    port = int(os.getenv('PORT', 7000))
     host = os.getenv('HOST', '0.0.0.0')
     uvicorn.run(app, host=host, port=port)

@@ -1,7 +1,7 @@
 # Project 12: Content Moderation System
 
-**Version**: 1.0.0 (Phase 1)
-**Status**: Phase 1 Complete - Core Foundation
+**Version**: 1.1.0 (Phase 2)
+**Status**: Phase 2 Complete - Image Moderation with NSFW Detection
 **Architecture**: Full-stack AI-powered content moderation platform
 
 ## Overview
@@ -15,9 +15,43 @@ A production-ready content moderation system that uses AI to classify multi-moda
 - Content platforms (UGC moderation)
 - Enterprise policy enforcement
 
-## Phase 1 Features (Current)
+## Features
 
-### ✅ Completed Features
+### Phase 2 ✅ (Current - Image Moderation)
+
+**NSFW Detection**:
+- Local NudeNet integration for fast NSFW detection
+- Explicit content detection (exposed body parts)
+- Suggestive content detection (context-based)
+- Confidence scoring (0.0-1.0)
+- Fallback mode when NudeNet unavailable
+
+**File Handling**:
+- Secure file upload with validation
+- Automatic thumbnail generation (300x300, JPEG)
+- SHA256 deduplication
+- Support for JPEG, PNG, GIF, WebP
+- File size validation (100MB limit)
+- Image metadata extraction
+
+**Enhanced Image Classification**:
+- Two-stage classification pipeline:
+  1. Fast local NSFW detection (NudeNet)
+  2. Vision model classification (GPT-4V, Claude Vision)
+- Combined confidence scoring
+- Automatic status determination (approved/rejected/flagged)
+- Cost tracking per classification
+
+**Classification Service**:
+- Unified API for text and image classification
+- Multi-provider LLM support with fallback
+- Moderation policy engine with configurable thresholds
+- Processing time metrics
+- Error handling with graceful degradation
+
+### Phase 1 ✅ (Core Foundation)
+
+**Authentication & Authorization**:
 
 **Authentication & Authorization**:
 - User registration with bcrypt password hashing (12 rounds)
@@ -73,9 +107,10 @@ A production-ready content moderation system that uses AI to classify multi-moda
 
 ### AI/ML
 - **Ollama** - Local LLM (default: llama3.2:3b)
-- **OpenAI** (1.12.0) - GPT-4, GPT-4V
-- **Anthropic** (0.18.0) - Claude 3.5
-- **NudeNet** (3.3.0) - NSFW detection (Phase 2)
+- **OpenAI** (1.12.0) - GPT-4, GPT-4V (vision)
+- **Anthropic** (0.18.0) - Claude 3.5 (vision)
+- **NudeNet** (3.4.2) - Local NSFW detection ✅
+- **Pillow** (10.2.0) - Image processing and thumbnails ✅
 
 ### Frontend
 - Vanilla JavaScript (ES6+)
@@ -131,11 +166,11 @@ python test_phase1.py
 python server.py
 ```
 
-Server runs at: http://localhost:8000
+Server runs at: http://localhost:7000
 
 ### Using the Web UI
 
-1. **Register**: Create an account at http://localhost:8000
+1. **Register**: Create an account at http://localhost:7000
 2. **Submit Content**: Use the "Submit Content" tab to submit text, images, or videos
 3. **View Results**: Check "My Content" to see submission status
 4. **Admin Access**: Create admin user to access user management
@@ -144,14 +179,14 @@ Server runs at: http://localhost:8000
 
 **Register User**:
 ```bash
-curl -X POST http://localhost:8000/api/auth/register \
+curl -X POST http://localhost:7000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
 ```
 
 **Login**:
 ```bash
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST http://localhost:7000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"testuser","password":"password123"}' \
   -c cookies.txt
@@ -159,7 +194,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 **Submit Text Content**:
 ```bash
-curl -X POST http://localhost:8000/api/content \
+curl -X POST http://localhost:7000/api/content \
   -H "Content-Type: multipart/form-data" \
   -F "content_type=text" \
   -F "text_content=This is a test message" \
@@ -169,7 +204,7 @@ curl -X POST http://localhost:8000/api/content \
 
 **Submit Image**:
 ```bash
-curl -X POST http://localhost:8000/api/content \
+curl -X POST http://localhost:7000/api/content \
   -F "content_type=image" \
   -F "file=@image.jpg" \
   -F "priority=0" \
@@ -178,7 +213,7 @@ curl -X POST http://localhost:8000/api/content \
 
 **List My Content**:
 ```bash
-curl http://localhost:8000/api/content -b cookies.txt
+curl http://localhost:7000/api/content -b cookies.txt
 ```
 
 ## Configuration
@@ -191,7 +226,7 @@ See [.env.example](.env.example) for all available options.
 
 ```bash
 # Server
-PORT=8000
+PORT=7000
 HOST=0.0.0.0
 ENVIRONMENT=development
 
@@ -304,46 +339,55 @@ The system classifies content into 10 categories:
 
 ```
 12-content-moderation/
-├── server.py                    # FastAPI application
-├── test_phase1.py               # Phase 1 tests
-├── requirements.txt             # Dependencies
-├── .env.example / .env          # Configuration
-├── README.md                    # Documentation
+├── server.py                        # FastAPI application
+├── test_phase1.py                   # Phase 1 tests
+├── test_phase2.py                   # Phase 2 tests ✅
+├── requirements.txt                 # Dependencies
+├── .env.example / .env              # Configuration
+├── README.md                        # Documentation
 │
 ├── src/
 │   ├── core/
-│   │   ├── database.py          # 8 SQLAlchemy models
-│   │   ├── auth_manager.py      # Auth + RBAC
-│   │   └── llm_client.py        # Multi-provider AI
+│   │   ├── database.py              # 8 SQLAlchemy models
+│   │   ├── auth_manager.py          # Auth + RBAC
+│   │   └── llm_client.py            # Multi-provider AI
 │   │
-│   ├── services/                # (Phase 2-6)
-│   ├── workers/                 # (Phase 4)
-│   └── utils/                   # (Phase 5-6)
+│   ├── services/
+│   │   ├── nsfw_detector.py         # NudeNet NSFW detection ✅
+│   │   └── classification_service.py # Unified classification ✅
+│   │
+│   ├── utils/
+│   │   └── file_handler.py          # File ops & thumbnails ✅
+│   │
+│   └── workers/                     # (Phase 4)
 │
 ├── templates/
-│   └── index.html               # Web UI
+│   └── index.html                   # Web UI
 │
 ├── static/
 │   ├── css/
-│   │   └── main.css             # Styling
+│   │   └── main.css                 # Styling
 │   └── js/
-│       └── app.js               # Client app
+│       └── app.js                   # Client app
 │
 ├── data/
-│   ├── database.db              # SQLite DB
-│   ├── uploads/                 # User files
-│   └── logs/                    # Application logs
+│   ├── database.db                  # SQLite DB
+│   ├── uploads/                     # User files ✅
+│   ├── thumbnails/                  # Generated thumbnails ✅
+│   └── logs/                        # Application logs
 │
-└── tests/                       # (Phase 6)
+└── tests/                           # (Phase 6)
 ```
 
 ## Upcoming Phases
 
-### Phase 2: Image Moderation (Week 3)
-- NudeNet NSFW detection
-- Vision model integration
-- Thumbnail generation
-- Image classification workers
+### ~~Phase 2: Image Moderation~~ ✅ **COMPLETE**
+- ✅ NudeNet NSFW detection
+- ✅ Vision model integration (GPT-4V, Claude Vision)
+- ✅ Thumbnail generation
+- ✅ Image classification service
+- ✅ File handler with validation
+- ✅ Comprehensive test suite (4/4 passing)
 
 ### Phase 3: Video Moderation (Week 4)
 - Frame extraction (ffmpeg)
@@ -374,24 +418,50 @@ The system classifies content into 10 categories:
 
 ## Testing
 
-### Run All Phase 1 Tests
+### Run Phase 1 Tests (Core Foundation)
 
 ```bash
-python test_phase1.py
+python3 test_phase1.py
 ```
 
-**Tests**:
+**Tests** (5/5 passing):
 1. ✅ Database initialization
 2. ✅ User registration and authentication
 3. ✅ Role-based access control
 4. ✅ Content submission
 5. ✅ LLM text classification
 
+### Run Phase 2 Tests (Image Moderation)
+
+```bash
+python3 test_phase2.py
+```
+
+**Tests** (4/4 passing):
+1. ✅ NSFW detector initialization
+2. ✅ File handler (save, thumbnails, validation)
+3. ✅ Classification service (text, image, policy)
+4. ✅ Integration (database + classification pipeline)
+
+**Note**: NudeNet is optional. Tests will use fallback mode if not installed.
+```bash
+# Optional: Install NudeNet for local NSFW detection
+pip3 install nudenet
+```
+
 ### Manual Testing
 
-1. **Web UI**: Test registration, login, content submission at http://localhost:8000
-2. **API**: Use curl/Postman to test endpoints
+1. **Web UI**: Test registration, login, image upload at http://localhost:8001
+2. **API**: Test image upload with curl:
+```bash
+curl -X POST http://localhost:8001/api/content \
+  -F "content_type=image" \
+  -F "file=@test_image.jpg" \
+  -F "priority=0" \
+  -b cookies.txt
+```
 3. **Database**: Inspect `data/database.db` with SQLite browser
+4. **Thumbnails**: Check `data/thumbnails/` for generated thumbnails
 
 ## Security Features
 
