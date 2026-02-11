@@ -288,12 +288,12 @@ async def submit_content(
     user: User = Depends(get_current_user)
 ):
     """
-    Submit content for moderation (Phase 2: With NSFW detection & classification)
+    Submit content for moderation (Phase 3: Multi-modal with video support)
 
     Supports:
     - Text content (text_content field) - LLM classification
     - Image upload (file field) - NSFW detection + Vision classification
-    - Video upload (file field) - Placeholder (Phase 3)
+    - Video upload (file field) - Frame extraction + NSFW detection + aggregated classification
     """
     with db_manager.get_session() as db:
         # Validate content type
@@ -359,6 +359,16 @@ async def submit_content(
                 success, thumb_path, error = file_handler.generate_thumbnail(file_path)
                 if success:
                     thumbnail_path = thumb_path
+
+            # Generate thumbnail for videos (Phase 3)
+            elif content_type_enum == ContentType.VIDEO:
+                from src.services.video_processor import get_video_processor
+                video_processor = get_video_processor()
+                success, thumb_path, error = video_processor.generate_video_thumbnail(file_path)
+                if success:
+                    thumbnail_path = thumb_path
+                else:
+                    logging.warning(f"Video thumbnail generation failed: {error}")
 
         else:
             raise HTTPException(status_code=400, detail="Unsupported content type")

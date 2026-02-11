@@ -1,7 +1,7 @@
 # Project 12: Content Moderation System
 
-**Version**: 1.1.0 (Phase 2)
-**Status**: Phase 2 Complete - Image Moderation with NSFW Detection
+**Version**: 1.2.0 (Phase 3)
+**Status**: Phase 3 Complete - Video Moderation with Frame Extraction
 **Architecture**: Full-stack AI-powered content moderation platform
 
 ## Overview
@@ -17,7 +17,38 @@ A production-ready content moderation system that uses AI to classify multi-moda
 
 ## Features
 
-### Phase 2 ✅ (Current - Image Moderation)
+### Phase 3 ✅ (Current - Video Moderation)
+
+**Video Processing**:
+- ffmpeg integration for frame extraction
+- Configurable frame rate (default 1 fps)
+- Maximum frames limit (default 100)
+- Automatic video thumbnail generation
+- Video metadata extraction (duration, resolution, codec, fps)
+
+**Frame-by-Frame Classification**:
+- Extract frames at specified rate
+- Classify each frame using NSFW detection + vision models
+- Aggregate results with confidence scoring
+- Violation percentage calculation
+- Category distribution analysis
+
+**Video Classification Pipeline**:
+- Frame extraction with ffmpeg
+- NSFW detection on each frame
+- Optional vision model classification
+- Result aggregation strategy:
+  - Max confidence for violations
+  - Percentage of frames flagged
+  - Most severe category selection
+- Automatic frame cleanup after processing
+
+**Graceful Degradation**:
+- Fallback mode when ffmpeg unavailable
+- Clear error messages for dependencies
+- Optional video processing
+
+### Phase 2 ✅ (Image Moderation)
 
 **NSFW Detection**:
 - Local NudeNet integration for fast NSFW detection
@@ -111,6 +142,8 @@ A production-ready content moderation system that uses AI to classify multi-moda
 - **Anthropic** (0.18.0) - Claude 3.5 (vision)
 - **NudeNet** (3.4.2) - Local NSFW detection ✅
 - **Pillow** (10.2.0) - Image processing and thumbnails ✅
+- **ffmpeg** - Video frame extraction and processing ✅
+- **ffmpeg-python** (0.2.0) - Python bindings for ffmpeg ✅
 
 ### Frontend
 - Vanilla JavaScript (ES6+)
@@ -122,6 +155,7 @@ A production-ready content moderation system that uses AI to classify multi-moda
 ### Prerequisites
 - Python 3.9+
 - Ollama (for local LLM) or OpenAI/Anthropic API keys
+- ffmpeg (for video processing) - Install: `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux)
 - Optional: PostgreSQL (for production), Redis (for Phase 4+)
 
 ### Setup
@@ -342,6 +376,7 @@ The system classifies content into 10 categories:
 ├── server.py                        # FastAPI application
 ├── test_phase1.py                   # Phase 1 tests
 ├── test_phase2.py                   # Phase 2 tests ✅
+├── test_phase3.py                   # Phase 3 tests ✅
 ├── requirements.txt                 # Dependencies
 ├── .env.example / .env              # Configuration
 ├── README.md                        # Documentation
@@ -354,6 +389,7 @@ The system classifies content into 10 categories:
 │   │
 │   ├── services/
 │   │   ├── nsfw_detector.py         # NudeNet NSFW detection ✅
+│   │   ├── video_processor.py       # ffmpeg frame extraction ✅
 │   │   └── classification_service.py # Unified classification ✅
 │   │
 │   ├── utils/
@@ -389,11 +425,13 @@ The system classifies content into 10 categories:
 - ✅ File handler with validation
 - ✅ Comprehensive test suite (4/4 passing)
 
-### Phase 3: Video Moderation (Week 4)
-- Frame extraction (ffmpeg)
-- Frame-by-frame classification
-- Result aggregation
-- Video thumbnails
+### ~~Phase 3: Video Moderation~~ ✅ **COMPLETE**
+- ✅ Frame extraction (ffmpeg-python)
+- ✅ Frame-by-frame classification with NSFW detection
+- ✅ Result aggregation with confidence scoring
+- ✅ Video thumbnails
+- ✅ Video processor service with fallback mode
+- ✅ Comprehensive test suite (4/4 passing)
 
 ### Phase 4: Queue System (Weeks 5-6)
 - Celery workers (critical, high, default, batch)
@@ -449,14 +487,47 @@ python3 test_phase2.py
 pip3 install nudenet
 ```
 
+### Run Phase 3 Tests (Video Moderation)
+
+```bash
+python3 test_phase3.py
+```
+
+**Tests** (4/4 passing):
+1. ✅ Video processor initialization
+2. ✅ Frame extraction with synthetic video
+3. ✅ Video classification service
+4. ✅ Integration (database + video classification pipeline)
+
+**Note**: ffmpeg is required for video processing. Tests will use fallback mode if not installed.
+```bash
+# Install ffmpeg
+# macOS:
+brew install ffmpeg
+
+# Ubuntu/Debian:
+sudo apt-get install ffmpeg
+
+# Verify installation:
+ffmpeg -version
+```
+
 ### Manual Testing
 
-1. **Web UI**: Test registration, login, image upload at http://localhost:8001
-2. **API**: Test image upload with curl:
+1. **Web UI**: Test registration, login, content upload at http://localhost:8001
+2. **API**: Test content upload with curl:
 ```bash
+# Image upload
 curl -X POST http://localhost:8001/api/content \
   -F "content_type=image" \
   -F "file=@test_image.jpg" \
+  -F "priority=0" \
+  -b cookies.txt
+
+# Video upload
+curl -X POST http://localhost:8001/api/content \
+  -F "content_type=video" \
+  -F "file=@test_video.mp4" \
   -F "priority=0" \
   -b cookies.txt
 ```
@@ -542,6 +613,6 @@ Built with patterns from:
 
 ---
 
-**Status**: Phase 1 Complete ✅
-**Next**: Phase 2 - Image Moderation (Week 3)
-**Last Updated**: 2026-02-06
+**Status**: Phase 3 Complete ✅
+**Next**: Phase 4 - Queue System (Celery, Redis, distributed workers)
+**Last Updated**: 2026-02-10

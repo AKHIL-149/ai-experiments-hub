@@ -5,9 +5,7 @@ Orchestrates NSFW detection and LLM classification for multi-modal content.
 """
 
 import logging
-import os
 from typing import Dict, Optional
-from pathlib import Path
 
 from ..core.llm_client import LLMClient
 from ..core.database import ViolationCategory
@@ -180,33 +178,216 @@ class ClassificationService:
     def classify_video(
         self,
         video_path: str,
-        max_frames: int = 10
+        max_frames: int = 10,
+        use_vision: bool = True
     ) -> Dict:
         """
-        Classify video content.
-
-        For Phase 2, returns placeholder. Full implementation in Phase 3.
+        Classify video content using frame-by-frame analysis.
 
         Args:
             video_path: Path to video file
             max_frames: Maximum frames to analyze
+            use_vision: Whether to use vision models
 
         Returns:
-            Classification result dictionary
+            Classification result dictionary with aggregated frame results
         """
-        logging.info(f"Video classification placeholder for: {video_path}")
+        from .video_processor import get_video_processor
+        import time
 
-        return {
-            'provider': 'placeholder',
-            'model': 'placeholder',
-            'category': ViolationCategory.CLEAN.value,
-            'confidence': 0.0,
-            'is_violation': False,
-            'reasoning': 'Video classification not yet implemented (Phase 3)',
-            'processing_time_ms': 0,
-            'cost': 0.0,
-            'nsfw_checked': False
-        }
+        start_time = time.time()
+
+        try:
+            # Initialize video processor
+            video_processor = get_video_processor(max_frames=max_frames)
+
+            if not video_processor.ffmpeg_available:
+                return {
+                    'provider': 'unavailable',
+                    'model': 'unavailable',
+                    'category': ViolationCategory.CLEAN.value,
+                    'confidence': 0.0,
+                    'is_violation': False,
+                    'reasoning': 'Video classification unavailable (ffmpeg not installed)',
+                    'processing_time_ms': 0,
+                    'cost': 0.0,
+                    'nsfw_checked': False,
+                    'frames_analyzed': 0
+                }
+
+            # Extract frames
+            logging.info(f"Extracting frames from video: {video_path}")
+            success, frame_paths, error = video_processor.extract_frames(video_path)
+
+            if not success or not frame_paths:
+                return {
+                    'provider': 'video_processor',
+                    'model': 'video_processor',
+                    'category': ViolationCategory.CLEAN.value,
+                    'confidence': 0.0,
+                    'is_violation': False,
+                    'reasoning': f'Frame extraction failed: {error}',
+                    'processing_time_ms': int((time.time() - start_time) * 1000),
+                    'cost': 0.0,
+                    'nsfw_checked': False,
+                    'frames_analyzed': 0
+                }
+
+            logging.info(f"Analyzing {len(frame_paths)} frames")
+
+            # Classify each frame
+            frame_results = []
+            total_cost = 0.0
+
+            for i, frame_path in enumerate(frame_paths):
+                try:
+                    result = self.classify_image(frame_path, use_vision=use_vision)
+                    frame_results.append(result)
+                    total_cost += result.get('cost', 0.0)
+
+                    logging.info(f"Frame {i+1}/{len(frame_paths)}: {result['category']} (confidence: {result['confidence']:.2f})")
+
+                except Exception as e:
+                    logging.error(f"Failed to classify frame {i}: {e}")
+                    continue
+
+            # Cleanup frames
+            video_processor.cleanup_frames(frame_paths)
+
+            # Aggregate results
+            if not frame_results:
+                return {
+                    'provider': self.llm_provider,
+                    'model': self.llm_client.model,
+                    'category': ViolationCategory.CLEAN.value,
+                    'confidence': 0.0,
+                    'is_violation': False,
+                    'reasoning': 'No frames could be classified',
+                    'processing_time_ms': int((time.time() - start_time) * 1000),
+                    'cost': total_cost,
+                    'nsfw_checked': True,
+                    'frames_analyzed': 0
+                }
+
+            aggregated = self._aggregate_frame_results(frame_results)
+
+            # Add metadata
+            aggregated['processing_time_ms'] = int((time.time() - start_time) * 1000)
+            aggregated['cost'] = total_cost
+            aggregated['frames_analyzed'] = len(frame_results)
+            aggregated['nsfw_checked'] = True
+
+            logging.info(f"Video classification complete: {aggregated['category']} (confidence: {aggregated['confidence']:.2f})")
+
+            return aggregated
+
+        except Exception as e:
+            logging.error(f"Video classification failed: {e}")
+            return {
+                'provider': self.llm_provider,
+                'model': self.llm_client.model,
+                'category': ViolationCategory.CLEAN.value,
+                'confidence': 0.0,
+                'is_violation': False,
+                'reasoning': f'Video classification error: {str(e)}',
+                'processing_time_ms': int((time.time() - start_time) * 1000),
+                'cost': 0.0,
+                'nsfw_checked': False,
+                'frames_analyzed': 0,
+                'error': str(e)
+            }
+
+    def _aggregate_frame_results(self, frame_results: list) -> Dict:
+        """
+        Aggregate frame classification results.
+
+        Strategy:
+        - Use max confidence for violations
+        - Calculate percentage of frames flagged
+        - Choose most severe category
+
+        Args:
+            frame_results: List of classification results
+
+        Returns:
+            Aggregated classification result
+        """
+        if not frame_results:
+            return {
+                'provider': self.llm_provider,
+                'model': self.llm_client.model,
+                'category': ViolationCategory.CLEAN.value,
+                'confidence': 0.0,
+                'is_violation': False,
+                'reasoning': 'No frames analyzed'
+            }
+
+        # Count violations by category
+        category_counts = {}
+        max_confidence_by_category = {}
+        violation_frames = 0
+
+        for result in frame_results:
+            category = result['category']
+            confidence = result['confidence']
+            is_violation = result['is_violation']
+
+            if is_violation:
+                violation_frames += 1
+
+            # Track counts
+            category_counts[category] = category_counts.get(category, 0) + 1
+
+            # Track max confidence per category
+            if category not in max_confidence_by_category or confidence > max_confidence_by_category[category]:
+                max_confidence_by_category[category] = confidence
+
+        total_frames = len(frame_results)
+        violation_percentage = violation_frames / total_frames
+
+        # Determine final category and confidence
+        # Priority: Use most severe violation with highest confidence
+        violation_categories = [cat for cat in category_counts.keys() if cat != ViolationCategory.CLEAN.value]
+
+        if violation_categories:
+            # Find violation with highest confidence
+            best_violation = max(violation_categories, key=lambda cat: max_confidence_by_category[cat])
+            final_category = best_violation
+            final_confidence = max_confidence_by_category[best_violation]
+
+            # Adjust confidence based on percentage of frames flagged
+            # If only a few frames are violations, reduce confidence
+            if violation_percentage < 0.3:
+                final_confidence *= 0.7  # Reduce confidence
+                reasoning = f"Violations detected in {violation_percentage*100:.1f}% of frames. Category: {final_category} (max confidence: {max_confidence_by_category[final_category]:.2f})"
+            else:
+                reasoning = f"Violations detected in {violation_percentage*100:.1f}% of frames. Consistent {final_category} content (confidence: {final_confidence:.2f})"
+
+            return {
+                'provider': self.llm_provider,
+                'model': self.llm_client.model,
+                'category': final_category,
+                'confidence': min(1.0, final_confidence),
+                'is_violation': True,
+                'reasoning': reasoning,
+                'violation_percentage': violation_percentage,
+                'category_distribution': category_counts
+            }
+
+        else:
+            # All frames are clean
+            clean_confidence = max_confidence_by_category.get(ViolationCategory.CLEAN.value, 0.0)
+
+            return {
+                'provider': self.llm_provider,
+                'model': self.llm_client.model,
+                'category': ViolationCategory.CLEAN.value,
+                'confidence': clean_confidence,
+                'is_violation': False,
+                'reasoning': f"All {total_frames} frames classified as clean (confidence: {clean_confidence:.2f})",
+                'violation_percentage': 0.0,
+                'category_distribution': category_counts
+            }
 
     def classify_content(
         self,
