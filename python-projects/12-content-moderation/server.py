@@ -1,6 +1,6 @@
 """Content Moderation System FastAPI Server"""
 
-from fastapi import FastAPI, HTTPException, Depends, Cookie, Response, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, Cookie, Response, Request, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ import uvicorn
 import os
 import hashlib
 import logging
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -288,12 +289,14 @@ async def submit_content(
     user: User = Depends(get_current_user)
 ):
     """
-    Submit content for moderation (Phase 3: Multi-modal with video support)
+    Submit content for moderation (Phase 4: Asynchronous queue processing)
 
     Supports:
-    - Text content (text_content field) - LLM classification
-    - Image upload (file field) - NSFW detection + Vision classification
-    - Video upload (file field) - Frame extraction + NSFW detection + aggregated classification
+    - Text content (text_content field) - LLM classification (async)
+    - Image upload (file field) - NSFW detection + Vision classification (async)
+    - Video upload (file field) - Frame extraction + NSFW detection + aggregated classification (async)
+
+    Returns immediately with job ID for status tracking.
     """
     with db_manager.get_session() as db:
         # Validate content type
@@ -307,7 +310,8 @@ async def submit_content(
 
         # Initialize services
         file_handler = get_file_handler()
-        classification_service = get_classification_service()
+        from src.core.queue_manager import get_queue_manager
+        queue_manager = get_queue_manager()
 
         file_path = None
         file_hash = None
@@ -380,7 +384,7 @@ async def submit_content(
             text_content=text_content,
             file_path=file_path,
             file_hash=file_hash,
-            status=ContentStatus.PROCESSING,  # Changed from PENDING
+            status=ContentStatus.PENDING,  # Pending until job is queued
             priority=priority or 0
         )
 
@@ -388,52 +392,60 @@ async def submit_content(
         db.commit()
         db.refresh(content_item)
 
-        # Phase 2: Immediate classification (synchronous for now)
+        # Phase 4: Asynchronous classification with Celery
         try:
-            classification_result = classification_service.classify_content(
-                content_type=content_type,
-                text_content=text_content,
-                file_path=file_path
-            )
+            # Create moderation job based on content type
+            if content_type_enum == ContentType.TEXT:
+                job = queue_manager.create_text_job(
+                    content_id=content_item.id,
+                    text_content=text_content,
+                    priority=priority or 0
+                )
+            elif content_type_enum == ContentType.IMAGE:
+                job = queue_manager.create_image_job(
+                    content_id=content_item.id,
+                    file_path=file_path,
+                    use_vision=True,
+                    priority=priority or 0
+                )
+            elif content_type_enum == ContentType.VIDEO:
+                job = queue_manager.create_video_job(
+                    content_id=content_item.id,
+                    file_path=file_path,
+                    max_frames=10,
+                    use_vision=False,  # Faster processing
+                    priority=priority or 0
+                )
+            else:
+                raise ValueError(f"Unsupported content type: {content_type_enum}")
 
-            # Create classification record
-            classification = Classification(
-                content_id=content_item.id,
-                category=ViolationCategory(classification_result['category']),
-                confidence=classification_result['confidence'],
-                is_violation=classification_result['is_violation'],
-                provider=classification_result['provider'],
-                model_name=classification_result['model'],
-                reasoning=classification_result['reasoning'],
-                processing_time_ms=classification_result['processing_time_ms'],
-                cost=classification_result['cost']
-            )
-
-            db.add(classification)
-
-            # Apply moderation policy
-            new_status = classification_service.apply_moderation_policy(classification_result)
-            content_item.status = ContentStatus(new_status)
-            content_item.moderated_at = datetime.utcnow()
-
+            # Update content status to processing
+            content_item.status = ContentStatus.PROCESSING
             db.commit()
             db.refresh(content_item)
-            db.refresh(classification)
 
-            # Prepare response
+            # Prepare response with job information
             content_dict = content_item.to_dict()
-            content_dict['classification'] = classification.to_dict()
             content_dict['thumbnail_path'] = thumbnail_path
+            content_dict['job_id'] = job.id
+            content_dict['celery_task_id'] = job.celery_task_id
+            content_dict['queue_name'] = job.queue_name
 
             return {
                 "success": True,
                 "content": content_dict,
-                "message": f"Content classified as {classification_result['category']} (confidence: {classification_result['confidence']:.2f})"
+                "job": {
+                    "id": job.id,
+                    "celery_task_id": job.celery_task_id,
+                    "queue_name": job.queue_name,
+                    "status": job.status.value
+                },
+                "message": f"Content submitted for {content_type} classification. Use job_id to check status."
             }
 
         except Exception as e:
-            # Classification failed, mark as flagged for manual review
-            logging.error(f"Classification failed for content {content_item.id}: {e}")
+            # Job creation failed, mark as flagged for manual review
+            logging.error(f"Job creation failed for content {content_item.id}: {e}")
             content_item.status = ContentStatus.FLAGGED
             db.commit()
             db.refresh(content_item)
@@ -441,7 +453,7 @@ async def submit_content(
             return {
                 "success": True,
                 "content": content_item.to_dict(),
-                "message": "Content submitted but classification failed. Flagged for manual review.",
+                "message": "Content submitted but job creation failed. Flagged for manual review.",
                 "error": str(e)
             }
 
@@ -705,6 +717,124 @@ async def get_moderation_stats(
         }
 
         return stats
+
+
+# Job status endpoints (Phase 4)
+
+@app.get("/api/jobs/{job_id}")
+async def get_job_status(
+    job_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Get moderation job status"""
+    from src.core.queue_manager import get_queue_manager
+    from src.core.database import ModerationJob
+
+    queue_manager = get_queue_manager()
+
+    # Verify user owns the content
+    with db_manager.get_session() as db:
+        job = db.query(ModerationJob).filter(ModerationJob.id == job_id).first()
+
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        content = db.query(ContentItem).filter(ContentItem.id == job.content_id).first()
+
+        if not content:
+            raise HTTPException(status_code=404, detail="Content not found")
+
+        # Check ownership or moderator status
+        auth_manager = AuthManager(db, SESSION_TTL_DAYS)
+        if content.user_id != user.id and not auth_manager.is_moderator(user):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get job status
+    status = queue_manager.get_job_status(job_id)
+
+    return status
+
+
+@app.get("/api/jobs/queue/stats")
+async def get_queue_stats(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get queue statistics (moderator only)"""
+    from src.core.queue_manager import get_queue_manager
+
+    queue_manager = get_queue_manager()
+    stats = queue_manager.get_queue_stats()
+
+    return {
+        "success": True,
+        "stats": stats
+    }
+
+
+# WebSocket endpoint for real-time job updates
+
+@app.websocket("/ws/jobs/{job_id}")
+async def websocket_job_updates(websocket: WebSocket, job_id: str):
+    """
+    WebSocket endpoint for real-time job progress updates.
+
+    Client connects with job_id and receives progress updates every 1 second.
+    """
+    await websocket.accept()
+
+    try:
+        from src.core.queue_manager import get_queue_manager
+        from src.core.database import ModerationJob
+
+        queue_manager = get_queue_manager()
+
+        # Verify job exists
+        with db_manager.get_session() as db:
+            job = db.query(ModerationJob).filter(ModerationJob.id == job_id).first()
+
+            if not job:
+                await websocket.send_json({
+                    "error": "Job not found"
+                })
+                await websocket.close()
+                return
+
+        # Send updates until task completes
+        while True:
+            status = queue_manager.get_job_status(job_id)
+
+            # Send status update
+            await websocket.send_json(status)
+
+            # Check if task is done
+            celery_state = status.get('celery_state')
+            if celery_state in ['SUCCESS', 'FAILURE', 'REVOKED']:
+                # Send final update and close
+                await asyncio.sleep(1)
+                await websocket.send_json({
+                    **status,
+                    'done': True
+                })
+                break
+
+            # Wait 1 second before next update
+            await asyncio.sleep(1)
+
+    except WebSocketDisconnect:
+        logging.info(f"WebSocket disconnected for job {job_id}")
+    except Exception as e:
+        logging.error(f"WebSocket error for job {job_id}: {e}")
+        try:
+            await websocket.send_json({
+                "error": str(e)
+            })
+        except:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 if __name__ == "__main__":

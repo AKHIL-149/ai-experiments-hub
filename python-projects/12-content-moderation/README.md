@@ -1,8 +1,8 @@
 # Project 12: Content Moderation System
 
-**Version**: 1.2.0 (Phase 3)
-**Status**: Phase 3 Complete - Video Moderation with Frame Extraction
-**Architecture**: Full-stack AI-powered content moderation platform
+**Version**: 1.3.0 (Phase 4)
+**Status**: Phase 4 Complete - Asynchronous Queue System with Celery
+**Architecture**: Full-stack AI-powered content moderation platform with distributed workers
 
 ## Overview
 
@@ -17,7 +17,49 @@ A production-ready content moderation system that uses AI to classify multi-moda
 
 ## Features
 
-### Phase 3 ✅ (Current - Video Moderation)
+### Phase 4 ✅ (Current - Asynchronous Queue System)
+
+**Celery Integration**:
+- Distributed task queue with Redis broker
+- Priority-based queues (critical, high, default, batch)
+- Auto-discovery of worker tasks
+- Exponential backoff retry logic with jitter
+- Task time limits (5min soft, 10min hard)
+
+**Queue Management**:
+- QueueManager for job creation and tracking
+- Job status monitoring with Celery task states
+- Queue statistics and metrics
+- Automatic job routing by priority
+- Retry count tracking
+
+**Worker Tasks**:
+- Text classification worker (async LLM processing)
+- Image classification worker (async NSFW + vision)
+- Video classification worker (async frame analysis)
+- BaseClassificationTask with common retry logic
+- Progress tracking with state updates
+
+**Real-time Updates**:
+- WebSocket endpoint for job progress (`/ws/jobs/{job_id}`)
+- Live status updates every 1 second
+- Progress notifications (10%, 30%, 70%, 100%)
+- Job completion/failure notifications
+
+**API Endpoints**:
+- `POST /api/content` - Submit content (returns job_id)
+- `GET /api/jobs/{job_id}` - Get job status
+- `GET /api/jobs/queue/stats` - Queue statistics (moderator)
+- `WS /ws/jobs/{job_id}` - Real-time progress updates
+
+**Performance Features**:
+- Async processing (non-blocking submissions)
+- Horizontal scalability (multiple workers)
+- Task prefetch control (1 task per worker)
+- Worker max tasks per child (1000 before restart)
+- Result expiration (1 hour)
+
+### Phase 3 ✅ (Video Moderation)
 
 **Video Processing**:
 - ffmpeg integration for frame extraction
@@ -373,10 +415,12 @@ The system classifies content into 10 categories:
 
 ```
 12-content-moderation/
-├── server.py                        # FastAPI application
+├── server.py                        # FastAPI application with WebSocket
+├── celery_app.py                    # Celery application entry point ✅
 ├── test_phase1.py                   # Phase 1 tests
 ├── test_phase2.py                   # Phase 2 tests ✅
 ├── test_phase3.py                   # Phase 3 tests ✅
+├── test_phase4.py                   # Phase 4 tests ✅
 ├── requirements.txt                 # Dependencies
 ├── .env.example / .env              # Configuration
 ├── README.md                        # Documentation
@@ -385,7 +429,8 @@ The system classifies content into 10 categories:
 │   ├── core/
 │   │   ├── database.py              # 8 SQLAlchemy models
 │   │   ├── auth_manager.py          # Auth + RBAC
-│   │   └── llm_client.py            # Multi-provider AI
+│   │   ├── llm_client.py            # Multi-provider AI
+│   │   └── queue_manager.py         # Job creation & tracking ✅
 │   │
 │   ├── services/
 │   │   ├── nsfw_detector.py         # NudeNet NSFW detection ✅
@@ -395,7 +440,13 @@ The system classifies content into 10 categories:
 │   ├── utils/
 │   │   └── file_handler.py          # File ops & thumbnails ✅
 │   │
-│   └── workers/                     # (Phase 4)
+│   └── workers/                     # Celery workers ✅
+│       ├── __init__.py              # Worker exports
+│       ├── celery_config.py         # Celery configuration
+│       ├── base_worker.py           # Base task class with retry
+│       ├── text_worker.py           # Text classification task
+│       ├── image_worker.py          # Image classification task
+│       └── video_worker.py          # Video classification task
 │
 ├── templates/
 │   └── index.html                   # Web UI
@@ -433,12 +484,15 @@ The system classifies content into 10 categories:
 - ✅ Video processor service with fallback mode
 - ✅ Comprehensive test suite (4/4 passing)
 
-### Phase 4: Queue System (Weeks 5-6)
-- Celery workers (critical, high, default, batch)
-- Redis broker and cache
-- Retry logic with exponential backoff
-- Job status tracking
-- WebSocket progress updates
+### ~~Phase 4: Queue System~~ ✅ **COMPLETE**
+- ✅ Celery workers with priority queues (critical, high, default, batch)
+- ✅ Redis broker and result backend
+- ✅ Retry logic with exponential backoff and jitter
+- ✅ Job creation and status tracking via QueueManager
+- ✅ WebSocket progress updates (`/ws/jobs/{job_id}`)
+- ✅ Worker tasks for text, image, and video classification
+- ✅ BaseClassificationTask with auto-retry
+- ✅ Comprehensive test suite (5/5 passing without Redis/Celery)
 
 ### Phase 5: Admin Dashboard (Weeks 7-8)
 - Review queue UI
@@ -510,6 +564,44 @@ sudo apt-get install ffmpeg
 
 # Verify installation:
 ffmpeg -version
+```
+
+### Run Phase 4 Tests (Queue System)
+
+```bash
+python3 test_phase4.py
+```
+
+**Tests** (5/5 passing):
+1. ✅ Celery configuration and setup
+2. ✅ Queue manager initialization
+3. ✅ Worker task imports
+4. ✅ Job creation
+5. ✅ Base worker class
+
+**Note**: Redis and Celery are required for full functionality. Tests verify code structure without requiring running services.
+
+```bash
+# Install Redis
+# macOS:
+brew install redis
+
+# Ubuntu/Debian:
+sudo apt-get install redis
+
+# Start Redis:
+redis-server
+
+# Verify Redis:
+redis-cli ping
+# Should return: PONG
+
+# Start Celery worker (in new terminal):
+celery -A celery_app worker -Q critical,high,default,batch -l info
+
+# Optional: Start Flower for monitoring:
+celery -A celery_app flower
+# Then visit: http://localhost:5555
 ```
 
 ### Manual Testing
@@ -613,6 +705,6 @@ Built with patterns from:
 
 ---
 
-**Status**: Phase 3 Complete ✅
-**Next**: Phase 4 - Queue System (Celery, Redis, distributed workers)
-**Last Updated**: 2026-02-10
+**Status**: Phase 4 Complete ✅
+**Next**: Phase 5 - Admin Dashboard (review queue UI, manual workflow, appeals)
+**Last Updated**: 2026-02-11
