@@ -1,8 +1,8 @@
 # Project 12: Content Moderation System
 
-**Version**: 1.3.0 (Phase 4)
-**Status**: Phase 4 Complete - Asynchronous Queue System with Celery
-**Architecture**: Full-stack AI-powered content moderation platform with distributed workers
+**Version**: 1.4.0 (Phase 5)
+**Status**: Phase 5 Complete - Admin Dashboard & Review Workflows
+**Architecture**: Full-stack AI-powered content moderation platform with human-in-the-loop review
 
 ## Overview
 
@@ -17,7 +17,101 @@ A production-ready content moderation system that uses AI to classify multi-moda
 
 ## Features
 
-### Phase 4 ✅ (Current - Asynchronous Queue System)
+### Phase 5 ✅ (Current - Admin Dashboard & Review Workflows)
+
+**Admin Dashboard**:
+- Real-time moderation statistics dashboard
+- Content status overview (total, pending, flagged, approved, rejected)
+- Review metrics (total reviews, manual reviews, appeal statistics)
+- User statistics (total users, active users, moderators)
+- Policy configuration metrics
+- Auto-refresh capability
+- Responsive design for mobile/desktop
+
+**Review Queue**:
+- Comprehensive review interface for moderators
+- Filter by status (flagged, pending) and priority
+- Pagination support (50 items per page)
+- Content preview (text/image/video)
+- Classification results display with confidence bars
+- Priority-based ordering (critical → high → normal)
+- Content metadata (user, timestamp, priority level)
+
+**Manual Review Workflow**:
+- Detailed content review modal
+- Approve/reject decisions with notes
+- Violation category selection for rejections
+- Classification results display
+- Audit trail creation for all decisions
+- Content status updates (approved/rejected)
+- Moderator attribution tracking
+
+**Appeal System**:
+- User-initiated appeals for rejected content
+- Appeal reason submission
+- Moderator appeal review queue
+- Appeal approval/rejection workflow
+- Moderator response to appeals
+- Content restoration on appeal approval
+- Appeal status tracking (pending/resolved)
+- Duplicate appeal prevention
+
+**Policy Management** (Admin Only):
+- Create moderation policies
+- Configure violation categories
+- Set auto-reject thresholds (0.0-1.0)
+- Set flag-for-review thresholds (0.0-1.0)
+- Severity levels (1-10)
+- Enable/disable policies
+- Edit existing policies
+- Policy listing with filters
+
+**Role-Based Access Control**:
+- User roles: USER, MODERATOR, ADMIN
+- Moderators: Review queue, appeals, stats
+- Admins: All moderator features + policy management
+- Role-based UI elements (hide admin-only sections)
+- Endpoint-level permission checks
+
+**Audit Logging**:
+- All admin actions logged (reviews, appeals, policies)
+- Actor tracking (user who performed action)
+- Resource tracking (content/policy affected)
+- Change tracking (old vs new values for policy updates)
+- Timestamp tracking
+- Event type categorization
+
+**Admin API Endpoints**:
+- `POST /api/moderation/review` - Submit manual review
+- `POST /api/appeals` - Create appeal
+- `GET /api/appeals` - List appeals (moderator)
+- `POST /api/appeals/{id}/review` - Review appeal
+- `GET /api/admin/policies` - List policies
+- `POST /api/admin/policies` - Create policy (admin)
+- `PATCH /api/admin/policies/{id}` - Update policy (admin)
+- `GET /api/admin/stats` - Dashboard statistics
+- `GET /admin/dashboard` - Admin dashboard page
+
+**UI Components**:
+- Admin dashboard HTML template
+- Review queue interface
+- Appeal management interface
+- Policy configuration interface
+- Review/appeal modals
+- Real-time stat cards
+- Responsive navigation sidebar
+- Notification system (success/error alerts)
+
+**Testing**:
+- 50+ unit tests for AdminService
+- 30+ integration tests for admin endpoints
+- Review workflow tests
+- Appeal workflow tests
+- Policy management tests
+- Role-based access tests
+- End-to-end workflow tests
+
+### Phase 4 ✅ (Asynchronous Queue System)
 
 **Celery Integration**:
 - Distributed task queue with Redis broker
@@ -292,6 +386,85 @@ curl -X POST http://localhost:7000/api/content \
 curl http://localhost:7000/api/content -b cookies.txt
 ```
 
+### Phase 5: Admin Dashboard Usage
+
+**Access Admin Dashboard**:
+1. Create moderator/admin user (requires database access initially)
+2. Login as moderator/admin
+3. Navigate to http://localhost:7000/admin/dashboard
+
+**Submit Review** (Moderator/Admin):
+```bash
+curl -X POST http://localhost:7000/api/moderation/review \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "content_id": "content-uuid",
+    "approved": false,
+    "category": "spam",
+    "notes": "This content violates spam policy"
+  }'
+```
+
+**Create Appeal** (Regular User):
+```bash
+curl -X POST http://localhost:7000/api/appeals \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "content_id": "rejected-content-uuid",
+    "reason": "I believe this was rejected incorrectly. It does not violate any policies."
+  }'
+```
+
+**List Appeals** (Moderator/Admin):
+```bash
+curl http://localhost:7000/api/appeals -b cookies.txt
+```
+
+**Review Appeal** (Moderator/Admin):
+```bash
+curl -X POST http://localhost:7000/api/appeals/{appeal-id}/review \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "approved": true,
+    "notes": "After review, restoring content"
+  }'
+```
+
+**Create Policy** (Admin Only):
+```bash
+curl -X POST http://localhost:7000/api/admin/policies \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "name": "NSFW Policy",
+    "category": "nsfw",
+    "auto_reject_threshold": 0.9,
+    "flag_review_threshold": 0.5,
+    "severity": 8,
+    "enabled": true
+  }'
+```
+
+**Update Policy** (Admin Only):
+```bash
+curl -X PATCH http://localhost:7000/api/admin/policies/{policy-id} \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "auto_reject_threshold": 0.85,
+    "severity": 9,
+    "enabled": false
+  }'
+```
+
+**Get Admin Statistics**:
+```bash
+curl http://localhost:7000/api/admin/stats -b cookies.txt
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -536,6 +709,47 @@ python3 test_phase2.py
 4. ✅ Integration (database + classification pipeline)
 
 **Note**: NudeNet is optional. Tests will use fallback mode if not installed.
+
+### Run Phase 5 Tests (Admin Dashboard)
+
+```bash
+# Run admin service unit tests
+pytest tests/test_admin_service.py -v
+
+# Run admin endpoints integration tests
+pytest tests/test_admin_endpoints.py -v
+
+# Run all Phase 5 tests
+pytest tests/test_admin*.py -v
+```
+
+**Unit Tests** (25+ tests for AdminService):
+1. ✅ Review queue retrieval with filters
+2. ✅ Review queue pagination
+3. ✅ Submit review (approve/reject)
+4. ✅ Review audit logging
+5. ✅ Create appeal
+6. ✅ Appeal validation (ownership, status, duplicates)
+7. ✅ Review appeal (approve/reject)
+8. ✅ List policies
+9. ✅ Create policy
+10. ✅ Update policy with change tracking
+11. ✅ Dashboard statistics
+
+**Integration Tests** (20+ tests for API endpoints):
+1. ✅ Submit review endpoint (moderator auth)
+2. ✅ Review unauthorized access
+3. ✅ Create appeal endpoint
+4. ✅ List appeals (moderator only)
+5. ✅ Review appeal endpoint
+6. ✅ List policies endpoint
+7. ✅ Create policy (admin only)
+8. ✅ Update policy endpoint
+9. ✅ Admin stats endpoint
+10. ✅ Full review workflow (flag → review → reject → appeal → approve)
+11. ✅ Full policy workflow (create → list → update → disable)
+
+**Note**: Integration tests require FastAPI TestClient.
 ```bash
 # Optional: Install NudeNet for local NSFW detection
 pip3 install nudenet
@@ -705,6 +919,6 @@ Built with patterns from:
 
 ---
 
-**Status**: Phase 4 Complete ✅
-**Next**: Phase 5 - Admin Dashboard (review queue UI, manual workflow, appeals)
-**Last Updated**: 2026-02-11
+**Status**: Phase 5 Complete ✅
+**Next**: Phase 6 - Production Features (analytics, cost tracking, deployment)
+**Last Updated**: 2026-02-13

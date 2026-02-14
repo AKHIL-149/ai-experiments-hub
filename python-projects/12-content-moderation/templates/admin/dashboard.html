@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Content Moderation System</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Admin Dashboard</h2>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="overview">
+                    Dashboard
+                </button>
+                <button class="nav-item" data-view="review">
+                    Review Queue
+                </button>
+                <button class="nav-item" data-view="appeals">
+                    Appeals
+                </button>
+                <button class="nav-item admin-only" data-view="policies">
+                    Policies
+                </button>
+                <button class="nav-item" data-view="analytics">
+                    Analytics
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <span id="current-username"></span>
+                    <span id="user-role" class="role-badge"></span>
+                </div>
+                <button id="back-to-app" class="btn-secondary">Back to App</button>
+                <button id="logout-btn" class="btn-logout">Logout</button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Overview Dashboard View -->
+            <div id="overview-view" class="content-view">
+                <div class="view-header">
+                    <h2>Dashboard Overview</h2>
+                    <p>Real-time moderation statistics and metrics</p>
+                </div>
+
+                <div class="dashboard-grid">
+                    <!-- Content Statistics -->
+                    <div class="stat-card">
+                        <h3>Content Status</h3>
+                        <div class="stat-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Total</span>
+                                <span class="stat-value" id="stat-total">-</span>
+                            </div>
+                            <div class="stat-item pending">
+                                <span class="stat-label">Pending</span>
+                                <span class="stat-value" id="stat-pending">-</span>
+                            </div>
+                            <div class="stat-item flagged">
+                                <span class="stat-label">Flagged</span>
+                                <span class="stat-value" id="stat-flagged">-</span>
+                            </div>
+                            <div class="stat-item approved">
+                                <span class="stat-label">Approved</span>
+                                <span class="stat-value" id="stat-approved">-</span>
+                            </div>
+                            <div class="stat-item rejected">
+                                <span class="stat-label">Rejected</span>
+                                <span class="stat-value" id="stat-rejected">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Review Statistics -->
+                    <div class="stat-card">
+                        <h3>Reviews</h3>
+                        <div class="stat-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Total Reviews</span>
+                                <span class="stat-value" id="stat-reviews-total">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Manual Reviews</span>
+                                <span class="stat-value" id="stat-reviews-manual">-</span>
+                            </div>
+                            <div class="stat-item pending">
+                                <span class="stat-label">Pending Appeals</span>
+                                <span class="stat-value" id="stat-appeals-pending">-</span>
+                            </div>
+                            <div class="stat-item approved">
+                                <span class="stat-label">Resolved Appeals</span>
+                                <span class="stat-value" id="stat-appeals-resolved">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User Statistics -->
+                    <div class="stat-card">
+                        <h3>Users</h3>
+                        <div class="stat-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Total Users</span>
+                                <span class="stat-value" id="stat-users-total">-</span>
+                            </div>
+                            <div class="stat-item approved">
+                                <span class="stat-label">Active Users</span>
+                                <span class="stat-value" id="stat-users-active">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Moderators</span>
+                                <span class="stat-value" id="stat-users-moderators">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Policy Statistics -->
+                    <div class="stat-card">
+                        <h3>Policies</h3>
+                        <div class="stat-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Total Policies</span>
+                                <span class="stat-value" id="stat-policies-total">-</span>
+                            </div>
+                            <div class="stat-item approved">
+                                <span class="stat-label">Enabled</span>
+                                <span class="stat-value" id="stat-policies-enabled">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="refresh-stats" class="btn-primary">Refresh Stats</button>
+                    <button id="view-queue" class="btn-secondary">Go to Review Queue</button>
+                </div>
+            </div>
+
+            <!-- Review Queue View -->
+            <div id="review-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>Review Queue</h2>
+                    <p>Manual content review and moderation</p>
+                </div>
+
+                <div class="queue-filters">
+                    <div class="filter-group">
+                        <label for="filter-status">Status:</label>
+                        <select id="filter-status">
+                            <option value="">All Flagged/Pending</option>
+                            <option value="flagged">Flagged</option>
+                            <option value="pending">Pending</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-priority">Priority:</label>
+                        <select id="filter-priority">
+                            <option value="">All Priorities</option>
+                            <option value="10">Critical (10)</option>
+                            <option value="5">High (5)</option>
+                            <option value="0">Normal (0)</option>
+                        </select>
+                    </div>
+                    <button id="apply-filters" class="btn-primary">Apply Filters</button>
+                    <button id="clear-filters" class="btn-secondary">Clear</button>
+                </div>
+
+                <div id="queue-container" class="queue-list">
+                    <p class="loading">Loading review queue...</p>
+                </div>
+
+                <div class="pagination">
+                    <button id="prev-page" class="btn-secondary" disabled>Previous</button>
+                    <span id="page-info">Page 1</span>
+                    <button id="next-page" class="btn-secondary">Next</button>
+                </div>
+            </div>
+
+            <!-- Appeals View -->
+            <div id="appeals-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>Appeals</h2>
+                    <p>Review user appeals for rejected content</p>
+                </div>
+
+                <div id="appeals-container" class="appeals-list">
+                    <p class="loading">Loading appeals...</p>
+                </div>
+            </div>
+
+            <!-- Policies View -->
+            <div id="policies-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>Moderation Policies</h2>
+                    <p>Configure content moderation rules and thresholds</p>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="create-policy-btn" class="btn-primary">Create New Policy</button>
+                </div>
+
+                <div id="policies-container" class="policies-list">
+                    <p class="loading">Loading policies...</p>
+                </div>
+
+                <!-- Create/Edit Policy Modal -->
+                <div id="policy-modal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3 id="policy-modal-title">Create Policy</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="policy-form">
+                                <div class="form-group">
+                                    <label for="policy-name">Policy Name:</label>
+                                    <input type="text" id="policy-name" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="policy-category">Violation Category:</label>
+                                    <select id="policy-category" required>
+                                        <option value="clean">Clean</option>
+                                        <option value="spam">Spam</option>
+                                        <option value="nsfw">NSFW</option>
+                                        <option value="hate_speech">Hate Speech</option>
+                                        <option value="violence">Violence</option>
+                                        <option value="harassment">Harassment</option>
+                                        <option value="misinformation">Misinformation</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="policy-auto-reject">Auto-Reject Threshold (0.0-1.0):</label>
+                                    <input type="number" id="policy-auto-reject" step="0.01" min="0" max="1" value="0.9">
+                                </div>
+                                <div class="form-group">
+                                    <label for="policy-flag-threshold">Flag Review Threshold (0.0-1.0):</label>
+                                    <input type="number" id="policy-flag-threshold" step="0.01" min="0" max="1" value="0.5">
+                                </div>
+                                <div class="form-group">
+                                    <label for="policy-severity">Severity (1-10):</label>
+                                    <input type="number" id="policy-severity" min="1" max="10" value="5">
+                                </div>
+                                <div class="form-group checkbox-group">
+                                    <label>
+                                        <input type="checkbox" id="policy-enabled" checked>
+                                        Policy Enabled
+                                    </label>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="save-policy" class="btn-primary">Save Policy</button>
+                            <button class="modal-close btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analytics-view" class="content-view" style="display: none;">
+                <div class="view-header">
+                    <h2>Analytics</h2>
+                    <p>Content moderation trends and insights</p>
+                </div>
+
+                <div class="analytics-placeholder">
+                    <p>Analytics charts and trends will be displayed here</p>
+                    <p class="note">Coming soon: Time-series charts, category breakdown, moderator performance</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Content Modal -->
+    <div id="review-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Review Content</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="review-content-display"></div>
+
+                <div class="review-form">
+                    <h4>Classification Results</h4>
+                    <div id="classification-results"></div>
+
+                    <h4>Review Decision</h4>
+                    <div class="form-group">
+                        <label>
+                            <input type="radio" name="review-decision" value="approve" checked>
+                            Approve Content
+                        </label>
+                        <label>
+                            <input type="radio" name="review-decision" value="reject">
+                            Reject Content
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="category-group" style="display: none;">
+                        <label for="violation-category">Violation Category:</label>
+                        <select id="violation-category">
+                            <option value="spam">Spam</option>
+                            <option value="nsfw">NSFW</option>
+                            <option value="hate_speech">Hate Speech</option>
+                            <option value="violence">Violence</option>
+                            <option value="harassment">Harassment</option>
+                            <option value="misinformation">Misinformation</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="review-notes">Review Notes:</label>
+                        <textarea id="review-notes" rows="4" placeholder="Optional notes about this decision..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="submit-review" class="btn-primary">Submit Review</button>
+                <button class="modal-close btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Appeal Review Modal -->
+    <div id="appeal-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Review Appeal</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="appeal-content-display"></div>
+
+                <div class="appeal-form">
+                    <h4>Appeal Decision</h4>
+                    <div class="form-group">
+                        <label>
+                            <input type="radio" name="appeal-decision" value="approve" checked>
+                            Approve Appeal (Restore Content)
+                        </label>
+                        <label>
+                            <input type="radio" name="appeal-decision" value="reject">
+                            Reject Appeal (Keep Rejected)
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="appeal-response">Response to User:</label>
+                        <textarea id="appeal-response" rows="4" placeholder="Explanation for the user..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="submit-appeal-review" class="btn-primary">Submit Decision</button>
+                <button class="modal-close btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/admin/dashboard.js"></script>
+</body>
+</html>

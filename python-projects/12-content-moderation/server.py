@@ -16,11 +16,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.core.database import (
-    DatabaseManager, User, ContentItem, Classification,
+    DatabaseManager, User, ContentItem, Classification, Review, Policy,
     ContentType, ContentStatus, ViolationCategory
 )
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.classification_service import get_classification_service
+from src.services.admin_service import get_admin_service
 from src.utils.file_handler import get_file_handler
 
 # Load environment
@@ -83,6 +84,39 @@ class ContentStatusUpdate(BaseModel):
 
 class UserRoleUpdate(BaseModel):
     role: UserRole
+
+
+class ReviewSubmitRequest(BaseModel):
+    content_id: str
+    approved: bool
+    category: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AppealCreateRequest(BaseModel):
+    content_id: str
+    reason: str
+
+
+class AppealReviewRequest(BaseModel):
+    approved: bool
+    notes: Optional[str] = None
+
+
+class PolicyCreateRequest(BaseModel):
+    name: str
+    category: str
+    auto_reject_threshold: float = 0.9
+    flag_review_threshold: float = 0.5
+    severity: int = 5
+    enabled: bool = True
+
+
+class PolicyUpdateRequest(BaseModel):
+    auto_reject_threshold: Optional[float] = None
+    flag_review_threshold: Optional[float] = None
+    severity: Optional[int] = None
+    enabled: Optional[bool] = None
 
 
 # Dependency: Get current user from session cookie
@@ -159,6 +193,12 @@ def calculate_file_hash(file_path: Path) -> str:
 async def index(request: Request):
     """Serve main HTML page"""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/admin/dashboard")
+async def admin_dashboard(request: Request):
+    """Serve admin dashboard page"""
+    return templates.TemplateResponse("admin/dashboard.html", {"request": request})
 
 
 @app.get("/api/health")
@@ -717,6 +757,207 @@ async def get_moderation_stats(
         }
 
         return stats
+
+
+# Phase 5: Review and Appeal endpoints
+
+@app.post("/api/moderation/review")
+async def submit_review(
+    request: ReviewSubmitRequest,
+    moderator: User = Depends(get_current_moderator)
+):
+    """Submit manual review decision (moderator only)"""
+    admin_service = get_admin_service()
+
+    success, review, error = admin_service.submit_review(
+        moderator=moderator,
+        content_id=request.content_id,
+        approved=request.approved,
+        category=request.category,
+        notes=request.notes
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=error)
+
+    return {
+        "success": True,
+        "review": review.to_dict(),
+        "message": f"Content {'approved' if request.approved else 'rejected'}"
+    }
+
+
+@app.post("/api/appeals")
+async def create_appeal(
+    request: AppealCreateRequest,
+    user: User = Depends(get_current_user)
+):
+    """Create appeal for rejected content"""
+    admin_service = get_admin_service()
+
+    success, appeal_id, error = admin_service.create_appeal(
+        user=user,
+        content_id=request.content_id,
+        reason=request.reason
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=error)
+
+    return {
+        "success": True,
+        "appeal_id": appeal_id,
+        "message": "Appeal submitted successfully"
+    }
+
+
+@app.get("/api/appeals")
+async def list_appeals(
+    moderator: User = Depends(get_current_moderator)
+):
+    """List all appeals (moderator only)"""
+    with db_manager.get_session() as db:
+        appeals = db.query(Review).filter(
+            Review.is_appeal_review == True
+        ).order_by(Review.created_at.desc()).all()
+
+        results = []
+        for appeal in appeals:
+            appeal_dict = appeal.to_dict()
+
+            # Add content information
+            content = db.query(ContentItem).filter(
+                ContentItem.id == appeal.content_id
+            ).first()
+
+            if content:
+                appeal_dict['content'] = content.to_dict()
+
+            results.append(appeal_dict)
+
+        return {
+            "success": True,
+            "appeals": results,
+            "total": len(results)
+        }
+
+
+@app.post("/api/appeals/{appeal_id}/review")
+async def review_appeal(
+    appeal_id: str,
+    request: AppealReviewRequest,
+    moderator: User = Depends(get_current_moderator)
+):
+    """Review an appeal (moderator only)"""
+    admin_service = get_admin_service()
+
+    success, review, error = admin_service.review_appeal(
+        moderator=moderator,
+        appeal_id=appeal_id,
+        approved=request.approved,
+        notes=request.notes
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=error)
+
+    return {
+        "success": True,
+        "review": review.to_dict(),
+        "message": f"Appeal {'approved' if request.approved else 'rejected'}"
+    }
+
+
+# Phase 5: Policy Management endpoints
+
+@app.get("/api/admin/policies")
+async def list_policies(
+    enabled_only: bool = False,
+    moderator: User = Depends(get_current_moderator)
+):
+    """List moderation policies (moderator only)"""
+    admin_service = get_admin_service()
+
+    success, policies, error = admin_service.list_policies(enabled_only=enabled_only)
+
+    if not success:
+        raise HTTPException(status_code=500, detail=error)
+
+    return {
+        "success": True,
+        "policies": [p.to_dict() for p in policies],
+        "total": len(policies)
+    }
+
+
+@app.post("/api/admin/policies")
+async def create_policy(
+    request: PolicyCreateRequest,
+    admin: User = Depends(get_current_admin)
+):
+    """Create moderation policy (admin only)"""
+    admin_service = get_admin_service()
+
+    success, policy, error = admin_service.create_policy(
+        admin=admin,
+        name=request.name,
+        category=request.category,
+        auto_reject_threshold=request.auto_reject_threshold,
+        flag_review_threshold=request.flag_review_threshold,
+        severity=request.severity,
+        enabled=request.enabled
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=error)
+
+    return {
+        "success": True,
+        "policy": policy.to_dict(),
+        "message": f"Policy '{request.name}' created successfully"
+    }
+
+
+@app.patch("/api/admin/policies/{policy_id}")
+async def update_policy(
+    policy_id: str,
+    request: PolicyUpdateRequest,
+    admin: User = Depends(get_current_admin)
+):
+    """Update moderation policy (admin only)"""
+    admin_service = get_admin_service()
+
+    success, policy, error = admin_service.update_policy(
+        admin=admin,
+        policy_id=policy_id,
+        auto_reject_threshold=request.auto_reject_threshold,
+        flag_review_threshold=request.flag_review_threshold,
+        severity=request.severity,
+        enabled=request.enabled
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=error)
+
+    return {
+        "success": True,
+        "policy": policy.to_dict(),
+        "message": f"Policy updated successfully"
+    }
+
+
+@app.get("/api/admin/stats")
+async def get_admin_stats(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get admin dashboard statistics (moderator only)"""
+    admin_service = get_admin_service()
+    stats = admin_service.get_admin_stats()
+
+    return {
+        "success": True,
+        "stats": stats
+    }
 
 
 # Job status endpoints (Phase 4)
