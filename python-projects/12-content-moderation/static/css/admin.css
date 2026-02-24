@@ -546,6 +546,195 @@
     cursor: pointer;
 }
 
+/* Analytics Styles */
+.analytics-section {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.analytics-section h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    color: #333;
+    border-bottom: 2px solid #4CAF50;
+    padding-bottom: 10px;
+}
+
+.analytics-section h4 {
+    margin: 15px 0 10px 0;
+    font-size: 16px;
+    color: #666;
+}
+
+/* Category Breakdown */
+.categories-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.category-bar {
+    display: grid;
+    grid-template-columns: 150px 1fr 150px;
+    align-items: center;
+    gap: 15px;
+}
+
+.category-label {
+    font-weight: 500;
+    color: #333;
+    text-transform: capitalize;
+}
+
+.category-progress {
+    background: #f0f0f0;
+    border-radius: 10px;
+    height: 20px;
+    overflow: hidden;
+}
+
+.category-fill {
+    background: linear-gradient(90deg, #4CAF50, #45a049);
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.category-stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: #666;
+}
+
+/* Content Type Stats */
+.content-types-chart {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.type-card {
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.type-card h4 {
+    margin: 0 0 10px 0;
+    color: #4CAF50;
+    font-size: 16px;
+}
+
+.type-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.type-stats div {
+    display: flex;
+    justify-content: space-between;
+    color: #666;
+}
+
+/* Cost Analysis */
+.costs-summary {
+    background: #f0f8ff;
+    border-left: 4px solid #2196F3;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+
+.cost-item {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+    font-size: 16px;
+}
+
+.cost-label {
+    color: #666;
+    font-weight: 500;
+}
+
+.cost-value {
+    color: #2196F3;
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.costs-breakdown {
+    margin-top: 20px;
+}
+
+.provider-cost {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    padding: 10px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.provider-cost:last-child {
+    border-bottom: none;
+}
+
+/* Performance Metrics */
+.performance-section {
+    margin: 15px 0;
+}
+
+.perf-item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 15px;
+    padding: 10px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.perf-item:last-child {
+    border-bottom: none;
+}
+
+/* Moderator Performance Table */
+.moderators-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.moderators-table thead {
+    background: #f5f5f5;
+}
+
+.moderators-table th,
+.moderators-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.moderators-table th {
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+}
+
+.moderators-table td {
+    color: #666;
+    font-size: 14px;
+}
+
+.moderators-table tr:hover {
+    background: #f9f9f9;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .dashboard-grid {

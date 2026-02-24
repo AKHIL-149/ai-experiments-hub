@@ -22,7 +22,9 @@ from src.core.database import (
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.classification_service import get_classification_service
 from src.services.admin_service import get_admin_service
+from src.services.analytics_service import get_analytics_service
 from src.utils.file_handler import get_file_handler
+from src.utils.cost_tracker import get_cost_tracker
 
 # Load environment
 load_dotenv()
@@ -958,6 +960,134 @@ async def get_admin_stats(
         "success": True,
         "stats": stats
     }
+
+
+# Phase 6: Analytics endpoints
+
+@app.get("/api/analytics/overview")
+async def get_analytics_overview(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get analytics overview metrics (moderator only)"""
+    analytics_service = get_analytics_service()
+    metrics = analytics_service.get_overview_metrics()
+
+    return {
+        "success": True,
+        "metrics": metrics
+    }
+
+
+@app.get("/api/analytics/trends")
+async def get_analytics_trends(
+    days: int = 30,
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get time-series trends (moderator only)"""
+    analytics_service = get_analytics_service()
+    trends = analytics_service.get_time_series(days=days)
+
+    return {
+        "success": True,
+        "trends": trends
+    }
+
+
+@app.get("/api/analytics/categories")
+async def get_category_breakdown(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get violation category breakdown (moderator only)"""
+    analytics_service = get_analytics_service()
+    breakdown = analytics_service.get_category_breakdown()
+
+    return {
+        "success": True,
+        "breakdown": breakdown
+    }
+
+
+@app.get("/api/analytics/content-types")
+async def get_content_type_stats(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get content type statistics (moderator only)"""
+    analytics_service = get_analytics_service()
+    stats = analytics_service.get_content_type_stats()
+
+    return {
+        "success": True,
+        "stats": stats
+    }
+
+
+@app.get("/api/analytics/moderators")
+async def get_moderator_performance(
+    admin: User = Depends(get_current_admin)
+):
+    """Get moderator performance metrics (admin only)"""
+    analytics_service = get_analytics_service()
+    performance = analytics_service.get_moderator_performance()
+
+    return {
+        "success": True,
+        "moderators": performance
+    }
+
+
+@app.get("/api/analytics/costs")
+async def get_cost_analysis(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get cost analysis (moderator only)"""
+    analytics_service = get_analytics_service()
+    costs = analytics_service.get_cost_analysis()
+
+    return {
+        "success": True,
+        "costs": costs
+    }
+
+
+@app.get("/api/analytics/performance")
+async def get_performance_metrics(
+    moderator: User = Depends(get_current_moderator)
+):
+    """Get system performance metrics (moderator only)"""
+    analytics_service = get_analytics_service()
+    metrics = analytics_service.get_performance_metrics()
+
+    return {
+        "success": True,
+        "metrics": metrics
+    }
+
+
+@app.get("/api/analytics/export")
+async def export_analytics(
+    days: int = 30,
+    format: str = 'json',
+    moderator: User = Depends(get_current_moderator)
+):
+    """Export analytics data (moderator only)"""
+    from fastapi.responses import JSONResponse
+    import json
+
+    analytics_service = get_analytics_service()
+    success, data, error = analytics_service.export_analytics_data(format=format, days=days)
+
+    if not success:
+        raise HTTPException(status_code=500, detail=error)
+
+    if format == 'json':
+        return JSONResponse(content=data)
+    else:
+        # CSV export would go here
+        return {
+            "success": True,
+            "message": "CSV export not yet implemented",
+            "data": data
+        }
 
 
 # Job status endpoints (Phase 4)

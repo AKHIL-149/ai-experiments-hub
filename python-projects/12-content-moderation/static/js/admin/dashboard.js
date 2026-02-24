@@ -162,7 +162,7 @@ function switchView(view) {
             loadPolicies();
             break;
         case 'analytics':
-            // Analytics view placeholder
+            loadAnalytics();
             break;
     }
 }
@@ -739,6 +739,295 @@ function closeAllModals() {
         modal.style.display = 'none';
     });
 }
+
+// Analytics Functions
+
+async function loadAnalytics() {
+    """Load all analytics data"""
+    await Promise.all([
+        loadAnalyticsOverview(),
+        loadCategoryBreakdown(),
+        loadContentTypeStats(),
+        loadCostAnalysis(),
+        loadPerformanceMetrics()
+    ]);
+
+    // Load moderator performance if admin
+    if (currentUser && currentUser.role === 'admin') {
+        await loadModeratorPerformance();
+    }
+
+    // Setup refresh button
+    document.getElementById('refresh-analytics')?.addEventListener('click', loadAnalytics);
+    document.getElementById('export-analytics')?.addEventListener('click', exportAnalyticsData);
+}
+
+async function loadAnalyticsOverview() {
+    try {
+        const response = await fetch('/api/analytics/overview', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load overview');
+
+        const data = await response.json();
+        const metrics = data.metrics;
+
+        const container = document.getElementById('analytics-overview');
+        container.innerHTML = `
+            <div class="stat-item">
+                <span class="stat-label">Total Content</span>
+                <span class="stat-value">${metrics.content?.total || 0}</span>
+            </div>
+            <div class="stat-item approved">
+                <span class="stat-label">Approved</span>
+                <span class="stat-value">${metrics.content?.approved || 0}</span>
+            </div>
+            <div class="stat-item rejected">
+                <span class="stat-label">Rejected</span>
+                <span class="stat-value">${metrics.content?.rejected || 0}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Approval Rate</span>
+                <span class="stat-value">${metrics.content?.approval_rate || 0}%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Total Reviews</span>
+                <span class="stat-value">${metrics.reviews?.total || 0}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Violations Detected</span>
+                <span class="stat-value">${metrics.classifications?.violations || 0}</span>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error loading analytics overview:', error);
+    }
+}
+
+async function loadCategoryBreakdown() {
+    try {
+        const response = await fetch('/api/analytics/categories', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load categories');
+
+        const data = await response.json();
+        const breakdown = data.breakdown;
+
+        const container = document.getElementById('analytics-categories');
+        if (!breakdown.categories || breakdown.categories.length === 0) {
+            container.innerHTML = '<p>No violation data available</p>';
+            return;
+        }
+
+        container.innerHTML = breakdown.categories.map(cat => `
+            <div class="category-bar">
+                <div class="category-label">${cat.category}</div>
+                <div class="category-progress">
+                    <div class="category-fill" style="width: ${cat.percentage}%"></div>
+                </div>
+                <div class="category-stats">
+                    <span>${cat.count} violations</span>
+                    <span>${cat.percentage}%</span>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading category breakdown:', error);
+    }
+}
+
+async function loadContentTypeStats() {
+    try {
+        const response = await fetch('/api/analytics/content-types', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load content types');
+
+        const data = await response.json();
+        const types = data.stats?.content_types || [];
+
+        const container = document.getElementById('analytics-content-types');
+        if (types.length === 0) {
+            container.innerHTML = '<p>No content type data available</p>';
+            return;
+        }
+
+        container.innerHTML = types.map(type => `
+            <div class="type-card">
+                <h4>${type.type.toUpperCase()}</h4>
+                <div class="type-stats">
+                    <div>Total: ${type.total}</div>
+                    <div>Approved: ${type.approved}</div>
+                    <div>Rejected: ${type.rejected}</div>
+                    <div>Approval Rate: ${type.approval_rate}%</div>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading content type stats:', error);
+    }
+}
+
+async function loadCostAnalysis() {
+    try {
+        const response = await fetch('/api/analytics/costs', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load costs');
+
+        const data = await response.json();
+        const costs = data.costs;
+
+        const container = document.getElementById('analytics-costs');
+        container.innerHTML = `
+            <div class="costs-summary">
+                <div class="cost-item">
+                    <span class="cost-label">Total Cost:</span>
+                    <span class="cost-value">$${costs.total_cost?.toFixed(4) || '0.0000'}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Average per Request:</span>
+                    <span class="cost-value">$${costs.average_cost?.toFixed(4) || '0.0000'}</span>
+                </div>
+            </div>
+            <div class="costs-breakdown">
+                <h4>By Provider</h4>
+                ${costs.by_provider?.map(p => `
+                    <div class="provider-cost">
+                        <span>${p.provider}</span>
+                        <span>${p.requests} requests</span>
+                        <span>$${p.cost?.toFixed(4) || '0.0000'}</span>
+                    </div>
+                `).join('') || '<p>No cost data</p>'}
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error loading cost analysis:', error);
+    }
+}
+
+async function loadPerformanceMetrics() {
+    try {
+        const response = await fetch('/api/analytics/performance', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load performance');
+
+        const data = await response.json();
+        const metrics = data.metrics;
+
+        const container = document.getElementById('analytics-performance');
+        container.innerHTML = `
+            <div class="performance-section">
+                <h4>Processing Time by Content Type</h4>
+                ${metrics.by_content_type?.map(t => `
+                    <div class="perf-item">
+                        <span>${t.type}</span>
+                        <span>${t.avg_processing_time}s avg</span>
+                    </div>
+                `).join('') || '<p>No data</p>'}
+            </div>
+            <div class="performance-section">
+                <h4>Queue Performance</h4>
+                ${metrics.by_queue?.map(q => `
+                    <div class="perf-item">
+                        <span>${q.queue} queue</span>
+                        <span>${q.jobs_processed} jobs</span>
+                        <span>${q.avg_processing_time}s avg</span>
+                    </div>
+                `).join('') || '<p>No data</p>'}
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error loading performance metrics:', error);
+    }
+}
+
+async function loadModeratorPerformance() {
+    try {
+        const response = await fetch('/api/analytics/moderators', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load moderator performance');
+
+        const data = await response.json();
+        const moderators = data.moderators || [];
+
+        const container = document.getElementById('analytics-moderators');
+        if (moderators.length === 0) {
+            container.innerHTML = '<p>No moderator data available</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <table class="moderators-table">
+                <thead>
+                    <tr>
+                        <th>Moderator</th>
+                        <th>Role</th>
+                        <th>Total Reviews</th>
+                        <th>Approvals</th>
+                        <th>Rejections</th>
+                        <th>Appeals</th>
+                        <th>Last Activity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${moderators.map(mod => `
+                        <tr>
+                            <td>${mod.username}</td>
+                            <td>${mod.role.toUpperCase()}</td>
+                            <td>${mod.total_reviews}</td>
+                            <td>${mod.approvals}</td>
+                            <td>${mod.rejections}</td>
+                            <td>${mod.appeals_reviewed}</td>
+                            <td>${mod.last_activity ? new Date(mod.last_activity).toLocaleDateString() : 'Never'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (error) {
+        console.error('Error loading moderator performance:', error);
+    }
+}
+
+async function exportAnalyticsData() {
+    try {
+        const response = await fetch('/api/analytics/export?days=30&format=json', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to export analytics');
+
+        const data = await response.json();
+
+        // Download as JSON file
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analytics_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showSuccess('Analytics exported successfully');
+    } catch (error) {
+        console.error('Error exporting analytics:', error);
+        showError('Failed to export analytics');
+    }
+}
+
+// Utility Functions
 
 async function logout() {
     try {

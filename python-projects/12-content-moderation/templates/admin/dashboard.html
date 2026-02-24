@@ -271,9 +271,45 @@
                     <p>Content moderation trends and insights</p>
                 </div>
 
-                <div class="analytics-placeholder">
-                    <p>Analytics charts and trends will be displayed here</p>
-                    <p class="note">Coming soon: Time-series charts, category breakdown, moderator performance</p>
+                <div class="action-buttons">
+                    <button id="refresh-analytics" class="btn-primary">Refresh Data</button>
+                    <button id="export-analytics" class="btn-secondary">Export Analytics (JSON)</button>
+                </div>
+
+                <!-- Overview Metrics -->
+                <div class="analytics-section">
+                    <h3>Overview Metrics</h3>
+                    <div id="analytics-overview" class="stat-grid"></div>
+                </div>
+
+                <!-- Category Breakdown -->
+                <div class="analytics-section">
+                    <h3>Violation Categories</h3>
+                    <div id="analytics-categories" class="categories-chart"></div>
+                </div>
+
+                <!-- Content Type Stats -->
+                <div class="analytics-section">
+                    <h3>Content Types</h3>
+                    <div id="analytics-content-types" class="content-types-chart"></div>
+                </div>
+
+                <!-- Cost Analysis -->
+                <div class="analytics-section">
+                    <h3>Cost Analysis</h3>
+                    <div id="analytics-costs" class="costs-display"></div>
+                </div>
+
+                <!-- Performance Metrics -->
+                <div class="analytics-section">
+                    <h3>Performance Metrics</h3>
+                    <div id="analytics-performance" class="performance-display"></div>
+                </div>
+
+                <!-- Moderator Performance (Admin only) -->
+                <div class="analytics-section admin-only" id="moderator-performance-section">
+                    <h3>Moderator Performance</h3>
+                    <div id="analytics-moderators" class="moderators-table"></div>
                 </div>
             </div>
         </div>
