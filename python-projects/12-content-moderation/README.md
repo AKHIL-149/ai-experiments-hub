@@ -1,8 +1,8 @@
 # Project 12: Content Moderation System
 
-**Version**: 1.5.0 (Phase 6)
-**Status**: Phase 6 Complete - Production Features with Analytics & Deployment
-**Architecture**: Production-ready AI-powered content moderation platform with analytics, cost tracking, and containerized deployment
+**Version**: 1.5.0-dev (Phase 6 - Refinement in Progress)
+**Status**: Core features complete, additional polish and refinement needed
+**Architecture**: AI-powered content moderation platform with analytics, cost tracking, and containerized deployment
 
 ## Overview
 
@@ -1125,6 +1125,36 @@ cd python-projects/12-content-moderation
 pip install -r requirements.txt
 ```
 
+## Known Issues & Refinement Needed
+
+While the core functionality is working, there are some areas that need additional refinement:
+
+### Deployment & Infrastructure
+- Redis and Celery workers not fully integrated in development mode
+- Docker deployment tested but needs production hardening
+- Need to add proper health checks for all services
+- Missing automated deployment scripts
+
+### Features Requiring Polish
+- CSV export format not implemented (only JSON available)
+- Chart visualization libraries not integrated (analytics shows raw data)
+- Email notifications system planned but not built
+- Real-time WebSocket updates work but could be more robust
+
+### Testing & Documentation
+- Load testing with Locust partially done, needs comprehensive scenarios
+- Integration tests could cover more edge cases
+- API documentation in Swagger is good but needs more examples
+- Deployment guide exists but needs step-by-step verification
+
+### Code Quality
+- Some error handling could be more graceful
+- Logging needs standardization across services
+- Cache invalidation strategy needs implementation
+- Database query optimization for large datasets
+
+**Next Steps**: Planning to refine these areas and add the missing polish before calling it production-ready. The system works well for development and testing, but needs these improvements for a true production deployment.
+
 ## Contributing
 
 Phase 1 is complete. Contributions welcome for Phases 2-6!
@@ -1143,6 +1173,7 @@ Built with patterns from:
 
 ---
 
-**Status**: Phase 6 Complete ✅ - Production Ready!
+**Status**: Phase 6 Complete ⚠️ - Core Features Working, Refinement Needed
 **Features**: Full-stack content moderation with AI classification, human review, analytics, and Docker deployment
-**Last Updated**: 2026-02-14
+**Completion**: ~97% (core functionality working, polish and production hardening in progress)
+**Last Updated**: 2026-02-25
