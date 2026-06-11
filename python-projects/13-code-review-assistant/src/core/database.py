@@ -52,6 +52,31 @@ class PRStatus(str, enum.Enum):
     REVIEWED = 'reviewed'
 
 
+class JobStatus(str, enum.Enum):
+    """Analysis job status enumeration."""
+    QUEUED = 'queued'
+    PROCESSING = 'processing'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+
+
+class IssueCategory(str, enum.Enum):
+    """Issue category enumeration."""
+    SECURITY = 'security'
+    SMELL = 'smell'
+    COMPLEXITY = 'complexity'
+    STYLE = 'style'
+    PATTERN = 'pattern'
+
+
+class IssueSeverity(str, enum.Enum):
+    """Issue severity enumeration."""
+    INFO = 'info'
+    WARNING = 'warning'
+    ERROR = 'error'
+    CRITICAL = 'critical'
+
+
 class User(Base):
     """User accounts with role-based access control."""
     __tablename__ = 'users'
@@ -232,6 +257,81 @@ class CodeFile(Base):
 
     def __repr__(self):
         return f"<CodeFile(id={self.id}, file_path={self.file_path}, language={self.language})>"
+
+
+class AnalysisJob(Base):
+    """Asynchronous analysis jobs tracked via Celery."""
+    __tablename__ = 'analysis_jobs'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    pull_request_id = Column(String(36), ForeignKey('pull_requests.id'), nullable=False, index=True)
+    job_type = Column(String(50), nullable=False)  # 'file', 'pr', 'repo'
+    status = Column(Enum(JobStatus), default=JobStatus.QUEUED, nullable=False)
+    celery_task_id = Column(String(100), index=True)  # Celery task ID
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    result_json = Column(JSON)  # Job results summary
+
+    # Relationships
+    pull_request = relationship('PullRequest', back_populates='analysis_jobs')
+
+    def to_dict(self) -> Dict:
+        """Convert analysis job to dictionary."""
+        return {
+            'id': self.id,
+            'pull_request_id': self.pull_request_id,
+            'job_type': self.job_type,
+            'status': self.status.value,
+            'celery_task_id': self.celery_task_id,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'result': self.result_json
+        }
+
+    def __repr__(self):
+        return f"<AnalysisJob(id={self.id}, job_type={self.job_type}, status={self.status})>"
+
+
+class Issue(Base):
+    """Code issues detected during analysis."""
+    __tablename__ = 'issues'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code_file_id = Column(String(36), ForeignKey('code_files.id'), nullable=False, index=True)
+    category = Column(Enum(IssueCategory), nullable=False, index=True)
+    severity = Column(Enum(IssueSeverity), nullable=False, index=True)
+    rule_id = Column(String(100), nullable=False)  # e.g., 'SEC001', 'SMELL002'
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=False)
+    line_number = Column(Integer)
+    column_number = Column(Integer)
+    code_snippet = Column(Text)
+    confidence = Column(Float)  # 0.0 to 1.0
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    code_file = relationship('CodeFile', back_populates='issues')
+    refactorings = relationship('Refactoring', back_populates='issue', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict:
+        """Convert issue to dictionary."""
+        return {
+            'id': self.id,
+            'code_file_id': self.code_file_id,
+            'category': self.category.value,
+            'severity': self.severity.value,
+            'rule_id': self.rule_id,
+            'title': self.title,
+            'description': self.description,
+            'line_number': self.line_number,
+            'column_number': self.column_number,
+            'code_snippet': self.code_snippet,
+            'confidence': self.confidence,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def __repr__(self):
+        return f"<Issue(id={self.id}, category={self.category}, severity={self.severity})>"
 
 
 class DatabaseManager:
