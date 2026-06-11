@@ -43,6 +43,15 @@ class RepositoryStatus(str, enum.Enum):
     ERROR = 'error'
 
 
+class PRStatus(str, enum.Enum):
+    """Pull request status enumeration."""
+    OPEN = 'open'
+    CLOSED = 'closed'
+    MERGED = 'merged'
+    ANALYZING = 'analyzing'
+    REVIEWED = 'reviewed'
+
+
 class User(Base):
     """User accounts with role-based access control."""
     __tablename__ = 'users'
@@ -142,6 +151,87 @@ class Repository(Base):
 
     def __repr__(self):
         return f"<Repository(id={self.id}, name={self.name}, status={self.status})>"
+
+
+class PullRequest(Base):
+    """GitHub pull requests for code review."""
+    __tablename__ = 'pull_requests'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    repository_id = Column(String(36), ForeignKey('repositories.id'), nullable=False, index=True)
+    pr_number = Column(Integer, nullable=False)
+    title = Column(String(500), nullable=False)
+    description = Column(Text)
+    author = Column(String(255))
+    status = Column(Enum(PRStatus), default=PRStatus.OPEN, nullable=False)
+    source_branch = Column(String(255), nullable=False)
+    target_branch = Column(String(255), nullable=False)
+    github_id = Column(String(100))  # GitHub PR ID
+    github_url = Column(String(500))
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = Column(DateTime)
+
+    # Relationships
+    repository = relationship('Repository', back_populates='pull_requests')
+    code_files = relationship('CodeFile', back_populates='pull_request', cascade='all, delete-orphan')
+    analysis_jobs = relationship('AnalysisJob', back_populates='pull_request', cascade='all, delete-orphan')
+    reviews = relationship('Review', back_populates='pull_request', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict:
+        """Convert pull request to dictionary."""
+        return {
+            'id': self.id,
+            'repository_id': self.repository_id,
+            'pr_number': self.pr_number,
+            'title': self.title,
+            'description': self.description,
+            'author': self.author,
+            'status': self.status.value,
+            'source_branch': self.source_branch,
+            'target_branch': self.target_branch,
+            'github_id': self.github_id,
+            'github_url': self.github_url,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None
+        }
+
+    def __repr__(self):
+        return f"<PullRequest(id={self.id}, pr_number={self.pr_number}, status={self.status})>"
+
+
+class CodeFile(Base):
+    """Code files analyzed in pull requests."""
+    __tablename__ = 'code_files'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    pull_request_id = Column(String(36), ForeignKey('pull_requests.id'), nullable=False, index=True)
+    file_path = Column(String(1000), nullable=False)
+    file_hash = Column(String(64))  # SHA256 hash of content
+    language = Column(String(50))
+    lines_of_code = Column(Integer)
+    parsed_data_json = Column(JSON)  # Cached ParsedModule from parser
+    last_analyzed_at = Column(DateTime)
+
+    # Relationships
+    pull_request = relationship('PullRequest', back_populates='code_files')
+    issues = relationship('Issue', back_populates='code_file', cascade='all, delete-orphan')
+    refactorings = relationship('Refactoring', back_populates='code_file', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict:
+        """Convert code file to dictionary."""
+        return {
+            'id': self.id,
+            'pull_request_id': self.pull_request_id,
+            'file_path': self.file_path,
+            'file_hash': self.file_hash,
+            'language': self.language,
+            'lines_of_code': self.lines_of_code,
+            'last_analyzed_at': self.last_analyzed_at.isoformat() if self.last_analyzed_at else None,
+            'parsed_data': self.parsed_data_json
+        }
+
+    def __repr__(self):
+        return f"<CodeFile(id={self.id}, file_path={self.file_path}, language={self.language})>"
 
 
 class DatabaseManager:
