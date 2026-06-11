@@ -35,6 +35,14 @@ class UserRole(str, enum.Enum):
     ADMIN = 'admin'
 
 
+class RepositoryStatus(str, enum.Enum):
+    """Repository status enumeration."""
+    PENDING = 'pending'
+    CLONING = 'cloning'
+    READY = 'ready'
+    ERROR = 'error'
+
+
 class User(Base):
     """User accounts with role-based access control."""
     __tablename__ = 'users'
@@ -67,6 +75,73 @@ class User(Base):
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, role={self.role})>"
+
+
+class UserSession(Base):
+    """User authentication sessions."""
+    __tablename__ = 'sessions'
+
+    id = Column(String(64), primary_key=True)  # Session token
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    last_accessed = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ip_address = Column(String(45))  # IPv6 compatible
+
+    # Relationships
+    user = relationship('User', back_populates='sessions')
+
+    def to_dict(self) -> Dict:
+        """Convert session to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'last_accessed': self.last_accessed.isoformat() if self.last_accessed else None,
+            'ip_address': self.ip_address
+        }
+
+    def __repr__(self):
+        return f"<UserSession(id={self.id}, user_id={self.user_id})>"
+
+
+class Repository(Base):
+    """GitHub repositories tracked for code review."""
+    __tablename__ = 'repositories'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    github_url = Column(String(500), nullable=False)
+    clone_path = Column(String(500))
+    default_branch = Column(String(100), default='main')
+    status = Column(Enum(RepositoryStatus), default=RepositoryStatus.PENDING, nullable=False)
+    last_synced_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    settings_json = Column(JSON)  # Custom settings per repo
+
+    # Relationships
+    user = relationship('User', back_populates='repositories')
+    pull_requests = relationship('PullRequest', back_populates='repository', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict:
+        """Convert repository to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'name': self.name,
+            'github_url': self.github_url,
+            'clone_path': self.clone_path,
+            'default_branch': self.default_branch,
+            'status': self.status.value,
+            'last_synced_at': self.last_synced_at.isoformat() if self.last_synced_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'settings': self.settings_json
+        }
+
+    def __repr__(self):
+        return f"<Repository(id={self.id}, name={self.name}, status={self.status})>"
 
 
 class DatabaseManager:
