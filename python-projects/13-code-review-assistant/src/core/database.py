@@ -77,6 +77,14 @@ class IssueSeverity(str, enum.Enum):
     CRITICAL = 'critical'
 
 
+class RefactoringStatus(str, enum.Enum):
+    """Refactoring suggestion status enumeration."""
+    SUGGESTED = 'suggested'
+    ACCEPTED = 'accepted'
+    REJECTED = 'rejected'
+    APPLIED = 'applied'
+
+
 class User(Base):
     """User accounts with role-based access control."""
     __tablename__ = 'users'
@@ -332,6 +340,116 @@ class Issue(Base):
 
     def __repr__(self):
         return f"<Issue(id={self.id}, category={self.category}, severity={self.severity})>"
+
+
+class Refactoring(Base):
+    """Refactoring suggestions for code improvements."""
+    __tablename__ = 'refactorings'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    issue_id = Column(String(36), ForeignKey('issues.id'), nullable=False, index=True)
+    code_file_id = Column(String(36), ForeignKey('code_files.id'), nullable=False, index=True)
+    refactoring_type = Column(String(100), nullable=False)  # 'extract_method', 'rename', 'simplify'
+    original_code = Column(Text)
+    refactored_code = Column(Text)
+    diff = Column(Text)  # Unified diff format
+    explanation = Column(Text)
+    benefits = Column(Text)
+    confidence = Column(Float)  # 0.0 to 1.0
+    status = Column(Enum(RefactoringStatus), default=RefactoringStatus.SUGGESTED, nullable=False)
+
+    # Relationships
+    issue = relationship('Issue', back_populates='refactorings')
+    code_file = relationship('CodeFile', back_populates='refactorings')
+
+    def to_dict(self) -> Dict:
+        """Convert refactoring to dictionary."""
+        return {
+            'id': self.id,
+            'issue_id': self.issue_id,
+            'code_file_id': self.code_file_id,
+            'refactoring_type': self.refactoring_type,
+            'original_code': self.original_code,
+            'refactored_code': self.refactored_code,
+            'diff': self.diff,
+            'explanation': self.explanation,
+            'benefits': self.benefits,
+            'confidence': self.confidence,
+            'status': self.status.value
+        }
+
+    def __repr__(self):
+        return f"<Refactoring(id={self.id}, type={self.refactoring_type}, status={self.status})>"
+
+
+class Review(Base):
+    """Pull request review results."""
+    __tablename__ = 'reviews'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    pull_request_id = Column(String(36), ForeignKey('pull_requests.id'), nullable=False, index=True)
+    reviewer_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    overall_score = Column(Integer)  # 0-100
+    issues_count = Column(Integer, default=0)
+    suggestions_count = Column(Integer, default=0)
+    summary = Column(Text)
+    approved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    pull_request = relationship('PullRequest', back_populates='reviews')
+    reviewer = relationship('User', back_populates='reviews')
+    comments = relationship('ReviewComment', back_populates='review', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict:
+        """Convert review to dictionary."""
+        return {
+            'id': self.id,
+            'pull_request_id': self.pull_request_id,
+            'reviewer_id': self.reviewer_id,
+            'overall_score': self.overall_score,
+            'issues_count': self.issues_count,
+            'suggestions_count': self.suggestions_count,
+            'summary': self.summary,
+            'approved': self.approved,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def __repr__(self):
+        return f"<Review(id={self.id}, score={self.overall_score}, approved={self.approved})>"
+
+
+class ReviewComment(Base):
+    """Individual comments in a pull request review."""
+    __tablename__ = 'review_comments'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    review_id = Column(String(36), ForeignKey('reviews.id'), nullable=False, index=True)
+    file_path = Column(String(1000), nullable=False)
+    line_number = Column(Integer)
+    comment_text = Column(Text, nullable=False)
+    severity = Column(Enum(IssueSeverity), default=IssueSeverity.INFO)
+    github_comment_id = Column(String(100))  # GitHub comment ID for syncing
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    review = relationship('Review', back_populates='comments')
+
+    def to_dict(self) -> Dict:
+        """Convert review comment to dictionary."""
+        return {
+            'id': self.id,
+            'review_id': self.review_id,
+            'file_path': self.file_path,
+            'line_number': self.line_number,
+            'comment_text': self.comment_text,
+            'severity': self.severity.value,
+            'github_comment_id': self.github_comment_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def __repr__(self):
+        return f"<ReviewComment(id={self.id}, file={self.file_path}, line={self.line_number})>"
 
 
 class DatabaseManager:
