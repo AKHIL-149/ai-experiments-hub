@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <p class="subtitle">Welcome back, {{ user.username }}!</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">📁</div>
+            <div class="stat-info">
+                <div class="stat-value">{{ stats.repositories }}</div>
+                <div class="stat-label">Repositories</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🔀</div>
+            <div class="stat-info">
+                <div class="stat-value">{{ stats.pull_requests }}</div>
+                <div class="stat-label">Pull Requests</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-info">
+                <div class="stat-value">{{ stats.issues }}</div>
+                <div class="stat-label">Issues Found</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-info">
+                <div class="stat-value">{{ stats.reviews }}</div>
+                <div class="stat-label">Reviews</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="dashboard-section">
+            <div class="section-header">
+                <h2>Recent Repositories</h2>
+                <a href="/repositories" class="btn btn-sm btn-secondary">View All</a>
+            </div>
+            <div class="card-list">
+                {% if repositories %}
+                    {% for repo in repositories %}
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>{{ repo.name }}</h3>
+                            <span class="badge badge-{{ repo.status }}">{{ repo.status }}</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted">{{ repo.github_url }}</p>
+                            <div class="card-meta">
+                                <span>Branch: {{ repo.default_branch }}</span>
+                                {% if repo.last_synced_at %}
+                                <span>Synced: {{ repo.last_synced_at }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <a href="/repositories/{{ repo.id }}" class="btn btn-sm btn-primary">View</a>
+                            <a href="/repositories/{{ repo.id }}/sync" class="btn btn-sm btn-secondary">Sync</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📂</div>
+                        <h3>No repositories yet</h3>
+                        <p>Add your first repository to start code review</p>
+                        <a href="/repositories/new" class="btn btn-primary">Add Repository</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="dashboard-section">
+            <div class="section-header">
+                <h2>Recent Pull Requests</h2>
+                <a href="/pull-requests" class="btn btn-sm btn-secondary">View All</a>
+            </div>
+            <div class="card-list">
+                {% if pull_requests %}
+                    {% for pr in pull_requests %}
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>#{{ pr.pr_number }}: {{ pr.title }}</h3>
+                            <span class="badge badge-{{ pr.status }}">{{ pr.status }}</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted">{{ pr.author }}</p>
+                            <div class="card-meta">
+                                <span>{{ pr.source_branch }} → {{ pr.target_branch }}</span>
+                                <span>{{ pr.created_at }}</span>
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <a href="/pull-requests/{{ pr.id }}" class="btn btn-sm btn-primary">Review</a>
+                            {% if pr.status == 'open' %}
+                            <a href="/pull-requests/{{ pr.id }}/analyze" class="btn btn-sm btn-secondary">Analyze</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon">🔀</div>
+                        <h3>No pull requests</h3>
+                        <p>Import pull requests from your repositories</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-section">
+        <div class="section-header">
+            <h2>Recent Issues</h2>
+            <a href="/issues" class="btn btn-sm btn-secondary">View All</a>
+        </div>
+        <div class="table-container">
+            {% if issues %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Category</th>
+                        <th>Title</th>
+                        <th>File</th>
+                        <th>Line</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for issue in issues %}
+                    <tr>
+                        <td><span class="badge badge-{{ issue.severity }}">{{ issue.severity }}</span></td>
+                        <td><span class="badge badge-{{ issue.category }}">{{ issue.category }}</span></td>
+                        <td>{{ issue.title }}</td>
+                        <td class="text-muted">{{ issue.file_path }}</td>
+                        <td>{{ issue.line_number }}</td>
+                        <td>
+                            <a href="/issues/{{ issue.id }}" class="btn btn-xs btn-primary">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">✅</div>
+                <h3>No issues found</h3>
+                <p>All analyzed code looks good!</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="quick-actions">
+        <h2>Quick Actions</h2>
+        <div class="action-grid">
+            <a href="/repositories/new" class="action-card">
+                <div class="action-icon">➕</div>
+                <h3>Add Repository</h3>
+                <p>Connect a GitHub repository</p>
+            </a>
+            <a href="/analyze/file" class="action-card">
+                <div class="action-icon">📄</div>
+                <h3>Analyze File</h3>
+                <p>Upload a file for analysis</p>
+            </a>
+            <a href="/settings" class="action-card">
+                <div class="action-icon">⚙️</div>
+                <h3>Settings</h3>
+                <p>Configure analysis rules</p>
+            </a>
+            <a href="/api/docs" class="action-card">
+                <div class="action-icon">📚</div>
+                <h3>API Docs</h3>
+                <p>View API documentation</p>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

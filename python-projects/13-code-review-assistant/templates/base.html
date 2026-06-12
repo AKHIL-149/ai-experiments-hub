@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Code Review Assistant{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <a href="/">
+                    <span class="logo">🔍</span>
+                    <span class="brand-name">Code Review Assistant</span>
+                </a>
+            </div>
+            <div class="nav-menu">
+                {% if user %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/repositories" class="nav-link">Repositories</a>
+                <a href="/pull-requests" class="nav-link">Pull Requests</a>
+                <a href="/issues" class="nav-link">Issues</a>
+                <div class="nav-user">
+                    <span class="user-name">{{ user.username }}</span>
+                    {% if user.role == 'admin' %}
+                    <span class="badge badge-admin">Admin</span>
+                    {% endif %}
+                    <a href="/logout" class="btn btn-secondary btn-sm">Logout</a>
+                </div>
+                {% else %}
+                <a href="/login" class="btn btn-primary">Login</a>
+                <a href="/register" class="btn btn-secondary">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.type }}">
+            {{ message.text }}
+            <button class="alert-close" onclick="this.parentElement.remove()">&times;</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 AI Code Review Assistant. Intelligent code analysis powered by AI.</p>
+            <div class="footer-links">
+                <a href="/docs">Documentation</a>
+                <a href="/api/docs">API</a>
+                <a href="https://github.com" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
