@@ -328,3 +328,286 @@ def test_default_thresholds(smell_analyzer):
     assert smell_analyzer.max_parameters == 5
     assert smell_analyzer.max_nesting_depth == 4
     assert smell_analyzer.max_class_methods == 20
+
+
+# SMELL002: Long parameter list tests
+
+def test_long_parameter_list_detection(smell_analyzer, python_parser):
+    """Test detection of functions with too many parameters"""
+    code = '''
+def function_with_many_params(a, b, c, d, e, f, g):
+    """Function with 7 parameters"""
+    return a + b + c + d + e + f + g
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) > 0
+    assert smell002_issues[0].severity == IssueSeverity.WARNING
+    assert 'parameter' in smell002_issues[0].title.lower()
+
+
+def test_short_parameter_list_not_flagged(smell_analyzer, python_parser):
+    """Test that functions with few parameters are not flagged"""
+    code = '''
+def function_with_few_params(a, b, c):
+    """Function with 3 parameters"""
+    return a + b + c
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) == 0
+
+
+def test_method_self_excluded_from_count(smell_analyzer, python_parser):
+    """Test that 'self' parameter is excluded from count"""
+    code = '''
+class MyClass:
+    def method_with_params(self, a, b, c, d, e):
+        """Method with 5 params (excluding self)"""
+        return a + b + c + d + e
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    # Should not be flagged (5 params excluding self)
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) == 0
+
+
+def test_classmethod_cls_excluded_from_count(smell_analyzer, python_parser):
+    """Test that 'cls' parameter is excluded from count"""
+    code = '''
+class MyClass:
+    @classmethod
+    def classmethod_with_params(cls, a, b, c, d, e):
+        """Class method with 5 params (excluding cls)"""
+        return a + b + c + d + e
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    # Should not be flagged (5 params excluding cls)
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) == 0
+
+
+def test_varargs_kwargs_counted_as_one(smell_analyzer, python_parser):
+    """Test that *args and **kwargs are counted as 1 each"""
+    code = '''
+def function_with_varargs(a, b, c, d, *args, **kwargs):
+    """Function with regular params + *args + **kwargs"""
+    return sum([a, b, c, d])
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    # 4 regular + 1 for *args + 1 for **kwargs = 6 total (should be flagged)
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) > 0
+
+
+def test_long_parameter_list_custom_threshold(smell_analyzer_custom, python_parser):
+    """Test custom threshold for parameter count"""
+    code = '''
+def function_with_four_params(a, b, c, d):
+    """Function with 4 parameters"""
+    return a + b + c + d
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer_custom.analyze(parsed, code)
+
+    # Custom threshold is 3, so 4 should be flagged
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) > 0
+
+
+def test_process_order_long_params(smell_analyzer, python_parser, vulnerable_code_path):
+    """Test that process_order function is flagged for long parameter list"""
+    parsed = python_parser.parse_file(vulnerable_code_path)
+    source_code = Path(vulnerable_code_path).read_text()
+    issues = smell_analyzer.analyze(parsed, source_code)
+
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) > 0
+
+    # Check that process_order is detected (has 9 parameters)
+    assert any('process_order' in i.title for i in smell002_issues)
+
+
+def test_long_param_list_metadata(smell_analyzer, python_parser):
+    """Test that SMELL002 issues contain parameter count metadata"""
+    code = '''
+def func(a, b, c, d, e, f, g):
+    return a
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) > 0
+
+    issue = smell002_issues[0]
+    assert 'parameter_count' in issue.metadata
+    assert 'threshold' in issue.metadata
+    assert issue.metadata['parameter_count'] > issue.metadata['threshold']
+
+
+# SMELL003: God class tests
+
+def test_god_class_too_many_methods(smell_analyzer, python_parser):
+    """Test detection of class with too many methods"""
+    code = '''
+class GodClass:
+    """Class with too many methods"""
+    def method1(self): pass
+    def method2(self): pass
+    def method3(self): pass
+    def method4(self): pass
+    def method5(self): pass
+    def method6(self): pass
+    def method7(self): pass
+    def method8(self): pass
+    def method9(self): pass
+    def method10(self): pass
+    def method11(self): pass
+    def method12(self): pass
+    def method13(self): pass
+    def method14(self): pass
+    def method15(self): pass
+    def method16(self): pass
+    def method17(self): pass
+    def method18(self): pass
+    def method19(self): pass
+    def method20(self): pass
+    def method21(self): pass
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) > 0
+    assert smell003_issues[0].severity == IssueSeverity.WARNING
+    assert 'god class' in smell003_issues[0].title.lower()
+
+
+def test_god_class_too_many_lines(smell_analyzer, python_parser):
+    """Test detection of class with too many lines"""
+    code = 'class LargeClass:\n    """Large class"""\n'
+    # Add enough methods to exceed 500 lines
+    for i in range(100):
+        code += f'    def method{i}(self):\n'
+        code += f'        x = {i}\n'
+        code += f'        y = {i * 2}\n'
+        code += f'        z = {i * 3}\n'
+        code += f'        return x + y + z\n\n'
+
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) > 0
+
+
+def test_small_class_not_flagged(smell_analyzer, python_parser):
+    """Test that small classes are not flagged"""
+    code = '''
+class SmallClass:
+    """A small, focused class"""
+    def __init__(self):
+        self.value = 0
+
+    def get_value(self):
+        return self.value
+
+    def set_value(self, value):
+        self.value = value
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) == 0
+
+
+def test_application_manager_god_class(smell_analyzer, python_parser, vulnerable_code_path):
+    """Test that ApplicationManager class is flagged as god class"""
+    parsed = python_parser.parse_file(vulnerable_code_path)
+    source_code = Path(vulnerable_code_path).read_text()
+    issues = smell_analyzer.analyze(parsed, source_code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) > 0
+
+    # Check that ApplicationManager is detected
+    assert any('ApplicationManager' in i.title for i in smell003_issues)
+
+
+def test_god_class_metadata(smell_analyzer, python_parser):
+    """Test that SMELL003 issues contain method count and LOC metadata"""
+    code = 'class GodClass:\n'
+    for i in range(25):
+        code += f'    def method{i}(self): pass\n'
+
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) > 0
+
+    issue = smell003_issues[0]
+    assert 'method_count' in issue.metadata
+    assert 'lines_of_code' in issue.metadata
+    assert 'method_threshold' in issue.metadata
+    assert 'loc_threshold' in issue.metadata
+
+
+def test_god_class_async_methods_counted(smell_analyzer, python_parser):
+    """Test that async methods are counted in god class detection"""
+    code = 'class AsyncClass:\n'
+    for i in range(25):
+        code += f'    async def async_method{i}(self): pass\n'
+
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) > 0
+
+
+def test_multiple_god_classes(smell_analyzer, python_parser):
+    """Test detection of multiple god classes"""
+    code = 'class GodClass1:\n'
+    for i in range(25):
+        code += f'    def method{i}(self): pass\n'
+    code += '\nclass GodClass2:\n'
+    for i in range(25):
+        code += f'    def method{i}(self): pass\n'
+
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) >= 2
+
+
+def test_all_smell_rules_in_vulnerable_code(smell_analyzer, python_parser, vulnerable_code_path):
+    """Test that all smell rules are detected in vulnerable code"""
+    parsed = python_parser.parse_file(vulnerable_code_path)
+    source_code = Path(vulnerable_code_path).read_text()
+    issues = smell_analyzer.analyze(parsed, source_code)
+
+    # Should find SMELL001 (process_order long method)
+    smell001_issues = [i for i in issues if i.rule_id == 'SMELL001']
+    assert len(smell001_issues) > 0
+
+    # Should find SMELL002 (process_order long params)
+    smell002_issues = [i for i in issues if i.rule_id == 'SMELL002']
+    assert len(smell002_issues) > 0
+
+    # Should find SMELL003 (ApplicationManager god class)
+    smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
+    assert len(smell003_issues) > 0
