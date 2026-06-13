@@ -611,3 +611,258 @@ def test_all_smell_rules_in_vulnerable_code(smell_analyzer, python_parser, vulne
     # Should find SMELL003 (ApplicationManager god class)
     smell003_issues = [i for i in issues if i.rule_id == 'SMELL003']
     assert len(smell003_issues) > 0
+
+
+# SMELL004: Deep nesting tests
+
+def test_deep_nesting_detection(smell_analyzer, python_parser):
+    """Test detection of deeply nested code"""
+    code = '''
+def deeply_nested():
+    """Function with 5 levels of nesting"""
+    if True:
+        if True:
+            if True:
+                if True:
+                    if True:
+                        return "deep"
+    return "shallow"
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    assert len(smell004_issues) > 0
+    assert smell004_issues[0].severity == IssueSeverity.WARNING
+    assert 'nesting' in smell004_issues[0].title.lower()
+
+
+def test_shallow_nesting_not_flagged(smell_analyzer, python_parser):
+    """Test that shallow nesting is not flagged"""
+    code = '''
+def shallow_function():
+    """Function with only 3 levels"""
+    if True:
+        if True:
+            if True:
+                return "ok"
+    return "done"
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    assert len(smell004_issues) == 0
+
+
+def test_deep_nesting_with_loops(smell_analyzer, python_parser):
+    """Test nesting with for/while loops"""
+    code = '''
+def nested_loops():
+    """Mixed nesting with loops"""
+    for i in range(10):
+        while i > 0:
+            if i % 2 == 0:
+                for j in range(5):
+                    if j > 2:
+                        return i
+    return 0
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    assert len(smell004_issues) > 0
+
+
+def test_complex_validation_deep_nesting(smell_analyzer, python_parser, vulnerable_code_path):
+    """Test that complex_validation is flagged for deep nesting"""
+    parsed = python_parser.parse_file(vulnerable_code_path)
+    source_code = Path(vulnerable_code_path).read_text()
+    issues = smell_analyzer.analyze(parsed, source_code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    assert len(smell004_issues) > 0
+
+    # Check that complex_validation is detected
+    assert any('complex_validation' in i.title for i in smell004_issues)
+
+
+def test_deep_nesting_metadata(smell_analyzer, python_parser):
+    """Test that SMELL004 issues contain depth metadata"""
+    code = '''
+def deep():
+    if 1:
+        if 1:
+            if 1:
+                if 1:
+                    if 1:
+                        pass
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    assert len(smell004_issues) > 0
+
+    issue = smell004_issues[0]
+    assert 'max_depth' in issue.metadata
+    assert 'threshold' in issue.metadata
+    assert issue.metadata['max_depth'] > issue.metadata['threshold']
+
+
+def test_nesting_with_try_except(smell_analyzer, python_parser):
+    """Test that try/except counts toward nesting"""
+    code = '''
+def with_try():
+    try:
+        if True:
+            for i in range(10):
+                while i > 0:
+                    with open('file') as f:
+                        return f.read()
+    except:
+        pass
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    assert len(smell004_issues) > 0
+
+
+def test_nesting_custom_threshold(smell_analyzer_custom, python_parser):
+    """Test custom nesting depth threshold"""
+    # smell_analyzer_custom has max_nesting_depth of 4 (default)
+    # This code has exactly 4 levels, so should be flagged
+    code = '''
+def medium_nesting():
+    if 1:
+        if 1:
+            if 1:
+                if 1:
+                    if 1:
+                        pass
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer_custom.analyze(parsed, code)
+
+    smell004_issues = [i for i in issues if i.rule_id == 'SMELL004']
+    # Should be flagged as it exceeds threshold of 4
+    assert len(smell004_issues) > 0
+
+
+# SMELL005: Magic numbers tests
+
+def test_magic_number_detection(smell_analyzer, python_parser):
+    """Test detection of magic numbers"""
+    code = '''
+def calculate():
+    """Function with magic numbers"""
+    result = value * 3.14
+    if result > 100:
+        return result * 1.5
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    assert len(smell005_issues) > 0
+    assert smell005_issues[0].severity == IssueSeverity.INFO
+
+
+def test_common_constants_not_flagged(smell_analyzer, python_parser):
+    """Test that 0, 1, -1, 2 are not flagged as magic"""
+    code = '''
+def with_common_numbers():
+    """Using common constants"""
+    x = 0
+    y = 1
+    z = -1
+    a = 2
+    return x + y + z + a
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    assert len(smell005_issues) == 0
+
+
+def test_magic_numbers_in_calculations(smell_analyzer, python_parser):
+    """Test magic numbers in arithmetic operations"""
+    code = '''
+def area_circle(radius):
+    """Calculate area with magic number"""
+    return radius * radius * 3.14159
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    assert len(smell005_issues) > 0
+    assert any('3.14159' in str(i.metadata.get('magic_number')) for i in smell005_issues)
+
+
+def test_calculate_score_magic_numbers(smell_analyzer, python_parser, vulnerable_code_path):
+    """Test that calculate_score is flagged for magic numbers"""
+    parsed = python_parser.parse_file(vulnerable_code_path)
+    source_code = Path(vulnerable_code_path).read_text()
+    issues = smell_analyzer.analyze(parsed, source_code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    assert len(smell005_issues) > 0
+
+    # Check for some of the magic numbers in calculate_score
+    magic_values = [i.metadata.get('magic_number') for i in smell005_issues]
+    # Should find numbers like 1000, 1.5, 500, 1.25, 100, 1.1
+    assert any(val in [1000, 500, 100, 1.5, 1.25, 1.1] for val in magic_values)
+
+
+def test_magic_number_metadata(smell_analyzer, python_parser):
+    """Test that SMELL005 issues contain the magic number value"""
+    code = '''
+def func():
+    return x * 42
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    assert len(smell005_issues) > 0
+
+    issue = smell005_issues[0]
+    assert 'magic_number' in issue.metadata
+    assert issue.metadata['magic_number'] == 42
+
+
+def test_magic_numbers_multiple_occurrences(smell_analyzer, python_parser):
+    """Test detection of multiple different magic numbers"""
+    code = '''
+def pricing():
+    base = 99.99
+    tax = base * 0.08
+    shipping = 15.50
+    return base + tax + shipping
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    # Should detect 99.99, 0.08, 15.50
+    assert len(smell005_issues) >= 3
+
+
+def test_magic_numbers_in_return(smell_analyzer, python_parser):
+    """Test magic numbers in return statements"""
+    code = '''
+def get_timeout():
+    return 30
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
+    assert len(smell005_issues) > 0
+    assert smell005_issues[0].metadata['magic_number'] == 30

@@ -41,6 +41,8 @@ class SmellAnalyzer(BaseAnalyzer):
         issues.extend(self._check_long_methods(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_long_parameter_lists(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_god_classes(tree, source_code, parsed_module.file_path))
+        issues.extend(self._check_deep_nesting(tree, source_code, parsed_module.file_path))
+        issues.extend(self._check_magic_numbers(tree, source_code, parsed_module.file_path))
 
         return issues
 
@@ -282,6 +284,118 @@ class SmellAnalyzer(BaseAnalyzer):
                 loc += 1
 
         return loc
+
+    def _check_deep_nesting(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
+        """Detect functions with deep nesting levels"""
+        issues = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                max_depth = self._calculate_max_nesting_depth(node)
+
+                if max_depth > self.max_nesting_depth:
+                    snippet = self.extract_code_snippet(source_code, node.lineno)
+
+                    is_method = self._is_method(node, tree)
+                    entity_type = "method" if is_method else "function"
+
+                    issues.append(self.create_issue(
+                        rule_id='SMELL004',
+                        severity=IssueSeverity.WARNING,
+                        title=f'Deep nesting in {entity_type}: {node.name}',
+                        description=f'The {entity_type} "{node.name}" has a maximum nesting depth of {max_depth}, '
+                                   f'exceeding the recommended maximum of {self.max_nesting_depth}. '
+                                   f'Deep nesting makes code harder to understand and follow. '
+                                   f'It often indicates complex control flow that should be simplified.',
+                        file_path=file_path,
+                        line_number=node.lineno,
+                        code_snippet=snippet,
+                        suggestion=f'Refactor to reduce nesting: use early returns/continue for guard clauses, '
+                                  f'extract nested blocks into separate {entity_type}s, or invert conditions. '
+                                  f'Consider using polymorphism or lookup tables for complex conditionals.',
+                        confidence=1.0,
+                        max_depth=max_depth,
+                        threshold=self.max_nesting_depth
+                    ))
+
+        return issues
+
+    def _calculate_max_nesting_depth(self, func_node: ast.FunctionDef) -> int:
+        """Calculate maximum nesting depth in a function"""
+        def get_depth(node, current_depth=0):
+            """Recursively calculate nesting depth"""
+            max_depth = current_depth
+
+            for child in ast.iter_child_nodes(node):
+                # Count nesting for control flow structures
+                if isinstance(child, (ast.If, ast.For, ast.While, ast.With, ast.Try)):
+                    child_depth = get_depth(child, current_depth + 1)
+                    max_depth = max(max_depth, child_depth)
+                else:
+                    child_depth = get_depth(child, current_depth)
+                    max_depth = max(max_depth, child_depth)
+
+            return max_depth
+
+        return get_depth(func_node, 0)
+
+    def _check_magic_numbers(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
+        """Detect magic numbers (unexplained numeric literals)"""
+        issues = []
+        # Track numbers we've already reported to avoid duplicates
+        reported = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant):
+                # Check if it's a number (int or float)
+                if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+                    # Ignore common constants
+                    if node.value in (0, 1, -1, 2, 0.0, 1.0):
+                        continue
+
+                    # Create a unique key for this number occurrence
+                    location_key = (node.lineno, node.col_offset, node.value)
+                    if location_key in reported:
+                        continue
+
+                    # Check if it's in a valid context (not in default arguments, type annotations, etc.)
+                    if self._is_magic_number_context(node, tree):
+                        reported.add(location_key)
+                        snippet = self.extract_code_snippet(source_code, node.lineno)
+
+                        issues.append(self.create_issue(
+                            rule_id='SMELL005',
+                            severity=IssueSeverity.INFO,
+                            title=f'Magic number: {node.value}',
+                            description=f'Found magic number {node.value} in the code. '
+                                       f'Magic numbers are numeric literals without clear meaning. '
+                                       f'They make code harder to understand and maintain, and can lead to '
+                                       f'errors if the same value needs to be changed in multiple places.',
+                            file_path=file_path,
+                            line_number=node.lineno,
+                            code_snippet=snippet,
+                            suggestion=f'Replace this magic number with a named constant that explains its purpose. '
+                                      f'For example: MAX_RETRIES = {node.value} or TIMEOUT_SECONDS = {node.value}',
+                            confidence=0.7,
+                            magic_number=node.value
+                        ))
+
+        return issues
+
+    def _is_magic_number_context(self, node: ast.Constant, tree: ast.AST) -> bool:
+        """Check if a number is in a context where it should be flagged as magic"""
+        # Find the parent context
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                if child is node:
+                    # Skip if it's in a comparison (like x > 0)
+                    # We only flag numbers in assignments, operations, function calls, etc.
+                    # This is a simple heuristic - magic numbers are most problematic
+                    # when they appear in logic/calculations
+                    if isinstance(parent, (ast.BinOp, ast.UnaryOp, ast.Assign,
+                                          ast.AugAssign, ast.Return, ast.Call)):
+                        return True
+        return False
 
     def get_rule_ids(self) -> List[str]:
         """Get all rule IDs this analyzer can detect"""
