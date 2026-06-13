@@ -1,11 +1,14 @@
 """Python code parser using AST module"""
 import ast
+import logging
 from pathlib import Path
 from typing import List, Optional, Union
 from datetime import datetime
 
 from .base_parser import BaseParser, ParseError
 from .models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
+
+logger = logging.getLogger(__name__)
 
 
 class PythonParser(BaseParser):
@@ -21,8 +24,13 @@ class PythonParser(BaseParser):
             code = Path(file_path).read_text(encoding='utf-8')
             return self.parse_code(code, file_path)
         except FileNotFoundError:
+            logger.error(f"File not found: {file_path}")
             raise ParseError(f"File not found: {file_path}", file_path=file_path)
+        except UnicodeDecodeError as e:
+            logger.error(f"Encoding error in {file_path}: {e}")
+            raise ParseError(f"File encoding error: {str(e)}", file_path=file_path)
         except Exception as e:
+            logger.error(f"Failed to read file {file_path}: {e}")
             raise ParseError(f"Failed to read file: {str(e)}", file_path=file_path)
 
     def parse_code(self, code: str, file_path: str = "<string>") -> ParsedModule:
@@ -30,12 +38,14 @@ class PythonParser(BaseParser):
         try:
             tree = ast.parse(code, filename=file_path)
         except SyntaxError as e:
+            logger.error(f"Syntax error in {file_path} at line {e.lineno}: {e.msg}")
             raise ParseError(
                 f"Syntax error: {e.msg}",
                 file_path=file_path,
                 line_number=e.lineno
             )
         except Exception as e:
+            logger.error(f"Failed to parse {file_path}: {e}")
             raise ParseError(f"Failed to parse code: {str(e)}", file_path=file_path)
 
         module_docstring = ast.get_docstring(tree)
