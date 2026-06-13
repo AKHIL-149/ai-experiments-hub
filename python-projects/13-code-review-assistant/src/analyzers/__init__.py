@@ -3,6 +3,7 @@ Code analyzers for detecting issues in source code.
 """
 from .base_analyzer import BaseAnalyzer, CodeIssue, IssueCategory, IssueSeverity
 from .security_analyzer import SecurityAnalyzer
+from .smell_analyzer import SmellAnalyzer
 from .analyzer_registry import AnalyzerRegistry, get_registry
 
 __all__ = [
@@ -11,6 +12,7 @@ __all__ = [
     'IssueCategory',
     'IssueSeverity',
     'SecurityAnalyzer',
+    'SmellAnalyzer',
     'AnalyzerRegistry',
     'get_registry'
 ]

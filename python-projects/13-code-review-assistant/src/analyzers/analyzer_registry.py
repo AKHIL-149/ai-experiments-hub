@@ -2,19 +2,21 @@
 from typing import Dict, List, Optional
 from .base_analyzer import BaseAnalyzer, CodeIssue
 from .security_analyzer import SecurityAnalyzer
+from .smell_analyzer import SmellAnalyzer
 
 
 class AnalyzerRegistry:
     """Registry for managing and running analyzers"""
-    
+
     def __init__(self):
         """Initialize registry with default analyzers"""
         self._analyzers: Dict[str, BaseAnalyzer] = {}
         self._register_default_analyzers()
-    
+
     def _register_default_analyzers(self):
         """Register built-in analyzers"""
         self.register_analyzer(SecurityAnalyzer())
+        self.register_analyzer(SmellAnalyzer())
     
     def register_analyzer(self, analyzer: BaseAnalyzer):
         """

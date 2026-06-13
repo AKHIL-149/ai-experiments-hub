@@ -98,59 +98,59 @@ def create_checksum(content):
 def process_order(order_id, customer_id, items, shipping_address, billing_address,
                  payment_method, discount_code, gift_wrap, special_instructions):
     """Method with too many lines and parameters"""
-    # Validate customer
     if not customer_id:
         return None
-
-    # Check inventory
+    if not order_id:
+        return None
     for item in items:
         if not check_stock(item):
             return None
-
-    # Calculate prices
     subtotal = 0
     for item in items:
         subtotal += item['price'] * item['quantity']
-
-    # Apply discount
     if discount_code:
         discount = calculate_discount(discount_code)
         subtotal = subtotal - (subtotal * discount)
-
-    # Calculate tax
     tax = subtotal * 0.1
-
-    # Add shipping
     shipping = calculate_shipping(shipping_address)
-
-    # Add gift wrap
     if gift_wrap:
         shipping += 5.00
-
     total = subtotal + tax + shipping
-
-    # Process payment
     payment_result = process_payment(payment_method, total)
     if not payment_result:
         return None
-
-    # Create shipment
     shipment = create_shipment(shipping_address, items)
-
-    # Send notifications
     send_confirmation_email(customer_id)
     send_sms_notification(customer_id)
-
-    # Update inventory
     for item in items:
         update_stock(item)
-
-    # Log transaction
     log_transaction(order_id, total)
-
-    # Update customer points
     update_loyalty_points(customer_id, total)
-
+    if special_instructions:
+        process_special_instructions(special_instructions)
+    if billing_address != shipping_address:
+        validate_billing_address(billing_address)
+    order_data = {
+        "order_id": order_id,
+        "customer_id": customer_id,
+        "items": items,
+        "subtotal": subtotal,
+        "tax": tax,
+        "shipping": shipping,
+        "total": total,
+        "payment_method": payment_method,
+        "shipping_address": shipping_address,
+        "billing_address": billing_address
+    }
+    archive_order(order_data)
+    generate_invoice(order_id)
+    update_analytics(order_data)
+    check_fraud_score(customer_id, total)
+    apply_loyalty_rewards(customer_id)
+    send_order_confirmation(order_id)
+    update_inventory_forecast(items)
+    notify_warehouse(shipment)
+    schedule_delivery(shipping_address)
     return {"order_id": order_id, "total": total}
 
 
@@ -266,3 +266,14 @@ def send_sms_notification(customer_id): pass
 def update_stock(item): pass
 def log_transaction(order_id, total): pass
 def update_loyalty_points(customer_id, total): pass
+def process_special_instructions(instructions): pass
+def validate_billing_address(address): pass
+def archive_order(order_data): pass
+def generate_invoice(order_id): pass
+def update_analytics(order_data): pass
+def check_fraud_score(customer_id, total): pass
+def apply_loyalty_rewards(customer_id): pass
+def send_order_confirmation(order_id): pass
+def update_inventory_forecast(items): pass
+def notify_warehouse(shipment): pass
+def schedule_delivery(address): pass
