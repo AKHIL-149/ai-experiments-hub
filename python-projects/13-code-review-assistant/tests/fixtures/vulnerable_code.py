@@ -7,13 +7,15 @@ for testing the analysis engine.
 import os
 import pickle
 import subprocess
-from hashlib import md5
+import hashlib
+from hashlib import md5, sha1
 
 
-# SEC001: Hardcoded secrets
-API_KEY = "sk_live_abc123456789"
+# SEC004: Hardcoded secrets
+# Note: These are fake test keys, not real credentials
+API_KEY = "sk_test_abc123456789xyz"  # Using test key prefix
 PASSWORD = "admin123"
-SECRET_TOKEN = "ghp_1234567890abcdef"
+SECRET_TOKEN = "test_token_1234567890abcdef"
 
 
 # SEC002: SQL Injection vulnerability
@@ -40,14 +42,27 @@ def execute_shell(cmd):
     subprocess.call(cmd, shell=True)
 
 
-# SEC004: Path traversal vulnerability
+# SEC005: Path traversal vulnerability
 def read_file(filename):
     """Vulnerable to path traversal"""
     with open("/var/data/" + filename, 'r') as f:
         return f.read()
 
 
-# SEC005: Unsafe deserialization
+def get_user_file(user_input):
+    """Another path traversal example"""
+    file_path = os.path.join('/app/data', user_input)
+    return open(file_path).read()
+
+
+def load_config(config_name):
+    """Path traversal with f-string"""
+    path = f"/etc/configs/{config_name}"
+    with open(path) as f:
+        return f.read()
+
+
+# SEC006: Unsafe deserialization
 def load_data(data):
     """Vulnerable to pickle exploit"""
     return pickle.loads(data)
@@ -58,10 +73,25 @@ def evaluate_expression(expr):
     return eval(expr)
 
 
-# SEC006: Weak cryptography
+def run_user_code(code):
+    """Dangerous use of exec"""
+    exec(code)
+
+
+# SEC007: Weak cryptography
 def hash_password(password):
     """Using weak MD5 for passwords"""
     return md5(password.encode()).hexdigest()
+
+
+def generate_token(data):
+    """Using weak SHA1"""
+    return sha1(data.encode()).hexdigest()
+
+
+def create_checksum(content):
+    """Using hashlib.md5() directly"""
+    return hashlib.md5(content.encode()).digest()
 
 
 # SMELL001: Long method (>50 lines)

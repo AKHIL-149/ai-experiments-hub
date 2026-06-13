@@ -256,7 +256,7 @@ def example(a: int, b: str = "default", *args, **kwargs):
     assert func.parameters[0].name == 'a'
     assert func.parameters[0].type_hint == 'int'
     assert func.parameters[1].name == 'b'
-    assert func.parameters[1].default_value == '"default"'
+    assert func.parameters[1].default_value in ['"default"', "'default'"]  # Accept either quote style
     assert func.parameters[2].name == '*args'
     assert func.parameters[3].name == '**kwargs'
 
