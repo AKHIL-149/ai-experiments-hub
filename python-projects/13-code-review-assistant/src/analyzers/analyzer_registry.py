@@ -1,5 +1,5 @@
 """Registry for managing code analyzers"""
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from .base_analyzer import BaseAnalyzer, CodeIssue
 from .security_analyzer import SecurityAnalyzer
 from .smell_analyzer import SmellAnalyzer
@@ -105,7 +105,7 @@ class AnalyzerRegistry:
     def get_all_rule_ids(self) -> List[str]:
         """
         Get all rule IDs from registered analyzers.
-        
+
         Returns:
             List of rule ID strings
         """
@@ -113,6 +113,123 @@ class AnalyzerRegistry:
         for analyzer in self._analyzers.values():
             rule_ids.extend(analyzer.get_rule_ids())
         return sorted(rule_ids)
+
+    def calculate_health_score(self, issues: List[CodeIssue]) -> Dict[str, Any]:
+        """
+        Calculate overall code health score based on detected issues.
+
+        Health score is 0-100 where:
+        - 100 = perfect code (no issues)
+        - 80-99 = good code (minor issues)
+        - 60-79 = fair code (some problems)
+        - 40-59 = poor code (many issues)
+        - 0-39 = critical code (severe issues)
+
+        Args:
+            issues: List of detected CodeIssue objects
+
+        Returns:
+            Dictionary with health score and breakdown
+        """
+        from .base_analyzer import IssueSeverity
+
+        if not issues:
+            return {
+                'overall_score': 100,
+                'grade': 'A+',
+                'total_issues': 0,
+                'by_severity': {},
+                'by_category': {},
+                'description': 'Excellent! No issues detected.'
+            }
+
+        # Weight issues by severity
+        severity_weights = {
+            IssueSeverity.INFO: 1,
+            IssueSeverity.WARNING: 3,
+            IssueSeverity.ERROR: 7,
+            IssueSeverity.CRITICAL: 15
+        }
+
+        # Count issues by severity and category
+        severity_counts = {}
+        category_counts = {}
+        total_penalty = 0
+
+        for issue in issues:
+            # Count by severity
+            severity = issue.severity
+            severity_counts[severity.value] = severity_counts.get(severity.value, 0) + 1
+
+            # Count by category
+            category = issue.category.value
+            category_counts[category] = category_counts.get(category, 0) + 1
+
+            # Calculate penalty
+            weight = severity_weights.get(severity, 1)
+            confidence_factor = issue.confidence
+            total_penalty += weight * confidence_factor
+
+        # Calculate score (exponential decay for penalties)
+        # Start at 100, reduce based on penalties
+        # Use formula: score = 100 * e^(-penalty_factor * total_penalty)
+        import math
+        penalty_factor = 0.05  # Tuning parameter
+        raw_score = 100 * math.exp(-penalty_factor * total_penalty)
+        overall_score = max(0, min(100, round(raw_score, 1)))
+
+        # Determine grade
+        if overall_score >= 95:
+            grade = 'A+'
+        elif overall_score >= 90:
+            grade = 'A'
+        elif overall_score >= 85:
+            grade = 'A-'
+        elif overall_score >= 80:
+            grade = 'B+'
+        elif overall_score >= 75:
+            grade = 'B'
+        elif overall_score >= 70:
+            grade = 'B-'
+        elif overall_score >= 65:
+            grade = 'C+'
+        elif overall_score >= 60:
+            grade = 'C'
+        elif overall_score >= 55:
+            grade = 'C-'
+        elif overall_score >= 50:
+            grade = 'D+'
+        elif overall_score >= 45:
+            grade = 'D'
+        elif overall_score >= 40:
+            grade = 'D-'
+        else:
+            grade = 'F'
+
+        # Generate description
+        if overall_score >= 90:
+            description = 'Excellent code quality with minimal issues.'
+        elif overall_score >= 80:
+            description = 'Good code quality with minor issues.'
+        elif overall_score >= 70:
+            description = 'Fair code quality with some problems to address.'
+        elif overall_score >= 60:
+            description = 'Acceptable code quality but needs improvement.'
+        elif overall_score >= 50:
+            description = 'Poor code quality with many issues.'
+        elif overall_score >= 40:
+            description = 'Very poor code quality requiring significant work.'
+        else:
+            description = 'Critical code quality issues detected.'
+
+        return {
+            'overall_score': overall_score,
+            'grade': grade,
+            'total_issues': len(issues),
+            'by_severity': severity_counts,
+            'by_category': category_counts,
+            'description': description
+        }
 
 
 # Singleton instance
