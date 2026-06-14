@@ -7,13 +7,15 @@ from .base_analyzer import BaseAnalyzer, CodeIssue, IssueCategory, IssueSeverity
 
 
 class ComplexityAnalyzer(BaseAnalyzer):
-    """Detects code complexity issues using cyclomatic complexity and maintainability index"""
+    """Detects code complexity issues using cyclomatic complexity, maintainability index, and cognitive complexity"""
 
     # Default thresholds
     DEFAULT_CC_WARNING = 10
     DEFAULT_CC_ERROR = 15
     DEFAULT_MI_WARNING = 20  # Below 20 is hard to maintain
     DEFAULT_MI_ERROR = 10    # Below 10 is extremely hard to maintain
+    DEFAULT_COGNITIVE_WARNING = 15
+    DEFAULT_COGNITIVE_ERROR = 25
 
     def __init__(self, config=None):
         """Initialize complexity analyzer with configurable thresholds"""
@@ -22,6 +24,8 @@ class ComplexityAnalyzer(BaseAnalyzer):
         self.cc_error_threshold = self.config.get('cc_error', self.DEFAULT_CC_ERROR)
         self.mi_warning_threshold = self.config.get('mi_warning', self.DEFAULT_MI_WARNING)
         self.mi_error_threshold = self.config.get('mi_error', self.DEFAULT_MI_ERROR)
+        self.cognitive_warning_threshold = self.config.get('cognitive_warning', self.DEFAULT_COGNITIVE_WARNING)
+        self.cognitive_error_threshold = self.config.get('cognitive_error', self.DEFAULT_COGNITIVE_ERROR)
 
     @property
     def analyzer_id(self) -> str:
@@ -42,6 +46,7 @@ class ComplexityAnalyzer(BaseAnalyzer):
 
         issues.extend(self._check_cyclomatic_complexity(source_code, parsed_module.file_path))
         issues.extend(self._check_maintainability_index(source_code, parsed_module.file_path))
+        issues.extend(self._check_cognitive_complexity(tree, source_code, parsed_module.file_path))
 
         return issues
 
@@ -140,6 +145,155 @@ class ComplexityAnalyzer(BaseAnalyzer):
 
         return issues
 
+    def _check_cognitive_complexity(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
+        """Check cognitive complexity for each function"""
+        issues = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                cognitive_score = self._calculate_cognitive_complexity(node)
+
+                # Determine severity based on cognitive complexity
+                if cognitive_score >= self.cognitive_error_threshold:
+                    severity = IssueSeverity.ERROR
+                elif cognitive_score >= self.cognitive_warning_threshold:
+                    severity = IssueSeverity.WARNING
+                else:
+                    # Skip if below warning threshold
+                    continue
+
+                snippet = self.extract_code_snippet(source_code, node.lineno)
+
+                # Identify what makes it complex
+                complexity_reasons = self._identify_complexity_reasons(node)
+
+                issues.append(self.create_issue(
+                    rule_id='COMPLEX003',
+                    severity=severity,
+                    title=f'High cognitive complexity: {node.name}',
+                    description=f'The function "{node.name}" has a cognitive complexity of {cognitive_score}, '
+                               f'which {"exceeds" if severity == IssueSeverity.ERROR else "is above"} the recommended threshold. '
+                               f'Cognitive complexity measures how difficult code is to understand. '
+                               f'High cognitive complexity indicates deeply nested structures, complex conditionals, '
+                               f'or confusing control flow that makes code hard to read and maintain. {complexity_reasons}',
+                    file_path=file_path,
+                    line_number=node.lineno,
+                    code_snippet=snippet,
+                    suggestion=f'Simplify by: reducing nesting depth (use early returns), '
+                              f'breaking complex conditionals into separate functions, '
+                              f'extracting nested loops into helper methods, '
+                              f'replacing complex boolean logic with descriptive variable names, '
+                              f'or using polymorphism instead of conditional chains.',
+                    confidence=0.9,
+                    cognitive_complexity=cognitive_score,
+                    warning_threshold=self.cognitive_warning_threshold,
+                    error_threshold=self.cognitive_error_threshold
+                ))
+
+        return issues
+
+    def _calculate_cognitive_complexity(self, node: ast.FunctionDef, nesting_level: int = 0) -> int:
+        """
+        Calculate cognitive complexity for a function.
+
+        Cognitive complexity increments for:
+        - Control flow structures (if, for, while, etc.) - base +1 plus nesting level
+        - Break and continue statements - +1
+        - Binary logical operators - +1 for each after the first in a sequence
+        - Except clauses - +1 plus nesting level
+        """
+        complexity = 0
+
+        for child in ast.walk(node):
+            # Skip the function node itself
+            if child is node:
+                continue
+
+            # Control flow structures: +1 + nesting increment
+            if isinstance(child, (ast.If, ast.For, ast.While, ast.With)):
+                complexity += 1 + nesting_level
+
+            # Except clauses: +1 + nesting increment
+            elif isinstance(child, ast.ExceptHandler):
+                complexity += 1 + nesting_level
+
+            # Break and continue: +1
+            elif isinstance(child, (ast.Break, ast.Continue)):
+                complexity += 1
+
+            # Binary boolean operators (and, or): +1 for each in sequence
+            elif isinstance(child, ast.BoolOp):
+                # Count the number of operators (values - 1)
+                complexity += len(child.values) - 1
+
+        # Recursively calculate for nested structures with increased nesting level
+        complexity += self._calculate_nested_complexity(node, nesting_level)
+
+        return complexity
+
+    def _calculate_nested_complexity(self, node: ast.AST, current_nesting: int) -> int:
+        """Calculate complexity contribution from nested structures"""
+        complexity = 0
+
+        for child in ast.iter_child_nodes(node):
+            # Increase nesting level for control structures
+            if isinstance(child, (ast.If, ast.For, ast.While, ast.With, ast.Try)):
+                # Recursively calculate for nested content
+                for nested in ast.iter_child_nodes(child):
+                    if isinstance(nested, (ast.If, ast.For, ast.While, ast.With)):
+                        complexity += 1 + (current_nesting + 1)
+                    # Recurse deeper
+                    complexity += self._calculate_nested_complexity(nested, current_nesting + 1)
+            else:
+                complexity += self._calculate_nested_complexity(child, current_nesting)
+
+        return complexity
+
+    def _identify_complexity_reasons(self, node: ast.FunctionDef) -> str:
+        """Identify what contributes to cognitive complexity"""
+        reasons = []
+
+        # Count different types of complexity contributors
+        if_count = sum(1 for _ in ast.walk(node) if isinstance(_, ast.If))
+        loop_count = sum(1 for _ in ast.walk(node) if isinstance(_, (ast.For, ast.While)))
+        try_count = sum(1 for _ in ast.walk(node) if isinstance(_, ast.Try))
+        bool_op_count = sum(1 for _ in ast.walk(node) if isinstance(_, ast.BoolOp))
+        max_nesting = self._calculate_max_nesting_depth(node)
+
+        if if_count > 3:
+            reasons.append(f'{if_count} conditional statements')
+        if loop_count > 2:
+            reasons.append(f'{loop_count} loops')
+        if try_count > 1:
+            reasons.append(f'{try_count} exception handlers')
+        if bool_op_count > 2:
+            reasons.append(f'{bool_op_count} boolean operations')
+        if max_nesting > 3:
+            reasons.append(f'maximum nesting depth of {max_nesting}')
+
+        if reasons:
+            return f'Contributors: {", ".join(reasons)}.'
+        return ''
+
+    def _calculate_max_nesting_depth(self, func_node: ast.FunctionDef) -> int:
+        """Calculate maximum nesting depth in a function"""
+        def get_depth(node, current_depth=0):
+            """Recursively calculate nesting depth"""
+            max_depth = current_depth
+
+            for child in ast.iter_child_nodes(node):
+                # Count nesting for control flow structures
+                if isinstance(child, (ast.If, ast.For, ast.While, ast.With, ast.Try)):
+                    child_depth = get_depth(child, current_depth + 1)
+                    max_depth = max(max_depth, child_depth)
+                else:
+                    child_depth = get_depth(child, current_depth)
+                    max_depth = max(max_depth, child_depth)
+
+            return max_depth
+
+        return get_depth(func_node, 0)
+
     def get_rule_ids(self) -> List[str]:
         """Get all rule IDs this analyzer can detect"""
-        return ['COMPLEX001', 'COMPLEX002']
+        return ['COMPLEX001', 'COMPLEX002', 'COMPLEX003']

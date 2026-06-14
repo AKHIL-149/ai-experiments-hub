@@ -42,7 +42,8 @@ def test_rule_ids(complexity_analyzer):
     rule_ids = complexity_analyzer.get_rule_ids()
     assert 'COMPLEX001' in rule_ids
     assert 'COMPLEX002' in rule_ids
-    assert len(rule_ids) == 2
+    assert 'COMPLEX003' in rule_ids
+    assert len(rule_ids) == 3
 
 
 def test_cyclomatic_complexity_detection(complexity_analyzer, python_parser):
@@ -378,3 +379,241 @@ def error_level(a, b, c):
         # Error should have higher or equal severity
         assert warning_cc[0].severity == IssueSeverity.WARNING
         assert error_cc[0].severity == IssueSeverity.ERROR
+
+
+# COMPLEX003: Cognitive complexity tests
+
+def test_cognitive_complexity_detection(complexity_analyzer, python_parser):
+    """Test detection of high cognitive complexity"""
+    code = '''
+def cognitively_complex(x, y, z):
+    """Function with high cognitive complexity"""
+    result = 0
+
+    # Nested conditions (increases cognitive load)
+    if x > 0:
+        for i in range(x):
+            if i % 2 == 0:
+                if y > 0:
+                    while y > 0:
+                        if z > 0:
+                            result += i * y * z
+                        y -= 1
+                else:
+                    result += i
+
+    # Complex boolean logic
+    if (x > 0 and y > 0) or (z > 0 and x < 10) or (y < 5 and z > 3):
+        result *= 2
+
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    assert len(complex003_issues) > 0
+    assert complex003_issues[0].severity in [IssueSeverity.WARNING, IssueSeverity.ERROR]
+    assert 'cognitive complexity' in complex003_issues[0].title.lower()
+
+
+def test_simple_function_not_flagged_cognitive(complexity_analyzer, python_parser):
+    """Test simple functions are not flagged for cognitive complexity"""
+    code = '''
+def simple_function(x):
+    """A simple linear function"""
+    if x > 0:
+        return x * 2
+    return 0
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    assert len(complex003_issues) == 0
+
+
+def test_cognitive_complexity_nested_loops(complexity_analyzer, python_parser):
+    """Test cognitive complexity with nested loops"""
+    code = '''
+def nested_loops(matrix):
+    """Function with nested loops"""
+    total = 0
+    for row in matrix:
+        for col in row:
+            if col > 0:
+                for k in range(col):
+                    if k % 2 == 0:
+                        while k > 0:
+                            if k % 3 == 0:
+                                total += k
+                            k -= 1
+                    else:
+                        total -= 1
+            else:
+                total += 1
+    return total
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    assert len(complex003_issues) > 0
+
+
+def test_cognitive_complexity_boolean_operators(complexity_analyzer, python_parser):
+    """Test cognitive complexity with complex boolean logic"""
+    code = '''
+def complex_conditions(a, b, c, d, e):
+    """Function with complex boolean expressions"""
+    if (a > 0 and b > 0 and c > 0) or (d < 0 and e < 0):
+        result = a + b
+    elif (a < 0 or b < 0) and (c > 5 or d > 5 or e > 5):
+        result = c + d
+    else:
+        result = e
+
+    if (a and b) or (c and d) or (e and a) or (b and c):
+        result *= 2
+
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    assert len(complex003_issues) > 0
+
+
+def test_cognitive_complexity_metadata(complexity_analyzer, python_parser):
+    """Test cognitive complexity issues contain proper metadata"""
+    code = '''
+def complex_func(x):
+    result = 0
+    if x > 0:
+        for i in range(x):
+            if i % 2:
+                while i > 0:
+                    if i % 3:
+                        result += i
+                    i -= 1
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    if len(complex003_issues) > 0:
+        issue = complex003_issues[0]
+        assert hasattr(issue, 'cognitive_complexity')
+        assert hasattr(issue, 'warning_threshold')
+        assert hasattr(issue, 'error_threshold')
+        assert issue.cognitive_complexity >= issue.warning_threshold
+
+
+def test_cognitive_complexity_custom_thresholds(python_parser):
+    """Test custom cognitive complexity thresholds"""
+    config = {
+        'cognitive_warning': 10,
+        'cognitive_error': 20
+    }
+    analyzer = ComplexityAnalyzer(config)
+
+    code = '''
+def medium_cognitive(x, y, z):
+    result = 0
+    if x > 0:
+        if y > 0:
+            for i in range(x):
+                if i % 2:
+                    while i > 0:
+                        if z > 0:
+                            result += i
+                        i -= 1
+                else:
+                    result -= i
+        else:
+            for j in range(y):
+                if j % 3:
+                    result += j
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    # With lower threshold (10), this should be flagged
+    assert len(complex003_issues) > 0
+
+
+def test_cognitive_complexity_break_continue(complexity_analyzer, python_parser):
+    """Test that break and continue contribute to cognitive complexity"""
+    code = '''
+def with_breaks(items):
+    """Function with break and continue"""
+    result = []
+    for item in items:
+        if item < 0:
+            continue
+        if item > 100:
+            break
+        for i in range(item):
+            if i % 2:
+                continue
+            result.append(i)
+            if len(result) > 50:
+                break
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    assert len(complex003_issues) > 0
+
+
+def test_cognitive_complexity_exception_handling(complexity_analyzer, python_parser):
+    """Test that exception handling contributes to cognitive complexity"""
+    code = '''
+def with_exceptions(data):
+    """Function with exception handling"""
+    result = 0
+    for item in data:
+        try:
+            if item > 0:
+                try:
+                    result += int(item)
+                    if result > 100:
+                        for i in range(10):
+                            try:
+                                result += i
+                            except:
+                                pass
+                except ValueError:
+                    if item < 10:
+                        try:
+                            result += 1
+                        except:
+                            result = 0
+        except TypeError:
+            try:
+                if item:
+                    result = str(item)
+            except:
+                pass
+    return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = complexity_analyzer.analyze(parsed, code)
+
+    complex003_issues = [i for i in issues if i.rule_id == 'COMPLEX003']
+    assert len(complex003_issues) > 0
+
+
+def test_all_complexity_rules(complexity_analyzer):
+    """Test that all complexity rule IDs are returned"""
+    rule_ids = complexity_analyzer.get_rule_ids()
+    assert 'COMPLEX001' in rule_ids
+    assert 'COMPLEX002' in rule_ids
+    assert 'COMPLEX003' in rule_ids
+    assert len(rule_ids) == 3
