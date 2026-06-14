@@ -43,6 +43,7 @@ class SmellAnalyzer(BaseAnalyzer):
         issues.extend(self._check_god_classes(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_deep_nesting(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_magic_numbers(tree, source_code, parsed_module.file_path))
+        issues.extend(self._check_duplicate_code(tree, source_code, parsed_module.file_path))
 
         return issues
 
@@ -396,6 +397,115 @@ class SmellAnalyzer(BaseAnalyzer):
                                           ast.AugAssign, ast.Return, ast.Call)):
                         return True
         return False
+
+    def _check_duplicate_code(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
+        """Detect duplicate code blocks"""
+        issues = []
+        functions = []
+
+        # Collect all functions with their code
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Get function body as string (normalized)
+                func_code = self._normalize_function_code(node, source_code)
+                if func_code:
+                    functions.append({
+                        'node': node,
+                        'code': func_code,
+                        'name': node.name
+                    })
+
+        # Compare functions for duplicates
+        reported_pairs = set()
+        for i, func1 in enumerate(functions):
+            for func2 in functions[i + 1:]:
+                # Skip if already reported
+                pair_key = tuple(sorted([func1['name'], func2['name']]))
+                if pair_key in reported_pairs:
+                    continue
+
+                # Check similarity
+                similarity = self._calculate_similarity(func1['code'], func2['code'])
+                if similarity > 0.8:  # 80% similar
+                    reported_pairs.add(pair_key)
+                    snippet = self.extract_code_snippet(source_code, func1['node'].lineno)
+
+                    is_method1 = self._is_method(func1['node'], tree)
+                    is_method2 = self._is_method(func2['node'], tree)
+                    entity_type = "methods" if is_method1 and is_method2 else "functions"
+
+                    issues.append(self.create_issue(
+                        rule_id='SMELL006',
+                        severity=IssueSeverity.INFO,
+                        title=f'Duplicate code: {func1["name"]} and {func2["name"]}',
+                        description=f'The {entity_type} "{func1["name"]}" and "{func2["name"]}" have {int(similarity * 100)}% similar code. '
+                                   f'Duplicate code makes maintenance harder because changes must be made in multiple places. '
+                                   f'It violates the DRY (Don\'t Repeat Yourself) principle.',
+                        file_path=file_path,
+                        line_number=func1['node'].lineno,
+                        code_snippet=snippet,
+                        suggestion=f'Extract the common code into a shared function or method. '
+                                  f'Consider using inheritance, composition, or helper functions to reduce duplication.',
+                        confidence=0.8,
+                        duplicate_of=func2['name'],
+                        similarity_score=similarity
+                    ))
+
+        return issues
+
+    def _normalize_function_code(self, func_node: ast.FunctionDef, source_code: str) -> str:
+        """Extract and normalize function code for comparison"""
+        try:
+            if not hasattr(func_node, 'end_lineno') or func_node.end_lineno is None:
+                return ""
+
+            lines = source_code.split('\n')
+            # Convert 1-based line numbers to 0-based indices
+            start = func_node.lineno - 1
+            end = func_node.end_lineno
+
+            # Get function body (skip definition line by starting at lineno+1)
+            func_lines = lines[start + 1:end]
+            if not func_lines:
+                return ""
+
+            # Normalize: remove leading/trailing whitespace, blank lines, comments, and docstrings
+            normalized = []
+            skip_docstring = True  # First string literal is the docstring
+
+            for line in func_lines:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+
+                # Skip docstring (first triple-quoted string)
+                if skip_docstring and (stripped.startswith('"""') or stripped.startswith("'''")):
+                    skip_docstring = False
+                    continue
+
+                skip_docstring = False
+                normalized.append(stripped)
+
+            return '\n'.join(normalized)
+        except:
+            return ""
+
+    def _calculate_similarity(self, code1: str, code2: str) -> float:
+        """Calculate similarity ratio between two code blocks"""
+        if not code1 or not code2:
+            return 0.0
+
+        # Simple similarity: ratio of matching lines
+        lines1 = set(code1.split('\n'))
+        lines2 = set(code2.split('\n'))
+
+        if not lines1 or not lines2:
+            return 0.0
+
+        intersection = len(lines1 & lines2)
+        union = len(lines1 | lines2)
+
+        return intersection / union if union > 0 else 0.0
 
     def get_rule_ids(self) -> List[str]:
         """Get all rule IDs this analyzer can detect"""

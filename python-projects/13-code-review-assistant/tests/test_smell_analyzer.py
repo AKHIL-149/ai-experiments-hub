@@ -866,3 +866,103 @@ def get_timeout():
     smell005_issues = [i for i in issues if i.rule_id == 'SMELL005']
     assert len(smell005_issues) > 0
     assert smell005_issues[0].metadata['magic_number'] == 30
+
+
+# SMELL006: Duplicate code tests
+
+def test_duplicate_code_detection(smell_analyzer, python_parser):
+    """Test detection of duplicate code blocks"""
+    code = '''
+def calculate_price_a(quantity):
+    """Calculate price for product A"""
+    base = 10
+    tax = base * 0.1
+    total = base + tax
+    return total * quantity
+
+def calculate_price_b(quantity):
+    """Calculate price for product B"""
+    base = 10
+    tax = base * 0.1
+    total = base + tax
+    return total * quantity
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell006_issues = [i for i in issues if i.rule_id == 'SMELL006']
+    assert len(smell006_issues) > 0
+    assert smell006_issues[0].severity == IssueSeverity.INFO
+    assert 'duplicate' in smell006_issues[0].title.lower()
+
+
+def test_no_duplicate_for_different_code(smell_analyzer, python_parser):
+    """Test that different code is not flagged as duplicate"""
+    code = '''
+def function_a():
+    """Different function A"""
+    x = 1
+    y = 2
+    return x + y
+
+def function_b():
+    """Different function B"""
+    a = 10
+    b = 20
+    c = 30
+    return a * b * c
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell006_issues = [i for i in issues if i.rule_id == 'SMELL006']
+    assert len(smell006_issues) == 0
+
+
+def test_duplicate_methods_in_class(smell_analyzer, python_parser):
+    """Test detection of duplicate methods in a class"""
+    code = '''
+class Calculator:
+    """Class with duplicate methods"""
+    def add_numbers_v1(self, a, b):
+        """Add two numbers - version 1"""
+        result = a + b
+        return result
+
+    def add_numbers_v2(self, a, b):
+        """Add two numbers - version 2"""
+        result = a + b
+        return result
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell006_issues = [i for i in issues if i.rule_id == 'SMELL006']
+    assert len(smell006_issues) > 0
+
+
+def test_duplicate_code_metadata(smell_analyzer, python_parser):
+    """Test that SMELL006 issues contain similarity metadata"""
+    code = '''
+def func1():
+    x = 1
+    y = 2
+    z = 3
+    return x + y + z
+
+def func2():
+    x = 1
+    y = 2
+    z = 3
+    return x + y + z
+'''
+    parsed = python_parser.parse_code(code)
+    issues = smell_analyzer.analyze(parsed, code)
+
+    smell006_issues = [i for i in issues if i.rule_id == 'SMELL006']
+    assert len(smell006_issues) > 0
+
+    issue = smell006_issues[0]
+    assert 'duplicate_of' in issue.metadata
+    assert 'similarity_score' in issue.metadata
+    assert issue.metadata['similarity_score'] > 0.8

@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from .base_analyzer import BaseAnalyzer, CodeIssue
 from .security_analyzer import SecurityAnalyzer
 from .smell_analyzer import SmellAnalyzer
+from .complexity_analyzer import ComplexityAnalyzer
 
 
 class AnalyzerRegistry:
@@ -17,6 +18,7 @@ class AnalyzerRegistry:
         """Register built-in analyzers"""
         self.register_analyzer(SecurityAnalyzer())
         self.register_analyzer(SmellAnalyzer())
+        self.register_analyzer(ComplexityAnalyzer())
     
     def register_analyzer(self, analyzer: BaseAnalyzer):
         """
