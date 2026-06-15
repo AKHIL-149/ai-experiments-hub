@@ -3,16 +3,21 @@ FastAPI server for AI Code Review Assistant
 """
 
 import os
+import tempfile
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Response, Cookie
+from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from src.core.database import DatabaseManager
 from src.core.auth_manager import AuthManager, UserRole
+from src.services.code_analyzer_service import CodeAnalyzerService
+from src.workers.analysis_worker import analyze_file_task
+from celery.result import AsyncResult
+from celery_app import celery_app
 
 # Load environment variables
 load_dotenv()
@@ -266,6 +271,135 @@ async def root():
 async def health():
     """Health check endpoint"""
     return {"status": "healthy", "service": "code-review-assistant"}
+
+
+# ============================================================================
+# Analysis Endpoints
+# ============================================================================
+
+class AnalyzeFileRequest(BaseModel):
+    """Request model for file analysis"""
+    code: str
+    filename: str = "code.py"
+    analyzer_ids: Optional[List[str]] = None
+
+
+@app.post("/api/analyze/file")
+async def analyze_file(
+    file: UploadFile = File(...),
+    analyzer_ids: Optional[str] = Form(None),
+    user = Depends(get_current_user)
+):
+    """
+    Upload and analyze a Python file.
+
+    Returns a job ID that can be used to check analysis status.
+    """
+    # Validate file type
+    if not file.filename.endswith('.py'):
+        raise HTTPException(status_code=400, detail="Only Python files (.py) are supported")
+
+    # Read file content
+    try:
+        content = await file.read()
+        file_content = content.decode('utf-8')
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+
+    # Parse analyzer IDs if provided
+    analyzer_list = None
+    if analyzer_ids:
+        analyzer_list = [a.strip() for a in analyzer_ids.split(',')]
+
+    # Queue async analysis task
+    task = analyze_file_task.delay(
+        file_content=file_content,
+        filename=file.filename,
+        analyzer_ids=analyzer_list
+    )
+
+    return {
+        "success": True,
+        "job_id": task.id,
+        "filename": file.filename,
+        "message": "Analysis queued successfully"
+    }
+
+
+@app.post("/api/analyze/code")
+async def analyze_code(
+    data: AnalyzeFileRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Analyze Python code directly (without file upload).
+
+    For synchronous analysis, use this endpoint for quick results.
+    """
+    # Create analyzer service
+    service = CodeAnalyzerService()
+
+    # Analyze synchronously
+    result = service.analyze_code(
+        source_code=data.code,
+        file_path=data.filename,
+        analyzer_ids=data.analyzer_ids
+    )
+
+    if not result['success']:
+        raise HTTPException(status_code=400, detail=result.get('error', 'Analysis failed'))
+
+    return result
+
+
+@app.get("/api/jobs/{job_id}")
+async def get_job_status(
+    job_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get status and results of an analysis job.
+
+    Job states:
+    - PENDING: Task waiting to be executed
+    - PROCESSING: Task is running
+    - SUCCESS: Task completed successfully
+    - FAILURE: Task failed
+    """
+    task = AsyncResult(job_id, app=celery_app)
+
+    if task.state == 'PENDING':
+        return {
+            "job_id": job_id,
+            "state": "PENDING",
+            "status": "Task is waiting in queue"
+        }
+    elif task.state == 'PROCESSING':
+        return {
+            "job_id": job_id,
+            "state": "PROCESSING",
+            "status": task.info.get('status', 'Processing...'),
+            "progress": task.info
+        }
+    elif task.state == 'SUCCESS':
+        result = task.result
+        return {
+            "job_id": job_id,
+            "state": "SUCCESS",
+            "result": result
+        }
+    elif task.state == 'FAILURE':
+        return {
+            "job_id": job_id,
+            "state": "FAILURE",
+            "error": str(task.info)
+        }
+    else:
+        return {
+            "job_id": job_id,
+            "state": task.state,
+            "info": str(task.info)
+        }
 
 
 # ============================================================================
