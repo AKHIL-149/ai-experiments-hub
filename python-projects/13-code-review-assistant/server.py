@@ -13,7 +13,7 @@ from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List
 
-from src.core.database import DatabaseManager
+from src.core.database import DatabaseManager, Repository, RepositoryStatus
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
 from src.workers.analysis_worker import (
@@ -72,6 +72,20 @@ class LoginRequest(BaseModel):
 class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str
+
+
+class CreateRepositoryRequest(BaseModel):
+    """Request model for creating a repository"""
+    name: str
+    github_url: str
+    github_token: Optional[str] = None
+
+
+class UpdateRepositoryRequest(BaseModel):
+    """Request model for updating a repository"""
+    name: Optional[str] = None
+    default_branch: Optional[str] = None
+    settings: Optional[dict] = None
 
 
 # Dependency: Get current user from session
@@ -619,6 +633,205 @@ async def get_issues_stats(
             reverse=True
         )[:10]
     }
+
+
+# ============================================================================
+# Repository Endpoints
+# ============================================================================
+
+@app.post("/api/repositories")
+async def create_repository(
+    data: CreateRepositoryRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Create a new repository for code review.
+
+    Validates GitHub URL and stores repository metadata.
+    Actual cloning happens asynchronously.
+    """
+    # Validate GitHub URL format
+    if not data.github_url.startswith(('https://github.com/', 'git@github.com:')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid GitHub URL. Must start with https://github.com/ or git@github.com:"
+        )
+
+    # Extract repo name from URL if not provided
+    name = data.name
+    if not name:
+        # Extract from URL like https://github.com/user/repo.git
+        parts = data.github_url.rstrip('/').rstrip('.git').split('/')
+        if len(parts) >= 2:
+            name = parts[-1]
+        else:
+            raise HTTPException(status_code=400, detail="Could not extract repository name from URL")
+
+    with db_manager.get_session() as db:
+        # Create repository record
+        repo = Repository(
+            user_id=user.id,
+            name=name,
+            github_url=data.github_url,
+            status=RepositoryStatus.PENDING
+        )
+
+        db.add(repo)
+        db.commit()
+        db.refresh(repo)
+
+        return {
+            "success": True,
+            "repository": repo.to_dict(),
+            "message": "Repository added successfully"
+        }
+
+
+@app.get("/api/repositories")
+async def list_repositories(
+    user = Depends(get_current_user)
+):
+    """
+    List all repositories for the current user.
+
+    Returns repositories with their status and metadata.
+    """
+    with db_manager.get_session() as db:
+        repositories = db.query(Repository).filter(
+            Repository.user_id == user.id
+        ).order_by(Repository.created_at.desc()).all()
+
+        return {
+            "success": True,
+            "total": len(repositories),
+            "repositories": [repo.to_dict() for repo in repositories]
+        }
+
+
+@app.get("/api/repositories/{repository_id}")
+async def get_repository(
+    repository_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get details of a specific repository.
+
+    Returns full repository information including pull requests count.
+    """
+    with db_manager.get_session() as db:
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # Get pull requests count
+        pr_count = len(repo.pull_requests) if repo.pull_requests else 0
+
+        repo_dict = repo.to_dict()
+        repo_dict['pull_requests_count'] = pr_count
+
+        return {
+            "success": True,
+            "repository": repo_dict
+        }
+
+
+@app.put("/api/repositories/{repository_id}")
+async def update_repository(
+    repository_id: str,
+    data: UpdateRepositoryRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Update repository settings.
+
+    Allows updating name, default branch, and custom settings.
+    """
+    with db_manager.get_session() as db:
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # Update fields if provided
+        if data.name is not None:
+            repo.name = data.name
+        if data.default_branch is not None:
+            repo.default_branch = data.default_branch
+        if data.settings is not None:
+            repo.settings_json = data.settings
+
+        db.commit()
+        db.refresh(repo)
+
+        return {
+            "success": True,
+            "repository": repo.to_dict(),
+            "message": "Repository updated successfully"
+        }
+
+
+@app.delete("/api/repositories/{repository_id}")
+async def delete_repository(
+    repository_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Delete a repository.
+
+    Removes repository and all associated data (PRs, issues, etc.) via cascade.
+    """
+    with db_manager.get_session() as db:
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        repo_name = repo.name
+        db.delete(repo)
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"Repository '{repo_name}' deleted successfully"
+        }
+
+
+@app.post("/api/repositories/{repository_id}/sync")
+async def sync_repository(
+    repository_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Sync repository with GitHub.
+
+    Fetches latest changes from GitHub (to be implemented with GitClient).
+    """
+    with db_manager.get_session() as db:
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # TODO: Implement actual sync logic in next commits
+        # For now, just return success
+        return {
+            "success": True,
+            "message": "Sync functionality will be implemented with GitClient",
+            "repository": repo.to_dict()
+        }
 
 
 # ============================================================================
