@@ -5,10 +5,11 @@ FastAPI server for AI Code Review Assistant
 import os
 import tempfile
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -51,8 +52,9 @@ db_manager = DatabaseManager(db_url)
 SESSION_TTL_DAYS = int(os.getenv('SESSION_TTL_DAYS', '30'))
 COOKIE_SECURE = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
 
-# Mount static files (will add later)
-# app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
 # Pydantic models for requests
@@ -217,58 +219,108 @@ async def change_password(
 
 
 # ============================================================================
-# Root Endpoint
+# Template Routes
 # ============================================================================
 
+# Optional dependency for template routes
+async def get_current_user_optional(session_token: Optional[str] = Cookie(None)):
+    """Get current user if authenticated, None otherwise"""
+    if not session_token:
+        return None
+
+    try:
+        with db_manager.get_session() as db:
+            auth_manager = AuthManager(db, SESSION_TTL_DAYS)
+            success, user, error = auth_manager.validate_session(session_token)
+            return user if success else None
+    except:
+        return None
+
+
 @app.get("/", response_class=HTMLResponse)
-async def root():
-    """Root endpoint - serve dashboard HTML"""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>AI Code Review Assistant</title>
-        <style>
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                max-width: 800px;
-                margin: 50px auto;
-                padding: 20px;
-                background: #f5f5f5;
-            }
-            .container {
-                background: white;
-                padding: 40px;
-                border-radius: 8px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            }
-            h1 { color: #333; margin-top: 0; }
-            .status { color: #28a745; font-weight: bold; }
-            ul { line-height: 2; }
-            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🔍 AI Code Review Assistant</h1>
-            <p class="status">✓ Server Running</p>
+async def root(request: Request):
+    """Root endpoint - redirect to dashboard"""
+    return RedirectResponse(url="/dashboard")
 
-            <h2>API Endpoints</h2>
-            <ul>
-                <li><code>POST /api/auth/register</code> - Register new user</li>
-                <li><code>POST /api/auth/login</code> - Login</li>
-                <li><code>POST /api/auth/logout</code> - Logout</li>
-                <li><code>GET /api/auth/me</code> - Get current user</li>
-                <li><code>GET /docs</code> - API Documentation (Swagger)</li>
-            </ul>
 
-            <p style="margin-top: 40px; color: #666;">
-                Project 13 - Week 1 Implementation
-            </p>
-        </div>
-    </body>
-    </html>
-    """
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request, user = Depends(get_current_user_optional)):
+    """Dashboard page showing recent analyses"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    # Get recent analyses
+    recent_analyses = get_all_cached_analyses()[:5]
+
+    # Calculate stats
+    stats = {
+        'repositories': 0,
+        'pull_requests': 0,
+        'issues': sum(len(a.get('issues', [])) for a in get_all_cached_analyses()),
+        'reviews': 0
+    }
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": user,
+        "stats": stats,
+        "repositories": [],
+        "pull_requests": [],
+        "issues": [issue for a in recent_analyses for issue in a.get('issues', [])][:10]
+    })
+
+
+@app.get("/analyze", response_class=HTMLResponse)
+async def analyze_page(request: Request, user = Depends(get_current_user_optional)):
+    """File analysis page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("analyze.html", {
+        "request": request,
+        "user": user
+    })
+
+
+@app.get("/issues", response_class=HTMLResponse)
+async def issues_page(request: Request, user = Depends(get_current_user_optional)):
+    """Issues list page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("issues.html", {
+        "request": request,
+        "user": user
+    })
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Login page"""
+    return templates.TemplateResponse("login.html", {
+        "request": request
+    })
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    """Registration page"""
+    return templates.TemplateResponse("register.html", {
+        "request": request
+    })
+
+
+@app.get("/logout", response_class=HTMLResponse)
+async def logout_page(response: Response, session_token: Optional[str] = Cookie(None)):
+    """Logout page - clears session and redirects"""
+    if session_token:
+        with db_manager.get_session() as db:
+            auth_manager = AuthManager(db, SESSION_TTL_DAYS)
+            auth_manager.delete_session(session_token)
+
+    response = RedirectResponse(url="/login")
+    response.delete_cookie(key="session_token")
+    return response
 
 
 @app.get("/health")
