@@ -308,6 +308,76 @@ async def issues_page(request: Request, user = Depends(get_current_user_optional
     })
 
 
+@app.get("/repositories", response_class=HTMLResponse)
+async def repositories_page(request: Request, user = Depends(get_current_user_optional)):
+    """Repositories list page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    # Calculate repository statistics
+    with db_manager.get_session() as db:
+        repos = db.query(Repository).filter(Repository.user_id == user.id).all()
+        stats = {
+            'total': len(repos),
+            'ready': sum(1 for r in repos if r.status == RepositoryStatus.READY),
+            'pending': sum(1 for r in repos if r.status == RepositoryStatus.PENDING),
+            'error': sum(1 for r in repos if r.status == RepositoryStatus.ERROR)
+        }
+
+    return templates.TemplateResponse("repositories.html", {
+        "request": request,
+        "user": user,
+        "stats": stats
+    })
+
+
+@app.get("/repositories/new", response_class=HTMLResponse)
+async def repository_add_page(request: Request, user = Depends(get_current_user_optional)):
+    """Add repository page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("repository_add.html", {
+        "request": request,
+        "user": user
+    })
+
+
+@app.get("/repositories/{repository_id}", response_class=HTMLResponse)
+async def repository_detail_page(
+    request: Request,
+    repository_id: str,
+    user = Depends(get_current_user_optional)
+):
+    """Repository detail page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    with db_manager.get_session() as db:
+        repository = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repository:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # Get repository statistics (will be implemented in PR phase)
+        stats = {
+            'pull_requests_count': 0,
+            'total_issues': 0,
+            'reviews_count': 0,
+            'health_score': None
+        }
+
+        return templates.TemplateResponse("repository_detail.html", {
+            "request": request,
+            "user": user,
+            "repository": repository,
+            "stats": stats
+        })
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Login page"""

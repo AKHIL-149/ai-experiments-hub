@@ -1,0 +1,461 @@
+{% extends "base.html" %}
+
+{% block title %}Repositories - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Repositories</h1>
+        <p class="subtitle">Manage your GitHub repositories for code review</p>
+    </div>
+
+    <!-- Statistics Summary -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">📁</div>
+            <div class="stat-info">
+                <div class="stat-value" id="totalRepos">{{ stats.total or 0 }}</div>
+                <div class="stat-label">Total Repositories</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-info">
+                <div class="stat-value" id="readyCount">{{ stats.ready or 0 }}</div>
+                <div class="stat-label">Ready</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">⏳</div>
+            <div class="stat-info">
+                <div class="stat-value" id="pendingCount">{{ stats.pending or 0 }}</div>
+                <div class="stat-label">Pending</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">❌</div>
+            <div class="stat-info">
+                <div class="stat-value" id="errorCount">{{ stats.error or 0 }}</div>
+                <div class="stat-label">Error</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters and Actions -->
+    <div class="card">
+        <div class="card-header">
+            <h2>🔍 Filter & Actions</h2>
+            <div class="header-actions">
+                <a href="/repositories/new" class="btn btn-primary">
+                    ➕ Add Repository
+                </a>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label for="statusFilter">Status</label>
+                    <select id="statusFilter" class="form-control" onchange="applyFilters()">
+                        <option value="">All Statuses</option>
+                        <option value="ready">Ready</option>
+                        <option value="pending">Pending</option>
+                        <option value="cloning">Cloning</option>
+                        <option value="error">Error</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="searchFilter">Search</label>
+                    <input type="text" id="searchFilter" class="form-control" placeholder="Search repositories..." oninput="applyFilters()">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Repositories List -->
+    <div class="card">
+        <div class="card-header">
+            <h2>📋 Repositories</h2>
+            <div class="header-actions">
+                <button class="btn btn-sm btn-secondary" onclick="refreshRepositories()">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="repositoriesContainer">
+                <div class="loading" id="loadingIndicator">
+                    <div class="spinner"></div>
+                    <p>Loading repositories...</p>
+                </div>
+                <div id="repositoriesContent" style="display: none;">
+                    <!-- Repository cards will be inserted here -->
+                </div>
+                <div id="emptyState" style="display: none;">
+                    <div class="empty-state">
+                        <div class="empty-icon">📂</div>
+                        <h3>No repositories yet</h3>
+                        <p>Add your first GitHub repository to start code review</p>
+                        <a href="/repositories/new" class="btn btn-primary">Add Repository</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination" style="display: none;">
+        <button class="btn btn-secondary" id="prevBtn" onclick="previousPage()">← Previous</button>
+        <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+        <button class="btn btn-secondary" id="nextBtn" onclick="nextPage()">Next →</button>
+    </div>
+</div>
+
+<!-- Repository Card Template -->
+<template id="repositoryCardTemplate">
+    <div class="repo-card" data-repo-id="">
+        <div class="repo-header">
+            <div class="repo-info">
+                <h3 class="repo-name"></h3>
+                <span class="badge repo-status"></span>
+            </div>
+            <div class="repo-actions">
+                <button class="btn btn-xs btn-secondary" onclick="syncRepository(this)">🔄 Sync</button>
+                <a href="#" class="btn btn-xs btn-primary repo-view-btn">View</a>
+                <button class="btn btn-xs btn-danger" onclick="deleteRepository(this)">🗑️ Delete</button>
+            </div>
+        </div>
+        <div class="repo-body">
+            <p class="repo-url"></p>
+            <div class="repo-meta">
+                <span class="meta-item">
+                    <span class="meta-icon">🌿</span>
+                    <span class="meta-label">Branch:</span>
+                    <span class="repo-branch"></span>
+                </span>
+                <span class="meta-item repo-synced" style="display: none;">
+                    <span class="meta-icon">🕒</span>
+                    <span class="meta-label">Last synced:</span>
+                    <span class="repo-last-synced"></span>
+                </span>
+            </div>
+        </div>
+    </div>
+</template>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.repo-card {
+    background: white;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+    transition: box-shadow 0.2s;
+}
+
+.repo-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.repo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.repo-info {
+    flex: 1;
+}
+
+.repo-name {
+    margin: 0 0 8px 0;
+    font-size: 1.25rem;
+    color: #24292e;
+}
+
+.repo-status {
+    font-size: 0.85rem;
+}
+
+.repo-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.repo-body {
+    color: #586069;
+}
+
+.repo-url {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    color: #0366d6;
+    word-break: break-all;
+}
+
+.repo-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.meta-icon {
+    font-size: 1rem;
+}
+
+.meta-label {
+    color: #586069;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.page-info {
+    font-size: 0.95rem;
+    color: #586069;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let itemsPerPage = 10;
+let allRepositories = [];
+let filteredRepositories = [];
+
+// Load repositories on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadRepositories();
+});
+
+async function loadRepositories() {
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const repositoriesContent = document.getElementById('repositoriesContent');
+    const emptyState = document.getElementById('emptyState');
+
+    loadingIndicator.style.display = 'block';
+    repositoriesContent.style.display = 'none';
+    emptyState.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/repositories');
+        const data = await response.json();
+
+        if (data.success) {
+            allRepositories = data.repositories || [];
+            filteredRepositories = [...allRepositories];
+
+            if (allRepositories.length === 0) {
+                emptyState.style.display = 'block';
+            } else {
+                renderRepositories();
+                repositoriesContent.style.display = 'block';
+            }
+        } else {
+            showError('Failed to load repositories: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        showError('Failed to load repositories: ' + error.message);
+    } finally {
+        loadingIndicator.style.display = 'none';
+    }
+}
+
+function renderRepositories() {
+    const container = document.getElementById('repositoriesContent');
+    const template = document.getElementById('repositoryCardTemplate');
+
+    container.innerHTML = '';
+
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const pageRepos = filteredRepositories.slice(startIndex, endIndex);
+
+    pageRepos.forEach(repo => {
+        const card = template.content.cloneNode(true);
+
+        card.querySelector('.repo-card').dataset.repoId = repo.id;
+        card.querySelector('.repo-name').textContent = repo.name;
+        card.querySelector('.repo-status').textContent = repo.status;
+        card.querySelector('.repo-status').className = `badge badge-${repo.status}`;
+        card.querySelector('.repo-url').textContent = repo.github_url;
+        card.querySelector('.repo-branch').textContent = repo.default_branch || 'main';
+        card.querySelector('.repo-view-btn').href = `/repositories/${repo.id}`;
+
+        if (repo.last_synced_at) {
+            card.querySelector('.repo-synced').style.display = 'flex';
+            card.querySelector('.repo-last-synced').textContent = formatDate(repo.last_synced_at);
+        }
+
+        container.appendChild(card);
+    });
+
+    updatePagination();
+}
+
+function updatePagination() {
+    const pagination = document.getElementById('pagination');
+    const totalPages = Math.ceil(filteredRepositories.length / itemsPerPage);
+
+    if (totalPages > 1) {
+        pagination.style.display = 'flex';
+        document.getElementById('currentPage').textContent = currentPage;
+        document.getElementById('totalPages').textContent = totalPages;
+        document.getElementById('prevBtn').disabled = currentPage === 1;
+        document.getElementById('nextBtn').disabled = currentPage === totalPages;
+    } else {
+        pagination.style.display = 'none';
+    }
+}
+
+function applyFilters() {
+    const statusFilter = document.getElementById('statusFilter').value.toLowerCase();
+    const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+
+    filteredRepositories = allRepositories.filter(repo => {
+        const matchesStatus = !statusFilter || repo.status === statusFilter;
+        const matchesSearch = !searchFilter ||
+            repo.name.toLowerCase().includes(searchFilter) ||
+            repo.github_url.toLowerCase().includes(searchFilter);
+
+        return matchesStatus && matchesSearch;
+    });
+
+    currentPage = 1;
+    renderRepositories();
+}
+
+function previousPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        renderRepositories();
+    }
+}
+
+function nextPage() {
+    const totalPages = Math.ceil(filteredRepositories.length / itemsPerPage);
+    if (currentPage < totalPages) {
+        currentPage++;
+        renderRepositories();
+    }
+}
+
+async function syncRepository(button) {
+    const repoCard = button.closest('.repo-card');
+    const repoId = repoCard.dataset.repoId;
+
+    button.disabled = true;
+    button.textContent = '⏳ Syncing...';
+
+    try {
+        const response = await fetch(`/api/repositories/${repoId}/sync`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showSuccess('Repository sync started');
+            await loadRepositories();
+        } else {
+            showError('Sync failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        showError('Sync failed: ' + error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = '🔄 Sync';
+    }
+}
+
+async function deleteRepository(button) {
+    const repoCard = button.closest('.repo-card');
+    const repoId = repoCard.dataset.repoId;
+    const repoName = repoCard.querySelector('.repo-name').textContent;
+
+    if (!confirm(`Are you sure you want to delete "${repoName}"? This action cannot be undone.`)) {
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await fetch(`/api/repositories/${repoId}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showSuccess('Repository deleted');
+            await loadRepositories();
+        } else {
+            showError('Delete failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        showError('Delete failed: ' + error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function refreshRepositories() {
+    loadRepositories();
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+}
+
+function showSuccess(message) {
+    const messagesDiv = document.querySelector('.messages') || createMessagesDiv();
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success';
+    alert.innerHTML = `${message}<button class="alert-close" onclick="this.parentElement.remove()">&times;</button>`;
+    messagesDiv.appendChild(alert);
+    setTimeout(() => alert.remove(), 5000);
+}
+
+function showError(message) {
+    const messagesDiv = document.querySelector('.messages') || createMessagesDiv();
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger';
+    alert.innerHTML = `${message}<button class="alert-close" onclick="this.parentElement.remove()">&times;</button>`;
+    messagesDiv.appendChild(alert);
+    setTimeout(() => alert.remove(), 5000);
+}
+
+function createMessagesDiv() {
+    const div = document.createElement('div');
+    div.className = 'messages';
+    document.querySelector('main').insertBefore(div, document.querySelector('.container'));
+    return div;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}Add Repository - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Add Repository</h1>
+        <p class="subtitle">Connect a GitHub repository for code review</p>
+    </div>
+
+    <div class="form-container">
+        <div class="card">
+            <div class="card-header">
+                <h2>📁 Repository Details</h2>
+            </div>
+            <div class="card-body">
+                <form id="addRepositoryForm" onsubmit="handleSubmit(event)">
+                    <div class="form-group">
+                        <label for="github_url" class="required">GitHub URL</label>
+                        <input
+                            type="text"
+                            id="github_url"
+                            name="github_url"
+                            class="form-control"
+                            placeholder="https://github.com/username/repository"
+                            required
+                        >
+                        <small class="form-text">
+                            Accepts HTTPS (https://github.com/owner/repo) or SSH (git@github.com:owner/repo.git) format
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="name">Repository Name</label>
+                        <input
+                            type="text"
+                            id="name"
+                            name="name"
+                            class="form-control"
+                            placeholder="my-project (leave empty to auto-detect)"
+                        >
+                        <small class="form-text">
+                            Optional. If not provided, the name will be extracted from the GitHub URL
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="github_token">GitHub Access Token</label>
+                        <input
+                            type="password"
+                            id="github_token"
+                            name="github_token"
+                            class="form-control"
+                            placeholder="ghp_xxxxxxxxxxxx"
+                        >
+                        <small class="form-text">
+                            Optional. Required for private repositories or to avoid rate limits.
+                            <a href="https://github.com/settings/tokens" target="_blank">Generate a token</a>
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="default_branch">Default Branch</label>
+                        <input
+                            type="text"
+                            id="default_branch"
+                            name="default_branch"
+                            class="form-control"
+                            value="main"
+                            placeholder="main"
+                        >
+                        <small class="form-text">
+                            The default branch to use for code review (usually 'main' or 'master')
+                        </small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            ✅ Add Repository
+                        </button>
+                        <a href="/repositories" class="btn btn-secondary">
+                            ❌ Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Information Card -->
+        <div class="card info-card">
+            <div class="card-header">
+                <h3>ℹ️ Information</h3>
+            </div>
+            <div class="card-body">
+                <h4>What happens next?</h4>
+                <ol class="info-list">
+                    <li>Repository will be validated and added to your account</li>
+                    <li>Repository status will be set to "Pending"</li>
+                    <li>You can sync the repository to clone it locally</li>
+                    <li>Once cloned, you can import and analyze pull requests</li>
+                </ol>
+
+                <h4>GitHub Access Token</h4>
+                <p>
+                    A GitHub personal access token is required for:
+                </p>
+                <ul class="info-list">
+                    <li>Accessing private repositories</li>
+                    <li>Avoiding GitHub API rate limits</li>
+                    <li>Posting review comments to pull requests</li>
+                </ul>
+                <p>
+                    <strong>Required permissions:</strong> <code>repo</code> (Full control of private repositories)
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.form-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+}
+
+@media (max-width: 968px) {
+    .form-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+.form-group {
+    margin-bottom: 24px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #24292e;
+}
+
+.form-group label.required::after {
+    content: " *";
+    color: #d73a49;
+}
+
+.form-control {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5da;
+    border-radius: 6px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #0366d6;
+    box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.1);
+}
+
+.form-text {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.875rem;
+    color: #586069;
+}
+
+.form-text a {
+    color: #0366d6;
+    text-decoration: none;
+}
+
+.form-text a:hover {
+    text-decoration: underline;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 32px;
+}
+
+.info-card {
+    height: fit-content;
+}
+
+.info-card h4 {
+    margin: 16px 0 8px 0;
+    font-size: 1rem;
+    color: #24292e;
+}
+
+.info-card h4:first-child {
+    margin-top: 0;
+}
+
+.info-list {
+    margin: 8px 0;
+    padding-left: 24px;
+    color: #586069;
+    font-size: 0.9rem;
+}
+
+.info-list li {
+    margin: 6px 0;
+}
+
+.info-card code {
+    background: #f6f8fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.error-message {
+    background: #ffeef0;
+    border: 1px solid #d73a49;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+    color: #d73a49;
+}
+
+.success-message {
+    background: #dcffe4;
+    border: 1px solid #28a745;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+    color: #28a745;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function handleSubmit(event) {
+    event.preventDefault();
+
+    const submitBtn = document.getElementById('submitBtn');
+    const form = document.getElementById('addRepositoryForm');
+    const formData = new FormData(form);
+
+    // Prepare request data
+    const data = {
+        github_url: formData.get('github_url').trim(),
+        name: formData.get('name').trim() || undefined,
+        github_token: formData.get('github_token').trim() || undefined
+    };
+
+    // Validate GitHub URL
+    if (!isValidGitHubUrl(data.github_url)) {
+        showError('Invalid GitHub URL format. Please use https://github.com/owner/repo or git@github.com:owner/repo.git');
+        return;
+    }
+
+    // Disable submit button
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Adding...';
+
+    try {
+        const response = await fetch('/api/repositories', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showSuccess('Repository added successfully! Redirecting...');
+            setTimeout(() => {
+                window.location.href = '/repositories';
+            }, 1500);
+        } else {
+            showError(result.error || 'Failed to add repository');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '✅ Add Repository';
+        }
+    } catch (error) {
+        showError('Network error: ' + error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = '✅ Add Repository';
+    }
+}
+
+function isValidGitHubUrl(url) {
+    const httpsPattern = /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+\/?$/;
+    const sshPattern = /^git@github\.com:[\w\-\.]+\/[\w\-\.]+\.git$/;
+
+    const normalized = url.replace(/\/$/, '').replace(/\.git$/, '');
+
+    if (url.startsWith('https://')) {
+        return httpsPattern.test(normalized + '/');
+    } else if (url.startsWith('git@')) {
+        return sshPattern.test(url);
+    }
+
+    return false;
+}
+
+function showSuccess(message) {
+    const form = document.getElementById('addRepositoryForm');
+    const existingMsg = form.querySelector('.success-message');
+    if (existingMsg) existingMsg.remove();
+
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-message';
+    successDiv.textContent = message;
+    form.insertBefore(successDiv, form.firstChild);
+}
+
+function showError(message) {
+    const form = document.getElementById('addRepositoryForm');
+    const existingMsg = form.querySelector('.error-message');
+    if (existingMsg) existingMsg.remove();
+
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+    form.insertBefore(errorDiv, form.firstChild);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => errorDiv.remove(), 5000);
+}
+
+// Auto-fill repository name from URL
+document.getElementById('github_url').addEventListener('blur', function() {
+    const nameInput = document.getElementById('name');
+    if (!nameInput.value && this.value) {
+        const url = this.value.trim();
+        const match = url.match(/github\.com[\/:][\w\-\.]+\/([\w\-\.]+)/);
+        if (match) {
+            const repoName = match[1].replace(/\.git$/, '');
+            nameInput.value = repoName;
+        }
+    }
+});
+</script>
+{% endblock %}
