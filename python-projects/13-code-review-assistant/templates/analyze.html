@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+
+{% block title %}Analyze File - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Analyze File</h1>
+        <p class="subtitle">Upload a Python file for comprehensive code analysis</p>
+    </div>
+
+    <div class="analyze-container">
+        <!-- Upload Form Section -->
+        <div class="upload-section" id="uploadSection">
+            <div class="card">
+                <div class="card-header">
+                    <h2>📤 Upload File</h2>
+                </div>
+                <div class="card-body">
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label for="file">Select Python File (.py)</label>
+                            <div class="file-upload-wrapper">
+                                <input type="file" id="file" name="file" accept=".py" required>
+                                <div class="file-upload-display" id="fileDisplay">
+                                    <span class="upload-icon">📁</span>
+                                    <span class="upload-text">Choose a file or drag and drop</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Analysis Options</label>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="analyzer" value="security" checked>
+                                    <span>🔒 Security Analysis</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="analyzer" value="smell" checked>
+                                    <span>👃 Code Smell Detection</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="analyzer" value="complexity" checked>
+                                    <span>🧮 Complexity Analysis</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                <span>🔍 Analyze Code</span>
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="document.getElementById('file').value=''; updateFileDisplay();">
+                                Clear
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Job Status Section -->
+        <div class="status-section" id="statusSection" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h2>⏳ Analysis Status</h2>
+                </div>
+                <div class="card-body">
+                    <div class="status-info">
+                        <div class="status-item">
+                            <span class="status-label">Job ID:</span>
+                            <span class="status-value" id="jobId">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">File:</span>
+                            <span class="status-value" id="fileName">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Status:</span>
+                            <span class="badge" id="jobStatus">-</span>
+                        </div>
+                    </div>
+
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+
+                    <div class="status-message" id="statusMessage">
+                        Initializing analysis...
+                    </div>
+
+                    <div class="status-actions">
+                        <button class="btn btn-secondary" onclick="cancelAnalysis()">Cancel</button>
+                        <button class="btn btn-primary" onclick="resetForm()" style="display: none;" id="newAnalysisBtn">
+                            New Analysis
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h2>📊 Analysis Results</h2>
+                    <button class="btn btn-sm btn-secondary" onclick="downloadReport()">
+                        Download Report
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Summary Stats -->
+                    <div class="results-summary" id="resultsSummary"></div>
+
+                    <!-- Health Score -->
+                    <div class="health-score-section" id="healthScoreSection"></div>
+
+                    <!-- Issues by Severity -->
+                    <div class="issues-section" id="issuesSection"></div>
+
+                    <!-- Detailed Issues -->
+                    <div class="issues-detail" id="issuesDetail"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentJobId = null;
+let pollInterval = null;
+
+// File input display update
+document.getElementById('file').addEventListener('change', updateFileDisplay);
+
+function updateFileDisplay() {
+    const fileInput = document.getElementById('file');
+    const display = document.getElementById('fileDisplay');
+
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        display.innerHTML = `
+            <span class="upload-icon">📄</span>
+            <span class="upload-text">${file.name} (${formatBytes(file.size)})</span>
+        `;
+    } else {
+        display.innerHTML = `
+            <span class="upload-icon">📁</span>
+            <span class="upload-text">Choose a file or drag and drop</span>
+        `;
+    }
+}
+
+// Form submission
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData(e.target);
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Get selected analyzers
+    const analyzers = Array.from(document.querySelectorAll('input[name="analyzer"]:checked'))
+        .map(cb => cb.value);
+
+    if (analyzers.length > 0) {
+        formData.append('analyzer_ids', analyzers.join(','));
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Uploading...</span>';
+
+    try {
+        const response = await fetch('/api/analyze/file', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.job_id) {
+            currentJobId = data.job_id;
+            showStatusSection(data.job_id, formData.get('file').name);
+            startPolling();
+        } else {
+            alert('Error: ' + (data.error || 'Upload failed'));
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>🔍 Analyze Code</span>';
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>🔍 Analyze Code</span>';
+    }
+});
+
+function showStatusSection(jobId, fileName) {
+    document.getElementById('uploadSection').style.display = 'none';
+    document.getElementById('statusSection').style.display = 'block';
+    document.getElementById('jobId').textContent = jobId;
+    document.getElementById('fileName').textContent = fileName;
+}
+
+function startPolling() {
+    pollInterval = setInterval(checkJobStatus, 2000);
+}
+
+async function checkJobStatus() {
+    if (!currentJobId) return;
+
+    try {
+        const response = await fetch(`/api/jobs/${currentJobId}`);
+        const data = await response.json();
+
+        updateStatus(data);
+
+        if (data.state === 'SUCCESS') {
+            clearInterval(pollInterval);
+            displayResults(data.result);
+        } else if (data.state === 'FAILURE') {
+            clearInterval(pollInterval);
+            displayError(data.meta?.error || 'Analysis failed');
+        }
+    } catch (error) {
+        console.error('Polling error:', error);
+    }
+}
+
+function updateStatus(data) {
+    const statusBadge = document.getElementById('jobStatus');
+    const statusMessage = document.getElementById('statusMessage');
+    const progressFill = document.getElementById('progressFill');
+
+    statusBadge.className = 'badge badge-' + data.state.toLowerCase();
+    statusBadge.textContent = data.state;
+
+    if (data.meta?.status) {
+        statusMessage.textContent = data.meta.status;
+    }
+
+    // Update progress bar
+    let progress = 0;
+    if (data.state === 'PENDING') progress = 10;
+    else if (data.state === 'PROCESSING') progress = 50;
+    else if (data.state === 'SUCCESS') progress = 100;
+
+    progressFill.style.width = progress + '%';
+}
+
+function displayResults(result) {
+    if (!result || !result.success) {
+        displayError(result?.error || 'No results available');
+        return;
+    }
+
+    const report = result.report;
+
+    // Show results section
+    document.getElementById('statusSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'block';
+    document.getElementById('newAnalysisBtn').style.display = 'inline-block';
+
+    // Summary
+    const summary = document.getElementById('resultsSummary');
+    summary.innerHTML = `
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">⚠️</div>
+                <div class="stat-info">
+                    <div class="stat-value">${report.total_issues}</div>
+                    <div class="stat-label">Total Issues</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📏</div>
+                <div class="stat-info">
+                    <div class="stat-value">${report.stats.code_lines}</div>
+                    <div class="stat-label">Lines of Code</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🎯</div>
+                <div class="stat-info">
+                    <div class="stat-value">${report.health_score.overall_score}</div>
+                    <div class="stat-label">Health Score</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-info">
+                    <div class="stat-value">${report.health_score.grade}</div>
+                    <div class="stat-label">Grade</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Health Score Details
+    const healthSection = document.getElementById('healthScoreSection');
+    healthSection.innerHTML = `
+        <h3>Health Score Breakdown</h3>
+        <div class="health-breakdown">
+            ${Object.entries(report.health_score.by_category || {}).map(([cat, score]) => `
+                <div class="health-item">
+                    <span class="health-label">${cat}:</span>
+                    <span class="health-score">${score}/100</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    // Issues by Severity
+    const issuesSection = document.getElementById('issuesSection');
+    issuesSection.innerHTML = `
+        <h3>Issues by Severity</h3>
+        <div class="severity-stats">
+            ${Object.entries(report.by_severity || {}).map(([sev, issues]) => `
+                <div class="severity-item">
+                    <span class="badge badge-${sev}">${sev}</span>
+                    <span class="severity-count">${issues.length}</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    // Detailed Issues
+    const issuesDetail = document.getElementById('issuesDetail');
+    if (report.issues && report.issues.length > 0) {
+        issuesDetail.innerHTML = `
+            <h3>Detailed Issues</h3>
+            <div class="issues-list">
+                ${report.issues.map((issue, idx) => `
+                    <div class="issue-card">
+                        <div class="issue-header">
+                            <span class="badge badge-${issue.severity}">${issue.severity}</span>
+                            <span class="badge badge-${issue.category}">${issue.category}</span>
+                            <span class="issue-title">${issue.title}</span>
+                        </div>
+                        <div class="issue-body">
+                            <p class="issue-description">${issue.description}</p>
+                            <div class="issue-meta">
+                                <span>📍 Line ${issue.line_number}</span>
+                                <span>🔖 ${issue.rule_id}</span>
+                                ${issue.confidence ? `<span>💯 ${(issue.confidence * 100).toFixed(0)}% confident</span>` : ''}
+                            </div>
+                            ${issue.code_snippet ? `
+                                <pre class="code-snippet"><code>${escapeHtml(issue.code_snippet)}</code></pre>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } else {
+        issuesDetail.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">✅</div>
+                <h3>No issues found!</h3>
+                <p>Your code looks clean and follows best practices.</p>
+            </div>
+        `;
+    }
+}
+
+function displayError(error) {
+    document.getElementById('statusMessage').innerHTML = `
+        <div class="alert alert-error">
+            <strong>Error:</strong> ${error}
+        </div>
+    `;
+    document.getElementById('newAnalysisBtn').style.display = 'inline-block';
+}
+
+function cancelAnalysis() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+    }
+    resetForm();
+}
+
+function resetForm() {
+    document.getElementById('uploadSection').style.display = 'block';
+    document.getElementById('statusSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('uploadForm').reset();
+    updateFileDisplay();
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('submitBtn').innerHTML = '<span>🔍 Analyze Code</span>';
+    currentJobId = null;
+}
+
+function downloadReport() {
+    // TODO: Implement report download
+    alert('Report download coming soon!');
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

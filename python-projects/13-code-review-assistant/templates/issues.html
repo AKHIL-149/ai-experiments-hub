@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+
+{% block title %}Issues - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Code Issues</h1>
+        <p class="subtitle">View and manage detected code issues</p>
+    </div>
+
+    <!-- Statistics Summary -->
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-info">
+                <div class="stat-value" id="totalIssues">-</div>
+                <div class="stat-label">Total Issues</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🔴</div>
+            <div class="stat-info">
+                <div class="stat-value" id="criticalCount">-</div>
+                <div class="stat-label">Critical</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🟠</div>
+            <div class="stat-info">
+                <div class="stat-value" id="errorCount">-</div>
+                <div class="stat-label">Errors</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🟡</div>
+            <div class="stat-info">
+                <div class="stat-value" id="warningCount">-</div>
+                <div class="stat-label">Warnings</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="card">
+        <div class="card-header">
+            <h2>🔍 Filters</h2>
+            <button class="btn btn-sm btn-secondary" onclick="clearFilters()">Clear All</button>
+        </div>
+        <div class="card-body">
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label for="severityFilter">Severity</label>
+                    <select id="severityFilter" class="form-control" onchange="applyFilters()">
+                        <option value="">All Severities</option>
+                        <option value="critical">Critical</option>
+                        <option value="error">Error</option>
+                        <option value="warning">Warning</option>
+                        <option value="info">Info</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="categoryFilter">Category</label>
+                    <select id="categoryFilter" class="form-control" onchange="applyFilters()">
+                        <option value="">All Categories</option>
+                        <option value="security">Security</option>
+                        <option value="smell">Code Smell</option>
+                        <option value="complexity">Complexity</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="fileFilter">File Path</label>
+                    <input type="text" id="fileFilter" class="form-control" placeholder="Filter by file path..." oninput="applyFilters()">
+                </div>
+
+                <div class="filter-group">
+                    <label for="searchFilter">Search</label>
+                    <input type="text" id="searchFilter" class="form-control" placeholder="Search in title or description..." oninput="applyFilters()">
+                </div>
+            </div>
+
+            <div class="filter-tags" id="filterTags"></div>
+        </div>
+    </div>
+
+    <!-- Issues Table -->
+    <div class="card">
+        <div class="card-header">
+            <h2>📋 Issues List</h2>
+            <div class="header-actions">
+                <button class="btn btn-sm btn-secondary" onclick="exportIssues()">
+                    📥 Export
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="refreshIssues()">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Loading State -->
+            <div id="loadingState" class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading issues...</p>
+            </div>
+
+            <!-- Issues Table -->
+            <div id="issuesTable" style="display: none;">
+                <div class="table-controls">
+                    <div class="table-info">
+                        Showing <span id="showingCount">0</span> of <span id="totalCount">0</span> issues
+                    </div>
+                    <div class="table-pagination">
+                        <button class="btn btn-xs btn-secondary" onclick="previousPage()" id="prevBtn" disabled>
+                            ← Previous
+                        </button>
+                        <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+                        <button class="btn btn-xs btn-secondary" onclick="nextPage()" id="nextBtn">
+                            Next →
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th onclick="sortBy('severity')" class="sortable">
+                                    Severity <span class="sort-icon">↕</span>
+                                </th>
+                                <th onclick="sortBy('category')" class="sortable">
+                                    Category <span class="sort-icon">↕</span>
+                                </th>
+                                <th onclick="sortBy('title')" class="sortable">
+                                    Title <span class="sort-icon">↕</span>
+                                </th>
+                                <th>File</th>
+                                <th onclick="sortBy('line_number')" class="sortable">
+                                    Line <span class="sort-icon">↕</span>
+                                </th>
+                                <th>Confidence</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="issuesTableBody">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" style="display: none;">
+                <div class="empty-state">
+                    <div class="empty-icon">✅</div>
+                    <h3>No issues found</h3>
+                    <p>No code issues match your current filters.</p>
+                    <button class="btn btn-primary" onclick="clearFilters()">Clear Filters</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Issue Detail Modal -->
+    <div id="issueModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Issue Details</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="issueModalBody">
+                <!-- Dynamic content -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-primary" onclick="dismissIssue()">Dismiss</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let allIssues = [];
+let filteredIssues = [];
+let currentPage = 1;
+let itemsPerPage = 20;
+let currentSort = { field: 'severity', direction: 'asc' };
+let currentFilters = {
+    severity: '',
+    category: '',
+    file: '',
+    search: ''
+};
+
+// Load issues on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadIssues();
+    loadStatistics();
+});
+
+async function loadIssues() {
+    showLoading();
+
+    try {
+        const response = await fetch('/api/issues?limit=1000');
+        const data = await response.json();
+
+        if (data.success) {
+            allIssues = data.issues || [];
+            filteredIssues = [...allIssues];
+            updateDisplay();
+        } else {
+            showError('Failed to load issues');
+        }
+    } catch (error) {
+        console.error('Error loading issues:', error);
+        showError('Error loading issues: ' + error.message);
+    }
+}
+
+async function loadStatistics() {
+    try {
+        const response = await fetch('/api/issues/summary/stats');
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('totalIssues').textContent = data.total_issues || 0;
+            document.getElementById('criticalCount').textContent = data.by_severity?.critical || 0;
+            document.getElementById('errorCount').textContent = data.by_severity?.error || 0;
+            document.getElementById('warningCount').textContent = data.by_severity?.warning || 0;
+        }
+    } catch (error) {
+        console.error('Error loading statistics:', error);
+    }
+}
+
+function applyFilters() {
+    currentFilters = {
+        severity: document.getElementById('severityFilter').value,
+        category: document.getElementById('categoryFilter').value,
+        file: document.getElementById('fileFilter').value.toLowerCase(),
+        search: document.getElementById('searchFilter').value.toLowerCase()
+    };
+
+    filteredIssues = allIssues.filter(issue => {
+        if (currentFilters.severity && issue.severity !== currentFilters.severity) return false;
+        if (currentFilters.category && issue.category !== currentFilters.category) return false;
+        if (currentFilters.file && !issue.file_path?.toLowerCase().includes(currentFilters.file)) return false;
+        if (currentFilters.search) {
+            const searchText = currentFilters.search;
+            const matchTitle = issue.title?.toLowerCase().includes(searchText);
+            const matchDesc = issue.description?.toLowerCase().includes(searchText);
+            if (!matchTitle && !matchDesc) return false;
+        }
+        return true;
+    });
+
+    currentPage = 1;
+    updateFilterTags();
+    updateDisplay();
+}
+
+function updateFilterTags() {
+    const tags = [];
+    if (currentFilters.severity) tags.push({ label: `Severity: ${currentFilters.severity}`, field: 'severity' });
+    if (currentFilters.category) tags.push({ label: `Category: ${currentFilters.category}`, field: 'category' });
+    if (currentFilters.file) tags.push({ label: `File: ${currentFilters.file}`, field: 'file' });
+    if (currentFilters.search) tags.push({ label: `Search: ${currentFilters.search}`, field: 'search' });
+
+    const tagsHtml = tags.map(tag => `
+        <span class="filter-tag">
+            ${tag.label}
+            <button onclick="removeFilter('${tag.field}')">&times;</button>
+        </span>
+    `).join('');
+
+    document.getElementById('filterTags').innerHTML = tagsHtml;
+}
+
+function removeFilter(field) {
+    if (field === 'severity') document.getElementById('severityFilter').value = '';
+    if (field === 'category') document.getElementById('categoryFilter').value = '';
+    if (field === 'file') document.getElementById('fileFilter').value = '';
+    if (field === 'search') document.getElementById('searchFilter').value = '';
+    applyFilters();
+}
+
+function clearFilters() {
+    document.getElementById('severityFilter').value = '';
+    document.getElementById('categoryFilter').value = '';
+    document.getElementById('fileFilter').value = '';
+    document.getElementById('searchFilter').value = '';
+    applyFilters();
+}
+
+function sortBy(field) {
+    if (currentSort.field === field) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort = { field, direction: 'asc' };
+    }
+
+    filteredIssues.sort((a, b) => {
+        let valA = a[field];
+        let valB = b[field];
+
+        // Special handling for severity
+        if (field === 'severity') {
+            const severityOrder = { critical: 0, error: 1, warning: 2, info: 3 };
+            valA = severityOrder[valA] ?? 999;
+            valB = severityOrder[valB] ?? 999;
+        }
+
+        if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    updateDisplay();
+}
+
+function updateDisplay() {
+    const total = filteredIssues.length;
+    const totalPages = Math.ceil(total / itemsPerPage);
+    const start = (currentPage - 1) * itemsPerPage;
+    const end = Math.min(start + itemsPerPage, total);
+    const pageIssues = filteredIssues.slice(start, end);
+
+    // Update pagination info
+    document.getElementById('totalCount').textContent = total;
+    document.getElementById('showingCount').textContent = pageIssues.length;
+    document.getElementById('currentPage').textContent = currentPage;
+    document.getElementById('totalPages').textContent = totalPages || 1;
+    document.getElementById('prevBtn').disabled = currentPage <= 1;
+    document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+
+    // Hide loading, show appropriate content
+    document.getElementById('loadingState').style.display = 'none';
+
+    if (total === 0) {
+        document.getElementById('issuesTable').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'block';
+    } else {
+        document.getElementById('issuesTable').style.display = 'block';
+        document.getElementById('emptyState').style.display = 'none';
+        renderIssuesTable(pageIssues);
+    }
+}
+
+function renderIssuesTable(issues) {
+    const tbody = document.getElementById('issuesTableBody');
+    tbody.innerHTML = issues.map((issue, idx) => `
+        <tr onclick="viewIssueDetail('${issue.source_filename}_${idx}')">
+            <td>
+                <span class="badge badge-${issue.severity}">${issue.severity}</span>
+            </td>
+            <td>
+                <span class="badge badge-${issue.category}">${issue.category}</span>
+            </td>
+            <td>
+                <strong>${escapeHtml(issue.title)}</strong>
+            </td>
+            <td class="text-muted">${escapeHtml(issue.file_path || '-')}</td>
+            <td>${issue.line_number || '-'}</td>
+            <td>
+                ${issue.confidence ?
+                    `<span class="confidence-badge">${(issue.confidence * 100).toFixed(0)}%</span>` :
+                    '-'
+                }
+            </td>
+            <td>
+                <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); viewIssueDetail('${issue.source_filename}_${idx}')">
+                    View
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function viewIssueDetail(issueId) {
+    try {
+        const response = await fetch(`/api/issues/${issueId}`);
+        const data = await response.json();
+
+        if (data.success) {
+            showIssueModal(data.issue);
+        } else {
+            alert('Issue not found');
+        }
+    } catch (error) {
+        console.error('Error loading issue:', error);
+        alert('Error loading issue details');
+    }
+}
+
+function showIssueModal(issue) {
+    const modal = document.getElementById('issueModal');
+    const body = document.getElementById('issueModalBody');
+
+    body.innerHTML = `
+        <div class="issue-detail">
+            <div class="issue-badges">
+                <span class="badge badge-${issue.severity}">${issue.severity}</span>
+                <span class="badge badge-${issue.category}">${issue.category}</span>
+                <span class="badge badge-rule">${issue.rule_id}</span>
+            </div>
+
+            <h3>${escapeHtml(issue.title)}</h3>
+            <p class="issue-description">${escapeHtml(issue.description)}</p>
+
+            <div class="issue-meta-grid">
+                <div class="meta-item">
+                    <span class="meta-label">File:</span>
+                    <span class="meta-value">${escapeHtml(issue.file_path)}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Line:</span>
+                    <span class="meta-value">${issue.line_number}</span>
+                </div>
+                ${issue.confidence ? `
+                    <div class="meta-item">
+                        <span class="meta-label">Confidence:</span>
+                        <span class="meta-value">${(issue.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                ` : ''}
+                ${issue.analyzed_at ? `
+                    <div class="meta-item">
+                        <span class="meta-label">Analyzed:</span>
+                        <span class="meta-value">${new Date(issue.analyzed_at).toLocaleString()}</span>
+                    </div>
+                ` : ''}
+            </div>
+
+            ${issue.code_snippet ? `
+                <div class="code-section">
+                    <h4>Code Snippet</h4>
+                    <pre class="code-snippet"><code>${escapeHtml(issue.code_snippet)}</code></pre>
+                </div>
+            ` : ''}
+
+            ${issue.suggestion ? `
+                <div class="suggestion-section">
+                    <h4>💡 Suggestion</h4>
+                    <p>${escapeHtml(issue.suggestion)}</p>
+                </div>
+            ` : ''}
+        </div>
+    `;
+
+    modal.style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('issueModal').style.display = 'none';
+}
+
+function dismissIssue() {
+    // TODO: Implement issue dismissal
+    alert('Dismiss functionality coming soon!');
+}
+
+function previousPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        updateDisplay();
+    }
+}
+
+function nextPage() {
+    const totalPages = Math.ceil(filteredIssues.length / itemsPerPage);
+    if (currentPage < totalPages) {
+        currentPage++;
+        updateDisplay();
+    }
+}
+
+function refreshIssues() {
+    loadIssues();
+    loadStatistics();
+}
+
+function exportIssues() {
+    // TODO: Implement CSV export
+    alert('Export functionality coming soon!');
+}
+
+function showLoading() {
+    document.getElementById('loadingState').style.display = 'block';
+    document.getElementById('issuesTable').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'none';
+}
+
+function showError(message) {
+    document.getElementById('loadingState').innerHTML = `
+        <div class="alert alert-error">${message}</div>
+    `;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('issueModal');
+    if (event.target === modal) {
+        closeModal();
+    }
+}
+</script>
+{% endblock %}
