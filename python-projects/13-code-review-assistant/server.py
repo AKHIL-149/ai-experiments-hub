@@ -15,7 +15,11 @@ from typing import Optional, List
 from src.core.database import DatabaseManager
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
-from src.workers.analysis_worker import analyze_file_task
+from src.workers.analysis_worker import (
+    analyze_file_task,
+    get_analysis_results,
+    get_all_cached_analyses
+)
 from celery.result import AsyncResult
 from celery_app import celery_app
 
@@ -400,6 +404,169 @@ async def get_job_status(
             "state": task.state,
             "info": str(task.info)
         }
+
+
+# ============================================================================
+# Issues Endpoints
+# ============================================================================
+
+@app.get("/api/issues")
+async def list_issues(
+    severity: Optional[str] = None,
+    category: Optional[str] = None,
+    file_path: Optional[str] = None,
+    job_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    user = Depends(get_current_user)
+):
+    """
+    List issues with filtering and pagination.
+
+    Query parameters:
+    - severity: Filter by severity (info, warning, error, critical)
+    - category: Filter by category (security, smell, complexity)
+    - file_path: Filter by file path (partial match)
+    - job_id: Filter by analysis job ID
+    - limit: Maximum number of issues to return (default 50)
+    - offset: Number of issues to skip (default 0)
+    """
+    all_issues = []
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Collect issues from all analyses
+    for analysis in analyses:
+        for issue in analysis.get('issues', []):
+            # Add metadata about the source
+            issue_with_meta = issue.copy()
+            issue_with_meta['analyzed_at'] = analysis.get('analyzed_at')
+            issue_with_meta['source_filename'] = analysis.get('filename')
+            all_issues.append(issue_with_meta)
+
+    # Apply filters
+    filtered_issues = all_issues
+
+    if severity:
+        filtered_issues = [i for i in filtered_issues if i.get('severity') == severity.lower()]
+
+    if category:
+        filtered_issues = [i for i in filtered_issues if i.get('category') == category.lower()]
+
+    if file_path:
+        filtered_issues = [i for i in filtered_issues if file_path.lower() in i.get('file_path', '').lower()]
+
+    if job_id:
+        # Get specific job's issues
+        job_analysis = get_analysis_results(job_id)
+        if job_analysis:
+            filtered_issues = job_analysis.get('issues', [])
+        else:
+            filtered_issues = []
+
+    # Sort by severity (critical > error > warning > info)
+    severity_order = {'critical': 0, 'error': 1, 'warning': 2, 'info': 3}
+    filtered_issues.sort(key=lambda x: severity_order.get(x.get('severity', 'info'), 3))
+
+    # Pagination
+    total = len(filtered_issues)
+    paginated_issues = filtered_issues[offset:offset + limit]
+
+    return {
+        "success": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "issues": paginated_issues,
+        "filters": {
+            "severity": severity,
+            "category": category,
+            "file_path": file_path,
+            "job_id": job_id
+        }
+    }
+
+
+@app.get("/api/issues/{issue_id}")
+async def get_issue(
+    issue_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get detailed information about a specific issue.
+
+    Note: This implementation uses in-memory cache.
+    Issue IDs are synthetic based on position in results.
+    """
+    # Since we're using in-memory cache, find issue across all analyses
+    analyses = get_all_cached_analyses()
+
+    for analysis in analyses:
+        for idx, issue in enumerate(analysis.get('issues', [])):
+            # Create a synthetic ID based on file and position
+            synthetic_id = f"{analysis.get('filename', 'unknown')}_{idx}"
+
+            if synthetic_id == issue_id or str(idx) == issue_id:
+                return {
+                    "success": True,
+                    "issue": {
+                        **issue,
+                        "id": synthetic_id,
+                        "analyzed_at": analysis.get('analyzed_at'),
+                        "source_filename": analysis.get('filename')
+                    }
+                }
+
+    raise HTTPException(status_code=404, detail="Issue not found")
+
+
+@app.get("/api/issues/summary/stats")
+async def get_issues_stats(
+    user = Depends(get_current_user)
+):
+    """
+    Get aggregated statistics about all issues.
+
+    Returns counts by severity, category, and file.
+    """
+    analyses = get_all_cached_analyses()
+
+    total_issues = 0
+    by_severity = {}
+    by_category = {}
+    by_file = {}
+
+    for analysis in analyses:
+        issues = analysis.get('issues', [])
+        total_issues += len(issues)
+
+        for issue in issues:
+            # Count by severity
+            sev = issue.get('severity', 'unknown')
+            by_severity[sev] = by_severity.get(sev, 0) + 1
+
+            # Count by category
+            cat = issue.get('category', 'unknown')
+            by_category[cat] = by_category.get(cat, 0) + 1
+
+            # Count by file
+            file = issue.get('file_path', 'unknown')
+            by_file[file] = by_file.get(file, 0) + 1
+
+    return {
+        "success": True,
+        "total_issues": total_issues,
+        "total_files_analyzed": len(analyses),
+        "by_severity": by_severity,
+        "by_category": by_category,
+        "by_file": by_file,
+        "most_problematic_files": sorted(
+            by_file.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:10]
+    }
 
 
 # ============================================================================

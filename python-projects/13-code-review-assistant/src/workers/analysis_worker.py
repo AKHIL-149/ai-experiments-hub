@@ -1,9 +1,14 @@
 """Celery worker for code analysis tasks"""
 import os
-import tempfile
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 from celery_app import celery_app
 from src.services.code_analyzer_service import CodeAnalyzerService
+
+
+# In-memory cache for storing analysis results (for demo/development)
+# In production, this should use Redis or database
+_analysis_cache = {}
 
 
 @celery_app.task(name='src.workers.analysis_worker.analyze_file_task', bind=True)
@@ -24,9 +29,18 @@ def analyze_file_task(
     Returns:
         Analysis results dictionary
     """
+    job_id = self.request.id
+
     try:
         # Update task state
-        self.update_state(state='PROCESSING', meta={'status': 'Analyzing code...'})
+        self.update_state(
+            state='PROCESSING',
+            meta={
+                'status': 'Analyzing code...',
+                'filename': filename,
+                'started_at': datetime.utcnow().isoformat()
+            }
+        )
 
         # Create analyzer service
         service = CodeAnalyzerService()
@@ -39,23 +53,53 @@ def analyze_file_task(
         )
 
         if result['success']:
+            # Store issues in cache for querying
+            _analysis_cache[job_id] = {
+                'filename': filename,
+                'issues': result['report']['issues'],
+                'report': result['report'],
+                'analyzed_at': datetime.utcnow().isoformat()
+            }
+
             self.update_state(
                 state='SUCCESS',
                 meta={
                     'status': 'Analysis complete',
-                    'issues_found': result['report']['total_issues']
+                    'issues_found': result['report']['total_issues'],
+                    'health_score': result['report']['health_score']['overall_score']
                 }
             )
 
         return result
 
     except Exception as e:
-        self.update_state(state='FAILURE', meta={'error': str(e)})
+        self.update_state(
+            state='FAILURE',
+            meta={
+                'error': str(e),
+                'filename': filename
+            }
+        )
         return {
             'success': False,
             'error': str(e),
             'file_path': filename
         }
+
+
+def get_analysis_results(job_id: str) -> Optional[Dict[str, Any]]:
+    """Get cached analysis results by job ID"""
+    return _analysis_cache.get(job_id)
+
+
+def get_all_cached_analyses() -> List[Dict[str, Any]]:
+    """Get all cached analysis results"""
+    return list(_analysis_cache.values())
+
+
+def clear_analysis_cache():
+    """Clear the analysis cache"""
+    _analysis_cache.clear()
 
 
 @celery_app.task(name='src.workers.analysis_worker.analyze_uploaded_file_task', bind=True)
