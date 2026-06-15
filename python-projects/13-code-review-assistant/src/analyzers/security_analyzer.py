@@ -50,7 +50,8 @@ class SecurityAnalyzer(BaseAnalyzer):
         issues.extend(self._check_unsafe_deserialization(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_weak_crypto(tree, source_code, parsed_module.file_path))
 
-        return issues
+        # Apply configuration (filter disabled rules, apply severity overrides)
+        return self.apply_configuration(issues)
 
     def _check_command_injection(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
         """Detect command injection vulnerabilities"""

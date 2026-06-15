@@ -45,7 +45,8 @@ class SmellAnalyzer(BaseAnalyzer):
         issues.extend(self._check_magic_numbers(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_duplicate_code(tree, source_code, parsed_module.file_path))
 
-        return issues
+        # Apply configuration (filter disabled rules, apply severity overrides)
+        return self.apply_configuration(issues)
 
     def _check_long_methods(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
         """Detect methods/functions that are too long"""

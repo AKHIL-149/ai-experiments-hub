@@ -3,6 +3,7 @@ Tests for complexity analyzer functionality
 """
 
 import pytest
+import os
 from pathlib import Path
 from src.analyzers.complexity_analyzer import ComplexityAnalyzer
 from src.analyzers.base_analyzer import IssueCategory, IssueSeverity
@@ -11,8 +12,32 @@ from src.parsers.python_parser import PythonParser
 
 @pytest.fixture
 def complexity_analyzer():
-    """Create ComplexityAnalyzer instance"""
-    return ComplexityAnalyzer()
+    """Create ComplexityAnalyzer instance with default config"""
+    # Clear environment to ensure defaults
+    env_vars = [
+        'COMPLEXITY_CC_WARN', 'COMPLEXITY_CC_ERROR',
+        'COMPLEXITY_MI_WARN', 'COMPLEXITY_MI_ERROR',
+        'COMPLEXITY_COGNITIVE_WARN', 'COMPLEXITY_COGNITIVE_ERROR'
+    ]
+    saved_env = {}
+    for var in env_vars:
+        saved_env[var] = os.environ.pop(var, None)
+
+    # Reload config to pick up cleared environment
+    try:
+        from src.core.config import reload_config
+        reload_config()
+    except ImportError:
+        pass
+
+    analyzer = ComplexityAnalyzer()
+
+    # Restore environment
+    for var, value in saved_env.items():
+        if value is not None:
+            os.environ[var] = value
+
+    return analyzer
 
 
 @pytest.fixture
@@ -166,10 +191,10 @@ def moderately_complex(x, y):
     complex001_issues = [i for i in issues if i.rule_id == 'COMPLEX001']
     if len(complex001_issues) > 0:
         issue = complex001_issues[0]
-        assert hasattr(issue, 'complexity')
-        assert hasattr(issue, 'warning_threshold')
-        assert hasattr(issue, 'error_threshold')
-        assert issue.complexity >= issue.warning_threshold
+        assert 'complexity' in issue.metadata
+        assert 'warning_threshold' in issue.metadata
+        assert 'error_threshold' in issue.metadata
+        assert issue.metadata['complexity'] >= issue.metadata['warning_threshold']
 
 
 def test_vulnerable_code_complexity(complexity_analyzer, python_parser, vulnerable_code_path):

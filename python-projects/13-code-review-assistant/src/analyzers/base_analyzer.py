@@ -199,3 +199,47 @@ class BaseAnalyzer(ABC):
             snippet_lines.append(f"{marker}{line_num:4d} | {lines[i]}")
 
         return '\n'.join(snippet_lines)
+
+    def apply_configuration(self, issues: List[CodeIssue]) -> List[CodeIssue]:
+        """
+        Apply configuration to filter and override issues.
+
+        This method:
+        - Filters out disabled rules
+        - Applies severity overrides
+
+        Args:
+            issues: List of detected issues
+
+        Returns:
+            Filtered and modified list of issues
+        """
+        try:
+            from ..core.config import get_config
+            config = get_config()
+        except ImportError:
+            # If config module not available, return issues as-is
+            return issues
+
+        filtered_issues = []
+
+        for issue in issues:
+            # Skip disabled rules
+            if not config.is_rule_enabled(issue.rule_id):
+                continue
+
+            # Apply severity override if configured
+            override_severity = config.get_severity_override(issue.rule_id)
+            if override_severity:
+                # Convert string to IssueSeverity enum
+                severity_map = {
+                    'INFO': IssueSeverity.INFO,
+                    'WARNING': IssueSeverity.WARNING,
+                    'ERROR': IssueSeverity.ERROR,
+                    'CRITICAL': IssueSeverity.CRITICAL
+                }
+                issue.severity = severity_map.get(override_severity, issue.severity)
+
+            filtered_issues.append(issue)
+
+        return filtered_issues

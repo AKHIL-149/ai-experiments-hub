@@ -20,12 +20,28 @@ class ComplexityAnalyzer(BaseAnalyzer):
     def __init__(self, config=None):
         """Initialize complexity analyzer with configurable thresholds"""
         super().__init__(config)
-        self.cc_warning_threshold = self.config.get('cc_warning', self.DEFAULT_CC_WARNING)
-        self.cc_error_threshold = self.config.get('cc_error', self.DEFAULT_CC_ERROR)
-        self.mi_warning_threshold = self.config.get('mi_warning', self.DEFAULT_MI_WARNING)
-        self.mi_error_threshold = self.config.get('mi_error', self.DEFAULT_MI_ERROR)
-        self.cognitive_warning_threshold = self.config.get('cognitive_warning', self.DEFAULT_COGNITIVE_WARNING)
-        self.cognitive_error_threshold = self.config.get('cognitive_error', self.DEFAULT_COGNITIVE_ERROR)
+
+        # Try to load from environment config first, then fall back to passed config, then defaults
+        try:
+            from ..core.config import get_config
+            env_config = get_config().get_complexity_config()
+        except ImportError:
+            env_config = {}
+
+        self.cc_warning_threshold = self.config.get('cc_warning',
+                                                     env_config.get('cc_warning', self.DEFAULT_CC_WARNING))
+        self.cc_error_threshold = self.config.get('cc_error',
+                                                   env_config.get('cc_error', self.DEFAULT_CC_ERROR))
+        self.mi_warning_threshold = self.config.get('mi_warning',
+                                                     env_config.get('mi_warning', self.DEFAULT_MI_WARNING))
+        self.mi_error_threshold = self.config.get('mi_error',
+                                                   env_config.get('mi_error', self.DEFAULT_MI_ERROR))
+        self.cognitive_warning_threshold = self.config.get('cognitive_warning',
+                                                            env_config.get('cognitive_warning',
+                                                                          self.DEFAULT_COGNITIVE_WARNING))
+        self.cognitive_error_threshold = self.config.get('cognitive_error',
+                                                          env_config.get('cognitive_error',
+                                                                        self.DEFAULT_COGNITIVE_ERROR))
 
     @property
     def analyzer_id(self) -> str:
@@ -48,7 +64,8 @@ class ComplexityAnalyzer(BaseAnalyzer):
         issues.extend(self._check_maintainability_index(source_code, parsed_module.file_path))
         issues.extend(self._check_cognitive_complexity(tree, source_code, parsed_module.file_path))
 
-        return issues
+        # Apply configuration (filter disabled rules, apply severity overrides)
+        return self.apply_configuration(issues)
 
     def _check_cyclomatic_complexity(self, source_code: str, file_path: str) -> List[CodeIssue]:
         """Check cyclomatic complexity using radon"""
