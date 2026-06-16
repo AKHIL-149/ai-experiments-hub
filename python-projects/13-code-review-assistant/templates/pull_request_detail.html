@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}PR #{{ pr.pr_number }} - {{ pr.title }} - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <div class="breadcrumb">
+            <a href="/pull-requests">Pull Requests</a>
+            <span class="separator">/</span>
+            <span>PR #{{ pr.pr_number }}</span>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="syncPR()">Sync from GitHub</button>
+            {% if pr.status != 'analyzing' %}
+            <button class="btn btn-primary" onclick="analyzePR()">Analyze PR</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- PR Header -->
+    <div class="pr-detail-header">
+        <div class="pr-title-row">
+            <h1>
+                #{{ pr.pr_number }} - {{ pr.title }}
+                <span class="badge badge-{{ pr.status }}">{{ pr.status }}</span>
+                {% if pr.is_draft %}
+                <span class="badge badge-draft">Draft</span>
+                {% endif %}
+                {% if pr.is_merged %}
+                <span class="badge badge-merged">Merged</span>
+                {% endif %}
+            </h1>
+        </div>
+
+        <div class="pr-meta-row">
+            <div class="pr-author-info">
+                {% if pr.author_avatar %}
+                <img src="{{ pr.author_avatar }}" alt="{{ pr.author }}" class="avatar">
+                {% endif %}
+                <div>
+                    <strong>{{ pr.author }}</strong>
+                    <span class="text-muted">opened this pull request on {{ pr.created_at }}</span>
+                </div>
+            </div>
+
+            <div class="pr-links">
+                {% if pr.github_url %}
+                <a href="{{ pr.github_url }}" class="btn btn-outline" target="_blank">
+                    View on GitHub
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- PR Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon text-primary">🔀</div>
+            <div class="stat-content">
+                <div class="stat-value">{{ pr.source_branch }} → {{ pr.target_branch }}</div>
+                <div class="stat-label">Branches</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon text-success">+</div>
+            <div class="stat-content">
+                <div class="stat-value">{{ pr.additions }}</div>
+                <div class="stat-label">Additions</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon text-danger">-</div>
+            <div class="stat-content">
+                <div class="stat-value">{{ pr.deletions }}</div>
+                <div class="stat-label">Deletions</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">📄</div>
+            <div class="stat-content">
+                <div class="stat-value">{{ pr.changed_files }}</div>
+                <div class="stat-label">Files Changed</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">💾</div>
+            <div class="stat-content">
+                <div class="stat-value">{{ pr.commits_count }}</div>
+                <div class="stat-label">Commits</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                {% if pr.mergeable %}✅{% else %}⚠️{% endif %}
+            </div>
+            <div class="stat-content">
+                <div class="stat-value">{{ pr.mergeable_state or 'Unknown' }}</div>
+                <div class="stat-label">Mergeable</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Description -->
+    {% if pr.description %}
+    <div class="card">
+        <div class="card-header">
+            <h3>Description</h3>
+        </div>
+        <div class="card-body">
+            <div class="pr-description">{{ pr.description }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Analysis Status -->
+    {% if analysis_job %}
+    <div class="card">
+        <div class="card-header">
+            <h3>Analysis Status</h3>
+        </div>
+        <div class="card-body">
+            <div class="analysis-status">
+                <div class="status-icon status-{{ analysis_job.state }}">
+                    {% if analysis_job.state == 'SUCCESS' %}✅
+                    {% elif analysis_job.state == 'FAILURE' %}❌
+                    {% elif analysis_job.state == 'PENDING' %}⏳
+                    {% else %}🔄{% endif %}
+                </div>
+                <div class="status-content">
+                    <strong>{{ analysis_job.state }}</strong>
+                    {% if analysis_job.info.status %}
+                    <p>{{ analysis_job.info.status }}</p>
+                    {% endif %}
+
+                    {% if analysis_job.state == 'SUCCESS' and analysis_job.result %}
+                    <div class="analysis-results">
+                        <p>✅ Analysis complete!</p>
+                        <ul>
+                            <li>Files analyzed: {{ analysis_job.result.files_analyzed }}</li>
+                            <li>Total issues: {{ analysis_job.result.total_issues }}</li>
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    {% if analysis_job.state in ['FETCHING', 'PARSING', 'ANALYZING'] %}
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 50%"></div>
+                    </div>
+                    <button class="btn btn-sm btn-secondary" onclick="checkAnalysisStatus()">
+                        Refresh Status
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Changed Files -->
+    {% if code_files %}
+    <div class="card">
+        <div class="card-header">
+            <h3>Analyzed Files ({{ code_files|length }})</h3>
+        </div>
+        <div class="card-body">
+            <div class="files-list">
+                {% for file in code_files %}
+                <div class="file-item">
+                    <div class="file-icon">📄</div>
+                    <div class="file-info">
+                        <div class="file-path">{{ file.file_path }}</div>
+                        <div class="file-meta">
+                            <span>{{ file.language }}</span>
+                            <span>{{ file.lines_of_code }} lines</span>
+                            {% if file.last_analyzed_at %}
+                            <span>Analyzed: {{ file.last_analyzed_at }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Actions</h3>
+        </div>
+        <div class="card-body">
+            <div class="actions-grid">
+                <button class="btn btn-secondary" onclick="syncPR()">
+                    Sync from GitHub
+                </button>
+
+                {% if pr.status != 'analyzing' %}
+                <button class="btn btn-primary" onclick="analyzePR()">
+                    {% if pr.reviewed_at %}Re-analyze{% else %}Analyze{% endif %} PR
+                </button>
+                {% endif %}
+
+                {% if pr.github_url %}
+                <a href="{{ pr.github_url }}" class="btn btn-outline" target="_blank">
+                    View on GitHub
+                </a>
+                {% endif %}
+
+                <button class="btn btn-danger" onclick="deletePR()">
+                    Delete PR
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const prId = '{{ pr.id }}';
+const jobId = '{{ job_id }}';
+
+async function analyzePR() {
+    if (!confirm('Start analyzing this pull request?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/prs/${prId}/analyze`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Analysis started!');
+            window.location.reload();
+        } else {
+            alert('Failed to start analysis: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function syncPR() {
+    if (!confirm('Sync this pull request from GitHub?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/prs/${prId}/sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Pull request synced successfully!');
+            window.location.reload();
+        } else {
+            alert('Failed to sync: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function deletePR() {
+    if (!confirm('Are you sure you want to delete this pull request? This cannot be undone.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/prs/${prId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Pull request deleted!');
+            window.location.href = '/pull-requests';
+        } else {
+            alert('Failed to delete: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function checkAnalysisStatus() {
+    try {
+        const response = await fetch(`/api/prs/${prId}/analysis/status?job_id=${jobId}`);
+        const data = await response.json();
+
+        if (data.success) {
+            window.location.reload();
+        }
+    } catch (error) {
+        console.error('Error checking status:', error);
+    }
+}
+
+// Auto-refresh if analysis is in progress
+{% if analysis_job and analysis_job.state in ['FETCHING', 'PARSING', 'ANALYZING'] %}
+setInterval(checkAnalysisStatus, 5000);
+{% endif %}
+</script>
+{% endblock %}

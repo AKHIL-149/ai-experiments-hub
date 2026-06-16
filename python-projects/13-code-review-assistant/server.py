@@ -13,7 +13,7 @@ from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from src.core.database import DatabaseManager, Repository, RepositoryStatus, User, PullRequest, PRStatus
+from src.core.database import DatabaseManager, Repository, RepositoryStatus, User, PullRequest, PRStatus, CodeFile
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
 from src.services.pr_service import PullRequestService
@@ -761,6 +761,122 @@ async def repository_detail_page(
             "user": user,
             "repository": repository,
             "stats": stats
+        })
+
+
+@app.get("/pull-requests", response_class=HTMLResponse)
+async def pull_requests_page(request: Request, user = Depends(get_current_user_optional)):
+    """Pull requests list page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    with db_manager.get_session() as db:
+        # Get user's repositories for filter dropdown
+        repositories = db.query(Repository).filter(
+            Repository.user_id == user.id
+        ).order_by(Repository.name).all()
+
+        # Get user's pull requests
+        pr_service = PullRequestService(db)
+
+        # Get filter parameters from query string
+        repository_id = request.query_params.get('repository_id')
+        status = request.query_params.get('status')
+
+        # Build filters
+        filters = {'user_id': user.id}
+        if repository_id:
+            filters['repository_id'] = repository_id
+        if status:
+            try:
+                filters['status'] = PRStatus[status.upper()]
+            except KeyError:
+                pass  # Invalid status, ignore
+
+        success, pull_requests, error = pr_service.list_prs(**filters)
+
+        if not success:
+            pull_requests = []
+
+    return templates.TemplateResponse("pull_requests.html", {
+        "request": request,
+        "user": user,
+        "repositories": repositories,
+        "pull_requests": pull_requests,
+        "selected_repository": repository_id,
+        "selected_status": status
+    })
+
+
+@app.get("/pull-requests/import", response_class=HTMLResponse)
+async def pull_request_import_page(request: Request, user = Depends(get_current_user_optional)):
+    """Pull request import page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    with db_manager.get_session() as db:
+        # Get user's repositories for dropdown
+        repositories = db.query(Repository).filter(
+            Repository.user_id == user.id,
+            Repository.status == RepositoryStatus.READY
+        ).order_by(Repository.name).all()
+
+    return templates.TemplateResponse("pull_request_import.html", {
+        "request": request,
+        "user": user,
+        "repositories": repositories
+    })
+
+
+@app.get("/pull-requests/{pr_id}", response_class=HTMLResponse)
+async def pull_request_detail_page(
+    request: Request,
+    pr_id: str,
+    user = Depends(get_current_user_optional)
+):
+    """Pull request detail page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    with db_manager.get_session() as db:
+        # Get PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Pull request not found")
+
+        # Get analyzed files
+        code_files = db.query(CodeFile).filter(
+            CodeFile.pull_request_id == pr_id
+        ).order_by(CodeFile.file_path).all()
+
+        # Get analysis job status if PR is analyzing
+        analysis_job = None
+        job_id = request.query_params.get('job_id')
+
+        if job_id:
+            try:
+                task_result = AsyncResult(job_id, app=celery_app)
+                analysis_job = {
+                    'id': job_id,
+                    'state': task_result.state,
+                    'info': task_result.info if task_result.info else {}
+                }
+            except Exception as e:
+                print(f"Error fetching job status: {e}")
+
+        # Calculate stats
+        total_issues = sum(1 for f in code_files if f.last_analyzed_at)
+
+        return templates.TemplateResponse("pull_request_detail.html", {
+            "request": request,
+            "user": user,
+            "pr": pr,
+            "repository": pr.repository,
+            "code_files": code_files,
+            "analysis_job": analysis_job,
+            "total_issues": total_issues
         })
 
 

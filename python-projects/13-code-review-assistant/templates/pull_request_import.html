@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Import Pull Request - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <div class="breadcrumb">
+            <a href="/pull-requests">Pull Requests</a>
+            <span class="separator">/</span>
+            <span>Import</span>
+        </div>
+    </div>
+
+    <div class="form-container">
+        <div class="form-card">
+            <div class="card-header">
+                <h2>Import Pull Request from GitHub</h2>
+                <p class="text-muted">Import a pull request from one of your repositories for code review.</p>
+            </div>
+
+            <div class="card-body">
+                <!-- GitHub Token Check -->
+                <div id="tokenStatus" class="alert" style="display: none;"></div>
+
+                <form id="importForm" onsubmit="importPR(event)">
+                    <div class="form-group">
+                        <label for="repository">Repository *</label>
+                        <select id="repository" name="repository_id" required class="form-control">
+                            <option value="">Select a repository...</option>
+                            {% for repo in repositories %}
+                            <option value="{{ repo.id }}">{{ repo.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="form-text">Choose the repository containing the pull request.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pr_number">Pull Request Number *</label>
+                        <input
+                            type="number"
+                            id="pr_number"
+                            name="pr_number"
+                            required
+                            min="1"
+                            class="form-control"
+                            placeholder="Enter PR number (e.g., 42)"
+                        >
+                        <small class="form-text">The PR number from GitHub (found in the PR URL).</small>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <strong>📌 Note:</strong> Importing will fetch the pull request information from GitHub
+                        and prepare it for analysis. Make sure you have configured your GitHub token.
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            Import Pull Request
+                        </button>
+                        <a href="/pull-requests" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <div class="help-card">
+            <h3>How to Import a Pull Request</h3>
+
+            <div class="help-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>Configure GitHub Token</h4>
+                    <p>Make sure you have set up your GitHub personal access token in your account settings.</p>
+                    <a href="/settings" class="btn btn-sm btn-outline">Go to Settings</a>
+                </div>
+            </div>
+
+            <div class="help-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>Add Repository</h4>
+                    <p>If you haven't already, add the repository that contains the pull request.</p>
+                    <a href="/repositories/add" class="btn btn-sm btn-outline">Add Repository</a>
+                </div>
+            </div>
+
+            <div class="help-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>Find PR Number</h4>
+                    <p>The PR number can be found in the GitHub URL:</p>
+                    <code>https://github.com/owner/repo/pull/<strong>42</strong></code>
+                </div>
+            </div>
+
+            <div class="help-step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <h4>Import & Analyze</h4>
+                    <p>After importing, you can analyze the pull request to find potential issues and improvements.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Check GitHub token status on page load
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('/api/github/status');
+        const data = await response.json();
+
+        const statusDiv = document.getElementById('tokenStatus');
+
+        if (data.authenticated) {
+            statusDiv.className = 'alert alert-success';
+            statusDiv.innerHTML = `✅ GitHub authenticated as <strong>${data.github_user}</strong>`;
+            statusDiv.style.display = 'block';
+        } else {
+            statusDiv.className = 'alert alert-warning';
+            statusDiv.innerHTML = `⚠️ GitHub token not configured. <a href="/settings">Configure now</a> to import pull requests.`;
+            statusDiv.style.display = 'block';
+            document.getElementById('submitBtn').disabled = true;
+        }
+    } catch (error) {
+        console.error('Error checking GitHub status:', error);
+    }
+});
+
+async function importPR(event) {
+    event.preventDefault();
+
+    const submitBtn = document.getElementById('submitBtn');
+    const form = event.target;
+    const formData = new FormData(form);
+
+    const data = {
+        repository_id: formData.get('repository_id'),
+        pr_number: parseInt(formData.get('pr_number'))
+    };
+
+    // Disable submit button
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Importing...';
+
+    try {
+        const response = await fetch('/api/prs/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            alert('✅ Pull request imported successfully!');
+            window.location.href = `/pull-requests/${result.pull_request.id}`;
+        } else {
+            alert('❌ Failed to import pull request: ' + (result.detail || 'Unknown error'));
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Import Pull Request';
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Import Pull Request';
+    }
+}
+</script>
+{% endblock %}

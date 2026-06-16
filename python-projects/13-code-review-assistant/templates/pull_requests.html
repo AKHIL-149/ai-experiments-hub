@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Pull Requests - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Pull Requests</h1>
+        <div class="header-actions">
+            <a href="/pull-requests/import" class="btn btn-primary">Import Pull Request</a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-card">
+        <form method="get" class="filters-form">
+            <div class="filter-group">
+                <label for="repository">Repository:</label>
+                <select name="repository_id" id="repository" onchange="this.form.submit()">
+                    <option value="">All Repositories</option>
+                    {% for repo in repositories %}
+                    <option value="{{ repo.id }}" {% if selected_repository == repo.id %}selected{% endif %}>
+                        {{ repo.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="status">Status:</label>
+                <select name="status" id="status" onchange="this.form.submit()">
+                    <option value="">All Statuses</option>
+                    <option value="open" {% if selected_status == 'open' %}selected{% endif %}>Open</option>
+                    <option value="analyzing" {% if selected_status == 'analyzing' %}selected{% endif %}>Analyzing</option>
+                    <option value="reviewed" {% if selected_status == 'reviewed' %}selected{% endif %}>Reviewed</option>
+                    <option value="merged" {% if selected_status == 'merged' %}selected{% endif %}>Merged</option>
+                    <option value="closed" {% if selected_status == 'closed' %}selected{% endif %}>Closed</option>
+                </select>
+            </div>
+        </form>
+    </div>
+
+    <!-- Pull Requests List -->
+    {% if pull_requests %}
+    <div class="prs-list">
+        {% for pr in pull_requests %}
+        <div class="pr-card">
+            <div class="pr-header">
+                <div class="pr-title-section">
+                    <h3>
+                        <a href="/pull-requests/{{ pr.id }}">
+                            #{{ pr.pr_number }} - {{ pr.title }}
+                        </a>
+                    </h3>
+                    <div class="pr-meta">
+                        <span class="pr-repo">{{ pr.repository_name }}</span>
+                        <span class="pr-author">
+                            {% if pr.author_avatar %}
+                            <img src="{{ pr.author_avatar }}" alt="{{ pr.author }}" class="avatar-sm">
+                            {% endif %}
+                            {{ pr.author }}
+                        </span>
+                        <span class="pr-date">{{ pr.created_at }}</span>
+                    </div>
+                </div>
+
+                <div class="pr-status">
+                    <span class="badge badge-{{ pr.status }}">{{ pr.status }}</span>
+                    {% if pr.is_draft %}
+                    <span class="badge badge-draft">Draft</span>
+                    {% endif %}
+                    {% if pr.is_merged %}
+                    <span class="badge badge-merged">Merged</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="pr-stats">
+                <div class="stat">
+                    <span class="stat-label">Branch:</span>
+                    <span class="stat-value">{{ pr.source_branch }} → {{ pr.target_branch }}</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Changes:</span>
+                    <span class="stat-value text-success">+{{ pr.additions }}</span>
+                    <span class="stat-value text-danger">-{{ pr.deletions }}</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Files:</span>
+                    <span class="stat-value">{{ pr.changed_files }}</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Commits:</span>
+                    <span class="stat-value">{{ pr.commits_count }}</span>
+                </div>
+            </div>
+
+            <div class="pr-actions">
+                <a href="/pull-requests/{{ pr.id }}" class="btn btn-sm btn-secondary">View Details</a>
+                {% if pr.status != 'analyzing' %}
+                <button class="btn btn-sm btn-primary" onclick="analyzePR('{{ pr.id }}')">
+                    Analyze
+                </button>
+                {% endif %}
+                {% if pr.github_url %}
+                <a href="{{ pr.github_url }}" class="btn btn-sm btn-outline" target="_blank">
+                    View on GitHub
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&repository_id={{ selected_repository }}&status={{ selected_status }}" class="btn btn-sm">Previous</a>
+        {% endif %}
+
+        <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+
+        {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}&repository_id={{ selected_repository }}&status={{ selected_status }}" class="btn btn-sm">Next</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h2>No Pull Requests Found</h2>
+        <p>Import a pull request from GitHub to get started.</p>
+        <a href="/pull-requests/import" class="btn btn-primary">Import Pull Request</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function analyzePR(prId) {
+    if (!confirm('Start analyzing this pull request?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/prs/${prId}/analyze`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Analysis started! You can check the progress in the PR details page.');
+            window.location.reload();
+        } else {
+            alert('Failed to start analysis: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+</script>
+{% endblock %}
