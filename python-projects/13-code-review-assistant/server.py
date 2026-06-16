@@ -11,9 +11,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 
-from src.core.database import DatabaseManager, Repository, RepositoryStatus
+from src.core.database import DatabaseManager, Repository, RepositoryStatus, User
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
 from src.workers.analysis_worker import (
@@ -235,6 +235,92 @@ async def change_password(
             "success": True,
             "message": "Password changed successfully"
         }
+
+
+# ============================================================================
+# GitHub Integration Routes
+# ============================================================================
+
+@app.post("/api/github/token")
+async def set_github_token(
+    data: Dict[str, str],
+    user = Depends(get_current_user)
+):
+    """Set or update GitHub personal access token"""
+    token = data.get('token')
+
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required")
+
+    # Validate token by trying to use it
+    try:
+        from src.services.github_service import GitHubService
+        github_service = GitHubService(github_token=token)
+        user_info = github_service.get_authenticated_user()
+        github_service.close()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid GitHub token: {str(e)}")
+
+    # Save token to user
+    with db_manager.get_session() as db:
+        db_user = db.query(User).filter(User.id == user.id).first()
+        db_user.github_token = token
+        db.commit()
+
+    return {
+        "success": True,
+        "message": "GitHub token saved successfully",
+        "github_user": user_info.get('login')
+    }
+
+
+@app.get("/api/github/status")
+async def get_github_status(user = Depends(get_current_user)):
+    """Get GitHub authentication status"""
+    with db_manager.get_session() as db:
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user.github_token:
+            return {
+                "authenticated": False,
+                "github_user": None
+            }
+
+        # Validate token is still working
+        try:
+            from src.services.github_service import GitHubService
+            github_service = GitHubService(github_token=db_user.github_token)
+            user_info = github_service.get_authenticated_user()
+            github_service.close()
+
+            return {
+                "authenticated": True,
+                "github_user": user_info.get('login'),
+                "github_email": user_info.get('email'),
+                "github_avatar": user_info.get('avatar_url')
+            }
+        except Exception as e:
+            return {
+                "authenticated": False,
+                "github_user": None,
+                "error": "Token is invalid or expired"
+            }
+
+
+@app.delete("/api/github/token")
+async def remove_github_token(user = Depends(get_current_user)):
+    """Remove GitHub token"""
+    with db_manager.get_session() as db:
+        db_user = db.query(User).filter(User.id == user.id).first()
+        db_user.github_token = None
+        db.commit()
+
+    return {
+        "success": True,
+        "message": "GitHub token removed"
+    }
 
 
 # ============================================================================
