@@ -266,9 +266,21 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
     # Get recent analyses
     recent_analyses = get_all_cached_analyses()[:5]
 
+    # Get repositories from database
+    with db_manager.get_session() as db:
+        # Get recent repositories for display
+        repositories = db.query(Repository).filter(
+            Repository.user_id == user.id
+        ).order_by(Repository.created_at.desc()).limit(5).all()
+
+        # Get total count
+        total_repositories = db.query(Repository).filter(
+            Repository.user_id == user.id
+        ).count()
+
     # Calculate stats
     stats = {
-        'repositories': 0,
+        'repositories': total_repositories,
         'pull_requests': 0,
         'issues': sum(len(a.get('issues', [])) for a in get_all_cached_analyses()),
         'reviews': 0
@@ -278,7 +290,7 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
         "request": request,
         "user": user,
         "stats": stats,
-        "repositories": [],
+        "repositories": repositories,
         "pull_requests": [],
         "issues": [issue for a in recent_analyses for issue in a.get('issues', [])][:10]
     })
