@@ -27,6 +27,10 @@ from src.workers.repository_worker import (
     sync_repository_task,
     delete_repository_task
 )
+from src.workers.pr_worker import (
+    analyze_pr_task,
+    sync_pr_task
+)
 from celery.result import AsyncResult
 from celery_app import celery_app
 
@@ -527,6 +531,78 @@ async def sync_pull_request(
             "success": True,
             "message": "Pull request synced successfully",
             "pull_request": updated_pr.to_dict()
+        }
+
+
+@app.post("/api/prs/{pr_id}/analyze")
+async def analyze_pull_request(
+    pr_id: str,
+    user = Depends(get_current_user)
+):
+    """Start async analysis of a pull request"""
+    with db_manager.get_session() as db:
+        # Get user's GitHub token
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user.github_token:
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub token not configured"
+            )
+
+        # Verify user owns the PR's repository
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Start async analysis task
+        task = analyze_pr_task.delay(pr_id, db_user.github_token)
+
+        return {
+            "success": True,
+            "message": "Pull request analysis started",
+            "job_id": task.id,
+            "pr_id": pr_id
+        }
+
+
+@app.get("/api/prs/{pr_id}/analysis/status")
+async def get_pr_analysis_status(
+    pr_id: str,
+    job_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Get PR analysis job status"""
+    with db_manager.get_session() as db:
+        # Verify user owns the PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Get PR data
+        pr_data = pr.to_dict()
+
+        # If job_id provided, get task status
+        if job_id:
+            task = AsyncResult(job_id)
+
+            task_info = {
+                'state': task.state,
+                'info': task.info if task.info else {}
+            }
+
+            if task.state == 'SUCCESS':
+                task_info['result'] = task.result
+
+            pr_data['analysis_job'] = task_info
+
+        return {
+            "success": True,
+            "pull_request": pr_data
         }
 
 
