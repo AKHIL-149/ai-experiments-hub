@@ -11,11 +11,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
-from src.core.database import DatabaseManager, Repository, RepositoryStatus, User
+from src.core.database import DatabaseManager, Repository, RepositoryStatus, User, PullRequest, PRStatus
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
+from src.services.pr_service import PullRequestService
 from src.workers.analysis_worker import (
     analyze_file_task,
     get_analysis_results,
@@ -321,6 +322,212 @@ async def remove_github_token(user = Depends(get_current_user)):
         "success": True,
         "message": "GitHub token removed"
     }
+
+
+# ============================================================================
+# Pull Request Routes
+# ============================================================================
+
+@app.post("/api/prs/import")
+async def import_pull_request(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Import a pull request from GitHub"""
+    repository_id = data.get('repository_id')
+    pr_number = data.get('pr_number')
+
+    if not repository_id or not pr_number:
+        raise HTTPException(
+            status_code=400,
+            detail="repository_id and pr_number are required"
+        )
+
+    # Get user's GitHub token
+    with db_manager.get_session() as db:
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user.github_token:
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub token not configured. Please set your GitHub token first."
+            )
+
+        # Verify user owns the repository
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # Import PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.import_from_github(
+            repository_id=repository_id,
+            pr_number=pr_number,
+            github_token=db_user.github_token
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        return {
+            "success": True,
+            "message": "Pull request imported successfully",
+            "pull_request": pr.to_dict()
+        }
+
+
+@app.get("/api/prs")
+async def list_pull_requests(
+    repository_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    user = Depends(get_current_user)
+):
+    """List pull requests"""
+    with db_manager.get_session() as db:
+        # Parse status if provided
+        pr_status = None
+        if status:
+            try:
+                pr_status = PRStatus(status)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+        pr_service = PullRequestService(db)
+        success, prs, error = pr_service.list_prs(
+            repository_id=repository_id,
+            user_id=user.id,
+            status=pr_status,
+            limit=limit,
+            offset=offset
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        return {
+            "success": True,
+            "pull_requests": [pr.to_dict() for pr in prs],
+            "count": len(prs)
+        }
+
+
+@app.get("/api/prs/{pr_id}")
+async def get_pull_request(
+    pr_id: str,
+    user = Depends(get_current_user)
+):
+    """Get pull request details"""
+    with db_manager.get_session() as db:
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        return {
+            "success": True,
+            "pull_request": pr.to_dict()
+        }
+
+
+@app.put("/api/prs/{pr_id}/status")
+async def update_pull_request_status(
+    pr_id: str,
+    data: Dict[str, str],
+    user = Depends(get_current_user)
+):
+    """Update pull request status"""
+    status_str = data.get('status')
+
+    if not status_str:
+        raise HTTPException(status_code=400, detail="status is required")
+
+    try:
+        status = PRStatus(status_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status_str}")
+
+    with db_manager.get_session() as db:
+        # Verify user owns the PR's repository
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Update status
+        success, error = pr_service.update_status(pr_id, status)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        return {
+            "success": True,
+            "message": "Pull request status updated"
+        }
+
+
+@app.delete("/api/prs/{pr_id}")
+async def delete_pull_request(
+    pr_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete a pull request"""
+    with db_manager.get_session() as db:
+        pr_service = PullRequestService(db)
+        success, error = pr_service.delete_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        return {
+            "success": True,
+            "message": "Pull request deleted"
+        }
+
+
+@app.post("/api/prs/{pr_id}/sync")
+async def sync_pull_request(
+    pr_id: str,
+    user = Depends(get_current_user)
+):
+    """Sync pull request with latest data from GitHub"""
+    with db_manager.get_session() as db:
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user.github_token:
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub token not configured"
+            )
+
+        # Get PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Update from GitHub
+        success, updated_pr, error = pr_service._update_from_github(
+            pr,
+            db_user.github_token
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        return {
+            "success": True,
+            "message": "Pull request synced successfully",
+            "pull_request": updated_pr.to_dict()
+        }
 
 
 # ============================================================================
