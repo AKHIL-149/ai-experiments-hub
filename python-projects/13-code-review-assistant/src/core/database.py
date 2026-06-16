@@ -197,12 +197,22 @@ class PullRequest(Base):
     title = Column(String(500), nullable=False)
     description = Column(Text)
     author = Column(String(255))
+    author_avatar = Column(String(500))
     status = Column(Enum(PRStatus), default=PRStatus.OPEN, nullable=False)
     source_branch = Column(String(255), nullable=False)
     target_branch = Column(String(255), nullable=False)
     github_id = Column(String(100))  # GitHub PR ID
     github_url = Column(String(500))
+    is_draft = Column(Boolean, default=False)
+    is_merged = Column(Boolean, default=False)
+    commits_count = Column(Integer, default=0)
+    additions = Column(Integer, default=0)
+    deletions = Column(Integer, default=0)
+    changed_files = Column(Integer, default=0)
+    mergeable = Column(Boolean)
+    mergeable_state = Column(String(50))
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime)
     reviewed_at = Column(DateTime)
 
     # Relationships
@@ -220,12 +230,22 @@ class PullRequest(Base):
             'title': self.title,
             'description': self.description,
             'author': self.author,
+            'author_avatar': self.author_avatar,
             'status': self.status.value,
             'source_branch': self.source_branch,
             'target_branch': self.target_branch,
             'github_id': self.github_id,
             'github_url': self.github_url,
+            'is_draft': self.is_draft,
+            'is_merged': self.is_merged,
+            'commits_count': self.commits_count,
+            'additions': self.additions,
+            'deletions': self.deletions,
+            'changed_files': self.changed_files,
+            'mergeable': self.mergeable,
+            'mergeable_state': self.mergeable_state,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None
         }
 
