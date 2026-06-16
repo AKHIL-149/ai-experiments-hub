@@ -966,6 +966,58 @@ async def sync_repository(
         }
 
 
+@app.get("/api/repositories/{repository_id}/status")
+async def get_repository_status(
+    repository_id: str,
+    job_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """
+    Get repository status including clone/sync job status.
+
+    Combines repository database status with active job status if job_id provided.
+    """
+    with db_manager.get_session() as db:
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        repo_dict = repo.to_dict()
+
+        # If job_id provided, get job status
+        job_status = None
+        if job_id:
+            task = AsyncResult(job_id, app=celery_app)
+            job_status = {
+                "job_id": job_id,
+                "state": task.state,
+            }
+
+            if task.state == 'PENDING':
+                job_status["status"] = "Task is waiting in queue"
+            elif task.state in ['CLONING', 'SYNCING', 'DELETING']:
+                job_status["status"] = task.info.get('status', f'{task.state}...')
+                job_status["progress"] = task.info
+            elif task.state == 'SUCCESS':
+                job_status["status"] = "Completed successfully"
+                job_status["result"] = task.result
+            elif task.state == 'FAILURE':
+                job_status["status"] = "Failed"
+                job_status["error"] = str(task.info)
+            else:
+                job_status["info"] = str(task.info)
+
+        return {
+            "success": True,
+            "repository": repo_dict,
+            "job": job_status
+        }
+
+
 # ============================================================================
 # Run server
 # ============================================================================
