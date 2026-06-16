@@ -21,6 +21,11 @@ from src.workers.analysis_worker import (
     get_analysis_results,
     get_all_cached_analyses
 )
+from src.workers.repository_worker import (
+    clone_repository_task,
+    sync_repository_task,
+    delete_repository_task
+)
 from celery.result import AsyncResult
 from celery_app import celery_app
 
@@ -762,11 +767,23 @@ async def create_repository(
         db.commit()
         db.refresh(repo)
 
-        return {
-            "success": True,
-            "repository": repo.to_dict(),
-            "message": "Repository added successfully"
-        }
+        repo_id = repo.id
+        repo_dict = repo.to_dict()
+
+    # Start async cloning task
+    task = clone_repository_task.delay(
+        repository_id=repo_id,
+        github_url=data.github_url,
+        branch=None,  # Use default branch
+        depth=1  # Shallow clone
+    )
+
+    return {
+        "success": True,
+        "repository": repo_dict,
+        "clone_job_id": task.id,
+        "message": "Repository added successfully. Cloning started in background."
+    }
 
 
 @app.get("/api/repositories")
@@ -868,6 +885,7 @@ async def delete_repository(
     Delete a repository.
 
     Removes repository and all associated data (PRs, issues, etc.) via cascade.
+    Also deletes cloned files asynchronously.
     """
     with db_manager.get_session() as db:
         repo = db.query(Repository).filter(
@@ -879,13 +897,26 @@ async def delete_repository(
             raise HTTPException(status_code=404, detail="Repository not found")
 
         repo_name = repo.name
+        clone_path = repo.clone_path
+
+        # Delete from database
         db.delete(repo)
         db.commit()
 
-        return {
-            "success": True,
-            "message": f"Repository '{repo_name}' deleted successfully"
-        }
+    # Delete cloned files asynchronously if they exist
+    job_id = None
+    if clone_path:
+        task = delete_repository_task.delay(
+            repository_id=repository_id,
+            clone_path=clone_path
+        )
+        job_id = task.id
+
+    return {
+        "success": True,
+        "message": f"Repository '{repo_name}' deleted successfully",
+        "cleanup_job_id": job_id
+    }
 
 
 @app.post("/api/repositories/{repository_id}/sync")
@@ -896,7 +927,7 @@ async def sync_repository(
     """
     Sync repository with GitHub.
 
-    Fetches latest changes from GitHub (to be implemented with GitClient).
+    Fetches and pulls latest changes from GitHub.
     """
     with db_manager.get_session() as db:
         repo = db.query(Repository).filter(
@@ -907,12 +938,31 @@ async def sync_repository(
         if not repo:
             raise HTTPException(status_code=404, detail="Repository not found")
 
-        # TODO: Implement actual sync logic in next commits
-        # For now, just return success
+        # Check if repository has been cloned
+        if not repo.clone_path:
+            # Start cloning if not cloned yet
+            task = clone_repository_task.delay(
+                repository_id=repository_id,
+                github_url=repo.github_url,
+                branch=repo.default_branch,
+                depth=1
+            )
+            return {
+                "success": True,
+                "message": "Repository not cloned yet. Cloning started.",
+                "job_id": task.id
+            }
+
+        # Start sync task
+        task = sync_repository_task.delay(
+            repository_id=repository_id,
+            clone_path=repo.clone_path
+        )
+
         return {
             "success": True,
-            "message": "Sync functionality will be implemented with GitClient",
-            "repository": repo.to_dict()
+            "message": "Repository sync started",
+            "job_id": task.id
         }
 
 
