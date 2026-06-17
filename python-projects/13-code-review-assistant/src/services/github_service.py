@@ -435,6 +435,141 @@ class GitHubService:
             'html_url': self.user.html_url
         }
 
+    def post_review_comments(
+        self,
+        repo_url: str,
+        pr_number: int,
+        comments: List[Dict[str, Any]],
+        summary: Optional[str] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Post review comments to a GitHub pull request.
+
+        Args:
+            repo_url: GitHub repository URL
+            pr_number: Pull request number
+            comments: List of comment dictionaries (from ReviewService)
+            summary: Optional review summary
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            # Get pull request
+            success, pr, error = self.get_pull_request(repo_url, pr_number)
+            if not success:
+                return False, error
+
+            # Post review summary as a comment if provided
+            if summary:
+                pr.create_issue_comment(summary)
+
+            # Post inline comments
+            # Get latest commit
+            commits = list(pr.get_commits())
+            if not commits:
+                return False, "No commits found in PR"
+
+            latest_commit = commits[-1]
+
+            # Group comments by file for efficiency
+            for comment_data in comments:
+                try:
+                    # Create review comment
+                    body = comment_data.get('comment_text', '')
+                    path = comment_data.get('file_path', '')
+                    line = comment_data.get('line_number')
+
+                    if not path or not body:
+                        continue
+
+                    # Post comment
+                    if line:
+                        pr.create_review_comment(
+                            body=body,
+                            commit=latest_commit,
+                            path=path,
+                            line=line
+                        )
+                    else:
+                        # File-level comment (no specific line)
+                        # Post as issue comment with file mention
+                        pr.create_issue_comment(f"**{path}**\n\n{body}")
+
+                except Exception as e:
+                    # Continue with other comments if one fails
+                    print(f"Failed to post comment on {path}: {e}")
+                    continue
+
+            return True, None
+
+        except Exception as e:
+            return False, f"Failed to post review: {str(e)}"
+
+    def create_pr_review(
+        self,
+        repo_url: str,
+        pr_number: int,
+        event: str,
+        body: Optional[str] = None,
+        comments: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Create a full PR review with comments.
+
+        Args:
+            repo_url: GitHub repository URL
+            pr_number: Pull request number
+            event: Review event (APPROVE, REQUEST_CHANGES, COMMENT)
+            body: Review body text
+            comments: List of review comments with path, line, body
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            # Get pull request
+            success, pr, error = self.get_pull_request(repo_url, pr_number)
+            if not success:
+                return False, error
+
+            # Get latest commit
+            commits = list(pr.get_commits())
+            if not commits:
+                return False, "No commits found in PR"
+
+            latest_commit = commits[-1]
+
+            # Format comments for GitHub review API
+            review_comments = []
+            if comments:
+                for comment in comments:
+                    if comment.get('file_path') and comment.get('comment_text'):
+                        review_comment = {
+                            'path': comment['file_path'],
+                            'body': comment['comment_text']
+                        }
+
+                        # Add line number if available
+                        if comment.get('line_number'):
+                            review_comment['line'] = comment['line_number']
+                            review_comment['side'] = 'RIGHT'
+
+                        review_comments.append(review_comment)
+
+            # Create review
+            pr.create_review(
+                commit=latest_commit,
+                body=body,
+                event=event,
+                comments=review_comments if review_comments else None
+            )
+
+            return True, None
+
+        except Exception as e:
+            return False, f"Failed to create review: {str(e)}"
+
     def close(self):
         """Close the GitHub client connection."""
         if hasattr(self, 'client'):

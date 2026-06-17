@@ -723,6 +723,103 @@ async def get_pr_files(
         }
 
 
+@app.post("/api/prs/{pr_id}/review/post")
+async def post_pr_review_to_github(
+    pr_id: str,
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """
+    Post review to GitHub PR.
+
+    Args:
+        pr_id: Pull request ID
+        data: {
+            "review_id": Optional review ID to post,
+            "event": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+            "body": Optional review body
+        }
+    """
+    with db_manager.get_session() as db:
+        # Get PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Get repository
+        repository = pr.repository
+
+        # Get user's GitHub token
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user or not db_user.github_token:
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub token not configured"
+            )
+
+        # Get review if review_id provided
+        review_id = data.get('review_id')
+        event = data.get('event', 'COMMENT')
+        body = data.get('body')
+
+        comments = []
+        summary = body
+
+        if review_id:
+            # Get review from database
+            from src.services.review_service import ReviewService
+
+            review_service = ReviewService(db)
+            success, review, error = review_service.get_review(review_id)
+
+            if not success:
+                raise HTTPException(status_code=404, detail="Review not found")
+
+            # Get review comments
+            success, db_comments, error = review_service.get_review_comments(review_id)
+
+            if success:
+                # Format comments for GitHub
+                comments = [
+                    {
+                        'file_path': c.file_path,
+                        'line_number': c.line_number,
+                        'comment_text': c.comment_text
+                    }
+                    for c in db_comments
+                ]
+
+            # Use review summary as body if not provided
+            if not summary:
+                summary = review.summary
+
+        # Post to GitHub
+        from src.services.github_service import GitHubService
+
+        github_service = GitHubService(github_token=db_user.github_token)
+        success, error = github_service.create_pr_review(
+            repository.github_url,
+            pr.pr_number,
+            event=event,
+            body=summary,
+            comments=comments if comments else None
+        )
+        github_service.close()
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to post review: {error}")
+
+        return {
+            "success": True,
+            "message": "Review posted to GitHub successfully",
+            "pr_id": pr_id,
+            "event": event
+        }
+
+
 # ============================================================================
 # Template Routes
 # ============================================================================
