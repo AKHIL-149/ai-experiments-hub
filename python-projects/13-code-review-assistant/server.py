@@ -606,6 +606,123 @@ async def get_pr_analysis_status(
         }
 
 
+@app.get("/api/prs/{pr_id}/diff")
+async def get_pr_diff(
+    pr_id: str,
+    analyze: bool = False,
+    user = Depends(get_current_user)
+):
+    """
+    Get diff for a pull request.
+
+    Args:
+        pr_id: Pull request ID
+        analyze: Whether to analyze the diff (default: False)
+    """
+    with db_manager.get_session() as db:
+        # Get PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Get repository
+        repository = pr.repository
+
+        # Get user's GitHub token
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user or not db_user.github_token:
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub token not configured. Please configure it in settings."
+            )
+
+        # Fetch diff from GitHub
+        from src.services.github_service import GitHubService
+
+        github_service = GitHubService(github_token=db_user.github_token)
+        success, diff_text, error = github_service.get_pull_request_diff(
+            repository.github_url,
+            pr.pr_number
+        )
+        github_service.close()
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch diff: {error}")
+
+        response = {
+            "success": True,
+            "pr_id": pr_id,
+            "pr_number": pr.pr_number,
+            "diff": diff_text
+        }
+
+        # Optionally analyze the diff
+        if analyze:
+            from src.services.diff_analyzer_service import DiffAnalyzerService
+
+            diff_analyzer = DiffAnalyzerService()
+            success, analysis, error = diff_analyzer.analyze_pr_diff(
+                diff_text,
+                language='python'
+            )
+
+            if success:
+                response['analysis'] = analysis
+            else:
+                response['analysis_error'] = error
+
+        return response
+
+
+@app.get("/api/prs/{pr_id}/files")
+async def get_pr_files(
+    pr_id: str,
+    user = Depends(get_current_user)
+):
+    """Get list of files changed in a pull request."""
+    with db_manager.get_session() as db:
+        # Get PR
+        pr_service = PullRequestService(db)
+        success, pr, error = pr_service.get_pr(pr_id, user_id=user.id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        # Get repository
+        repository = pr.repository
+
+        # Get user's GitHub token
+        db_user = db.query(User).filter(User.id == user.id).first()
+
+        if not db_user or not db_user.github_token:
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub token not configured"
+            )
+
+        # Fetch files from GitHub
+        from src.services.github_service import GitHubService
+
+        github_service = GitHubService(github_token=db_user.github_token)
+        success, files_info, error = github_service.get_pull_request_files(
+            repository.github_url,
+            pr.pr_number
+        )
+        github_service.close()
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch files: {error}")
+
+        return {
+            "success": True,
+            "pr_id": pr_id,
+            "files": files_info
+        }
+
+
 # ============================================================================
 # Template Routes
 # ============================================================================
