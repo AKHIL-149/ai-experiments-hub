@@ -99,6 +99,21 @@ class DiffFile:
             count += len(hunk.get_removed_lines())
         return count
 
+    @property
+    def additions(self) -> int:
+        """Get total count of added lines (property)."""
+        return self.get_added_lines_count()
+
+    @property
+    def deletions(self) -> int:
+        """Get total count of removed lines (property)."""
+        return self.get_removed_lines_count()
+
+    @property
+    def is_renamed_file(self) -> bool:
+        """Check if file was renamed (alias for is_renamed)."""
+        return self.is_renamed
+
 
 class DiffParser:
     """Parser for Git unified diffs."""
