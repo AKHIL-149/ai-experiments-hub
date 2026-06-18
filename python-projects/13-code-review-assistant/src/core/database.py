@@ -336,6 +336,13 @@ class Issue(Base):
     column_number = Column(Integer)
     code_snippet = Column(Text)
     confidence = Column(Float)  # 0.0 to 1.0
+
+    # AI Enhancement fields
+    ai_explanation = Column(Text)  # AI-generated explanation
+    fix_suggestion = Column(Text)  # AI-generated fix suggestion
+    fix_confidence = Column(Float)  # Confidence in the fix (0.0 to 1.0)
+    can_auto_apply = Column(Boolean, default=False)  # Whether fix can be auto-applied
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

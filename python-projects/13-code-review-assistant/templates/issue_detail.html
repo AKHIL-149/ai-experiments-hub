@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Issue Detail - AI Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/issue_detail.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Issue Detail</h1>
+            <a href="/issues" class="back-link">← Back to Issues</a>
+        </header>
+
+        <div class="issue-card" data-severity="{{ issue.severity }}">
+            <!-- Issue Header -->
+            <div class="issue-header">
+                <div class="issue-title-section">
+                    <span class="severity-badge severity-{{ issue.severity }}">{{ issue.severity|upper }}</span>
+                    <span class="category-badge">{{ issue.category }}</span>
+                    <h2>{{ issue.title }}</h2>
+                </div>
+                <div class="issue-meta">
+                    <span class="issue-file">{{ issue.file_path }}:{{ issue.line_number }}</span>
+                    <span class="issue-rule">{{ issue.rule_id }}</span>
+                </div>
+            </div>
+
+            <!-- Issue Description -->
+            <div class="issue-description">
+                <h3>Description</h3>
+                <p>{{ issue.description }}</p>
+            </div>
+
+            <!-- Code Snippet -->
+            <div class="code-snippet-section">
+                <h3>Code Location</h3>
+                <div class="code-header">
+                    <span>{{ issue.file_path }}</span>
+                    <button class="copy-btn" onclick="copyCode('code-snippet')">
+                        📋 Copy
+                    </button>
+                </div>
+                <pre><code id="code-snippet" class="language-{{ issue.language or 'python' }}">{{ issue.code_snippet or 'Code snippet not available' }}</code></pre>
+            </div>
+
+            <!-- AI Explanation -->
+            {% if issue.ai_explanation %}
+            <div class="ai-explanation-section">
+                <div class="explanation-header" onclick="toggleSection('ai-explanation')">
+                    <h3>
+                        🤖 AI Explanation
+                        <span class="toggle-icon">▼</span>
+                    </h3>
+                </div>
+                <div id="ai-explanation" class="explanation-content expanded">
+                    <div class="explanation-text">
+                        {{ issue.ai_explanation }}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Fix Suggestion -->
+            {% if issue.fix_suggestion %}
+            <div class="fix-suggestion-section">
+                <div class="fix-header" onclick="toggleSection('fix-suggestion')">
+                    <h3>
+                        💡 Suggested Fix
+                        <span class="confidence-score">Confidence: {{ (issue.fix_suggestion.confidence_score * 100)|int }}%</span>
+                        <span class="toggle-icon">▼</span>
+                    </h3>
+                </div>
+                <div id="fix-suggestion" class="fix-content expanded">
+                    <div class="fix-description">
+                        {{ issue.fix_suggestion.suggested_fix }}
+                    </div>
+                    {% if issue.fix_suggestion.can_auto_apply %}
+                    <button class="apply-fix-btn" onclick="applyFix('{{ issue.id }}')">
+                        ✓ Apply This Fix
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Refactoring Preview -->
+            {% if issue.refactoring %}
+            <div class="refactoring-section">
+                <div class="refactoring-header" onclick="toggleSection('refactoring')">
+                    <h3>
+                        🔧 Refactoring Suggestion
+                        <span class="confidence-score">Confidence: {{ (issue.refactoring.confidence * 100)|int }}%</span>
+                        <span class="toggle-icon">▼</span>
+                    </h3>
+                </div>
+                <div id="refactoring" class="refactoring-content expanded">
+                    <!-- Explanation -->
+                    <div class="refactoring-explanation">
+                        <h4>What This Does</h4>
+                        <p>{{ issue.refactoring.explanation }}</p>
+                    </div>
+
+                    <!-- Diff Preview -->
+                    <div class="diff-preview">
+                        <h4>Changes Preview</h4>
+                        <div class="diff-tabs">
+                            <button class="diff-tab active" onclick="showDiffMode('unified')">Unified</button>
+                            <button class="diff-tab" onclick="showDiffMode('split')">Split</button>
+                        </div>
+
+                        <!-- Unified Diff -->
+                        <div id="unified-diff" class="diff-view active">
+                            <pre><code class="diff">{{ issue.refactoring.diff }}</code></pre>
+                        </div>
+
+                        <!-- Split Diff -->
+                        <div id="split-diff" class="diff-view">
+                            <div class="split-container">
+                                <div class="split-pane original">
+                                    <h5>Original</h5>
+                                    <pre><code class="language-{{ issue.language or 'python' }}">{{ issue.refactoring.original_code }}</code></pre>
+                                </div>
+                                <div class="split-pane refactored">
+                                    <h5>Refactored</h5>
+                                    <pre><code class="language-{{ issue.language or 'python' }}">{{ issue.refactoring.refactored_code }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="refactoring-actions">
+                        <button class="btn btn-primary" onclick="acceptRefactoring('{{ issue.refactoring.id }}')">
+                            ✓ Accept Refactoring
+                        </button>
+                        <button class="btn btn-secondary" onclick="rejectRefactoring('{{ issue.refactoring.id }}')">
+                            ✗ Reject
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Related Issues -->
+            {% if related_issues %}
+            <div class="related-issues-section">
+                <h3>Related Issues in This File</h3>
+                <ul class="related-issues-list">
+                    {% for related in related_issues %}
+                    <li>
+                        <a href="/issues/{{ related.id }}">
+                            <span class="severity-badge severity-{{ related.severity }}">{{ related.severity }}</span>
+                            {{ related.title }}
+                            <span class="line-ref">Line {{ related.line_number }}</span>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Actions -->
+            <div class="issue-actions">
+                <button class="btn btn-secondary" onclick="dismissIssue('{{ issue.id }}')">
+                    Dismiss Issue
+                </button>
+                <button class="btn btn-secondary" onclick="createGithubIssue('{{ issue.id }}')">
+                    Create GitHub Issue
+                </button>
+                <button class="btn btn-secondary" onclick="shareIssue('{{ issue.id }}')">
+                    Share
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="/static/js/issue_detail.js"></script>
+    <script>
+        // Initialize syntax highlighting
+        hljs.highlightAll();
+    </script>
+</body>
+</html>

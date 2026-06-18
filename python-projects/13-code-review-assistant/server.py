@@ -13,7 +13,10 @@ from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from src.core.database import DatabaseManager, Repository, RepositoryStatus, User, PullRequest, PRStatus, CodeFile
+from src.core.database import (
+    DatabaseManager, Repository, RepositoryStatus, User, PullRequest, PRStatus,
+    CodeFile, Issue, Refactoring, RefactoringStatus
+)
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
 from src.services.pr_service import PullRequestService
@@ -906,6 +909,97 @@ async def issues_page(request: Request, user = Depends(get_current_user_optional
         "request": request,
         "user": user
     })
+
+
+@app.get("/issues/{issue_id}", response_class=HTMLResponse)
+async def issue_detail_page(request: Request, issue_id: str, user = Depends(get_current_user_optional)):
+    """Issue detail page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    with db_manager.get_session() as db:
+        # Get the issue
+        issue = db.query(Issue).filter(Issue.id == issue_id).first()
+
+        if not issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+
+        # Get code file information
+        code_file = db.query(CodeFile).filter(CodeFile.id == issue.code_file_id).first()
+
+        # Verify user has access to this issue (through repository ownership)
+        if code_file:
+            pr = db.query(PullRequest).filter(PullRequest.id == code_file.pull_request_id).first()
+            if pr:
+                repo = db.query(Repository).filter(Repository.id == pr.repository_id).first()
+                if repo and repo.user_id != user.id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+        # Get refactoring suggestion if exists
+        refactoring = db.query(Refactoring).filter(Refactoring.issue_id == issue_id).first()
+
+        # Get related issues in the same file
+        related_issues = []
+        if code_file:
+            related_issues = db.query(Issue).filter(
+                Issue.code_file_id == code_file.id,
+                Issue.id != issue_id
+            ).limit(5).all()
+
+        # Convert to dict for template
+        issue_dict = {
+            'id': issue.id,
+            'category': issue.category,
+            'severity': issue.severity,
+            'rule_id': issue.rule_id,
+            'title': issue.title,
+            'description': issue.description,
+            'line_number': issue.line_number,
+            'code_snippet': issue.code_snippet,
+            'file_path': code_file.file_path if code_file else 'Unknown',
+            'language': code_file.language if code_file else 'python',
+            'ai_explanation': issue.ai_explanation,
+            'fix_suggestion': None,
+            'refactoring': None
+        }
+
+        # Add fix suggestion if available
+        if issue.fix_suggestion:
+            issue_dict['fix_suggestion'] = {
+                'suggested_fix': issue.fix_suggestion,
+                'confidence_score': issue.fix_confidence or 0.0,
+                'can_auto_apply': issue.can_auto_apply or False
+            }
+
+        # Add refactoring if available
+        if refactoring:
+            issue_dict['refactoring'] = {
+                'id': refactoring.id,
+                'refactoring_type': refactoring.refactoring_type,
+                'explanation': refactoring.explanation,
+                'confidence': refactoring.confidence,
+                'original_code': refactoring.original_code,
+                'refactored_code': refactoring.refactored_code,
+                'diff': refactoring.diff,
+                'status': refactoring.status.value
+            }
+
+        # Convert related issues to dict
+        related_issues_dict = []
+        for rel_issue in related_issues:
+            related_issues_dict.append({
+                'id': rel_issue.id,
+                'severity': rel_issue.severity,
+                'title': rel_issue.title,
+                'line_number': rel_issue.line_number
+            })
+
+        return templates.TemplateResponse("issue_detail.html", {
+            "request": request,
+            "user": user,
+            "issue": issue_dict,
+            "related_issues": related_issues_dict
+        })
 
 
 @app.get("/repositories", response_class=HTMLResponse)
