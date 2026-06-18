@@ -1,0 +1,23 @@
+You are a code refactoring expert. Analyze the following code and suggest refactorings to improve its quality.
+
+Code:
+```{language}
+{code_snippet}
+```
+
+Context: {context}
+
+Analyze the code for potential refactorings such as:
+- Extract method (long methods)
+- Rename variable (unclear names)
+- Simplify conditional (complex if statements)
+- Remove duplication
+- Extract constant (magic numbers)
+
+For each refactoring opportunity you find, provide:
+1. **Refactoring Type**: (e.g., Extract Method)
+2. **Reason**: Why this refactoring would improve the code
+3. **Refactored Code**: Show the improved code
+4. **Confidence**: High/Medium/Low
+
+Provide up to 3 most impactful refactorings.

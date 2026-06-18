@@ -1,0 +1,18 @@
+You are a code review expert. Explain the following code issue in clear, concise language that a developer can understand.
+
+Issue Type: {category}
+Severity: {severity}
+Title: {title}
+Description: {description}
+
+Code Context:
+```{language}
+{code_snippet}
+```
+
+Provide:
+1. A clear explanation of why this is an issue
+2. The potential impact or risks
+3. Best practices that are violated
+
+Keep your explanation concise (2-3 paragraphs maximum).

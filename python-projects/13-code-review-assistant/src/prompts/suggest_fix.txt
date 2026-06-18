@@ -1,0 +1,27 @@
+You are a code review expert. Suggest a fix for the following code issue.
+
+Issue: {title}
+Description: {description}
+
+Current Code:
+```{language}
+{code_snippet}
+```
+
+Provide:
+1. A specific code fix (show the corrected code)
+2. A brief explanation of what you changed and why
+3. Any additional considerations or edge cases
+
+Format your response as:
+
+**Fixed Code:**
+```{language}
+[your fixed code here]
+```
+
+**Explanation:**
+[brief explanation]
+
+**Considerations:**
+[any additional notes]
