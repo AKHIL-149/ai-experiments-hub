@@ -1002,6 +1002,18 @@ async def issue_detail_page(request: Request, issue_id: str, user = Depends(get_
         })
 
 
+@app.get("/demo/diff-viewer", response_class=HTMLResponse)
+async def diff_viewer_demo_page(request: Request, user = Depends(get_current_user_optional)):
+    """Diff viewer component demo page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("diff_viewer_demo.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/repositories", response_class=HTMLResponse)
 async def repositories_page(request: Request, user = Depends(get_current_user_optional)):
     """Repositories list page"""

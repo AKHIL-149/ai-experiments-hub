@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diff Viewer Demo - AI Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/diff-viewer.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        .demo-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .demo-header {
+            margin-bottom: 40px;
+        }
+
+        .demo-header h1 {
+            font-size: 32px;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .demo-header p {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+        .demo-section {
+            margin-bottom: 60px;
+        }
+
+        .demo-section h2 {
+            font-size: 24px;
+            color: #374151;
+            margin-bottom: 16px;
+        }
+
+        .demo-section p {
+            color: #6b7280;
+            margin-bottom: 20px;
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .demo-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .demo-card h3 {
+            font-size: 16px;
+            color: #111827;
+            margin-bottom: 12px;
+        }
+
+        .demo-card button {
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .demo-card button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <div class="demo-header">
+            <h1>Diff Viewer Component Demo</h1>
+            <p>A reusable diff viewer with unified and split modes, syntax highlighting, and inline comments</p>
+        </div>
+
+        <!-- Basic Example -->
+        <div class="demo-section">
+            <h2>Basic Diff Viewer</h2>
+            <p>Standard diff viewer with unified and split views</p>
+            <div id="basic-diff"></div>
+        </div>
+
+        <!-- With Comments -->
+        <div class="demo-section">
+            <h2>Diff Viewer with Comments</h2>
+            <p>Click the 💬 button on any changed line to add a comment</p>
+            <div id="comment-diff"></div>
+        </div>
+
+        <!-- Examples Grid -->
+        <div class="demo-section">
+            <h2>Load Example Diffs</h2>
+            <div class="demo-grid">
+                <div class="demo-card">
+                    <h3>Security Fix</h3>
+                    <p>SQL injection vulnerability fix</p>
+                    <button onclick="loadExample('security')">Load Example</button>
+                </div>
+
+                <div class="demo-card">
+                    <h3>Refactoring</h3>
+                    <p>Code simplification refactoring</p>
+                    <button onclick="loadExample('refactoring')">Load Example</button>
+                </div>
+
+                <div class="demo-card">
+                    <h3>Style Change</h3>
+                    <p>Code formatting improvements</p>
+                    <button onclick="loadExample('style')">Load Example</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="/static/js/diff-viewer.js"></script>
+    <script>
+        // Sample diff data
+        const exampleDiffs = {
+            security: `--- original
++++ modified
+@@ -1,3 +1,4 @@
+ def get_user(user_id):
+-    query = "SELECT * FROM users WHERE id = " + user_id
+-    cursor.execute(query)
++    query = "SELECT * FROM users WHERE id = %s"
++    cursor.execute(query, (user_id,))
+     return cursor.fetchone()`,
+
+            refactoring: `--- original
++++ modified
+@@ -1,6 +1,2 @@
+-def process_data(data):
+-    results = []
+-    for item in data:
+-        if item['status'] == 'active' and item['type'] == 'premium':
+-            results.append(item)
+-    return results
++def process_data(data):
++    return [item for item in data if item['status'] == 'active' and item['type'] == 'premium']`,
+
+            style: `--- original
++++ modified
+@@ -1,5 +1,7 @@
+-def calculate(x,y,z):
+-    result=x+y+z
+-    return result
++def calculate(x, y, z):
++    """Calculate the sum of three numbers."""
++    result = x + y + z
++    return result
++
+
+-def main( ):
+-    print( calculate(1,2,3))
++def main():
++    print(calculate(1, 2, 3))`
+        };
+
+        // Initialize basic diff viewer
+        const basicViewer = new DiffViewer(document.getElementById('basic-diff'), {
+            mode: 'unified',
+            language: 'python',
+            syntaxHighlighting: true
+        });
+        basicViewer.loadDiff(exampleDiffs.security);
+
+        // Initialize diff viewer with comments
+        const commentViewer = new DiffViewer(document.getElementById('comment-diff'), {
+            mode: 'split',
+            language: 'python',
+            syntaxHighlighting: true,
+            allowComments: true
+        });
+        commentViewer.loadDiff(exampleDiffs.refactoring);
+
+        // Listen for comment events
+        document.getElementById('comment-diff').addEventListener('comment-added', (e) => {
+            console.log('Comment added:', e.detail);
+        });
+
+        // Load example function
+        function loadExample(type) {
+            const diff = exampleDiffs[type];
+            basicViewer.loadDiff(diff);
+
+            // Scroll to viewer
+            document.getElementById('basic-diff').scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        }
+
+        // Show notification helper
+        window.showNotification = function(message, type) {
+            const toast = document.createElement('div');
+            toast.textContent = message;
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 25px;
+                background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+                color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                z-index: 10000;
+                font-size: 14px;
+                font-weight: 500;
+                animation: slideIn 0.3s ease-out;
+            `;
+
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-in';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        // Add CSS animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
