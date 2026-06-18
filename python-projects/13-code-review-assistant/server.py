@@ -1422,6 +1422,221 @@ async def get_issues_stats(
 
 
 # ============================================================================
+# Refactoring Endpoints
+# ============================================================================
+
+@app.get("/api/refactorings")
+async def list_refactorings(
+    status: Optional[str] = None,
+    issue_id: Optional[str] = None,
+    code_file_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    user = Depends(get_current_user)
+):
+    """
+    List refactoring suggestions with filtering and pagination.
+
+    Query parameters:
+    - status: Filter by status (suggested/accepted/rejected/applied)
+    - issue_id: Filter by issue ID
+    - code_file_id: Filter by code file ID
+    - limit: Maximum number of refactorings to return (default 50)
+    - offset: Number of refactorings to skip (default 0)
+    """
+    from src.core.database import Refactoring, RefactoringStatus
+
+    with db_manager.get_session() as db:
+        query = db.query(Refactoring)
+
+        # Apply filters
+        if status:
+            try:
+                status_enum = RefactoringStatus(status.lower())
+                query = query.filter(Refactoring.status == status_enum)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+        if issue_id:
+            query = query.filter(Refactoring.issue_id == issue_id)
+
+        if code_file_id:
+            query = query.filter(Refactoring.code_file_id == code_file_id)
+
+        # Get total count
+        total = query.count()
+
+        # Apply pagination
+        refactorings = query.limit(limit).offset(offset).all()
+
+        return {
+            "success": True,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "refactorings": [r.to_dict() for r in refactorings],
+            "filters": {
+                "status": status,
+                "issue_id": issue_id,
+                "code_file_id": code_file_id
+            }
+        }
+
+
+@app.get("/api/refactorings/{refactoring_id}")
+async def get_refactoring(
+    refactoring_id: str,
+    user = Depends(get_current_user)
+):
+    """Get detailed information about a specific refactoring suggestion."""
+    from src.services.refactoring_service import RefactoringService
+
+    with db_manager.get_session() as db:
+        service = RefactoringService(db)
+        success, refactoring, error = service.get_refactoring(refactoring_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        return {
+            "success": True,
+            "refactoring": refactoring.to_dict()
+        }
+
+
+@app.post("/api/refactorings")
+async def create_refactoring(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """
+    Create a new refactoring suggestion.
+
+    Required fields:
+    - issue_id: Associated issue ID
+    - code_file_id: Code file ID
+    - refactoring_type: Type of refactoring
+    - original_code: Original code snippet
+    - refactored_code: Refactored code snippet
+    - explanation: Explanation of the refactoring
+
+    Optional fields:
+    - benefits: Benefits of applying this refactoring
+    - confidence: Confidence score (0.0-1.0, default 0.5)
+    """
+    from src.services.refactoring_service import RefactoringService
+
+    # Validate required fields
+    required_fields = ['issue_id', 'code_file_id', 'refactoring_type',
+                      'original_code', 'refactored_code', 'explanation']
+    for field in required_fields:
+        if field not in data:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+
+    with db_manager.get_session() as db:
+        service = RefactoringService(db)
+
+        success, refactoring, error = service.create_refactoring(
+            issue_id=data['issue_id'],
+            code_file_id=data['code_file_id'],
+            refactoring_type=data['refactoring_type'],
+            original_code=data['original_code'],
+            refactored_code=data['refactored_code'],
+            explanation=data['explanation'],
+            benefits=data.get('benefits'),
+            confidence=data.get('confidence', 0.5)
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail=error)
+
+        return {
+            "success": True,
+            "refactoring": refactoring.to_dict()
+        }
+
+
+@app.post("/api/refactorings/{refactoring_id}/accept")
+async def accept_refactoring(
+    refactoring_id: str,
+    user = Depends(get_current_user)
+):
+    """Accept a refactoring suggestion."""
+    from src.services.refactoring_service import RefactoringService
+
+    with db_manager.get_session() as db:
+        service = RefactoringService(db)
+        success, refactoring, error = service.accept_refactoring(refactoring_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        return {
+            "success": True,
+            "refactoring": refactoring.to_dict()
+        }
+
+
+@app.post("/api/refactorings/{refactoring_id}/reject")
+async def reject_refactoring(
+    refactoring_id: str,
+    user = Depends(get_current_user)
+):
+    """Reject a refactoring suggestion."""
+    from src.services.refactoring_service import RefactoringService
+
+    with db_manager.get_session() as db:
+        service = RefactoringService(db)
+        success, refactoring, error = service.reject_refactoring(refactoring_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        return {
+            "success": True,
+            "refactoring": refactoring.to_dict()
+        }
+
+
+@app.post("/api/refactorings/{refactoring_id}/apply")
+async def mark_refactoring_applied(
+    refactoring_id: str,
+    user = Depends(get_current_user)
+):
+    """Mark a refactoring as applied."""
+    from src.services.refactoring_service import RefactoringService
+
+    with db_manager.get_session() as db:
+        service = RefactoringService(db)
+        success, refactoring, error = service.mark_refactoring_applied(refactoring_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=error)
+
+        return {
+            "success": True,
+            "refactoring": refactoring.to_dict()
+        }
+
+
+@app.get("/api/refactorings/stats/summary")
+async def get_refactoring_stats(
+    user = Depends(get_current_user)
+):
+    """Get refactoring statistics."""
+    from src.services.refactoring_service import RefactoringService
+
+    with db_manager.get_session() as db:
+        service = RefactoringService(db)
+        stats = service.get_stats()
+
+        return {
+            "success": True,
+            **stats
+        }
+
+
+# ============================================================================
 # Repository Endpoints
 # ============================================================================
 
