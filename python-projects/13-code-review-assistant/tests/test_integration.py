@@ -1,8 +1,19 @@
 """Integration tests for end-to-end workflows"""
 import pytest
+import sys
 import tempfile
 import os
 from pathlib import Path
+from unittest.mock import Mock
+
+# Mock celery before imports
+mock_celery = Mock()
+mock_celery.celery_app = Mock()
+mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+sys.modules['celery'] = Mock()
+sys.modules['celery.result'] = Mock()
+sys.modules['celery_app'] = mock_celery
+
 from src.services.code_analyzer_service import CodeAnalyzerService
 from src.workers.analysis_worker import (
     _analysis_cache,
