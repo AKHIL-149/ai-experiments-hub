@@ -7,7 +7,7 @@ import tempfile
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -1362,6 +1362,116 @@ async def get_job_status(
             "state": task.state,
             "info": str(task.info)
         }
+
+
+@app.get("/api/tasks/{task_id}/status")
+async def get_task_status(
+    task_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get the current status of a task (for polling).
+    Returns progress information in a simple format.
+    """
+    task = AsyncResult(task_id, app=celery_app)
+
+    response = {
+        "task_id": task_id,
+        "status": task.state.lower(),
+        "progress": 0
+    }
+
+    if task.state == 'PENDING':
+        response["message"] = "Task is pending..."
+    elif task.state == 'PROCESSING' or task.state == 'STARTED':
+        info = task.info or {}
+        response["status"] = "in_progress"
+        response["progress"] = info.get('progress', 0)
+        response["message"] = info.get('message', 'Processing...')
+        response["current"] = info.get('current', 0)
+        response["total"] = info.get('total', 0)
+    elif task.state == 'SUCCESS':
+        response["status"] = "completed"
+        response["progress"] = 100
+        response["message"] = "Task completed successfully"
+        response["result"] = task.result
+    elif task.state == 'FAILURE':
+        response["status"] = "failed"
+        response["error"] = str(task.info)
+        response["message"] = "Task failed"
+
+    return response
+
+
+@app.get("/api/tasks/{task_id}/progress")
+async def task_progress_stream(
+    task_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Server-Sent Events endpoint for real-time task progress updates.
+    Streams progress events until the task completes or fails.
+    """
+    import asyncio
+    import json
+
+    async def event_generator():
+        task = AsyncResult(task_id, app=celery_app)
+
+        while True:
+            # Get current task state
+            state = task.state
+
+            if state == 'PENDING':
+                data = {
+                    "status": "pending",
+                    "progress": 0,
+                    "message": "Task is pending..."
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+
+            elif state == 'PROCESSING' or state == 'STARTED':
+                info = task.info or {}
+                data = {
+                    "status": "in_progress",
+                    "progress": info.get('progress', 0),
+                    "message": info.get('message', 'Processing...'),
+                    "current": info.get('current', 0),
+                    "total": info.get('total', 0)
+                }
+                yield f"event: progress\ndata: {json.dumps(data)}\n\n"
+
+            elif state == 'SUCCESS':
+                data = {
+                    "status": "completed",
+                    "progress": 100,
+                    "message": "Task completed successfully",
+                    "result": task.result
+                }
+                yield f"event: complete\ndata: {json.dumps(data)}\n\n"
+                break
+
+            elif state == 'FAILURE':
+                data = {
+                    "status": "failed",
+                    "error": str(task.info),
+                    "message": "Task failed"
+                }
+                yield f"event: error\ndata: {json.dumps(data)}\n\n"
+                break
+
+            # Wait before checking again
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
 
 
 # ============================================================================
