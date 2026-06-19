@@ -1757,6 +1757,276 @@ async def get_recent_activity(limit: int = 10, user = Depends(get_current_user))
 
 
 # ============================================================================
+# Analytics Endpoints
+# ============================================================================
+
+@app.get("/api/analytics/health-score")
+async def get_health_score(user = Depends(get_current_user)):
+    """
+    Get comprehensive health score for all analyzed code
+
+    Returns:
+    - score: Health score (0-100)
+    - grade: Letter grade (A-F)
+    - color: Color code for visualization
+    - status: Status text
+    - severity_counts: Breakdown by severity
+    - category_breakdown: Breakdown by category
+    """
+    from src.services.analytics_service import analytics_service
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Collect all issues
+    all_issues = []
+    for analysis in analyses:
+        all_issues.extend(analysis.get('issues', []))
+
+    # Calculate health score
+    result = analytics_service.calculate_health_score(all_issues)
+
+    return JSONResponse(result)
+
+
+@app.get("/api/analytics/trends")
+async def get_analytics_trends(
+    days: int = 30,
+    grouping: str = 'day',
+    user = Depends(get_current_user)
+):
+    """
+    Get issue trends over time
+
+    Query parameters:
+    - days: Number of days to include (default 30)
+    - grouping: 'day', 'week', or 'month' (default 'day')
+
+    Returns array of trend data points with date and issue counts
+    """
+    from src.services.analytics_service import analytics_service
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Calculate trends
+    trends = analytics_service.calculate_issue_trends(
+        analyses,
+        days=days,
+        grouping=grouping
+    )
+
+    return JSONResponse(trends)
+
+
+@app.get("/api/analytics/repository")
+async def get_repository_analytics(user = Depends(get_current_user)):
+    """
+    Get comprehensive repository metrics
+
+    Returns:
+    - total_analyses: Total number of analyses
+    - total_issues: Total issues found
+    - total_files: Number of files analyzed
+    - total_lines_of_code: Total LOC
+    - avg_issues_per_file: Average issues per file
+    - avg_complexity: Average complexity score
+    - most_common_issues: Top 10 most common issues
+    - severity_distribution: Issues by severity
+    - category_distribution: Issues by category
+    - health_score: Overall health score
+    """
+    from src.services.analytics_service import analytics_service
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Calculate repository metrics
+    metrics = analytics_service.calculate_repository_metrics(analyses)
+
+    return JSONResponse(metrics)
+
+
+@app.get("/api/analytics/insights")
+async def get_analytics_insights(user = Depends(get_current_user)):
+    """
+    Get actionable insights based on code analysis
+
+    Returns array of insights with:
+    - type: Insight type identifier
+    - severity: Insight severity (critical/error/warning/info)
+    - title: Insight title
+    - message: Detailed message
+    - recommendation: Actionable recommendation
+    """
+    from src.services.analytics_service import analytics_service
+
+    # Get repository metrics
+    analyses = get_all_cached_analyses()
+    metrics = analytics_service.calculate_repository_metrics(analyses)
+
+    # Generate insights
+    insights = analytics_service.generate_insights(metrics)
+
+    return JSONResponse(insights)
+
+
+@app.get("/api/analytics/compare")
+async def compare_periods(
+    current_days: int = 7,
+    previous_days: int = 7,
+    user = Depends(get_current_user)
+):
+    """
+    Compare metrics between two time periods
+
+    Query parameters:
+    - current_days: Days to include in current period (default 7)
+    - previous_days: Days to include in previous period (default 7)
+
+    Returns:
+    - current: Metrics for current period
+    - previous: Metrics for previous period
+    - changes: Change metrics with direction indicators
+    """
+    from src.services.analytics_service import analytics_service
+    from datetime import datetime, timedelta
+
+    # Get all analyses
+    all_analyses = get_all_cached_analyses()
+
+    # Split into current and previous periods
+    now = datetime.now()
+    current_start = now - timedelta(days=current_days)
+    previous_start = current_start - timedelta(days=previous_days)
+
+    current_period = []
+    previous_period = []
+
+    for analysis in all_analyses:
+        analyzed_at = analysis.get('analyzed_at')
+        if not analyzed_at:
+            continue
+
+        try:
+            if isinstance(analyzed_at, str):
+                analysis_date = datetime.fromisoformat(analyzed_at.replace('Z', '+00:00'))
+            else:
+                analysis_date = analyzed_at
+
+            if current_start <= analysis_date <= now:
+                current_period.append(analysis)
+            elif previous_start <= analysis_date < current_start:
+                previous_period.append(analysis)
+
+        except:
+            continue
+
+    # Compare periods
+    comparison = analytics_service.compare_periods(current_period, previous_period)
+
+    return JSONResponse(comparison)
+
+
+@app.get("/api/analytics/export")
+async def export_analytics(
+    format: str = 'json',
+    days: int = 30,
+    user = Depends(get_current_user)
+):
+    """
+    Export analytics data in CSV or JSON format
+
+    Query parameters:
+    - format: 'json' or 'csv' (default 'json')
+    - days: Number of days to include (default 30)
+
+    Returns:
+    - JSON: JSON response with all analytics data
+    - CSV: CSV file download
+    """
+    from src.services.analytics_service import analytics_service
+    from datetime import datetime, timedelta
+    import csv
+    import io
+
+    # Get analyses for the period
+    all_analyses = get_all_cached_analyses()
+    cutoff_date = datetime.now() - timedelta(days=days)
+
+    # Filter by date
+    recent_analyses = []
+    for analysis in all_analyses:
+        analyzed_at = analysis.get('analyzed_at')
+        if not analyzed_at:
+            continue
+
+        try:
+            if isinstance(analyzed_at, str):
+                analysis_date = datetime.fromisoformat(analyzed_at.replace('Z', '+00:00'))
+            else:
+                analysis_date = analyzed_at
+
+            if analysis_date >= cutoff_date:
+                recent_analyses.append(analysis)
+        except:
+            continue
+
+    # Calculate metrics
+    metrics = analytics_service.calculate_repository_metrics(recent_analyses)
+    trends = analytics_service.calculate_issue_trends(recent_analyses, days=days)
+    health_score = analytics_service.calculate_health_score(
+        [issue for analysis in recent_analyses for issue in analysis.get('issues', [])]
+    )
+
+    data = {
+        'export_date': datetime.now().isoformat(),
+        'period_days': days,
+        'health_score': health_score,
+        'repository_metrics': metrics,
+        'trends': trends
+    }
+
+    if format.lower() == 'csv':
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write health score
+        writer.writerow(['Health Score Metrics'])
+        writer.writerow(['Score', 'Grade', 'Status'])
+        writer.writerow([health_score['score'], health_score['grade'], health_score['status']])
+        writer.writerow([])
+
+        # Write repository metrics
+        writer.writerow(['Repository Metrics'])
+        writer.writerow(['Metric', 'Value'])
+        for key, value in metrics.items():
+            if not isinstance(value, (dict, list)):
+                writer.writerow([key, value])
+        writer.writerow([])
+
+        # Write trends
+        writer.writerow(['Issue Trends'])
+        if trends:
+            headers = list(trends[0].keys())
+            writer.writerow(headers)
+            for trend in trends:
+                writer.writerow([trend.get(h, '') for h in headers])
+
+        # Return CSV response
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=analytics_export_{datetime.now().strftime('%Y%m%d')}.csv"}
+        )
+
+    # Return JSON
+    return JSONResponse(data)
+
+
+# ============================================================================
 # Issues Endpoints
 # ============================================================================
 
