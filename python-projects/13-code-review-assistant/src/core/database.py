@@ -211,9 +211,16 @@ class PullRequest(Base):
     changed_files = Column(Integer, default=0)
     mergeable = Column(Boolean)
     mergeable_state = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, index=True)
     reviewed_at = Column(DateTime)
+
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_pr_repo_status', 'repository_id', 'status'),
+        Index('idx_pr_repo_created', 'repository_id', 'created_at'),
+        Index('idx_pr_status_created', 'status', 'created_at'),
+    )
 
     # Relationships
     repository = relationship('Repository', back_populates='pull_requests')
@@ -297,9 +304,15 @@ class AnalysisJob(Base):
     job_type = Column(String(50), nullable=False)  # 'file', 'pr', 'repo'
     status = Column(Enum(JobStatus), default=JobStatus.QUEUED, nullable=False)
     celery_task_id = Column(String(100), index=True)  # Celery task ID
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
+    started_at = Column(DateTime, index=True)
+    completed_at = Column(DateTime, index=True)
     result_json = Column(JSON)  # Job results summary
+
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_job_pr_status', 'pull_request_id', 'status'),
+        Index('idx_job_status_started', 'status', 'started_at'),
+    )
 
     # Relationships
     pull_request = relationship('PullRequest', back_populates='analysis_jobs')
@@ -343,7 +356,14 @@ class Issue(Base):
     fix_confidence = Column(Float)  # Confidence in the fix (0.0 to 1.0)
     can_auto_apply = Column(Boolean, default=False)  # Whether fix can be auto-applied
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_issue_category_severity', 'category', 'severity'),
+        Index('idx_issue_file_severity', 'code_file_id', 'severity'),
+        Index('idx_issue_created_severity', 'created_at', 'severity'),
+    )
 
     # Relationships
     code_file = relationship('CodeFile', back_populates='issues')
