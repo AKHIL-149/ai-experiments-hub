@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/settings.css">
+    <link rel="stylesheet" href="/static/css/progress-tracker.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f9fafb;
+            line-height: 1.6;
+        }
+
+        /* Page Header */
+        .page-header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .page-header-content {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .page-subtitle {
+            font-size: 15px;
+            color: #6b7280;
+        }
+
+        /* Navigation */
+        .nav-links {
+            margin-top: 16px;
+            display: flex;
+            gap: 16px;
+        }
+
+        .nav-link {
+            color: #3b82f6;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: #2563eb;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="page-header-content">
+            <h1 class="page-title">⚙️ Settings & Configuration</h1>
+            <p class="page-subtitle">Customize your code review experience and configure analysis rules</p>
+            <div class="nav-links">
+                <a href="/dashboard" class="nav-link">← Back to Dashboard</a>
+                <a href="/repositories" class="nav-link">Repositories</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Container -->
+    <div class="settings-container">
+        <div id="settings-container"></div>
+    </div>
+
+    <script src="/static/js/progress-tracker.js"></script>
+    <script src="/static/js/settings.js"></script>
+    <script>
+        // Initialize settings manager
+        const settingsManager = new SettingsManager({
+            onSave: async (settings) => {
+                // Save to API
+                try {
+                    const response = await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(settings)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to save settings to server');
+                    }
+
+                    console.log('Settings saved to server');
+                } catch (error) {
+                    console.error('Error saving to server:', error);
+                    // Local storage save still succeeded, so don't throw
+                }
+            },
+            autoSave: true,
+            storageKey: 'userSettings'
+        });
+
+        // Initialize the UI
+        settingsManager.init();
+
+        // Load settings from API on page load
+        async function loadServerSettings() {
+            try {
+                const response = await fetch('/api/settings', {
+                    credentials: 'same-origin'
+                });
+
+                if (response.ok) {
+                    const serverSettings = await response.json();
+                    if (serverSettings && Object.keys(serverSettings).length > 0) {
+                        // Merge server settings with local
+                        console.log('Loaded settings from server');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading settings from server:', error);
+                // Fall back to localStorage
+            }
+        }
+
+        loadServerSettings();
+    </script>
+</body>
+</html>

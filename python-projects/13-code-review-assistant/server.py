@@ -899,6 +899,47 @@ async def analyze_page(request: Request, user = Depends(get_current_user_optiona
     })
 
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, user = Depends(get_current_user_optional)):
+    """Settings and configuration page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "user": user
+    })
+
+
+@app.get("/api/settings")
+async def get_user_settings(user = Depends(get_current_user)):
+    """Get user settings"""
+    # For now, return empty dict (settings are stored in localStorage)
+    # In a production app, you'd store these in the database
+    return JSONResponse({})
+
+
+@app.post("/api/settings")
+async def save_user_settings(request: Request, user = Depends(get_current_user)):
+    """Save user settings"""
+    try:
+        settings = await request.json()
+
+        # For now, just acknowledge receipt
+        # In a production app, you'd save these to the database
+        # with db_manager.get_session() as db:
+        #     db_user = db.query(User).filter(User.id == user.id).first()
+        #     db_user.settings_json = json.dumps(settings)
+        #     db.commit()
+
+        return JSONResponse({
+            "success": True,
+            "message": "Settings saved successfully"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/issues", response_class=HTMLResponse)
 async def issues_page(request: Request, user = Depends(get_current_user_optional)):
     """Issues list page"""
