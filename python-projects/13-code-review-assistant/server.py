@@ -57,6 +57,73 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============================================================================
+# Error Handling Middleware
+# ============================================================================
+
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    """
+    Global error handling middleware with correlation ID tracking
+    and structured logging
+    """
+    from src.services.logging_service import logging_service
+
+    # Generate correlation ID for this request
+    correlation_id = request.headers.get('X-Correlation-ID', logging_service.generate_correlation_id())
+
+    with logging_service.correlation_context(correlation_id):
+        try:
+            # Log request
+            logging_service.info(
+                f"{request.method} {request.url.path}",
+                metadata={
+                    'method': request.method,
+                    'path': request.url.path,
+                    'query_params': dict(request.query_params),
+                    'client_host': request.client.host if request.client else None
+                }
+            )
+
+            # Process request
+            response = await call_next(request)
+
+            # Add correlation ID to response headers
+            response.headers['X-Correlation-ID'] = correlation_id
+
+            # Log response
+            logging_service.info(
+                f"Response {response.status_code}",
+                metadata={'status_code': response.status_code}
+            )
+
+            return response
+
+        except Exception as e:
+            # Log error
+            logging_service.error(
+                f"Request failed: {str(e)}",
+                metadata={
+                    'method': request.method,
+                    'path': request.url.path,
+                    'error_type': type(e).__name__
+                },
+                exception=e
+            )
+
+            # Return error response
+            return JSONResponse(
+                status_code=500,
+                content={
+                    'error': 'Internal server error',
+                    'correlation_id': correlation_id,
+                    'message': str(e)
+                },
+                headers={'X-Correlation-ID': correlation_id}
+            )
+
+
 # Initialize database
 db_url = os.getenv('DATABASE_URL')
 db_manager = DatabaseManager(db_url)
@@ -2177,6 +2244,122 @@ async def get_notification_statistics(user_id: Optional[str] = None, user = Depe
     stats = notification_service.get_statistics(user_id=user_id)
 
     return JSONResponse(stats)
+
+
+# ============================================================================
+# Logging Endpoints
+# ============================================================================
+
+@app.get("/api/logs")
+async def get_logs(
+    level: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    user = Depends(get_current_user)
+):
+    """
+    Get logs with optional filtering
+
+    Query parameters:
+    - level: Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    - correlation_id: Filter by correlation ID
+    - limit: Maximum number of logs to return
+    - offset: Number of logs to skip
+    """
+    from src.services.logging_service import logging_service, LogLevel
+
+    # Parse log level if provided
+    filter_level = None
+    if level:
+        try:
+            filter_level = LogLevel(level.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid log level: {level}")
+
+    # Get logs
+    logs = logging_service.get_logs(
+        level=filter_level,
+        correlation_id=correlation_id,
+        limit=limit,
+        offset=offset
+    )
+
+    return JSONResponse({'logs': logs, 'count': len(logs)})
+
+
+@app.get("/api/logs/errors")
+async def get_error_logs(limit: int = 100, user = Depends(get_current_user)):
+    """Get recent error logs"""
+    from src.services.logging_service import logging_service
+
+    errors = logging_service.get_errors(limit=limit)
+
+    return JSONResponse({'errors': errors, 'count': len(errors)})
+
+
+@app.get("/api/logs/statistics")
+async def get_logging_statistics(user = Depends(get_current_user)):
+    """Get logging statistics"""
+    from src.services.logging_service import logging_service
+
+    stats = logging_service.get_statistics()
+
+    return JSONResponse(stats)
+
+
+@app.delete("/api/logs")
+async def clear_logs(user = Depends(get_current_user)):
+    """Clear all logs"""
+    from src.services.logging_service import logging_service
+
+    # Only admins can clear logs
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can clear logs")
+
+    count = logging_service.clear_logs()
+
+    return JSONResponse({'success': True, 'count': count, 'message': f'Cleared {count} logs'})
+
+
+@app.delete("/api/logs/errors")
+async def clear_error_logs(user = Depends(get_current_user)):
+    """Clear error logs"""
+    from src.services.logging_service import logging_service
+
+    # Only admins can clear error logs
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can clear error logs")
+
+    count = logging_service.clear_errors()
+
+    return JSONResponse({'success': True, 'count': count, 'message': f'Cleared {count} error logs'})
+
+
+@app.get("/api/logs/export")
+async def export_logs(format: str = 'json', user = Depends(get_current_user)):
+    """
+    Export logs in JSON or CSV format
+
+    Query parameters:
+    - format: Export format ('json' or 'csv')
+    """
+    from src.services.logging_service import logging_service
+    from datetime import datetime
+
+    if format.lower() not in ['json', 'csv']:
+        raise HTTPException(status_code=400, detail="Format must be 'json' or 'csv'")
+
+    exported = logging_service.export_logs(format=format.lower())
+
+    if format.lower() == 'csv':
+        return StreamingResponse(
+            iter([exported]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=logs_export_{datetime.now().strftime('%Y%m%d')}.csv"}
+        )
+
+    return JSONResponse(exported)
 
 
 # ============================================================================
