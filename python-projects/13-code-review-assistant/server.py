@@ -2027,6 +2027,159 @@ async def export_analytics(
 
 
 # ============================================================================
+# Notification Endpoints
+# ============================================================================
+
+@app.get("/api/notifications")
+async def get_notifications(
+    user_id: Optional[str] = None,
+    notification_type: Optional[str] = None,
+    unread_only: bool = False,
+    limit: int = 50,
+    user = Depends(get_current_user)
+):
+    """
+    Get notifications with optional filtering
+
+    Query parameters:
+    - user_id: Filter by user ID
+    - notification_type: Filter by type (info, warning, error, etc.)
+    - unread_only: Only return unread notifications
+    - limit: Maximum number of notifications to return
+    """
+    from src.services.notification_service import notification_service, NotificationType
+
+    # Parse notification type if provided
+    filter_type = None
+    if notification_type:
+        try:
+            filter_type = NotificationType(notification_type)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid notification type: {notification_type}")
+
+    # Get notifications
+    notifications = notification_service.get_notifications(
+        user_id=user_id,
+        notification_type=filter_type,
+        unread_only=unread_only
+    )
+
+    # Apply limit
+    if limit:
+        notifications = notifications[:limit]
+
+    return JSONResponse({'notifications': notifications, 'count': len(notifications)})
+
+
+@app.get("/api/notifications/{notification_id}")
+async def get_notification(notification_id: str, user = Depends(get_current_user)):
+    """Get a specific notification by ID"""
+    from src.services.notification_service import notification_service
+
+    notification = notification_service.get_notification(notification_id)
+
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse(notification)
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user = Depends(get_current_user)):
+    """Mark a notification as read"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.mark_as_read(notification_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse({'success': True, 'message': 'Notification marked as read'})
+
+
+@app.post("/api/notifications/read-all")
+async def mark_all_notifications_read(
+    user_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Mark all notifications as read for a user"""
+    from src.services.notification_service import notification_service
+
+    count = notification_service.mark_all_as_read(user_id=user_id)
+
+    return JSONResponse({'success': True, 'count': count, 'message': f'Marked {count} notifications as read'})
+
+
+@app.post("/api/notifications/{notification_id}/dismiss")
+async def dismiss_notification(notification_id: str, user = Depends(get_current_user)):
+    """Dismiss a notification"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.dismiss_notification(notification_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse({'success': True, 'message': 'Notification dismissed'})
+
+
+@app.delete("/api/notifications/{notification_id}")
+async def delete_notification(notification_id: str, user = Depends(get_current_user)):
+    """Permanently delete a notification"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.delete_notification(notification_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse({'success': True, 'message': 'Notification deleted'})
+
+
+@app.delete("/api/notifications/old")
+async def clear_old_notifications(days: int = 30, user = Depends(get_current_user)):
+    """Clear notifications older than specified days"""
+    from src.services.notification_service import notification_service
+
+    count = notification_service.clear_old_notifications(days=days)
+
+    return JSONResponse({'success': True, 'count': count, 'message': f'Deleted {count} old notifications'})
+
+
+@app.get("/api/notifications/preferences")
+async def get_notification_preferences(user = Depends(get_current_user)):
+    """Get notification preferences"""
+    from src.services.notification_service import notification_service
+
+    preferences = notification_service.get_preferences()
+
+    return JSONResponse(preferences)
+
+
+@app.post("/api/notifications/preferences")
+async def update_notification_preferences(preferences: Dict[str, Any], user = Depends(get_current_user)):
+    """Update notification preferences"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.update_preferences(preferences)
+
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to update preferences")
+
+    return JSONResponse({'success': True, 'message': 'Preferences updated'})
+
+
+@app.get("/api/notifications/statistics")
+async def get_notification_statistics(user_id: Optional[str] = None, user = Depends(get_current_user)):
+    """Get notification statistics"""
+    from src.services.notification_service import notification_service
+
+    stats = notification_service.get_statistics(user_id=user_id)
+
+    return JSONResponse(stats)
+
+
+# ============================================================================
 # Issues Endpoints
 # ============================================================================
 
