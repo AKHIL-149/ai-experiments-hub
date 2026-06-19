@@ -1014,6 +1014,18 @@ async def diff_viewer_demo_page(request: Request, user = Depends(get_current_use
     })
 
 
+@app.get("/demo/advanced-filters", response_class=HTMLResponse)
+async def advanced_filters_demo_page(request: Request, user = Depends(get_current_user_optional)):
+    """Advanced filters component demo page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("advanced_filters_demo.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/repositories", response_class=HTMLResponse)
 async def repositories_page(request: Request, user = Depends(get_current_user_optional)):
     """Repositories list page"""

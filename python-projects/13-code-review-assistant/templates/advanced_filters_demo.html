@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Filters Demo - Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/advanced-filters.css">
+    <link rel="stylesheet" href="/static/css/progress-tracker.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f9fafb;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+        .results-section {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .results-count {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .results-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .result-item {
+            padding: 16px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .result-item:hover {
+            background: #f3f4f6;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 8px;
+        }
+
+        .result-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .result-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .result-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-text {
+            font-size: 18px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Advanced Filters Demo</h1>
+            <p class="subtitle">Multi-criteria filtering with presets and full-text search</p>
+        </header>
+
+        <!-- Advanced Filters Component -->
+        <div id="advanced-filters-container"></div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+            <div class="results-header">
+                <h2 class="results-count">Found <span id="results-count">0</span> issue(s)</h2>
+            </div>
+
+            <div class="results-list" id="results-list">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔎</div>
+                    <div class="empty-state-text">No filters applied. Use the filters above to search for issues.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/progress-tracker.js"></script>
+    <script src="/static/js/advanced-filters.js"></script>
+    <script>
+        // Sample issue data for demo
+        const sampleIssues = [
+            {
+                id: 1,
+                title: 'SQL Injection Vulnerability',
+                severity: 'critical',
+                category: 'security',
+                file: 'src/services/database.py',
+                description: 'Potential SQL injection via string concatenation',
+                created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 2,
+                title: 'Long Method Detected',
+                severity: 'warning',
+                category: 'smell',
+                file: 'src/analyzers/code_analyzer.py',
+                description: 'Method exceeds 50 lines',
+                created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 3,
+                title: 'High Cyclomatic Complexity',
+                severity: 'error',
+                category: 'complexity',
+                file: 'src/services/refactoring_engine.py',
+                description: 'Complexity score: 15',
+                created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 4,
+                title: 'Hardcoded Secret Detected',
+                severity: 'critical',
+                category: 'security',
+                file: 'src/core/config.py',
+                description: 'API key found in source code',
+                created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 5,
+                title: 'Magic Number Found',
+                severity: 'info',
+                category: 'smell',
+                file: 'src/utils/helpers.py',
+                description: 'Numeric literal without explanation',
+                created_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 6,
+                title: 'Deep Nesting Detected',
+                severity: 'warning',
+                category: 'complexity',
+                file: 'src/parsers/python_parser.py',
+                description: 'Nesting depth exceeds 4 levels',
+                created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 7,
+                title: 'Command Injection Risk',
+                severity: 'critical',
+                category: 'security',
+                file: 'src/services/git_client.py',
+                description: 'Unsafe use of os.system with user input',
+                created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
+            },
+            {
+                id: 8,
+                title: 'God Class Detected',
+                severity: 'error',
+                category: 'smell',
+                file: 'src/services/pr_reviewer_service.py',
+                description: 'Class has 25+ methods',
+                created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+            }
+        ];
+
+        // Initialize advanced filters
+        const filters = new AdvancedFilters('advanced-filters-container', {
+            onFilterChange: applyFilters,
+            allowPresets: true,
+            persistState: true,
+            storageKey: 'demoFilters'
+        });
+
+        filters.init();
+
+        // Apply filters to sample data
+        function applyFilters(activeFilters) {
+            console.log('Active filters:', activeFilters);
+
+            let filteredIssues = [...sampleIssues];
+
+            // Apply search filter
+            if (activeFilters.search) {
+                const searchLower = activeFilters.search.toLowerCase();
+                filteredIssues = filteredIssues.filter(issue =>
+                    issue.title.toLowerCase().includes(searchLower) ||
+                    issue.description.toLowerCase().includes(searchLower) ||
+                    issue.file.toLowerCase().includes(searchLower)
+                );
+            }
+
+            // Apply severity filter
+            if (activeFilters.severity && activeFilters.severity.length > 0) {
+                filteredIssues = filteredIssues.filter(issue =>
+                    activeFilters.severity.includes(issue.severity)
+                );
+            }
+
+            // Apply category filter
+            if (activeFilters.category && activeFilters.category.length > 0) {
+                filteredIssues = filteredIssues.filter(issue =>
+                    activeFilters.category.includes(issue.category)
+                );
+            }
+
+            // Apply date range filter
+            if (activeFilters.dateFrom) {
+                const fromDate = new Date(activeFilters.dateFrom);
+                filteredIssues = filteredIssues.filter(issue =>
+                    new Date(issue.created_at) >= fromDate
+                );
+            }
+
+            if (activeFilters.dateTo) {
+                const toDate = new Date(activeFilters.dateTo);
+                toDate.setHours(23, 59, 59, 999); // End of day
+                filteredIssues = filteredIssues.filter(issue =>
+                    new Date(issue.created_at) <= toDate
+                );
+            }
+
+            // Apply file path filter
+            if (activeFilters.filePath) {
+                const pathLower = activeFilters.filePath.toLowerCase();
+                filteredIssues = filteredIssues.filter(issue =>
+                    issue.file.toLowerCase().includes(pathLower)
+                );
+            }
+
+            renderResults(filteredIssues);
+        }
+
+        // Render filtered results
+        function renderResults(issues) {
+            const resultsList = document.getElementById('results-list');
+            const resultsCount = document.getElementById('results-count');
+
+            resultsCount.textContent = issues.length;
+
+            if (issues.length === 0) {
+                resultsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <div class="empty-state-text">No issues match your filters</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const severityColors = {
+                critical: '#dc2626',
+                error: '#ef4444',
+                warning: '#f59e0b',
+                info: '#3b82f6'
+            };
+
+            resultsList.innerHTML = issues.map(issue => `
+                <div class="result-item">
+                    <div class="result-header">
+                        <div class="result-title">${issue.title}</div>
+                        <span class="result-badge severity-${issue.severity}" style="background-color: ${severityColors[issue.severity]}; color: white;">
+                            ${issue.severity}
+                        </span>
+                    </div>
+                    <div>${issue.description}</div>
+                    <div class="result-meta">
+                        <span>📁 ${issue.file}</span>
+                        <span>🏷️ ${issue.category}</span>
+                        <span>🕐 ${formatTimeAgo(issue.created_at)}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Format time ago
+        function formatTimeAgo(timestamp) {
+            const now = new Date();
+            const date = new Date(timestamp);
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return 'just now';
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            return `${Math.floor(seconds / 86400)}d ago`;
+        }
+
+        // Show initial results (no filters)
+        renderResults(sampleIssues);
+    </script>
+</body>
+</html>
