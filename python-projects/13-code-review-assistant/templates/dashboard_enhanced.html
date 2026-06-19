@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AI Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dashboard</h1>
+            <p>Overview of your code health and recent activity</p>
+        </header>
+
+        <!-- Stats Cards -->
+        <div id="stats-cards" class="stats-grid">
+            <!-- Dynamically populated -->
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Main Content -->
+            <div class="dashboard-main">
+                <!-- Issue Trend Chart -->
+                <div class="chart-container">
+                    <h3>Issue Trends (Last 30 Days)</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="issue-trend-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Issue Distribution Chart -->
+                <div class="chart-container">
+                    <h3>Issue Distribution by Severity</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="issue-distribution-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="dashboard-sidebar">
+                <!-- Health Score Card -->
+                <div id="health-score-card"></div>
+
+                <!-- Recent Activity Feed -->
+                <div class="chart-container">
+                    <h3>Recent Activity</h3>
+                    <div id="activity-feed"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+    <script>
+        // Initialize components
+        let healthScoreCard, issueTrendChart, issueDistributionChart, activityFeed, statsCard;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize components
+            healthScoreCard = new HealthScoreCard('health-score-card');
+            issueTrendChart = new IssueTrendChart('issue-trend-chart', {
+                title: 'Issue Trends Over Time',
+                days: 30
+            });
+            issueDistributionChart = new IssueDistributionChart('issue-distribution-chart', {
+                type: 'doughnut',
+                title: 'Issues by Severity'
+            });
+            activityFeed = new ActivityFeed('activity-feed', {
+                maxItems: 10,
+                showTimestamps: true
+            });
+            statsCard = new StatsCard('stats-cards');
+
+            // Load dashboard data
+            await loadDashboardData();
+
+            // Refresh every 60 seconds
+            setInterval(loadDashboardData, 60000);
+        });
+
+        async function loadDashboardData() {
+            try {
+                // Fetch all dashboard data
+                const [metricsResponse, trendsResponse, activitiesResponse] = await Promise.all([
+                    fetch('/api/dashboard/metrics'),
+                    fetch('/api/dashboard/trends?days=30'),
+                    fetch('/api/dashboard/activity?limit=10')
+                ]);
+
+                if (!metricsResponse.ok || !trendsResponse.ok || !activitiesResponse.ok) {
+                    throw new Error('Failed to fetch dashboard data');
+                }
+
+                const metrics = await metricsResponse.json();
+                const trends = await trendsResponse.json();
+                const activities = await activitiesResponse.json();
+
+                // Calculate health score
+                const healthData = HealthScoreCalculator.calculate(metrics);
+                healthScoreCard.render(healthData);
+
+                // Render stats cards
+                const stats = [
+                    {
+                        icon: '📊',
+                        label: 'Total Issues',
+                        value: metrics.total_issues || 0,
+                        color: '#3b82f6',
+                        change: metrics.issues_change || 0
+                    },
+                    {
+                        icon: '⚠️',
+                        label: 'Critical Issues',
+                        value: metrics.critical_issues || 0,
+                        color: '#dc2626',
+                        change: metrics.critical_change || 0
+                    },
+                    {
+                        icon: '📁',
+                        label: 'Repositories',
+                        value: metrics.total_repositories || 0,
+                        color: '#10b981'
+                    },
+                    {
+                        icon: '📝',
+                        label: 'Lines of Code',
+                        value: formatNumber(metrics.total_lines_of_code || 0),
+                        color: '#f59e0b'
+                    }
+                ];
+                statsCard.render(stats);
+
+                // Render trend chart
+                issueTrendChart.render(trends.data || []);
+
+                // Render distribution chart
+                issueDistributionChart.render({
+                    critical: metrics.critical_issues || 0,
+                    error: metrics.error_issues || 0,
+                    warning: metrics.warning_issues || 0,
+                    info: metrics.info_issues || 0
+                });
+
+                // Render activity feed
+                activityFeed.render(activities.data || []);
+
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+                showError('Failed to load dashboard data. Please refresh the page.');
+            }
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        function showError(message) {
+            const container = document.querySelector('.container');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'dashboard-error';
+            errorDiv.textContent = message;
+            container.insertBefore(errorDiv, container.firstChild);
+
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+    </script>
+</body>
+</html>

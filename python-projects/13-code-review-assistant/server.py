@@ -1475,6 +1475,235 @@ async def task_progress_stream(
 
 
 # ============================================================================
+# Dashboard Endpoints
+# ============================================================================
+
+@app.get("/api/dashboard/metrics")
+async def get_dashboard_metrics(user = Depends(get_current_user)):
+    """
+    Get overall dashboard metrics and statistics.
+
+    Returns:
+    - total_issues: Total number of issues across all analyses
+    - issues_by_severity: Breakdown by critical/error/warning/info
+    - total_repositories: Number of repositories (estimate)
+    - total_lines_of_code: Total LOC analyzed
+    - avg_complexity: Average cyclomatic complexity
+    - test_coverage: Estimated test coverage (placeholder)
+    """
+    all_issues = []
+    total_loc = 0
+    complexity_scores = []
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Collect metrics from all analyses
+    for analysis in analyses:
+        issues = analysis.get('issues', [])
+        all_issues.extend(issues)
+
+        # Extract LOC if available
+        metadata = analysis.get('metadata', {})
+        loc = metadata.get('lines_of_code', 0)
+        total_loc += loc
+
+        # Extract complexity metrics
+        for issue in issues:
+            if issue.get('category') == 'complexity':
+                # Try to extract complexity value from description
+                desc = issue.get('description', '')
+                if 'complexity' in desc.lower():
+                    try:
+                        # Extract number from description
+                        import re
+                        match = re.search(r'(\d+)', desc)
+                        if match:
+                            complexity_scores.append(int(match.group(1)))
+                    except:
+                        pass
+
+    # Count issues by severity
+    severity_counts = {
+        'critical': 0,
+        'error': 0,
+        'warning': 0,
+        'info': 0
+    }
+
+    for issue in all_issues:
+        severity = issue.get('severity', 'info').lower()
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+
+    # Calculate average complexity
+    avg_complexity = sum(complexity_scores) / len(complexity_scores) if complexity_scores else 0
+
+    # Estimate repositories (count unique source filenames)
+    unique_sources = set()
+    for analysis in analyses:
+        filename = analysis.get('filename', '')
+        if filename:
+            # Extract potential repo name from path
+            parts = filename.split('/')
+            if len(parts) > 2:
+                unique_sources.add('/'.join(parts[:3]))
+            else:
+                unique_sources.add(filename)
+
+    return JSONResponse({
+        "total_issues": len(all_issues),
+        "critical_issues": severity_counts['critical'],
+        "error_issues": severity_counts['error'],
+        "warning_issues": severity_counts['warning'],
+        "info_issues": severity_counts['info'],
+        "total_repositories": len(unique_sources) if unique_sources else 1,
+        "total_lines_of_code": total_loc,
+        "avg_complexity": round(avg_complexity, 2),
+        "test_coverage": 75.0  # Placeholder - would need actual test analysis
+    })
+
+
+@app.get("/api/dashboard/trends")
+async def get_dashboard_trends(days: int = 30, user = Depends(get_current_user)):
+    """
+    Get issue trends over time.
+
+    Query parameters:
+    - days: Number of days to include in trends (default 30)
+
+    Returns array of:
+    - date: ISO date string
+    - critical: Count of critical issues
+    - error: Count of error issues
+    - warning: Count of warning issues
+    - info: Count of info issues
+    """
+    from datetime import datetime, timedelta
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Create date buckets
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+
+    # Initialize daily counts
+    daily_counts = {}
+    current_date = start_date
+    while current_date <= end_date:
+        date_str = current_date.strftime('%Y-%m-%d')
+        daily_counts[date_str] = {
+            'critical': 0,
+            'error': 0,
+            'warning': 0,
+            'info': 0
+        }
+        current_date += timedelta(days=1)
+
+    # Group issues by date
+    for analysis in analyses:
+        analyzed_at = analysis.get('analyzed_at')
+        if not analyzed_at:
+            continue
+
+        try:
+            # Parse analyzed_at timestamp
+            if isinstance(analyzed_at, str):
+                analysis_date = datetime.fromisoformat(analyzed_at.replace('Z', '+00:00'))
+            else:
+                analysis_date = analyzed_at
+
+            # Check if within range
+            if start_date <= analysis_date <= end_date:
+                date_str = analysis_date.strftime('%Y-%m-%d')
+
+                # Count issues by severity
+                for issue in analysis.get('issues', []):
+                    severity = issue.get('severity', 'info').lower()
+                    if severity in daily_counts[date_str]:
+                        daily_counts[date_str][severity] += 1
+        except:
+            continue
+
+    # Convert to array format
+    trends = [
+        {
+            'date': date_str,
+            'critical': counts['critical'],
+            'error': counts['error'],
+            'warning': counts['warning'],
+            'info': counts['info']
+        }
+        for date_str, counts in sorted(daily_counts.items())
+    ]
+
+    return JSONResponse(trends)
+
+
+@app.get("/api/dashboard/activity")
+async def get_recent_activity(limit: int = 10, user = Depends(get_current_user)):
+    """
+    Get recent activity feed.
+
+    Query parameters:
+    - limit: Maximum number of activities to return (default 10)
+
+    Returns array of activity objects with:
+    - type: Activity type (analysis, issue_found, etc.)
+    - title: Activity title
+    - description: Activity description
+    - timestamp: ISO timestamp
+    - severity: Optional severity for issue-related activities
+    """
+    from datetime import datetime
+
+    activities = []
+
+    # Get all cached analyses
+    analyses = get_all_cached_analyses()
+
+    # Sort by timestamp (most recent first)
+    sorted_analyses = sorted(
+        analyses,
+        key=lambda a: a.get('analyzed_at', ''),
+        reverse=True
+    )
+
+    # Generate activity items
+    for analysis in sorted_analyses[:limit]:
+        analyzed_at = analysis.get('analyzed_at', datetime.now().isoformat())
+        filename = analysis.get('filename', 'Unknown file')
+        issues = analysis.get('issues', [])
+
+        # Add analysis activity
+        activities.append({
+            'type': 'analysis',
+            'title': f'Analyzed {filename}',
+            'description': f'Found {len(issues)} issue(s)',
+            'timestamp': analyzed_at,
+            'icon': '📝'
+        })
+
+        # Add critical issue activities
+        critical_issues = [i for i in issues if i.get('severity') == 'critical']
+        for issue in critical_issues[:2]:  # Limit to 2 per analysis
+            activities.append({
+                'type': 'issue_found',
+                'title': issue.get('title', 'Critical Issue'),
+                'description': f"In {filename}: {issue.get('description', '')[:100]}...",
+                'timestamp': analyzed_at,
+                'severity': 'critical',
+                'icon': '🚨'
+            })
+
+    # Sort all activities by timestamp and limit
+    activities.sort(key=lambda a: a.get('timestamp', ''), reverse=True)
+
+    return JSONResponse(activities[:limit])
+
+
+# ============================================================================
 # Issues Endpoints
 # ============================================================================
 
