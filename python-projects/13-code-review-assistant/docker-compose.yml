@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # Redis - Message broker and cache
+  redis:
+    image: redis:7-alpine
+    container_name: code-review-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL - Production database (optional, comment out to use SQLite)
+  postgres:
+    image: postgres:15-alpine
+    container_name: code-review-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: codereviewer
+      POSTGRES_USER: reviewer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reviewer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-review-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Server
+      HOST: 0.0.0.0
+      PORT: 8000
+      ALLOWED_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+
+      # Database (choose one)
+      # SQLite (default)
+      DATABASE_URL: sqlite:///./data/database.db
+      # PostgreSQL (uncomment to use)
+      # DATABASE_URL: postgresql://reviewer:${POSTGRES_PASSWORD:-changeme}@postgres:5432/codereviewer
+
+      # Authentication
+      SESSION_TTL_DAYS: 30
+      COOKIE_SECURE: "false"
+
+      # GitHub
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+
+      # Git
+      GIT_CLONE_DIR: ./data/repos
+
+      # LLM (configure one)
+      OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+      # Analysis
+      COMPLEXITY_THRESHOLD_WARN: 10
+      COMPLEXITY_THRESHOLD_ERROR: 15
+
+      # Celery/Redis
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/2
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Celery Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-review-worker
+    restart: unless-stopped
+    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    environment:
+      # Database
+      DATABASE_URL: sqlite:///./data/database.db
+      # PostgreSQL (uncomment to use)
+      # DATABASE_URL: postgresql://reviewer:${POSTGRES_PASSWORD:-changeme}@postgres:5432/codereviewer
+
+      # Celery/Redis
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/2
+
+      # GitHub
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+      # Git
+      GIT_CLONE_DIR: ./data/repos
+
+      # LLM
+      OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  app-data:
+    driver: local
+
+networks:
+  default:
+    name: code-review-network

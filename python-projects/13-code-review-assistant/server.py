@@ -193,6 +193,116 @@ async def require_admin(user = Depends(get_current_user)):
 
 
 # ============================================================================
+# Health Check Endpoints
+# ============================================================================
+
+@app.get("/health")
+async def health_check():
+    """Basic health check endpoint for Docker/monitoring"""
+    return {
+        "status": "healthy",
+        "service": "code-review-assistant",
+        "version": "0.1.0"
+    }
+
+
+@app.get("/api/health/db")
+async def database_health():
+    """Database connectivity health check"""
+    try:
+        with db_manager.get_session() as db:
+            # Simple query to verify database is accessible
+            db.execute("SELECT 1")
+            return {
+                "status": "healthy",
+                "component": "database",
+                "database_url": db_url.split('@')[-1] if db_url else "sqlite"
+            }
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "component": "database",
+                "error": str(e)
+            }
+        )
+
+
+@app.get("/api/health/celery")
+async def celery_health():
+    """Celery worker health check"""
+    try:
+        # Check if Celery workers are available
+        inspect = celery_app.control.inspect()
+        active_workers = inspect.active()
+
+        if active_workers:
+            return {
+                "status": "healthy",
+                "component": "celery",
+                "workers": list(active_workers.keys()),
+                "worker_count": len(active_workers)
+            }
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "component": "celery",
+                    "error": "No active workers found"
+                }
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "component": "celery",
+                "error": str(e)
+            }
+        )
+
+
+@app.get("/api/health/redis")
+async def redis_health():
+    """Redis connectivity health check"""
+    try:
+        from src.services.cache_service import cache_service
+
+        # Try to set and get a test value
+        test_key = "health_check_test"
+        test_value = "ok"
+        cache_service.set(test_key, test_value, ttl=10)
+        result = cache_service.get(test_key)
+
+        if result == test_value:
+            return {
+                "status": "healthy",
+                "component": "redis",
+                "backend": "redis" if cache_service.use_redis else "memory"
+            }
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "component": "redis",
+                    "error": "Cache read/write test failed"
+                }
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "component": "redis",
+                "error": str(e)
+            }
+        )
+
+
+# ============================================================================
 # Authentication Endpoints
 # ============================================================================
 
