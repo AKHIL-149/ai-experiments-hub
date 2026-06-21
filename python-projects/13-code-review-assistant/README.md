@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.6 (Webhook Infrastructure & GitHub App Integration)
-**Status**: Production-Ready with Multi-Language Support & Automatic PR Analysis
+**Version**: 0.5.7 (Automatic PR Analysis Worker)
+**Status**: Production-Ready with Multi-Language Support & Webhook-Triggered PR Analysis
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, and comprehensive production monitoring.
 
@@ -59,13 +59,14 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 825+
+- **Total Tests**: 833+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
   - Analyzer tests: 22 Java analyzer tests, 30 JavaScript analyzer tests (100% passing)
   - Service tests: 100+ tests (100% passing)
   - Webhook infrastructure tests: 25 tests (100% passing)
+  - Webhook worker tests: 8 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -557,6 +558,17 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.7 - Automatic PR Analysis Worker (87% Complete)
+**Commit 13.5.7 (AKHIL-157)** - Implemented webhook-triggered PR analysis:
+- Added `analyze_pr_webhook` Celery task for async PR processing
+- GitHub App authentication with installation tokens
+- Multi-language PR analysis (Python, JS/TS, Java, Go, Rust)
+- Priority-based job queuing (high/normal/low)
+- Real-time progress tracking with Celery state updates
+- Complete workflow: fetch → parse → analyze → store
+- Enhanced queue manager with Celery task dispatching
+- 8 comprehensive tests (100% passing)
+
 ### Version 0.5.6 - Webhook Infrastructure & GitHub App Integration (83% Complete)
 **Commit 13.5.6 (AKHIL-156)** - Added comprehensive webhook infrastructure:
 - GitHub App authentication with JWT token generation
@@ -586,5 +598,5 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ---
 
-**Project 13 - Phase 5.6 Complete**
-Production-ready with webhook integration, multi-language support, and comprehensive monitoring ✨
+**Project 13 - Phase 5.7 Complete**
+Production-ready with webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨
