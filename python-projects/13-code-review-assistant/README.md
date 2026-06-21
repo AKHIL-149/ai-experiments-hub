@@ -1,9 +1,9 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.0 (Enhanced Auto-Detection & Registry)
-**Status**: Production-Ready with Intelligent Language Detection
+**Version**: 0.5.6 (Webhook Infrastructure & GitHub App Integration)
+**Status**: Production-Ready with Multi-Language Support & Automatic PR Analysis
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, and comprehensive production monitoring.
 
 ## 🚀 Features
 
@@ -27,6 +27,11 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 ### GitHub Integration
 - **Repository Management**: Clone, sync, and manage GitHub repositories
 - **Pull Request Reviews**: Automatic PR analysis with inline comments
+- **Webhook Infrastructure**: Real-time PR analysis triggered by GitHub events
+  - GitHub App authentication with JWT tokens
+  - HMAC-SHA256 signature verification for security
+  - Installation token caching and automatic refresh
+  - Event-driven architecture (PR opened, synchronized, reopened)
 - **Diff Viewer**: Unified and split diff visualization with syntax highlighting
 - **Review Posting**: Post comprehensive reviews back to GitHub
 
@@ -54,12 +59,13 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 800+
+- **Total Tests**: 825+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
   - Analyzer tests: 22 Java analyzer tests, 30 JavaScript analyzer tests (100% passing)
   - Service tests: 100+ tests (100% passing)
+  - Webhook infrastructure tests: 25 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -352,6 +358,12 @@ registry.reset_statistics()
 - `DELETE /api/logs` - Clear (admin only)
 - `GET /api/logs/export` - Export logs
 
+**GitHub Integration** (1 endpoint)
+- `POST /api/github/webhook` - GitHub webhook receiver
+  * Signature verification (HMAC-SHA256)
+  * Event routing (ping, pull_request, push, installation)
+  * Automatic PR analysis queuing
+
 **Full API documentation**: [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger UI)
 
 ## 🧪 Testing
@@ -409,7 +421,9 @@ docker run -d -p 8000:8000 \
 │   │   ├── database.py          # 10 SQLAlchemy models
 │   │   ├── auth_manager.py      # RBAC authentication
 │   │   ├── llm_client.py        # AI integration
-│   │   └── git_client.py        # Git operations
+│   │   ├── git_client.py        # Git operations
+│   │   ├── github_app.py        # GitHub App authentication (JWT)
+│   │   └── webhook_handler.py   # Webhook event handling
 │   ├── parsers/                 # Code parsing
 │   │   ├── python_parser.py     # Python AST
 │   │   └── models.py            # Parse models
@@ -420,6 +434,7 @@ docker run -d -p 8000:8000 \
 │   ├── services/                # Business logic
 │   │   ├── code_analyzer_service.py
 │   │   ├── pr_service.py
+│   │   ├── webhook_service.py   # Webhook event processing
 │   │   ├── analytics_service.py # Health scoring, trends
 │   │   ├── notification_service.py # 10 notification types
 │   │   ├── logging_service.py   # Structured logging
@@ -540,5 +555,36 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ---
 
-**Project 13 - Week 4 Complete**
-Production-ready with full testing, documentation, and monitoring ✨
+## 📈 Recent Updates
+
+### Version 0.5.6 - Webhook Infrastructure & GitHub App Integration (83% Complete)
+**Commit 13.5.6 (AKHIL-156)** - Added comprehensive webhook infrastructure:
+- GitHub App authentication with JWT token generation
+- Installation token caching with automatic refresh
+- Webhook signature verification (HMAC-SHA256)
+- Event-driven PR analysis (opened, synchronized, reopened)
+- 25 comprehensive tests (100% passing)
+
+### Version 0.5.5 - Language Auto-Detection & Registry Enhancement (80% Complete)
+**Commit 13.5.5 (AKHIL-155)** - Enhanced parser registry:
+- Content-based language detection with pattern matching
+- Shebang detection for scripts
+- Extension-based auto-detection with fallbacks
+- 32 registry tests (100% passing)
+
+### Version 0.5.4 - Rust Parser Implementation (77% Complete)
+**Commit 13.5.4 (AKHIL-154)** - Added Rust language support
+
+### Version 0.5.3 - Go Parser Implementation (73% Complete)
+**Commit 13.5.3 (AKHIL-153)** - Added Go language support
+
+### Version 0.5.2 - Java Analysis Suite (70% Complete)
+**Commit 13.5.2 (AKHIL-152)** - Added Java analyzers
+
+### Version 0.5.1 - Java Parser Foundation (67% Complete)
+**Commit 13.5.1 (AKHIL-151)** - Added Java language support
+
+---
+
+**Project 13 - Phase 5.6 Complete**
+Production-ready with webhook integration, multi-language support, and comprehensive monitoring ✨
