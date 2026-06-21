@@ -1,17 +1,19 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.3.0 (Multi-Language Support: Python, JavaScript, Java)
-**Status**: Production-Ready with Multi-Language Analysis
+**Version**: 0.4.0 (Multi-Language Support: Python, JavaScript, Java, Go, Rust)
+**Status**: Production-Ready with 5-Language Analysis
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, and Java code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
 
 ## 🚀 Features
 
 ### Core Analysis
-- **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX, Java
+- **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX, Java, Go, Rust
 - **Python Analysis**: Security vulnerabilities, code smells, complexity metrics
 - **JavaScript/TypeScript Analysis**: ES6+, React/JSX support, async/await patterns
 - **Java Analysis**: Spring Framework patterns, Javadoc extraction, enterprise security rules
+- **Go Analysis**: Structs, interfaces, goroutines, package documentation
+- **Rust Analysis**: Ownership patterns, traits, impl blocks, derive macros
 - **22+ Analysis Rules**: SQL injection, hardcoded secrets, long methods, deep nesting, XXE, weak cryptography
 - **AI-Powered Insights**: Ollama/Anthropic/OpenAI integration for explanations and refactorings
 - **Severity Levels**: Info, Warning, Error, Critical with confidence scoring

@@ -4,6 +4,8 @@ from .base_parser import BaseParser, ParseError
 from .python_parser import PythonParser
 from .javascript_parser import JavaScriptParser
 from .java_parser import JavaParser
+from .go_parser import GoParser
+from .rust_parser import RustParser
 from .models import ParsedModule
 
 
@@ -26,6 +28,8 @@ class ParserRegistry:
         self.register_parser('python', PythonParser())
         self.register_parser('javascript', JavaScriptParser())
         self.register_parser('java', JavaParser())
+        self.register_parser('go', GoParser())
+        self.register_parser('rust', RustParser())
 
     def register_parser(self, language: str, parser: BaseParser):
         """
