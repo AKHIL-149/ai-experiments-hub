@@ -239,7 +239,7 @@ def test_analyze_multiple_files_aggregation(service, tmp_path):
     file1.write_text('password = "secret123"')
 
     file2 = tmp_path / "bad2.py"
-    file2.write_text('api_key = "sk_live_abc123"')
+    file2.write_text('api_key = "sk_test_abc123"')
 
     result = service.analyze_multiple_files([str(file1), str(file2)])
 

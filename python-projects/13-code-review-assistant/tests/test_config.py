@@ -150,7 +150,7 @@ def test_disabled_rule_filters_issues(monkeypatch, parser):
 
     code = '''
 password = "hardcoded123"
-api_key = "sk_live_abc123def456"
+api_key = "sk_test_abc123def456"
 '''
 
     parsed = parser.parse_code(code)

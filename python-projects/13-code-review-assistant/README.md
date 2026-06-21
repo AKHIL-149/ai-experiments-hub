@@ -1,14 +1,20 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.4.0 (Multi-Language Support: Python, JavaScript, Java, Go, Rust)
-**Status**: Production-Ready with 5-Language Analysis
+**Version**: 0.5.0 (Enhanced Auto-Detection & Registry)
+**Status**: Production-Ready with Intelligent Language Detection
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, and comprehensive production monitoring.
 
 ## 🚀 Features
 
 ### Core Analysis
 - **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX, Java, Go, Rust
+- **Intelligent Auto-Detection**:
+  - **Extension-based**: Automatic parser selection from file extension
+  - **Content-based**: Pattern matching on imports, keywords, and syntax
+  - **Shebang detection**: Script language detection from `#!/usr/bin/env` lines
+  - **Scoring algorithm**: Selects language with most pattern matches
+  - **Fallback support**: Graceful degradation when extension is unknown
 - **Python Analysis**: Security vulnerabilities, code smells, complexity metrics
 - **JavaScript/TypeScript Analysis**: ES6+, React/JSX support, async/await patterns
 - **Java Analysis**: Spring Framework patterns, Javadoc extraction, enterprise security rules
@@ -48,10 +54,10 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 770+
+- **Total Tests**: 800+
 - **Coverage**: 90%+
 - **Test Suites**:
-  - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests (100% passing)
+  - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
   - Analyzer tests: 22 Java analyzer tests, 30 JavaScript analyzer tests (100% passing)
   - Service tests: 100+ tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
@@ -216,6 +222,102 @@ curl -X POST http://localhost:8000/api/analyze \
 curl http://localhost:8000/api/analytics/health-score \
   -H "Cookie: session_token=$TOKEN"
 ```
+
+### Language Auto-Detection
+
+The system intelligently detects programming languages using multiple strategies:
+
+#### 1. Extension-Based Detection (Primary)
+```python
+from src.parsers import get_registry
+
+registry = get_registry()
+
+# Detects Python from .py extension
+language = registry.detect_language('script.py')  # Returns: 'python'
+
+# Detects JavaScript from .js/.jsx/.ts/.tsx
+language = registry.detect_language('App.tsx')    # Returns: 'javascript'
+
+# Detects Java from .java
+language = registry.detect_language('Main.java')  # Returns: 'java'
+```
+
+#### 2. Content-Based Detection (Fallback)
+```python
+# Python code without extension
+code = """
+import os
+from pathlib import Path
+
+def main():
+    pass
+"""
+language = registry.detect_language_from_content(code)  # Returns: 'python'
+
+# JavaScript code detection
+code = """
+import React from 'react';
+
+export default function App() {
+    return <div>Hello</div>;
+}
+"""
+language = registry.detect_language_from_content(code)  # Returns: 'javascript'
+```
+
+#### 3. Shebang Detection (Scripts)
+```python
+# Python script
+code = """#!/usr/bin/env python3
+print("Hello")
+"""
+language = registry.detect_language_from_content(code)  # Returns: 'python'
+
+# Node.js script
+code = """#!/usr/bin/env node
+console.log('Hello');
+"""
+language = registry.detect_language_from_content(code)  # Returns: 'javascript'
+```
+
+#### 4. Auto-Detection During Parsing
+```python
+# Automatically detects language and parses
+parsed_module = registry.parse_file('script')  # No extension, uses content
+
+# Disable auto-detection to force extension-based only
+parsed_module = registry.parse_file('script.py', auto_detect=False)
+```
+
+#### Registry Statistics
+```python
+# Get parser information
+info = registry.get_parser_info()
+# Returns: {
+#   'python': {'language': 'python', 'extensions': ['.py'], ...},
+#   'javascript': {'language': 'javascript', 'extensions': ['.js', '.jsx', ...], ...},
+#   ...
+# }
+
+# Get parsing statistics
+stats = registry.get_statistics()
+# Returns: {'python': 45, 'javascript': 23, 'java': 12, ...}
+
+# Get comprehensive stats
+total_langs, total_exts, parse_counts = registry.get_language_stats()
+# Returns: (5, 12, {'python': 45, 'javascript': 23, ...})
+
+# Reset statistics
+registry.reset_statistics()
+```
+
+#### Supported Languages & Extensions
+- **Python**: `.py`, `.pyw`
+- **JavaScript/TypeScript**: `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`
+- **Java**: `.java`
+- **Go**: `.go`
+- **Rust**: `.rs`
 
 ## 📚 API Reference
 

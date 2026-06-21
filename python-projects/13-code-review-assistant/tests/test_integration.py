@@ -41,7 +41,7 @@ import os
 
 # Hardcoded credentials
 password = "admin123"
-api_key = "sk_live_abc123"
+api_key = "sk_test_abc123"
 
 def unsafe_deserialize(data):
     """Unsafe deserialization"""

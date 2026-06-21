@@ -33,7 +33,7 @@ def sample_vulnerable_code():
     return cursor.fetchone()
 
 def process_payment(amount):
-    api_key = "sk_live_1234567890"  # Hardcoded secret
+    api_key = "sk_test_1234567890"  # Hardcoded secret
     return make_payment(api_key, amount)'''
 
 

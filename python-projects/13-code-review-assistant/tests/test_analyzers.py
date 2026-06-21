@@ -93,7 +93,7 @@ def test_no_duplicate_issues(registry, parser):
     code = '''
 def test():
     password = "secret123"
-    api_key = "sk_live_abc123"
+    api_key = "sk_test_abc123"
 '''
 
     parsed = parser.parse_code(code)

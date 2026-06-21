@@ -209,7 +209,9 @@ def test_parser_registry_detect_language():
 
     assert registry.detect_language('test.py') == 'python'
     assert registry.detect_language('test.pyw') == 'python'
-    assert registry.detect_language('test.js') is None
+    assert registry.detect_language('test.js') == 'javascript'  # Now supported
+    assert registry.detect_language('test.java') == 'java'  # Now supported
+    assert registry.detect_language('test.unknown') is None
 
 
 def test_parser_registry_get_parser_for_file():
