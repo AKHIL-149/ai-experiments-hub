@@ -44,7 +44,7 @@ class QueueManager:
             job = AnalysisJob(
                 pull_request_id=pr_id,
                 job_type=job_type,
-                status=JobStatus.PENDING,
+                status=JobStatus.QUEUED,
                 started_at=datetime.now(timezone.utc)
             )
 
@@ -234,13 +234,37 @@ class QueueManager:
         job = AnalysisJob(
             pull_request_id=pr.id,
             job_type='pr_analysis',
-            status=JobStatus.PENDING,
-            started_at=datetime.utcnow()
+            status=JobStatus.QUEUED,
+            started_at=datetime.now(timezone.utc)
         )
 
         self.db.add(job)
         self.db.commit()
         self.db.refresh(job)
+
+        # Dispatch Celery task (if celery is available)
+        try:
+            from ..workers.pr_worker import analyze_pr_webhook
+
+            # Queue the task with appropriate priority
+            task_options = {}
+            if priority == 'high':
+                task_options['priority'] = 9
+            elif priority == 'low':
+                task_options['priority'] = 1
+
+            task = analyze_pr_webhook.apply_async(
+                args=[job.id, repository_id, pr_number, installation_id],
+                **task_options
+            )
+
+            # Update job with celery task ID
+            job.celery_task_id = task.id
+            self.db.commit()
+        except Exception as e:
+            # If Celery is not available or task dispatch fails, job stays PENDING
+            # It can be processed by a cron job or manual trigger later
+            print(f"Warning: Could not dispatch Celery task: {e}")
 
         return job
 
