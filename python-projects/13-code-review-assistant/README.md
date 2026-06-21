@@ -1,17 +1,18 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.2.0 (Multi-Language Support)
-**Status**: Production-Ready with JavaScript/TypeScript
+**Version**: 0.3.0 (Multi-Language Support: Python, JavaScript, Java)
+**Status**: Production-Ready with Multi-Language Analysis
 
-An intelligent code review system that analyzes Python and JavaScript/TypeScript code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, and Java code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
 
 ## 🚀 Features
 
 ### Core Analysis
-- **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX
+- **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX, Java
 - **Python Analysis**: Security vulnerabilities, code smells, complexity metrics
 - **JavaScript/TypeScript Analysis**: ES6+, React/JSX support, async/await patterns
-- **15+ Analysis Rules**: SQL injection, hardcoded secrets, long methods, deep nesting, cyclomatic complexity
+- **Java Analysis**: Spring Framework patterns, Javadoc extraction, enterprise security rules
+- **22+ Analysis Rules**: SQL injection, hardcoded secrets, long methods, deep nesting, XXE, weak cryptography
 - **AI-Powered Insights**: Ollama/Anthropic/OpenAI integration for explanations and refactorings
 - **Severity Levels**: Info, Warning, Error, Critical with confidence scoring
 
@@ -45,10 +46,11 @@ An intelligent code review system that analyzes Python and JavaScript/TypeScript
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 720+
+- **Total Tests**: 770+
 - **Coverage**: 90%+
 - **Test Suites**:
-  - Parser tests: 44 JavaScript/TypeScript tests (100% passing)
+  - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests (100% passing)
+  - Analyzer tests: 22 Java analyzer tests, 30 JavaScript analyzer tests (100% passing)
   - Service tests: 100+ tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
