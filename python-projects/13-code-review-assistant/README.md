@@ -1,14 +1,16 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.1.0 (Week 4 Complete)
-**Status**: Production-Ready MVP
+**Version**: 0.2.0 (Multi-Language Support)
+**Status**: Production-Ready with JavaScript/TypeScript
 
-An intelligent code review system that analyzes Python code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python and JavaScript/TypeScript code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, and comprehensive production monitoring.
 
 ## 🚀 Features
 
 ### Core Analysis
-- **Python Code Analysis**: Security vulnerabilities, code smells, complexity metrics
+- **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX
+- **Python Analysis**: Security vulnerabilities, code smells, complexity metrics
+- **JavaScript/TypeScript Analysis**: ES6+, React/JSX support, async/await patterns
 - **15+ Analysis Rules**: SQL injection, hardcoded secrets, long methods, deep nesting, cyclomatic complexity
 - **AI-Powered Insights**: Ollama/Anthropic/OpenAI integration for explanations and refactorings
 - **Severity Levels**: Info, Warning, Error, Critical with confidence scoring
@@ -43,9 +45,10 @@ An intelligent code review system that analyzes Python code, detects issues, sug
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 680+
-- **Coverage**: 89%+
+- **Total Tests**: 720+
+- **Coverage**: 90%+
 - **Test Suites**:
+  - Parser tests: 44 JavaScript/TypeScript tests (100% passing)
   - Service tests: 100+ tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests

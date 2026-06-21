@@ -2,6 +2,7 @@
 from typing import Dict, Optional, List
 from .base_parser import BaseParser, ParseError
 from .python_parser import PythonParser
+from .javascript_parser import JavaScriptParser
 from .models import ParsedModule
 
 
@@ -22,6 +23,7 @@ class ParserRegistry:
     def _register_default_parsers(self):
         """Register all available parsers"""
         self.register_parser('python', PythonParser())
+        self.register_parser('javascript', JavaScriptParser())
 
     def register_parser(self, language: str, parser: BaseParser):
         """
