@@ -508,6 +508,70 @@ async def remove_github_token(user = Depends(get_current_user)):
     }
 
 
+@app.post("/api/github/webhook")
+async def github_webhook(request: Request):
+    """
+    GitHub webhook endpoint for receiving events.
+
+    Handles:
+    - Pull request events (opened, synchronized, reopened)
+    - Push events
+    - Installation events
+    - Review events
+    """
+    from src.core.webhook_handler import get_webhook_handler
+    from src.services.webhook_service import get_webhook_service
+
+    # Get raw body for signature verification
+    body = await request.body()
+
+    # Get headers
+    signature = request.headers.get('X-Hub-Signature-256', '')
+    event_type = request.headers.get('X-GitHub-Event', '')
+    delivery_id = request.headers.get('X-GitHub-Delivery', '')
+
+    # Verify signature
+    webhook_handler = get_webhook_handler()
+    if not webhook_handler.verify_signature(body, signature):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid webhook signature"
+        )
+
+    # Parse JSON payload
+    import json
+    try:
+        payload = json.loads(body.decode('utf-8'))
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON payload"
+        )
+
+    # Log webhook receipt
+    from src.services.logging_service import logging_service
+    logging_service.info(
+        f"Received GitHub webhook: {event_type}",
+        extra={
+            'event_type': event_type,
+            'delivery_id': delivery_id,
+            'action': payload.get('action')
+        }
+    )
+
+    # Handle event asynchronously
+    webhook_service = get_webhook_service()
+    result = await webhook_handler.handle_event(event_type, payload)
+
+    # Return success response
+    return {
+        "success": True,
+        "event": event_type,
+        "delivery_id": delivery_id,
+        "result": result
+    }
+
+
 # ============================================================================
 # Pull Request Routes
 # ============================================================================

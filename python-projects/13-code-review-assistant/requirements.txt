@@ -11,6 +11,7 @@ python-multipart==0.0.6
 # Git Integration
 GitPython==3.1.40
 PyGithub==2.1.1
+PyJWT==2.10.1  # GitHub App authentication
 
 # Code Analysis
 radon==6.0.1

@@ -3,7 +3,7 @@ Queue management for async task processing with Celery
 """
 
 from typing import Optional, Dict, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from celery.result import AsyncResult
 
@@ -45,7 +45,7 @@ class QueueManager:
                 pull_request_id=pr_id,
                 job_type=job_type,
                 status=JobStatus.PENDING,
-                started_at=datetime.utcnow()
+                started_at=datetime.now(timezone.utc)
             )
 
             self.db.add(job)
@@ -129,7 +129,7 @@ class QueueManager:
 
         # Update job status
         job.status = JobStatus.FAILED
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
         job.result_json = {'error': 'Job cancelled by user'}
         self.db.commit()
 
@@ -147,7 +147,7 @@ class QueueManager:
         """
         from datetime import timedelta
 
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         count = self.db.query(AnalysisJob).filter(
             AnalysisJob.completed_at < cutoff_date,
@@ -187,3 +187,89 @@ class QueueManager:
             stats[status.value] = count
 
         return stats
+
+    def queue_pr_analysis(
+        self,
+        repository_id: int,
+        pr_number: int,
+        installation_id: Optional[int] = None,
+        priority: str = 'normal'
+    ) -> AnalysisJob:
+        """
+        Queue PR analysis job (webhook integration)
+
+        Args:
+            repository_id: Repository ID
+            pr_number: Pull request number
+            installation_id: GitHub installation ID
+            priority: Job priority (high/normal/low)
+
+        Returns:
+            Created AnalysisJob
+        """
+        from ..core.database import PullRequest
+
+        # Find or create PR
+        pr = self.db.query(PullRequest).filter(
+            PullRequest.repository_id == repository_id,
+            PullRequest.pr_number == pr_number
+        ).first()
+
+        if not pr:
+            # Create minimal PR record
+            pr = PullRequest(
+                repository_id=repository_id,
+                pr_number=pr_number,
+                title=f"PR #{pr_number}",
+                author="unknown",
+                status="open",
+                source_branch="unknown",
+                target_branch="unknown"
+            )
+            self.db.add(pr)
+            self.db.commit()
+            self.db.refresh(pr)
+
+        # Create analysis job
+        job = AnalysisJob(
+            pull_request_id=pr.id,
+            job_type='pr_analysis',
+            status=JobStatus.PENDING,
+            started_at=datetime.utcnow()
+        )
+
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+
+        return job
+
+
+# Global queue manager instance
+_queue_manager: Optional[QueueManager] = None
+
+
+def get_queue_manager() -> QueueManager:
+    """
+    Get the global queue manager instance.
+
+    Note: This is a simplified version for webhook integration.
+    In production, this should be properly initialized with db session and celery app.
+
+    Returns:
+        QueueManager instance
+    """
+    global _queue_manager
+
+    if _queue_manager is None:
+        from .database import DatabaseManager
+
+        # Mock celery app for now (will be implemented later)
+        class MockCeleryApp:
+            pass
+
+        db_manager = DatabaseManager()
+        session = db_manager.get_session()
+        _queue_manager = QueueManager(session, MockCeleryApp())
+
+    return _queue_manager
