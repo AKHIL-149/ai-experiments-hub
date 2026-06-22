@@ -2241,6 +2241,30 @@ async def analyze_page(request: Request, user = Depends(get_current_user_optiona
     })
 
 
+@app.get("/notifications", response_class=HTMLResponse)
+async def notifications_page(request: Request, user = Depends(get_current_user_optional)):
+    """Notification center page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("notifications.html", {
+        "request": request,
+        "user": user
+    })
+
+
+@app.get("/notifications/preferences", response_class=HTMLResponse)
+async def notification_preferences_page(request: Request, user = Depends(get_current_user_optional)):
+    """Notification preferences page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("notification_preferences.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, user = Depends(get_current_user_optional)):
     """Settings and configuration page"""

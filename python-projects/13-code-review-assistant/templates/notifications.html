@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications - AI Code Review Assistant{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/notifications.css">
+{% endblock %}
+
+{% block content %}
+<div class="container notifications-page">
+    <div class="page-header">
+        <h1>🔔 Notification Center</h1>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="notificationManager.markAllRead()">
+                Mark All Read
+            </button>
+            <a href="/notifications/preferences" class="btn btn-primary">
+                ⚙️ Preferences
+            </a>
+        </div>
+    </div>
+
+    <!-- Notification Filters -->
+    <div class="notification-filters">
+        <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all" onclick="notificationManager.filterByType('all')">
+                All <span class="badge" id="count-all">0</span>
+            </button>
+            <button class="filter-tab" data-filter="unread" onclick="notificationManager.filterByType('unread')">
+                Unread <span class="badge badge-primary" id="count-unread">0</span>
+            </button>
+            <button class="filter-tab" data-filter="pr_analysis" onclick="notificationManager.filterByType('pr_analysis')">
+                PR Analysis <span class="badge" id="count-pr">0</span>
+            </button>
+            <button class="filter-tab" data-filter="critical" onclick="notificationManager.filterByType('critical')">
+                Critical <span class="badge badge-danger" id="count-critical">0</span>
+            </button>
+            <button class="filter-tab" data-filter="mentions" onclick="notificationManager.filterByType('mentions')">
+                Mentions <span class="badge" id="count-mentions">0</span>
+            </button>
+        </div>
+        <div class="filter-controls">
+            <select id="severity-filter" class="form-select" onchange="notificationManager.applyFilters()">
+                <option value="">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="error">Error</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+            </select>
+            <select id="repository-filter" class="form-select" onchange="notificationManager.applyFilters()">
+                <option value="">All Repositories</option>
+                <!-- Populated dynamically -->
+            </select>
+        </div>
+    </div>
+
+    <!-- Notifications List -->
+    <div class="notifications-container">
+        <div id="notifications-list" class="notifications-list">
+            <!-- Loading state -->
+            <div class="loading-state" id="loading-state">
+                <div class="spinner"></div>
+                <p>Loading notifications...</p>
+            </div>
+
+            <!-- Empty state -->
+            <div class="empty-state" id="empty-state" style="display: none;">
+                <div class="empty-icon">🔕</div>
+                <h3>No notifications</h3>
+                <p>You're all caught up! Check back later for updates.</p>
+            </div>
+
+            <!-- Notifications will be inserted here -->
+        </div>
+
+        <!-- Load more -->
+        <div class="load-more" id="load-more" style="display: none;">
+            <button class="btn btn-secondary" onclick="notificationManager.loadMore()">
+                Load More
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Detail Modal -->
+    <div id="notification-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close" onclick="notificationManager.closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Notification details -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="notificationManager.closeModal()">Close</button>
+                <button class="btn btn-primary" id="modal-action-btn"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Notification Template (Hidden) -->
+<template id="notification-template">
+    <div class="notification-item" data-id="{id}" data-read="{read}">
+        <div class="notification-icon {severity}">
+            <span class="icon">{icon}</span>
+        </div>
+        <div class="notification-content">
+            <div class="notification-header">
+                <h4 class="notification-title">{title}</h4>
+                <span class="notification-time">{time}</span>
+            </div>
+            <p class="notification-message">{message}</p>
+            <div class="notification-meta">
+                <span class="badge badge-{severity}">{severity}</span>
+                {repository}
+                {pr_number}
+            </div>
+        </div>
+        <div class="notification-actions">
+            <button class="btn-icon" onclick="notificationManager.markAsRead('{id}')" title="Mark as read">
+                ✓
+            </button>
+            <button class="btn-icon" onclick="notificationManager.viewDetails('{id}')" title="View details">
+                👁
+            </button>
+            <button class="btn-icon btn-danger" onclick="notificationManager.deleteNotification('{id}')" title="Delete">
+                🗑
+            </button>
+        </div>
+    </div>
+</template>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/notification-manager.js"></script>
+<script>
+    // Initialize notification manager on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        window.notificationManager = new NotificationManager();
+        notificationManager.init();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block title %}Notification Preferences - AI Code Review Assistant{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/notifications.css">
+{% endblock %}
+
+{% block content %}
+<div class="container preferences-page">
+    <div class="page-header">
+        <div>
+            <h1>⚙️ Notification Preferences</h1>
+            <p class="subtitle">Configure how and when you receive notifications</p>
+        </div>
+        <div class="header-actions">
+            <a href="/notifications" class="btn btn-secondary">← Back to Notifications</a>
+            <button class="btn btn-primary" onclick="preferencesManager.savePreferences()">Save Changes</button>
+        </div>
+    </div>
+
+    <div class="preferences-container">
+        <!-- Channel Configuration -->
+        <div class="preference-section">
+            <h2>📢 Notification Channels</h2>
+            <p class="section-description">Choose how you want to receive notifications</p>
+
+            <div class="channel-grid">
+                <!-- Email -->
+                <div class="channel-card">
+                    <div class="channel-header">
+                        <div class="channel-icon">📧</div>
+                        <h3>Email</h3>
+                        <label class="toggle">
+                            <input type="checkbox" id="email-enabled" onchange="preferencesManager.toggleChannel('email')">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="channel-config" id="email-config" style="display: none;">
+                        <div class="form-group">
+                            <label>Email Address</label>
+                            <input type="email" id="email-address" class="form-input" placeholder="your@email.com">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="email-digest">
+                                Enable Daily Digest
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>Digest Time</label>
+                            <input type="time" id="email-digest-time" class="form-input" value="09:00">
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="preferencesManager.testChannel('email')">
+                            Test Email
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Slack -->
+                <div class="channel-card">
+                    <div class="channel-header">
+                        <div class="channel-icon">💬</div>
+                        <h3>Slack</h3>
+                        <label class="toggle">
+                            <input type="checkbox" id="slack-enabled" onchange="preferencesManager.toggleChannel('slack')">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="channel-config" id="slack-config" style="display: none;">
+                        <div class="form-group">
+                            <label>Webhook URL</label>
+                            <input type="url" id="slack-webhook" class="form-input" placeholder="https://hooks.slack.com/...">
+                        </div>
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <input type="text" id="slack-channel" class="form-input" placeholder="#code-reviews">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="slack-threading">
+                                Use Threading
+                            </label>
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="preferencesManager.testChannel('slack')">
+                            Test Slack
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Discord -->
+                <div class="channel-card">
+                    <div class="channel-header">
+                        <div class="channel-icon">🎮</div>
+                        <h3>Discord</h3>
+                        <label class="toggle">
+                            <input type="checkbox" id="discord-enabled" onchange="preferencesManager.toggleChannel('discord')">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="channel-config" id="discord-config" style="display: none;">
+                        <div class="form-group">
+                            <label>Webhook URL</label>
+                            <input type="url" id="discord-webhook" class="form-input" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="discord-username" class="form-input" placeholder="Code Review Bot">
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="preferencesManager.testChannel('discord')">
+                            Test Discord
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification Rules -->
+        <div class="preference-section">
+            <div class="section-header">
+                <h2>📋 Notification Rules</h2>
+                <button class="btn btn-sm btn-primary" onclick="rulesManager.createRule()">+ New Rule</button>
+            </div>
+            <p class="section-description">Create custom rules to filter and route notifications</p>
+
+            <div id="rules-list" class="rules-list">
+                <!-- Loading -->
+                <div class="loading-state" id="rules-loading">
+                    <div class="spinner"></div>
+                    <p>Loading rules...</p>
+                </div>
+
+                <!-- Empty state -->
+                <div class="empty-state" id="rules-empty" style="display: none;">
+                    <p>No notification rules configured. Create your first rule to get started!</p>
+                </div>
+
+                <!-- Rules will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Severity Filters -->
+        <div class="preference-section">
+            <h2>🎚 Severity Filters</h2>
+            <p class="section-description">Choose which severity levels trigger notifications</p>
+
+            <div class="severity-checkboxes">
+                <label class="severity-checkbox critical">
+                    <input type="checkbox" id="severity-critical" checked>
+                    <span class="severity-icon">🔴</span>
+                    <span>Critical</span>
+                </label>
+                <label class="severity-checkbox error">
+                    <input type="checkbox" id="severity-error" checked>
+                    <span class="severity-icon">🟠</span>
+                    <span>Error</span>
+                </label>
+                <label class="severity-checkbox warning">
+                    <input type="checkbox" id="severity-warning" checked>
+                    <span class="severity-icon">🟡</span>
+                    <span>Warning</span>
+                </label>
+                <label class="severity-checkbox info">
+                    <input type="checkbox" id="severity-info">
+                    <span class="severity-icon">🔵</span>
+                    <span>Info</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Quiet Hours -->
+        <div class="preference-section">
+            <h2>🌙 Quiet Hours</h2>
+            <p class="section-description">Pause notifications during specific hours</p>
+
+            <div class="quiet-hours-config">
+                <label class="toggle">
+                    <input type="checkbox" id="quiet-hours-enabled" onchange="preferencesManager.toggleQuietHours()">
+                    <span class="toggle-slider"></span>
+                    Enable Quiet Hours
+                </label>
+
+                <div id="quiet-hours-settings" style="display: none;">
+                    <div class="time-range">
+                        <div class="form-group">
+                            <label>Start Time</label>
+                            <input type="time" id="quiet-start" class="form-input" value="22:00">
+                        </div>
+                        <div class="form-group">
+                            <label>End Time</label>
+                            <input type="time" id="quiet-end" class="form-input" value="08:00">
+                        </div>
+                        <div class="form-group">
+                            <label>Timezone</label>
+                            <select id="quiet-timezone" class="form-select">
+                                <option value="UTC">UTC</option>
+                                <option value="America/New_York">Eastern</option>
+                                <option value="America/Chicago">Central</option>
+                                <option value="America/Denver">Mountain</option>
+                                <option value="America/Los_Angeles">Pacific</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="days-selector">
+                        <label>Active Days:</label>
+                        <div class="day-checkboxes">
+                            <label><input type="checkbox" name="quiet-day" value="0" checked> Mon</label>
+                            <label><input type="checkbox" name="quiet-day" value="1" checked> Tue</label>
+                            <label><input type="checkbox" name="quiet-day" value="2" checked> Wed</label>
+                            <label><input type="checkbox" name="quiet-day" value="3" checked> Thu</label>
+                            <label><input type="checkbox" name="quiet-day" value="4" checked> Fri</label>
+                            <label><input type="checkbox" name="quiet-day" value="5"> Sat</label>
+                            <label><input type="checkbox" name="quiet-day" value="6"> Sun</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Settings -->
+        <div class="preference-section">
+            <h2>🔧 Advanced Settings</h2>
+
+            <div class="advanced-settings">
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="batch-notifications">
+                        <strong>Batch Notifications</strong>
+                        <p class="setting-description">Group similar notifications together</p>
+                    </label>
+                </div>
+                <div class="setting-item" id="batch-interval-setting" style="display: none;">
+                    <label>Batch Interval (minutes)</label>
+                    <input type="number" id="batch-interval" class="form-input" value="60" min="15" max="480">
+                </div>
+                <div class="setting-item">
+                    <label>Rate Limiting</label>
+                    <p class="setting-description">Maximum notifications per hour</p>
+                    <input type="number" id="rate-limit" class="form-input" value="10" min="1" max="100">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save reminder -->
+    <div class="save-reminder" id="save-reminder" style="display: none;">
+        <p>⚠️ You have unsaved changes</p>
+        <button class="btn btn-primary" onclick="preferencesManager.savePreferences()">Save Now</button>
+    </div>
+</div>
+
+<!-- Rule Editor Modal -->
+<div id="rule-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h2 id="rule-modal-title">Create Notification Rule</h2>
+            <button class="modal-close" onclick="rulesManager.closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="rule-form">
+                <div class="form-group">
+                    <label>Rule Name *</label>
+                    <input type="text" id="rule-name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="rule-description" class="form-input" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Priority (lower = higher priority)</label>
+                    <input type="number" id="rule-priority" class="form-input" value="100" min="1">
+                </div>
+
+                <h3>Conditions</h3>
+                <div class="rule-conditions">
+                    <div class="form-group">
+                        <label>Severity</label>
+                        <select id="rule-severity" class="form-select" multiple>
+                            <option value="critical">Critical</option>
+                            <option value="error">Error</option>
+                            <option value="warning">Warning</option>
+                            <option value="info">Info</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>File Patterns (one per line)</label>
+                        <textarea id="rule-patterns" class="form-input" rows="3" placeholder="app/**/*.py&#10;src/**/*.js"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Minimum Confidence (%)</label>
+                        <input type="number" id="rule-confidence" class="form-input" value="0" min="0" max="100">
+                    </div>
+                </div>
+
+                <h3>Actions</h3>
+                <div class="rule-actions">
+                    <label><input type="checkbox" id="rule-notify-slack"> Notify via Slack</label>
+                    <label><input type="checkbox" id="rule-notify-email"> Notify via Email</label>
+                    <label><input type="checkbox" id="rule-notify-discord"> Notify via Discord</label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="rulesManager.closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="rulesManager.saveRule()">Save Rule</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/notification-manager.js"></script>
+<script>
+    // Initialize preferences manager on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        window.preferencesManager = new PreferencesManager();
+        window.rulesManager = new RulesManager();
+        preferencesManager.init();
+        rulesManager.init();
+
+        // Track changes
+        document.querySelectorAll('input, select, textarea').forEach(input => {
+            input.addEventListener('change', () => {
+                document.getElementById('save-reminder').style.display = 'flex';
+            });
+        });
+
+        // Batch notifications toggle
+        document.getElementById('batch-notifications').addEventListener('change', function() {
+            document.getElementById('batch-interval-setting').style.display = this.checked ? 'block' : 'none';
+        });
+    });
+</script>
+{% endblock %}
