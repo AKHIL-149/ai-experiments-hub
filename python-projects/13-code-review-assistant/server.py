@@ -2660,6 +2660,18 @@ async def logout_page(response: Response, session_token: Optional[str] = Cookie(
     return response
 
 
+@app.get("/rules/builder", response_class=HTMLResponse)
+async def rule_builder_page(request: Request, user = Depends(get_current_user_optional)):
+    """Rule builder page - visual custom rule editor"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("rule_builder.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
@@ -4344,6 +4356,209 @@ async def get_repository_status(
             "success": True,
             "repository": repo_dict,
             "job": job_status
+        }
+
+
+# ============================================================================
+# Custom Rules API
+# ============================================================================
+
+class CustomRuleRequest(BaseModel):
+    """Request model for custom rule"""
+    id: str
+    name: str
+    description: str
+    category: str
+    severity: str
+    languages: List[str]
+    pattern_type: str
+    message: str
+    fix_suggestion: Optional[str] = None
+    auto_fixable: bool = False
+    ast_patterns: Optional[List[Dict[str, Any]]] = None
+    regex_pattern: Optional[Dict[str, Any]] = None
+
+
+class TestRuleRequest(BaseModel):
+    """Request model for testing a rule"""
+    rule: Dict[str, Any]
+    code: str
+    language: str
+
+
+@app.post("/api/rules/custom")
+async def save_custom_rule(
+    request: CustomRuleRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Save a custom analysis rule.
+
+    The rule will be stored and can be used in future analyses.
+    """
+    try:
+        from src.core.database import CustomRule
+
+        with db_manager.get_session() as db:
+            # Check if rule ID already exists
+            existing_rule = db.query(CustomRule).filter(
+                CustomRule.id == request.id,
+                CustomRule.user_id == user.id
+            ).first()
+
+            if existing_rule:
+                # Update existing rule
+                existing_rule.name = request.name
+                existing_rule.description = request.description
+                existing_rule.category = request.category
+                existing_rule.severity = request.severity
+                existing_rule.languages = ','.join(request.languages)
+                existing_rule.pattern_type = request.pattern_type
+                existing_rule.pattern_data = {
+                    'ast_patterns': request.ast_patterns,
+                    'regex_pattern': request.regex_pattern
+                }
+                existing_rule.message = request.message
+                existing_rule.fix_suggestion = request.fix_suggestion
+                existing_rule.auto_fixable = request.auto_fixable
+            else:
+                # Create new rule
+                new_rule = CustomRule(
+                    id=request.id,
+                    user_id=user.id,
+                    name=request.name,
+                    description=request.description,
+                    category=request.category,
+                    severity=request.severity,
+                    languages=','.join(request.languages),
+                    pattern_type=request.pattern_type,
+                    pattern_data={
+                        'ast_patterns': request.ast_patterns,
+                        'regex_pattern': request.regex_pattern
+                    },
+                    message=request.message,
+                    fix_suggestion=request.fix_suggestion,
+                    auto_fixable=request.auto_fixable,
+                    enabled=True
+                )
+                db.add(new_rule)
+
+            db.commit()
+
+        return {"success": True, "message": "Rule saved successfully"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/rules/custom")
+async def get_custom_rules(user = Depends(get_current_user)):
+    """
+    Get all custom rules for the current user.
+    """
+    try:
+        from src.core.database import CustomRule
+
+        with db_manager.get_session() as db:
+            rules = db.query(CustomRule).filter(
+                CustomRule.user_id == user.id
+            ).all()
+
+            return {
+                "success": True,
+                "rules": [rule.to_dict() for rule in rules]
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/rules/custom/{rule_id}")
+async def get_custom_rule(rule_id: str, user = Depends(get_current_user)):
+    """
+    Get a specific custom rule.
+    """
+    try:
+        from src.core.database import CustomRule
+
+        with db_manager.get_session() as db:
+            rule = db.query(CustomRule).filter(
+                CustomRule.id == rule_id,
+                CustomRule.user_id == user.id
+            ).first()
+
+            if not rule:
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            return {
+                "success": True,
+                "rule": rule.to_dict()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/rules/custom/{rule_id}")
+async def delete_custom_rule(rule_id: str, user = Depends(get_current_user)):
+    """
+    Delete a custom rule.
+    """
+    try:
+        from src.core.database import CustomRule
+
+        with db_manager.get_session() as db:
+            rule = db.query(CustomRule).filter(
+                CustomRule.id == rule_id,
+                CustomRule.user_id == user.id
+            ).first()
+
+            if not rule:
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            db.delete(rule)
+            db.commit()
+
+        return {"success": True, "message": "Rule deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/rules/test")
+async def test_rule(
+    request: TestRuleRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Test a custom rule against code.
+
+    Returns matches found by the rule.
+    """
+    try:
+        from src.services.custom_rule_service import CustomRuleService
+
+        rule_service = CustomRuleService()
+        matches = rule_service.test_rule(
+            rule=request.rule,
+            code=request.code,
+            language=request.language
+        )
+
+        return {
+            "success": True,
+            "matches": matches
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "matches": []
         }
 
 

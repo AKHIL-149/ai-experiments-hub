@@ -783,6 +783,68 @@ class NotificationRule(Base):
         return f"<NotificationRule(id={self.id}, name={self.name}, enabled={self.enabled})>"
 
 
+class CustomRule(Base):
+    """Custom analysis rules created by users."""
+    __tablename__ = 'custom_rules'
+
+    id = Column(String(100), primary_key=True)  # User-defined rule ID (e.g., CUSTOM001)
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+
+    # Rule metadata
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    category = Column(String(50), nullable=False)  # security, smell, complexity, etc.
+    severity = Column(String(20), nullable=False)  # info, warning, error, critical
+    languages = Column(String(200), nullable=False)  # Comma-separated list: python,javascript,java
+
+    # Pattern matching
+    pattern_type = Column(String(20), nullable=False)  # ast, regex, or both
+    pattern_data = Column(JSON, nullable=False)  # {ast_patterns: [...], regex_pattern: {...}}
+
+    # Action/Message
+    message = Column(Text, nullable=False)  # Message to show when rule is triggered
+    fix_suggestion = Column(Text)  # Suggestion for fixing the issue
+    auto_fixable = Column(Boolean, default=False)
+
+    # Status
+    enabled = Column(Boolean, default=True)
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    last_used_at = Column(DateTime)
+    use_count = Column(Integer, default=0)
+
+    # Relationships
+    user = relationship('User', backref='custom_rules')
+
+    def to_dict(self) -> Dict:
+        """Convert CustomRule to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'name': self.name,
+            'description': self.description,
+            'category': self.category,
+            'severity': self.severity,
+            'languages': self.languages.split(',') if self.languages else [],
+            'pattern_type': self.pattern_type,
+            'ast_patterns': self.pattern_data.get('ast_patterns') if self.pattern_data else None,
+            'regex_pattern': self.pattern_data.get('regex_pattern') if self.pattern_data else None,
+            'message': self.message,
+            'fix_suggestion': self.fix_suggestion,
+            'auto_fixable': self.auto_fixable,
+            'enabled': self.enabled,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None,
+            'use_count': self.use_count
+        }
+
+    def __repr__(self):
+        return f"<CustomRule(id={self.id}, name={self.name}, enabled={self.enabled})>"
+
+
 class DatabaseManager:
     """Manages database connections and sessions."""
 

@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}Rule Builder - AI Code Review Assistant{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/rule-builder.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="rule-builder-page">
+    <!-- Header -->
+    <div class="page-header">
+        <div>
+            <h1>🔧 Custom Rule Builder</h1>
+            <p class="subtitle">Create custom analysis rules with visual pattern matching and regex testing</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="ruleBuilder.loadTemplates()">
+                📚 Templates
+            </button>
+            <button class="btn btn-secondary" onclick="ruleBuilder.loadRule()">
+                📂 Load Rule
+            </button>
+            <button class="btn btn-primary" onclick="ruleBuilder.saveRule()">
+                💾 Save Rule
+            </button>
+        </div>
+    </div>
+
+    <div class="builder-container">
+        <!-- Left Panel: Rule Configuration -->
+        <div class="builder-panel config-panel">
+            <h2>Rule Configuration</h2>
+
+            <!-- Rule Metadata -->
+            <div class="section">
+                <h3>Basic Information</h3>
+                <div class="form-group">
+                    <label for="rule-id">Rule ID *</label>
+                    <input type="text" id="rule-id" class="form-input" placeholder="e.g., CUSTOM001" required>
+                    <small>Unique identifier for this rule</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="rule-name">Rule Name *</label>
+                    <input type="text" id="rule-name" class="form-input" placeholder="e.g., SQL Injection Detection" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="rule-description">Description *</label>
+                    <textarea id="rule-description" class="form-input" rows="3" placeholder="Describe what this rule detects" required></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="rule-category">Category *</label>
+                        <select id="rule-category" class="form-select" required>
+                            <option value="">Select category...</option>
+                            <option value="security">Security</option>
+                            <option value="smell">Code Smell</option>
+                            <option value="complexity">Complexity</option>
+                            <option value="performance">Performance</option>
+                            <option value="maintainability">Maintainability</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="rule-severity">Severity *</label>
+                        <select id="rule-severity" class="form-select" required>
+                            <option value="">Select severity...</option>
+                            <option value="info">Info</option>
+                            <option value="warning">Warning</option>
+                            <option value="error">Error</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="rule-languages">Target Languages *</label>
+                    <select id="rule-languages" class="form-select" multiple>
+                        <option value="python">Python</option>
+                        <option value="javascript">JavaScript/TypeScript</option>
+                        <option value="java">Java</option>
+                        <option value="go">Go</option>
+                        <option value="rust">Rust</option>
+                    </select>
+                    <small>Hold Ctrl/Cmd to select multiple</small>
+                </div>
+            </div>
+
+            <!-- Pattern Matching -->
+            <div class="section">
+                <h3>Pattern Matching</h3>
+
+                <div class="pattern-type-selector">
+                    <label class="radio-option">
+                        <input type="radio" name="pattern-type" value="ast" checked>
+                        <span>AST Pattern</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="pattern-type" value="regex">
+                        <span>Regex Pattern</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="pattern-type" value="both">
+                        <span>Combined</span>
+                    </label>
+                </div>
+
+                <!-- AST Pattern Builder -->
+                <div id="ast-pattern-section" class="pattern-section">
+                    <h4>AST Pattern Builder</h4>
+
+                    <div class="form-group">
+                        <label for="ast-node-type">Node Type</label>
+                        <select id="ast-node-type" class="form-select">
+                            <option value="">Select node type...</option>
+                            <optgroup label="Python">
+                                <option value="FunctionDef">Function Definition</option>
+                                <option value="ClassDef">Class Definition</option>
+                                <option value="Call">Function Call</option>
+                                <option value="Assign">Assignment</option>
+                                <option value="If">If Statement</option>
+                                <option value="For">For Loop</option>
+                                <option value="While">While Loop</option>
+                                <option value="Import">Import Statement</option>
+                                <option value="BinOp">Binary Operation</option>
+                                <option value="Compare">Comparison</option>
+                            </optgroup>
+                            <optgroup label="JavaScript">
+                                <option value="FunctionDeclaration">Function Declaration</option>
+                                <option value="ArrowFunctionExpression">Arrow Function</option>
+                                <option value="CallExpression">Function Call</option>
+                                <option value="VariableDeclaration">Variable Declaration</option>
+                                <option value="IfStatement">If Statement</option>
+                                <option value="ForStatement">For Loop</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ast-attributes">Node Attributes (JSON)</label>
+                        <textarea id="ast-attributes" class="form-input code-input" rows="4" placeholder='{"name": "execute", "args": {"length": ">0"}}'></textarea>
+                        <small>Define specific attributes the node must have</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ast-child-pattern">Child Pattern</label>
+                        <textarea id="ast-child-pattern" class="form-input code-input" rows="3" placeholder='Look for specific child nodes'></textarea>
+                    </div>
+
+                    <button class="btn btn-secondary btn-sm" onclick="ruleBuilder.addASTPattern()">
+                        ➕ Add Pattern
+                    </button>
+
+                    <div id="ast-patterns-list" class="patterns-list">
+                        <!-- AST patterns will be listed here -->
+                    </div>
+                </div>
+
+                <!-- Regex Pattern Tester -->
+                <div id="regex-pattern-section" class="pattern-section" style="display: none;">
+                    <h4>Regex Pattern Tester</h4>
+
+                    <div class="form-group">
+                        <label for="regex-pattern">Regular Expression</label>
+                        <input type="text" id="regex-pattern" class="form-input code-input" placeholder="e.g., (os\.system|subprocess\.call)\(.*?\)">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="regex-case-insensitive">
+                                Case Insensitive
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="regex-multiline">
+                                Multiline
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="regex-dotall">
+                                Dot Matches All
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regex-test-input">Test Input</label>
+                        <textarea id="regex-test-input" class="form-input code-input" rows="4" placeholder="Enter code to test the regex pattern"></textarea>
+                    </div>
+
+                    <button class="btn btn-secondary btn-sm" onclick="ruleBuilder.testRegex()">
+                        🧪 Test Pattern
+                    </button>
+
+                    <div id="regex-test-results" class="test-results">
+                        <!-- Test results will appear here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rule Action -->
+            <div class="section">
+                <h3>Rule Action</h3>
+
+                <div class="form-group">
+                    <label for="rule-message">Detection Message *</label>
+                    <textarea id="rule-message" class="form-input" rows="2" placeholder="Message to show when rule is triggered" required></textarea>
+                    <small>Use {variable} for dynamic values</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="rule-fix-suggestion">Fix Suggestion</label>
+                    <textarea id="rule-fix-suggestion" class="form-input" rows="3" placeholder="Suggest how to fix the issue"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="rule-auto-fixable">
+                        Auto-fixable (can be automatically corrected)
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Code Preview & Testing -->
+        <div class="builder-panel preview-panel">
+            <h2>Live Preview & Testing</h2>
+
+            <!-- Test Code Input -->
+            <div class="section">
+                <h3>Test Code</h3>
+                <div class="form-group">
+                    <label for="preview-language">Language</label>
+                    <select id="preview-language" class="form-select" onchange="ruleBuilder.updatePreviewLanguage()">
+                        <option value="python">Python</option>
+                        <option value="javascript">JavaScript</option>
+                        <option value="java">Java</option>
+                        <option value="go">Go</option>
+                        <option value="rust">Rust</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <textarea id="preview-code" class="form-input code-input" rows="15" placeholder="Enter test code here..."></textarea>
+                </div>
+
+                <button class="btn btn-primary" onclick="ruleBuilder.testRule()">
+                    ▶️ Test Rule
+                </button>
+            </div>
+
+            <!-- Test Results -->
+            <div class="section">
+                <h3>Test Results</h3>
+                <div id="test-results-container" class="results-container">
+                    <div class="empty-state">
+                        <p>🧪 No tests run yet</p>
+                        <small>Configure your rule and test it against sample code</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rule Preview -->
+            <div class="section">
+                <h3>Rule JSON Preview</h3>
+                <pre id="rule-json-preview" class="json-preview"><code class="language-json">{}</code></pre>
+                <button class="btn btn-secondary btn-sm" onclick="ruleBuilder.copyRuleJSON()">
+                    📋 Copy JSON
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Template Library Modal -->
+<div id="templates-modal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h2>📚 Rule Templates</h2>
+            <button class="modal-close" onclick="ruleBuilder.closeTemplatesModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="template-filters">
+                <input type="text" id="template-search" class="form-input" placeholder="Search templates...">
+                <select id="template-category-filter" class="form-select">
+                    <option value="">All Categories</option>
+                    <option value="security">Security</option>
+                    <option value="smell">Code Smell</option>
+                    <option value="complexity">Complexity</option>
+                    <option value="performance">Performance</option>
+                </select>
+            </div>
+            <div id="templates-grid" class="templates-grid">
+                <!-- Templates will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load Rule Modal -->
+<div id="load-rule-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>📂 Load Custom Rule</h2>
+            <button class="modal-close" onclick="ruleBuilder.closeLoadModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="saved-rules-list" class="saved-rules-list">
+                <!-- Saved rules will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="/static/js/rule-builder.js"></script>
+<script>
+    const ruleBuilder = new RuleBuilder();
+    ruleBuilder.init();
+</script>
+{% endblock %}

@@ -1,9 +1,9 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.13 (Notification UI & Management)
-**Status**: Production-Ready with Complete Notification System & Multi-Language Support
+**Version**: 0.5.14 (Rule Builder UI)
+**Status**: Production-Ready with Custom Rule Builder & Complete Notification System
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, visual custom rule builder, and comprehensive production monitoring.
 
 ## 🚀 Features
 
@@ -45,6 +45,12 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 ### Advanced UI Components
 - **Dashboard**: Real-time health scores with Chart.js, activity feed, issue trends
 - **Issue Browser**: Advanced filtering (severity, category, file, date range), saved presets
+- **Rule Builder**: Visual editor for creating custom analysis rules
+  - AST pattern matching builder with node type selectors
+  - Regex pattern tester with live validation
+  - Live code preview and rule testing
+  - Template library for quick starts
+  - Save/load custom rules
 - **Diff Viewer**: Syntax-highlighted unified/split diff views
 - **Progress Tracker**: Real-time progress with SSE and polling fallback
 - **Settings Panel**: Configurable rules, thresholds, AI providers, theme switching
@@ -59,7 +65,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 1008+
+- **Total Tests**: 1060+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
@@ -74,6 +80,8 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - Notification rules tests: 25 tests (100% passing)
   - Notification digest tests: 41 tests (100% passing)
   - Notification UI tests: 20 tests (100% passing)
+  - Custom rule service tests: 24 tests (100% passing)
+  - Rule builder endpoint tests: 28 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -569,6 +577,23 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.14 - Rule Builder UI (102% Complete)
+**Commit 13.5.14** - Implemented visual custom rule builder:
+- Rule builder HTML template (rule_builder.html) with comprehensive form interface
+- Rule builder CSS (rule-builder.css, 700+ lines) with responsive design
+- RuleBuilder JavaScript class (1000+ lines) for interactive rule creation
+- AST pattern matching builder with node type selectors for Python and JavaScript
+- Regex pattern tester with live validation and multi-flag support
+- Live code preview with syntax highlighting and real-time rule testing
+- Rule templates library (security, smells, complexity templates)
+- CustomRule database model for storing user-defined rules
+- CustomRuleService for testing and applying custom rules
+- 5 new API endpoints (save, get, get-by-id, delete, test rules)
+- Pattern matching support: AST patterns, regex patterns, or combined
+- Support for multiple programming languages per rule
+- Auto-fixable rule flagging
+- 52 comprehensive tests (24 service + 28 endpoint, 100% passing)
+
 ### Version 0.5.13 - Notification UI & Management (100% Complete)
 **Commit 13.5.13** - Completed comprehensive notification user interface:
 - Notification center page (notifications.html) with filtering and modal views
@@ -696,5 +721,5 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ---
 
-**Project 13 - Phase 5.13 Complete**
-Production-ready with complete notification UI, digest & batching system, advanced rules engine, multi-channel notifications, GitHub App UI, webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨
+**Project 13 - Phase 5.14 Complete**
+Production-ready with visual custom rule builder, complete notification UI, digest & batching system, advanced rules engine, multi-channel notifications, GitHub App UI, webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨
