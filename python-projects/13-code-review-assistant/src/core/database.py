@@ -698,6 +698,91 @@ class DiscordConfiguration(Base):
         return f"<DiscordConfiguration(id={self.id}, user_id={self.user_id}, enabled={self.enabled})>"
 
 
+class NotificationRule(Base):
+    """Notification rules with conditions and actions."""
+    __tablename__ = 'notification_rules'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey('repositories.id'), index=True)  # Optional: per-repo rule
+
+    # Rule metadata
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    enabled = Column(Boolean, default=True)
+    priority = Column(Integer, default=100)  # Lower number = higher priority
+
+    # Conditions (JSON-serialized)
+    conditions = Column(JSON, nullable=False)  # {severity: [], category: [], file_patterns: [], pr_author: [], etc.}
+
+    # Actions - which channels to notify
+    notify_slack = Column(Boolean, default=False)
+    notify_email = Column(Boolean, default=False)
+    notify_discord = Column(Boolean, default=False)
+
+    # Channel-specific configurations (references to config IDs)
+    slack_config_id = Column(String(36), ForeignKey('slack_configurations.id'))
+    email_config_id = Column(String(36), ForeignKey('email_configurations.id'))
+    discord_config_id = Column(String(36), ForeignKey('discord_configurations.id'))
+
+    # Quiet hours (JSON-serialized)
+    quiet_hours_enabled = Column(Boolean, default=False)
+    quiet_hours = Column(JSON)  # {start: "22:00", end: "08:00", timezone: "America/Chicago", days: [0,1,2,3,4,5,6]}
+
+    # Batch/digest settings
+    batch_notifications = Column(Boolean, default=False)
+    batch_interval_minutes = Column(Integer, default=60)  # Wait N minutes before sending batch
+
+    # Rate limiting
+    rate_limit_enabled = Column(Boolean, default=False)
+    max_notifications_per_hour = Column(Integer, default=10)
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    last_triggered_at = Column(DateTime)
+    trigger_count = Column(Integer, default=0)
+
+    # Relationships
+    user = relationship('User', backref='notification_rules')
+    repository = relationship('Repository', backref='notification_rules')
+    slack_config = relationship('SlackConfiguration')
+    email_config = relationship('EmailConfiguration')
+    discord_config = relationship('DiscordConfiguration')
+
+    def to_dict(self) -> Dict:
+        """Convert NotificationRule to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'repository_id': self.repository_id,
+            'name': self.name,
+            'description': self.description,
+            'enabled': self.enabled,
+            'priority': self.priority,
+            'conditions': self.conditions,
+            'notify_slack': self.notify_slack,
+            'notify_email': self.notify_email,
+            'notify_discord': self.notify_discord,
+            'slack_config_id': self.slack_config_id,
+            'email_config_id': self.email_config_id,
+            'discord_config_id': self.discord_config_id,
+            'quiet_hours_enabled': self.quiet_hours_enabled,
+            'quiet_hours': self.quiet_hours,
+            'batch_notifications': self.batch_notifications,
+            'batch_interval_minutes': self.batch_interval_minutes,
+            'rate_limit_enabled': self.rate_limit_enabled,
+            'max_notifications_per_hour': self.max_notifications_per_hour,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_triggered_at': self.last_triggered_at.isoformat() if self.last_triggered_at else None,
+            'trigger_count': self.trigger_count
+        }
+
+    def __repr__(self):
+        return f"<NotificationRule(id={self.id}, name={self.name}, enabled={self.enabled})>"
+
+
 class DatabaseManager:
     """Manages database connections and sessions."""
 

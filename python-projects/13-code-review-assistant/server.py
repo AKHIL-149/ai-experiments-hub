@@ -1305,6 +1305,222 @@ async def test_discord_connection(
 
 
 # ============================================================================
+# Notification Rules Routes
+# ============================================================================
+
+@app.get("/api/notification-rules")
+async def get_notification_rules(
+    repository_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Get notification rules for user/repository"""
+    from src.core.database import NotificationRule
+
+    with db_manager.get_session() as db:
+        query = db.query(NotificationRule).filter(
+            NotificationRule.user_id == user.id
+        )
+
+        if repository_id:
+            query = query.filter(
+                (NotificationRule.repository_id == repository_id) |
+                (NotificationRule.repository_id == None)
+            )
+
+        rules = query.order_by(NotificationRule.priority.asc()).all()
+
+        return {
+            'success': True,
+            'rules': [rule.to_dict() for rule in rules]
+        }
+
+
+@app.post("/api/notification-rules")
+async def create_notification_rule(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Create or update notification rule"""
+    from src.core.database import NotificationRule
+
+    # Required fields
+    name = data.get('name')
+    conditions = data.get('conditions')
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not conditions:
+        raise HTTPException(status_code=400, detail="conditions are required")
+
+    rule_id = data.get('id')
+    repository_id = data.get('repository_id')
+
+    with db_manager.get_session() as db:
+        if rule_id:
+            # Update existing
+            rule = db.query(NotificationRule).filter(
+                NotificationRule.id == rule_id,
+                NotificationRule.user_id == user.id
+            ).first()
+
+            if not rule:
+                raise HTTPException(status_code=404, detail="Rule not found")
+        else:
+            # Create new
+            rule = NotificationRule(
+                user_id=user.id,
+                repository_id=repository_id,
+                name=name,
+                conditions=conditions
+            )
+            db.add(rule)
+
+        # Update fields
+        rule.name = name
+        rule.description = data.get('description')
+        rule.enabled = data.get('enabled', True)
+        rule.priority = data.get('priority', 100)
+        rule.conditions = conditions
+        rule.notify_slack = data.get('notify_slack', False)
+        rule.notify_email = data.get('notify_email', False)
+        rule.notify_discord = data.get('notify_discord', False)
+        rule.slack_config_id = data.get('slack_config_id')
+        rule.email_config_id = data.get('email_config_id')
+        rule.discord_config_id = data.get('discord_config_id')
+        rule.quiet_hours_enabled = data.get('quiet_hours_enabled', False)
+        rule.quiet_hours = data.get('quiet_hours')
+        rule.batch_notifications = data.get('batch_notifications', False)
+        rule.batch_interval_minutes = data.get('batch_interval_minutes', 60)
+        rule.rate_limit_enabled = data.get('rate_limit_enabled', False)
+        rule.max_notifications_per_hour = data.get('max_notifications_per_hour', 10)
+
+        db.commit()
+        db.refresh(rule)
+
+        return {
+            'success': True,
+            'rule': rule.to_dict()
+        }
+
+
+@app.delete("/api/notification-rules/{rule_id}")
+async def delete_notification_rule(
+    rule_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete notification rule"""
+    from src.core.database import NotificationRule
+
+    with db_manager.get_session() as db:
+        rule = db.query(NotificationRule).filter(
+            NotificationRule.id == rule_id,
+            NotificationRule.user_id == user.id
+        ).first()
+
+        if not rule:
+            raise HTTPException(status_code=404, detail="Rule not found")
+
+        db.delete(rule)
+        db.commit()
+
+        return {
+            'success': True,
+            'message': 'Notification rule deleted'
+        }
+
+
+@app.post("/api/notification-rules/{rule_id}/test")
+async def test_notification_rule(
+    rule_id: str,
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Test a notification rule with sample issue"""
+    from src.core.database import NotificationRule
+    from src.services.notification_rules_engine import get_rules_engine
+
+    with db_manager.get_session() as db:
+        rule = db.query(NotificationRule).filter(
+            NotificationRule.id == rule_id,
+            NotificationRule.user_id == user.id
+        ).first()
+
+        if not rule:
+            raise HTTPException(status_code=404, detail="Rule not found")
+
+    # Get sample issue from request or use default
+    sample_issue = data.get('issue', {
+        'type': 'Test Issue',
+        'severity': 'warning',
+        'category': 'style',
+        'file': 'test.py',
+        'line': 10,
+        'message': 'This is a test issue',
+        'confidence': 90
+    })
+
+    sample_pr = data.get('pr_info', {
+        'number': 999,
+        'title': 'Test PR',
+        'author': 'testuser',
+        'repository': 'test/repo',
+        'url': 'https://github.com/test/repo/pull/999'
+    })
+
+    # Evaluate rule
+    engine = get_rules_engine()
+    matches = engine._evaluate_rule(rule, sample_issue, sample_pr)
+
+    result = {
+        'success': True,
+        'rule_name': rule.name,
+        'matches': matches,
+        'sample_issue': sample_issue,
+        'sample_pr': sample_pr
+    }
+
+    if matches:
+        action = engine._create_action(rule, sample_issue, sample_pr)
+        result['action'] = action
+        result['would_notify'] = len(action['channels']) > 0 if action else False
+    else:
+        result['action'] = None
+        result['would_notify'] = False
+
+    return result
+
+
+@app.post("/api/notification-rules/evaluate")
+async def evaluate_notification_rules(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Evaluate all rules against an issue"""
+    from src.services.notification_rules_engine import get_rules_engine
+
+    issue = data.get('issue')
+    pr_info = data.get('pr_info')
+    repository_id = data.get('repository_id')
+
+    if not issue:
+        raise HTTPException(status_code=400, detail="issue is required")
+
+    engine = get_rules_engine()
+    actions = engine.evaluate_issue(
+        issue=issue,
+        pr_info=pr_info,
+        user_id=user.id,
+        repository_id=repository_id
+    )
+
+    return {
+        'success': True,
+        'actions': actions,
+        'matched_rules_count': len(actions)
+    }
+
+
+# ============================================================================
 # Pull Request Routes
 # ============================================================================
 

@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.10 (Email & Discord Notifications)
-**Status**: Production-Ready with Multi-Language Support & Multi-Channel Notifications
+**Version**: 0.5.11 (Notification Rules Engine)
+**Status**: Production-Ready with Multi-Language Support & Advanced Notification Rules
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, and comprehensive production monitoring.
 
@@ -59,7 +59,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 922+
+- **Total Tests**: 947+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
@@ -71,6 +71,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - Slack integration tests: 24 tests (100% passing)
   - Email integration tests: 24 tests (100% passing)
   - Discord integration tests: 28 tests (100% passing)
+  - Notification rules tests: 25 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -561,6 +562,21 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 ---
 
 ## 📈 Recent Updates
+
+### Version 0.5.11 - Notification Rules Engine (96% Complete)
+**Commit 13.5.11** - Implemented advanced notification rules and routing:
+- NotificationRulesEngine with condition builder and evaluation system
+- NotificationRule database model with JSON conditions and actions
+- Condition types: severity, category, file patterns, PR author, issue type, confidence
+- Quiet hours support with timezone handling and day-of-week configuration
+- Rate limiting to prevent notification spam
+- Priority-based rule execution (lower number = higher priority)
+- Multi-channel routing (Slack, Email, Discord) per rule
+- Batch notifications with configurable intervals
+- 5 new API endpoints (create, update, delete, test, evaluate rules)
+- Pattern matching for file paths (wildcards, recursive patterns)
+- Rule testing with sample issues before deployment
+- 25 comprehensive tests (100% passing)
 
 ### Version 0.5.10 - Email & Discord Notifications (94% Complete)
 **Commit 13.5.10** - Added comprehensive multi-channel notification support:
