@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plugin Management - Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/github-app.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #2d3748;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 1rem;
+        }
+
+        .main-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .toolbar h2 {
+            color: #2d3748;
+            font-size: 1.5rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+
+        .plugins-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .plugin-card {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .plugin-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .plugin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+
+        .plugin-title {
+            flex: 1;
+        }
+
+        .plugin-title h3 {
+            color: #2d3748;
+            font-size: 1.25rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .plugin-version {
+            color: #718096;
+            font-size: 0.875rem;
+        }
+
+        .plugin-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-inactive {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .status-error {
+            background: #fc8181;
+            color: white;
+        }
+
+        .plugin-meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .plugin-meta-item {
+            color: #718096;
+        }
+
+        .plugin-meta-item strong {
+            color: #2d3748;
+        }
+
+        .plugin-description {
+            color: #4a5568;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+
+        .plugin-languages {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .language-badge {
+            background: #e2e8f0;
+            color: #2d3748;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .plugin-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .plugin-actions button {
+            flex: 1;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .modal-header h3 {
+            color: #2d3748;
+            font-size: 1.5rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #718096;
+        }
+
+        .close-btn:hover {
+            color: #2d3748;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            color: #2d3748;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group .help-text {
+            color: #718096;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #718096;
+        }
+
+        .empty-state h3 {
+            color: #2d3748;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .spinner {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 2px solid #48bb78;
+        }
+
+        .alert-error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 2px solid #f56565;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .plugin-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #718096;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+
+        <div class="header">
+            <h1>Plugin Management</h1>
+            <p>Extend the code review assistant with custom plugins</p>
+        </div>
+
+        <div class="main-content">
+            <div class="toolbar">
+                <h2>Installed Plugins</h2>
+                <button class="btn btn-primary" onclick="showLoadPluginModal()">
+                    + Load Plugin
+                </button>
+            </div>
+
+            <div id="alert-container"></div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Loading plugins...</p>
+            </div>
+
+            <div id="plugins-container" class="plugins-grid"></div>
+
+            <div id="empty-state" class="empty-state" style="display: none;">
+                <h3>No Plugins Installed</h3>
+                <p>Load your first plugin to get started</p>
+                <button class="btn btn-primary" style="margin-top: 1rem;" onclick="showLoadPluginModal()">
+                    Load Plugin
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Plugin Modal -->
+    <div id="load-plugin-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Load Plugin</h3>
+                <button class="close-btn" onclick="closeLoadPluginModal()">&times;</button>
+            </div>
+
+            <form id="load-plugin-form" onsubmit="loadPlugin(event)">
+                <div class="form-group">
+                    <label for="plugin-file-path">Plugin File Path *</label>
+                    <input type="text" id="plugin-file-path" required
+                           placeholder="./plugins/example_analyzer.py">
+                    <div class="help-text">
+                        Absolute or relative path to the plugin Python file
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="plugin-enabled" checked>
+                        <label for="plugin-enabled">Enable plugin immediately</label>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        Load Plugin
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeLoadPluginModal()">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Plugin Details Modal -->
+    <div id="plugin-details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="details-plugin-name">Plugin Details</h3>
+                <button class="close-btn" onclick="closeDetailsModal()">&times;</button>
+            </div>
+
+            <div id="plugin-details-content"></div>
+
+            <div style="margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeDetailsModal()">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/plugin-manager.js"></script>
+</body>
+</html>

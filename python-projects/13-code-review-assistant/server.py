@@ -15,7 +15,7 @@ from typing import Optional, List, Dict, Any
 
 from src.core.database import (
     DatabaseManager, Repository, RepositoryStatus, User, PullRequest, PRStatus,
-    CodeFile, Issue, Refactoring, RefactoringStatus
+    CodeFile, Issue, Refactoring, RefactoringStatus, Plugin
 )
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
@@ -2672,6 +2672,18 @@ async def rule_builder_page(request: Request, user = Depends(get_current_user_op
     })
 
 
+@app.get("/plugins", response_class=HTMLResponse)
+async def plugins_page(request: Request, user = Depends(get_current_user_optional)):
+    """Plugin management page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("plugins.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
@@ -4560,6 +4572,310 @@ async def test_rule(
             "error": str(e),
             "matches": []
         }
+
+
+# ============================================================================
+# Plugin Management API
+# ============================================================================
+
+class LoadPluginRequest(BaseModel):
+    """Request model for loading a plugin"""
+    file_path: str
+    enabled: bool = True
+
+
+class UpdatePluginRequest(BaseModel):
+    """Request model for updating plugin configuration"""
+    enabled: Optional[bool] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.get("/api/plugins")
+async def list_plugins(user = Depends(get_current_user)):
+    """
+    List all installed plugins for the current user.
+
+    Returns list of plugins with their status and statistics.
+    """
+    try:
+        from src.core.database import Plugin
+
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            plugins = db.query(Plugin).filter(
+                Plugin.user_id == user.id
+            ).all()
+
+            return {
+                "success": True,
+                "plugins": [plugin.to_dict() for plugin in plugins]
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list plugins: {str(e)}")
+
+
+@app.post("/api/plugins/load")
+async def load_plugin(
+    request: LoadPluginRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Load a plugin from a file path.
+
+    Validates the plugin and registers it in the database.
+    """
+    try:
+        from src.core.database import Plugin
+        from src.core.plugin_manager import PluginManager
+        import os
+
+        # Validate file exists
+        if not os.path.exists(request.file_path):
+            raise HTTPException(status_code=404, detail="Plugin file not found")
+
+        # Load plugin using PluginManager
+        plugin_manager = PluginManager()
+        plugin_instance = plugin_manager.load_plugin_from_file(request.file_path)
+
+        if not plugin_instance:
+            raise HTTPException(status_code=400, detail="Failed to load plugin")
+
+        # Check if plugin already exists
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            existing = db.query(Plugin).filter(
+                Plugin.name == plugin_instance.metadata.name,
+                Plugin.user_id == user.id
+            ).first()
+
+            if existing:
+                raise HTTPException(status_code=400, detail="Plugin already installed")
+
+            # Create plugin database record
+            plugin_record = Plugin(
+                user_id=user.id,
+                name=plugin_instance.metadata.name,
+                version=plugin_instance.metadata.version,
+                author=plugin_instance.metadata.author,
+                description=plugin_instance.metadata.description,
+                plugin_type=plugin_instance.metadata.plugin_type.value,
+                status='active' if request.enabled else 'inactive',
+                file_path=request.file_path,
+                homepage=plugin_instance.metadata.homepage,
+                license=plugin_instance.metadata.license,
+                supported_languages=','.join(plugin_instance.metadata.supported_languages) if plugin_instance.metadata.supported_languages else '',
+                enabled=request.enabled,
+                load_count=1
+            )
+
+            db.add(plugin_record)
+            db.commit()
+            db.refresh(plugin_record)
+
+            # Register plugin in PluginManager
+            if request.enabled:
+                plugin_manager.register_plugin(plugin_instance)
+
+            return {
+                "success": True,
+                "message": "Plugin loaded successfully",
+                "plugin": plugin_record.to_dict()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load plugin: {str(e)}")
+
+
+@app.get("/api/plugins/{plugin_id}")
+async def get_plugin(
+    plugin_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get details about a specific plugin.
+    """
+    try:
+        from src.core.database import Plugin
+
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            plugin = db.query(Plugin).filter(
+                Plugin.id == plugin_id,
+                Plugin.user_id == user.id
+            ).first()
+
+            if not plugin:
+                raise HTTPException(status_code=404, detail="Plugin not found")
+
+            return {
+                "success": True,
+                "plugin": plugin.to_dict()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get plugin: {str(e)}")
+
+
+@app.put("/api/plugins/{plugin_id}")
+async def update_plugin(
+    plugin_id: str,
+    request: UpdatePluginRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Update plugin configuration or enable/disable it.
+    """
+    try:
+        from src.core.database import Plugin
+        from src.core.plugin_manager import PluginManager
+
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            plugin = db.query(Plugin).filter(
+                Plugin.id == plugin_id,
+                Plugin.user_id == user.id
+            ).first()
+
+            if not plugin:
+                raise HTTPException(status_code=404, detail="Plugin not found")
+
+            # Update fields
+            if request.enabled is not None:
+                plugin.enabled = request.enabled
+                plugin.status = 'active' if request.enabled else 'inactive'
+
+                # Update in PluginManager
+                plugin_manager = PluginManager()
+                if request.enabled:
+                    # Reload and enable plugin
+                    plugin_instance = plugin_manager.load_plugin_from_file(plugin.file_path)
+                    if plugin_instance:
+                        plugin_manager.register_plugin(plugin_instance)
+                else:
+                    # Disable plugin
+                    existing_plugin = plugin_manager.get_plugin(plugin.name)
+                    if existing_plugin:
+                        plugin_manager.unregister_plugin(plugin.name)
+
+            if request.config is not None:
+                plugin.config_json = request.config
+
+            db.commit()
+            db.refresh(plugin)
+
+            return {
+                "success": True,
+                "message": "Plugin updated successfully",
+                "plugin": plugin.to_dict()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update plugin: {str(e)}")
+
+
+@app.delete("/api/plugins/{plugin_id}")
+async def delete_plugin(
+    plugin_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Uninstall and delete a plugin.
+    """
+    try:
+        from src.core.database import Plugin
+        from src.core.plugin_manager import PluginManager
+
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            plugin = db.query(Plugin).filter(
+                Plugin.id == plugin_id,
+                Plugin.user_id == user.id
+            ).first()
+
+            if not plugin:
+                raise HTTPException(status_code=404, detail="Plugin not found")
+
+            # Unregister from PluginManager
+            plugin_manager = PluginManager()
+            plugin_manager.unregister_plugin(plugin.name)
+
+            # Delete from database
+            db.delete(plugin)
+            db.commit()
+
+            return {
+                "success": True,
+                "message": "Plugin deleted successfully"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete plugin: {str(e)}")
+
+
+@app.get("/api/plugins/{plugin_id}/manifest")
+async def get_plugin_manifest(
+    plugin_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get detailed manifest/metadata for a plugin.
+    """
+    try:
+        from src.core.database import Plugin
+        from src.core.plugin_manager import PluginManager
+
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            plugin = db.query(Plugin).filter(
+                Plugin.id == plugin_id,
+                Plugin.user_id == user.id
+            ).first()
+
+            if not plugin:
+                raise HTTPException(status_code=404, detail="Plugin not found")
+
+            # Get plugin instance from manager
+            plugin_manager = PluginManager()
+            plugin_instance = plugin_manager.get_plugin(plugin.name)
+
+            manifest = plugin.to_dict()
+
+            if plugin_instance:
+                # Add additional runtime information
+                manifest['hooks'] = list(plugin_instance.hooks.keys())
+                manifest['metadata'] = {
+                    'name': plugin_instance.metadata.name,
+                    'version': plugin_instance.metadata.version,
+                    'author': plugin_instance.metadata.author,
+                    'description': plugin_instance.metadata.description,
+                    'plugin_type': plugin_instance.metadata.plugin_type.value,
+                    'supported_languages': plugin_instance.metadata.supported_languages,
+                    'homepage': plugin_instance.metadata.homepage,
+                    'license': plugin_instance.metadata.license
+                }
+
+                # Get rules if it's an analyzer plugin
+                if hasattr(plugin_instance, 'get_rules'):
+                    manifest['rules'] = plugin_instance.get_rules()
+
+            return {
+                "success": True,
+                "manifest": manifest
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get manifest: {str(e)}")
 
 
 # ============================================================================

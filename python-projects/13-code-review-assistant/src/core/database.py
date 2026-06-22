@@ -845,6 +845,77 @@ class CustomRule(Base):
         return f"<CustomRule(id={self.id}, name={self.name}, enabled={self.enabled})>"
 
 
+class Plugin(Base):
+    """Installed plugins."""
+    __tablename__ = 'plugins'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+
+    # Plugin metadata
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    version = Column(String(50), nullable=False)
+    author = Column(String(200))
+    description = Column(Text)
+    plugin_type = Column(String(50), nullable=False)  # analyzer, formatter, reporter, integration, custom
+    status = Column(String(50), default='inactive')  # active, inactive, error, disabled
+
+    # Plugin source
+    file_path = Column(String(1000), nullable=False)  # Path to plugin file
+    homepage = Column(String(500))
+    license = Column(String(100))
+    supported_languages = Column(String(500))  # Comma-separated list
+
+    # Configuration
+    config_json = Column(JSON)  # Plugin-specific configuration
+
+    # Status
+    enabled = Column(Boolean, default=True)
+
+    # Statistics
+    load_count = Column(Integer, default=0)
+    execution_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    last_error = Column(Text)
+
+    # Metadata
+    installed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    last_used_at = Column(DateTime)
+
+    # Relationships
+    user = relationship('User', backref='plugins')
+
+    def to_dict(self) -> Dict:
+        """Convert Plugin to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'name': self.name,
+            'version': self.version,
+            'author': self.author,
+            'description': self.description,
+            'plugin_type': self.plugin_type,
+            'status': self.status,
+            'file_path': self.file_path,
+            'homepage': self.homepage,
+            'license': self.license,
+            'supported_languages': self.supported_languages.split(',') if self.supported_languages else [],
+            'config': self.config_json,
+            'enabled': self.enabled,
+            'load_count': self.load_count,
+            'execution_count': self.execution_count,
+            'error_count': self.error_count,
+            'last_error': self.last_error,
+            'installed_at': self.installed_at.isoformat() if self.installed_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None
+        }
+
+    def __repr__(self):
+        return f"<Plugin(id={self.id}, name={self.name}, version={self.version}, status={self.status})>"
+
+
 class DatabaseManager:
     """Manages database connections and sessions."""
 
