@@ -388,7 +388,7 @@ pytest tests/test_*_endpoints.py -v            # API tests
 ```
 
 **Test Statistics**:
-- Total: 680+ tests
+- Total: 988+ tests
 - Service layer: 100% passing
 - E2E workflows: 15 comprehensive tests
 - Coverage: 89%+
@@ -563,6 +563,21 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.12 - Notification Digest & Batching Worker (98% Complete)
+**Commit 13.5.12** - Implemented notification batching and digest system:
+- NotificationDigestService for aggregating and formatting digests
+- Notification batching worker with Celery tasks
+- Scheduled digest sending (daily at 9:00 AM, weekly on Mondays)
+- Batch notification processing with multi-channel support
+- 5 new Celery tasks (queue, batch, daily/weekly digests, user digest)
+- 6 new API endpoints (queue, batch, send, preview, test digest)
+- Email, Slack, and Discord digest formatting
+- Quiet hours checking with configurable send times
+- Celery Beat integration for scheduled tasks
+- Notification grouping by user and channel type
+- Batched HTML email generation
+- 41 comprehensive tests (25 digest + 16 worker, 100% passing)
+
 ### Version 0.5.11 - Notification Rules Engine (96% Complete)
 **Commit 13.5.11** - Implemented advanced notification rules and routing:
 - NotificationRulesEngine with condition builder and evaluation system
@@ -654,5 +669,5 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ---
 
-**Project 13 - Phase 5.9 Complete**
-Production-ready with Slack notifications, GitHub App UI, webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨
+**Project 13 - Phase 5.12 Complete**
+Production-ready with notification digest & batching, advanced rules engine, multi-channel notifications, GitHub App UI, webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨

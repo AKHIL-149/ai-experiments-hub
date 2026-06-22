@@ -37,6 +37,21 @@ celery_app.autodiscover_tasks(['src.workers'])
 celery_app.conf.task_routes = {
     'src.workers.analysis_worker.*': {'queue': 'analysis'},
     'src.workers.pr_worker.*': {'queue': 'pr_review'},
+    'src.workers.notification_worker.*': {'queue': 'notifications'},
+}
+
+# Celery Beat schedule for periodic tasks
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    'send-daily-digests': {
+        'task': 'notification_worker.send_daily_digests',
+        'schedule': crontab(hour=9, minute=0),  # Daily at 9:00 AM UTC
+    },
+    'send-weekly-digests': {
+        'task': 'notification_worker.send_weekly_digests',
+        'schedule': crontab(hour=9, minute=0, day_of_week=1),  # Monday at 9:00 AM UTC
+    },
 }
 
 if __name__ == '__main__':

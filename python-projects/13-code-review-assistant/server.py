@@ -1521,6 +1521,159 @@ async def evaluate_notification_rules(
 
 
 # ============================================================================
+# Batch Notifications & Digest Routes
+# ============================================================================
+
+@app.post("/api/notifications/queue")
+async def queue_notification(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Queue a notification for processing"""
+    from src.workers.notification_worker import queue_notification as queue_task
+
+    issue = data.get('issue')
+    pr_info = data.get('pr_info')
+    repository_id = data.get('repository_id')
+    context = data.get('context')
+
+    if not issue:
+        raise HTTPException(status_code=400, detail="issue is required")
+
+    # Queue the notification task
+    task = queue_task.apply_async(
+        args=[issue, pr_info, user.id, repository_id, context]
+    )
+
+    return {
+        'success': True,
+        'task_id': task.id,
+        'message': 'Notification queued for processing'
+    }
+
+
+@app.post("/api/notifications/batch")
+async def process_batch_notifications(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Process a batch of notifications"""
+    from src.workers.notification_worker import process_batch_notifications as batch_task
+
+    notifications = data.get('notifications')
+    batch_interval = data.get('batch_interval_minutes', 60)
+
+    if not notifications:
+        raise HTTPException(status_code=400, detail="notifications are required")
+
+    # Queue batch processing task
+    task = batch_task.apply_async(
+        args=[notifications, batch_interval]
+    )
+
+    return {
+        'success': True,
+        'task_id': task.id,
+        'batch_size': len(notifications),
+        'message': 'Batch processing queued'
+    }
+
+
+@app.post("/api/digest/send")
+async def send_digest(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Send notification digest for user"""
+    from src.workers.notification_worker import send_user_digest
+
+    period = data.get('period', 'daily')
+    repository_id = data.get('repository_id')
+
+    if period not in ['daily', 'weekly']:
+        raise HTTPException(status_code=400, detail="period must be 'daily' or 'weekly'")
+
+    # Queue digest sending
+    task = send_user_digest.apply_async(
+        args=[user.id, period, repository_id]
+    )
+
+    return {
+        'success': True,
+        'task_id': task.id,
+        'period': period,
+        'message': f'{period.capitalize()} digest queued for sending'
+    }
+
+
+@app.get("/api/digest/preview")
+async def preview_digest(
+    period: str = 'daily',
+    repository_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Preview digest data without sending"""
+    from src.services.notification_digest_service import get_digest_service
+
+    if period not in ['daily', 'weekly']:
+        raise HTTPException(status_code=400, detail="period must be 'daily' or 'weekly'")
+
+    digest_service = get_digest_service()
+    digest_data = digest_service.aggregate_notifications(
+        user_id=user.id,
+        period=period,
+        repository_id=repository_id
+    )
+
+    return {
+        'success': True,
+        'digest': digest_data
+    }
+
+
+@app.post("/api/digest/test")
+async def test_digest(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Send a test digest"""
+    from src.services.notification_digest_service import get_digest_service
+
+    channel = data.get('channel', 'email')
+    period = data.get('period', 'daily')
+    repository_id = data.get('repository_id')
+
+    if channel not in ['email', 'slack', 'discord']:
+        raise HTTPException(status_code=400, detail="channel must be 'email', 'slack', or 'discord'")
+
+    if period not in ['daily', 'weekly']:
+        raise HTTPException(status_code=400, detail="period must be 'daily' or 'weekly'")
+
+    digest_service = get_digest_service()
+
+    if channel == 'email':
+        result = digest_service.create_email_digest(
+            user_id=user.id,
+            period=period,
+            repository_id=repository_id
+        )
+    elif channel == 'slack':
+        result = digest_service.create_slack_digest(
+            user_id=user.id,
+            period=period,
+            repository_id=repository_id
+        )
+    else:  # discord
+        result = digest_service.create_discord_digest(
+            user_id=user.id,
+            period=period,
+            repository_id=repository_id
+        )
+
+    return result
+
+
+# ============================================================================
 # Pull Request Routes
 # ============================================================================
 
