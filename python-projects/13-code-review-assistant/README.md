@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.9 (Slack Integration)
-**Status**: Production-Ready with Multi-Language Support & Slack Notifications
+**Version**: 0.5.10 (Email & Discord Notifications)
+**Status**: Production-Ready with Multi-Language Support & Multi-Channel Notifications
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, and comprehensive production monitoring.
 
@@ -59,7 +59,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 870+
+- **Total Tests**: 922+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
@@ -69,6 +69,8 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - Webhook worker tests: 8 tests (100% passing)
   - GitHub App UI tests: 13 tests (endpoint coverage)
   - Slack integration tests: 24 tests (100% passing)
+  - Email integration tests: 24 tests (100% passing)
+  - Discord integration tests: 28 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -560,8 +562,21 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.10 - Email & Discord Notifications (94% Complete)
+**Commit 13.5.10** - Added comprehensive multi-channel notification support:
+- EmailService with SMTP integration and HTML email templates
+- DiscordService with rich embed formatting and webhook support
+- EmailConfiguration and DiscordConfiguration database models
+- Notification preferences with digest mode and severity filtering
+- 8 new API endpoints (Email and Discord configuration management)
+- HTML email templates for all notification types (PR analysis, critical issues, failures)
+- Discord embeds with color coding and rich formatting
+- Digest mode with daily/weekly batching for email notifications
+- Test endpoints for SMTP and Discord webhook validation
+- 52 comprehensive tests (24 email + 28 Discord, 100% passing)
+
 ### Version 0.5.9 - Slack Integration (92% Complete)
-**Commit 13.5.9 (AKHIL-159)** - Implemented Slack notifications and webhooks:
+**Commit 13.5.9** - Implemented Slack notifications and webhooks:
 - SlackService with rich message formatting (blocks, attachments)
 - 4 notification types: PR analysis complete, critical issues, failures, PR opened
 - SlackConfiguration database model with per-user/repo settings

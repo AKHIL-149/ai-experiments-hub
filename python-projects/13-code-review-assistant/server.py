@@ -986,6 +986,325 @@ async def test_slack_connection(
 
 
 # ============================================================================
+# Email Configuration Routes
+# ============================================================================
+
+@app.get("/api/email/config")
+async def get_email_config(
+    repository_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Get Email configuration for user/repository"""
+    from src.core.database import EmailConfiguration
+
+    with db_manager.get_session() as db:
+        query = db.query(EmailConfiguration).filter(
+            EmailConfiguration.user_id == user.id
+        )
+
+        if repository_id:
+            query = query.filter(EmailConfiguration.repository_id == repository_id)
+
+        configs = query.all()
+
+        return {
+            'success': True,
+            'configurations': [config.to_dict() for config in configs]
+        }
+
+
+@app.post("/api/email/config")
+async def create_email_config(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Create or update Email configuration"""
+    from src.core.database import EmailConfiguration
+
+    # Required fields
+    from_email = data.get('from_email')
+    to_email = data.get('to_email')
+
+    if not from_email or not to_email:
+        raise HTTPException(status_code=400, detail="from_email and to_email are required")
+
+    config_id = data.get('id')
+    repository_id = data.get('repository_id')
+
+    with db_manager.get_session() as db:
+        if config_id:
+            # Update existing
+            config = db.query(EmailConfiguration).filter(
+                EmailConfiguration.id == config_id,
+                EmailConfiguration.user_id == user.id
+            ).first()
+
+            if not config:
+                raise HTTPException(status_code=404, detail="Configuration not found")
+        else:
+            # Create new
+            config = EmailConfiguration(
+                user_id=user.id,
+                repository_id=repository_id,
+                from_email=from_email,
+                to_email=to_email
+            )
+            db.add(config)
+
+        # Update fields
+        config.smtp_host = data.get('smtp_host')
+        config.smtp_port = data.get('smtp_port', 587)
+        config.smtp_username = data.get('smtp_username')
+        config.smtp_password = data.get('smtp_password')
+        config.smtp_use_tls = data.get('smtp_use_tls', True)
+        config.from_email = from_email
+        config.from_name = data.get('from_name', 'Code Review Assistant')
+        config.to_email = to_email
+        config.reply_to = data.get('reply_to')
+        config.enabled = data.get('enabled', True)
+        config.notify_pr_opened = data.get('notify_pr_opened', True)
+        config.notify_pr_analysis_complete = data.get('notify_pr_analysis_complete', True)
+        config.notify_critical_issues = data.get('notify_critical_issues', True)
+        config.notify_analysis_failed = data.get('notify_analysis_failed', True)
+        config.enable_digest = data.get('enable_digest', False)
+        config.digest_frequency = data.get('digest_frequency', 'daily')
+        config.digest_time = data.get('digest_time', '09:00')
+        config.min_severity = data.get('min_severity', 'info')
+        config.only_failures = data.get('only_failures', False)
+
+        db.commit()
+        db.refresh(config)
+
+        return {
+            'success': True,
+            'configuration': config.to_dict()
+        }
+
+
+@app.delete("/api/email/config/{config_id}")
+async def delete_email_config(
+    config_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete Email configuration"""
+    from src.core.database import EmailConfiguration
+
+    with db_manager.get_session() as db:
+        config = db.query(EmailConfiguration).filter(
+            EmailConfiguration.id == config_id,
+            EmailConfiguration.user_id == user.id
+        ).first()
+
+        if not config:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+
+        db.delete(config)
+        db.commit()
+
+        return {
+            'success': True,
+            'message': 'Email configuration deleted'
+        }
+
+
+@app.post("/api/email/test")
+async def test_email_connection(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Test Email SMTP connection"""
+    from src.services.email_service import EmailService
+
+    # Required fields
+    smtp_host = data.get('smtp_host')
+    smtp_port = data.get('smtp_port', 587)
+    smtp_username = data.get('smtp_username')
+    smtp_password = data.get('smtp_password')
+    from_email = data.get('from_email')
+    to_email = data.get('to_email')
+
+    if not all([smtp_host, smtp_username, smtp_password, from_email, to_email]):
+        raise HTTPException(
+            status_code=400,
+            detail="smtp_host, smtp_username, smtp_password, from_email, and to_email are required"
+        )
+
+    # Create temporary Email service
+    email_service = EmailService(
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_username=smtp_username,
+        smtp_password=smtp_password,
+        smtp_use_tls=data.get('smtp_use_tls', True),
+        from_email=from_email,
+        from_name=data.get('from_name', 'Code Review Assistant')
+    )
+
+    # Send test email
+    html_body = """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="color: #10b981;">✅ Email Configuration Test</h2>
+        <p>Your email configuration is working correctly!</p>
+        <p style="color: #6b7280; font-size: 12px;">
+            This is a test email from Code Review Assistant.
+        </p>
+    </body>
+    </html>
+    """
+
+    result = email_service.send_email(
+        to_email=to_email,
+        subject='Code Review Assistant - Email Test',
+        html_body=html_body,
+        text_body='Email Configuration Test\n\nYour email configuration is working correctly!'
+    )
+
+    return result
+
+
+# ============================================================================
+# Discord Configuration Routes
+# ============================================================================
+
+@app.get("/api/discord/config")
+async def get_discord_config(
+    repository_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Get Discord configuration for user/repository"""
+    from src.core.database import DiscordConfiguration
+
+    with db_manager.get_session() as db:
+        query = db.query(DiscordConfiguration).filter(
+            DiscordConfiguration.user_id == user.id
+        )
+
+        if repository_id:
+            query = query.filter(DiscordConfiguration.repository_id == repository_id)
+
+        configs = query.all()
+
+        return {
+            'success': True,
+            'configurations': [config.to_dict() for config in configs]
+        }
+
+
+@app.post("/api/discord/config")
+async def create_discord_config(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Create or update Discord configuration"""
+    from src.core.database import DiscordConfiguration
+
+    webhook_url = data.get('webhook_url')
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required")
+
+    config_id = data.get('id')
+    repository_id = data.get('repository_id')
+
+    with db_manager.get_session() as db:
+        if config_id:
+            # Update existing
+            config = db.query(DiscordConfiguration).filter(
+                DiscordConfiguration.id == config_id,
+                DiscordConfiguration.user_id == user.id
+            ).first()
+
+            if not config:
+                raise HTTPException(status_code=404, detail="Configuration not found")
+        else:
+            # Create new
+            config = DiscordConfiguration(
+                user_id=user.id,
+                repository_id=repository_id
+            )
+            db.add(config)
+
+        # Update fields
+        config.webhook_url = webhook_url
+        config.username = data.get('username', 'Code Review Assistant')
+        config.avatar_url = data.get('avatar_url')
+        config.enabled = data.get('enabled', True)
+        config.notify_pr_opened = data.get('notify_pr_opened', True)
+        config.notify_pr_analysis_complete = data.get('notify_pr_analysis_complete', True)
+        config.notify_critical_issues = data.get('notify_critical_issues', True)
+        config.notify_analysis_failed = data.get('notify_analysis_failed', True)
+        config.min_severity = data.get('min_severity', 'info')
+        config.only_failures = data.get('only_failures', False)
+
+        db.commit()
+        db.refresh(config)
+
+        return {
+            'success': True,
+            'configuration': config.to_dict()
+        }
+
+
+@app.delete("/api/discord/config/{config_id}")
+async def delete_discord_config(
+    config_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete Discord configuration"""
+    from src.core.database import DiscordConfiguration
+
+    with db_manager.get_session() as db:
+        config = db.query(DiscordConfiguration).filter(
+            DiscordConfiguration.id == config_id,
+            DiscordConfiguration.user_id == user.id
+        ).first()
+
+        if not config:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+
+        db.delete(config)
+        db.commit()
+
+        return {
+            'success': True,
+            'message': 'Discord configuration deleted'
+        }
+
+
+@app.post("/api/discord/test")
+async def test_discord_connection(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Test Discord webhook connection"""
+    from src.services.discord_service import DiscordService
+
+    webhook_url = data.get('webhook_url')
+
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required")
+
+    # Create temporary Discord service
+    discord_service = DiscordService(webhook_url=webhook_url)
+
+    # Send test message
+    result = discord_service.send_message(
+        content=f"✅ **Discord Integration Test**",
+        embeds=[{
+            'title': '✅ Discord Integration Test',
+            'description': f'Your Discord webhook is configured correctly for user **{user.username}**!',
+            'color': 0x10b981,
+            'footer': {
+                'text': 'Code Review Assistant'
+            }
+        }]
+    )
+
+    return result
+
+
+# ============================================================================
 # Pull Request Routes
 # ============================================================================
 

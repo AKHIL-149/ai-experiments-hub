@@ -563,6 +563,141 @@ class SlackConfiguration(Base):
         return f"<SlackConfiguration(id={self.id}, user_id={self.user_id}, enabled={self.enabled})>"
 
 
+class EmailConfiguration(Base):
+    """Email SMTP configuration and notification preferences."""
+    __tablename__ = 'email_configurations'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey('repositories.id'), index=True)  # Optional: per-repo config
+
+    # SMTP configuration
+    smtp_host = Column(String(200))
+    smtp_port = Column(Integer, default=587)
+    smtp_username = Column(String(200))
+    smtp_password = Column(String(500))  # Should be encrypted
+    smtp_use_tls = Column(Boolean, default=True)
+
+    # Email settings
+    from_email = Column(String(200), nullable=False)
+    from_name = Column(String(100), default='Code Review Assistant')
+    to_email = Column(String(200), nullable=False)  # Primary recipient
+    reply_to = Column(String(200))
+
+    # Notification preferences
+    enabled = Column(Boolean, default=True)
+    notify_pr_opened = Column(Boolean, default=True)
+    notify_pr_analysis_complete = Column(Boolean, default=True)
+    notify_critical_issues = Column(Boolean, default=True)
+    notify_analysis_failed = Column(Boolean, default=True)
+
+    # Digest mode
+    enable_digest = Column(Boolean, default=False)
+    digest_frequency = Column(String(20), default='daily')  # daily, weekly
+    digest_time = Column(String(10), default='09:00')  # HH:MM
+    last_digest_sent = Column(DateTime)
+
+    # Filtering
+    min_severity = Column(String(20), default='info')
+    only_failures = Column(Boolean, default=False)
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = relationship('User', backref='email_configurations')
+    repository = relationship('Repository', backref='email_configurations')
+
+    def to_dict(self) -> Dict:
+        """Convert Email configuration to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'repository_id': self.repository_id,
+            'smtp_host': self.smtp_host,
+            'smtp_port': self.smtp_port,
+            'smtp_username': self.smtp_username,
+            'smtp_use_tls': self.smtp_use_tls,
+            'from_email': self.from_email,
+            'from_name': self.from_name,
+            'to_email': self.to_email,
+            'reply_to': self.reply_to,
+            'enabled': self.enabled,
+            'notify_pr_opened': self.notify_pr_opened,
+            'notify_pr_analysis_complete': self.notify_pr_analysis_complete,
+            'notify_critical_issues': self.notify_critical_issues,
+            'notify_analysis_failed': self.notify_analysis_failed,
+            'enable_digest': self.enable_digest,
+            'digest_frequency': self.digest_frequency,
+            'digest_time': self.digest_time,
+            'last_digest_sent': self.last_digest_sent.isoformat() if self.last_digest_sent else None,
+            'min_severity': self.min_severity,
+            'only_failures': self.only_failures,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<EmailConfiguration(id={self.id}, user_id={self.user_id}, to_email={self.to_email})>"
+
+
+class DiscordConfiguration(Base):
+    """Discord webhook configuration and notification preferences."""
+    __tablename__ = 'discord_configurations'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey('repositories.id'), index=True)  # Optional: per-repo config
+
+    # Webhook configuration
+    webhook_url = Column(String(500), nullable=False)
+    username = Column(String(100), default='Code Review Assistant')
+    avatar_url = Column(String(500))
+
+    # Notification preferences
+    enabled = Column(Boolean, default=True)
+    notify_pr_opened = Column(Boolean, default=True)
+    notify_pr_analysis_complete = Column(Boolean, default=True)
+    notify_critical_issues = Column(Boolean, default=True)
+    notify_analysis_failed = Column(Boolean, default=True)
+
+    # Filtering
+    min_severity = Column(String(20), default='info')
+    only_failures = Column(Boolean, default=False)
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = relationship('User', backref='discord_configurations')
+    repository = relationship('Repository', backref='discord_configurations')
+
+    def to_dict(self) -> Dict:
+        """Convert Discord configuration to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'repository_id': self.repository_id,
+            'webhook_url': self.webhook_url[:50] + '...' if self.webhook_url else None,  # Redacted
+            'username': self.username,
+            'avatar_url': self.avatar_url,
+            'enabled': self.enabled,
+            'notify_pr_opened': self.notify_pr_opened,
+            'notify_pr_analysis_complete': self.notify_pr_analysis_complete,
+            'notify_critical_issues': self.notify_critical_issues,
+            'notify_analysis_failed': self.notify_analysis_failed,
+            'min_severity': self.min_severity,
+            'only_failures': self.only_failures,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<DiscordConfiguration(id={self.id}, user_id={self.user_id}, enabled={self.enabled})>"
+
+
 class DatabaseManager:
     """Manages database connections and sessions."""
 
