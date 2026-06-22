@@ -841,6 +841,151 @@ async def test_github_app_connection(user = Depends(require_admin)):
 
 
 # ============================================================================
+# Slack Integration Routes
+# ============================================================================
+
+@app.get("/api/slack/config")
+async def get_slack_config(
+    repository_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """Get Slack configuration for user/repository"""
+    from src.core.database import SlackConfiguration
+
+    with db_manager.get_session() as db:
+        query = db.query(SlackConfiguration).filter(
+            SlackConfiguration.user_id == user.id
+        )
+
+        if repository_id:
+            query = query.filter(SlackConfiguration.repository_id == repository_id)
+
+        configs = query.all()
+
+        return {
+            'success': True,
+            'configurations': [config.to_dict() for config in configs]
+        }
+
+
+@app.post("/api/slack/config")
+async def create_slack_config(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Create or update Slack configuration"""
+    from src.core.database import SlackConfiguration
+
+    webhook_url = data.get('webhook_url')
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required")
+
+    config_id = data.get('id')
+    repository_id = data.get('repository_id')
+
+    with db_manager.get_session() as db:
+        if config_id:
+            # Update existing
+            config = db.query(SlackConfiguration).filter(
+                SlackConfiguration.id == config_id,
+                SlackConfiguration.user_id == user.id
+            ).first()
+
+            if not config:
+                raise HTTPException(status_code=404, detail="Configuration not found")
+        else:
+            # Create new
+            config = SlackConfiguration(
+                user_id=user.id,
+                repository_id=repository_id
+            )
+            db.add(config)
+
+        # Update fields
+        config.webhook_url = webhook_url
+        config.channel = data.get('channel')
+        config.username = data.get('username', 'Code Review Assistant')
+        config.icon_emoji = data.get('icon_emoji', ':robot_face:')
+        config.enabled = data.get('enabled', True)
+        config.notify_pr_opened = data.get('notify_pr_opened', True)
+        config.notify_pr_analysis_complete = data.get('notify_pr_analysis_complete', True)
+        config.notify_critical_issues = data.get('notify_critical_issues', True)
+        config.notify_analysis_failed = data.get('notify_analysis_failed', True)
+        config.use_threads = data.get('use_threads', True)
+        config.min_severity = data.get('min_severity', 'info')
+        config.only_failures = data.get('only_failures', False)
+
+        db.commit()
+        db.refresh(config)
+
+        return {
+            'success': True,
+            'configuration': config.to_dict()
+        }
+
+
+@app.delete("/api/slack/config/{config_id}")
+async def delete_slack_config(
+    config_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete Slack configuration"""
+    from src.core.database import SlackConfiguration
+
+    with db_manager.get_session() as db:
+        config = db.query(SlackConfiguration).filter(
+            SlackConfiguration.id == config_id,
+            SlackConfiguration.user_id == user.id
+        ).first()
+
+        if not config:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+
+        db.delete(config)
+        db.commit()
+
+        return {
+            'success': True,
+            'message': 'Slack configuration deleted'
+        }
+
+
+@app.post("/api/slack/test")
+async def test_slack_connection(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """Test Slack webhook connection"""
+    from src.services.slack_service import SlackService
+
+    webhook_url = data.get('webhook_url')
+    channel = data.get('channel')
+
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required")
+
+    # Create temporary Slack service
+    slack_service = SlackService(webhook_url=webhook_url)
+
+    # Send test message
+    result = slack_service.send_message(
+        text=f"Test message from Code Review Assistant for user {user.username}",
+        blocks=[
+            {
+                'type': 'section',
+                'text': {
+                    'type': 'mrkdwn',
+                    'text': ':white_check_mark: *Slack Integration Test*\n\nYour Slack webhook is configured correctly!'
+                }
+            }
+        ],
+        channel=channel
+    )
+
+    return result
+
+
+# ============================================================================
 # Pull Request Routes
 # ============================================================================
 

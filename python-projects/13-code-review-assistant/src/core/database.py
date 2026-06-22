@@ -5,7 +5,7 @@ Database models and connection management for AI Code Review Assistant.
 import os
 import enum
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 import uuid
 
@@ -498,6 +498,69 @@ class ReviewComment(Base):
 
     def __repr__(self):
         return f"<ReviewComment(id={self.id}, file={self.file_path}, line={self.line_number})>"
+
+
+class SlackConfiguration(Base):
+    """Slack webhook configuration and notification preferences."""
+    __tablename__ = 'slack_configurations'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey('repositories.id'), index=True)  # Optional: per-repo config
+
+    # Webhook configuration
+    webhook_url = Column(String(500), nullable=False)
+    channel = Column(String(100))  # Default channel (optional, can be in webhook URL)
+    username = Column(String(100), default='Code Review Assistant')
+    icon_emoji = Column(String(50), default=':robot_face:')
+
+    # Notification preferences
+    enabled = Column(Boolean, default=True)
+    notify_pr_opened = Column(Boolean, default=True)
+    notify_pr_analysis_complete = Column(Boolean, default=True)
+    notify_critical_issues = Column(Boolean, default=True)
+    notify_analysis_failed = Column(Boolean, default=True)
+
+    # Threading
+    use_threads = Column(Boolean, default=True)  # Reply in threads vs new messages
+    thread_ts = Column(String(100))  # Last thread timestamp for this config
+
+    # Filtering
+    min_severity = Column(String(20), default='info')  # Minimum severity to notify
+    only_failures = Column(Boolean, default=False)  # Only notify on failures
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = relationship('User', backref='slack_configurations')
+    repository = relationship('Repository', backref='slack_configurations')
+
+    def to_dict(self) -> Dict:
+        """Convert Slack configuration to dictionary."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'repository_id': self.repository_id,
+            'webhook_url': self.webhook_url[:50] + '...' if self.webhook_url else None,  # Redacted
+            'channel': self.channel,
+            'username': self.username,
+            'icon_emoji': self.icon_emoji,
+            'enabled': self.enabled,
+            'notify_pr_opened': self.notify_pr_opened,
+            'notify_pr_analysis_complete': self.notify_pr_analysis_complete,
+            'notify_critical_issues': self.notify_critical_issues,
+            'notify_analysis_failed': self.notify_analysis_failed,
+            'use_threads': self.use_threads,
+            'min_severity': self.min_severity,
+            'only_failures': self.only_failures,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<SlackConfiguration(id={self.id}, user_id={self.user_id}, enabled={self.enabled})>"
 
 
 class DatabaseManager:
