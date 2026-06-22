@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub App Configuration - Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/settings.css">
+    <link rel="stylesheet" href="/static/css/github-app.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f9fafb;
+            line-height: 1.6;
+        }
+
+        /* Page Header */
+        .page-header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .page-header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .page-subtitle {
+            font-size: 15px;
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+
+        /* Navigation */
+        .nav-links {
+            display: flex;
+            gap: 16px;
+        }
+
+        .nav-link {
+            color: #3b82f6;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: #2563eb;
+            text-decoration: underline;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px 40px;
+        }
+
+        /* Info Box */
+        .info-box {
+            background: #eff6ff;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .info-box h3 {
+            color: #1e40af;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .info-box p {
+            color: #1e3a8a;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            color: #1e3a8a;
+            font-size: 14px;
+        }
+
+        .info-box li {
+            margin-bottom: 4px;
+        }
+
+        .info-box a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .info-box a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="page-header-content">
+            <h1 class="page-title">🤖 GitHub App Configuration</h1>
+            <p class="page-subtitle">
+                Configure GitHub App integration for automatic PR analysis via webhooks
+            </p>
+            <div class="nav-links">
+                <a href="/dashboard" class="nav-link">← Back to Dashboard</a>
+                <a href="/settings" class="nav-link">General Settings</a>
+                <a href="/repositories" class="nav-link">Repositories</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Info Box -->
+        <div class="info-box">
+            <h3>📚 How to Set Up a GitHub App</h3>
+            <p>Follow these steps to create and configure a GitHub App for automatic PR analysis:</p>
+            <ul>
+                <li>Go to GitHub Settings → Developer settings → GitHub Apps → <a href="https://github.com/settings/apps/new" target="_blank">New GitHub App</a></li>
+                <li>Set a unique name (e.g., "My Code Review Assistant")</li>
+                <li>Set Homepage URL to your server URL (e.g., <code>http://localhost:8000</code>)</li>
+                <li>Set Webhook URL to: <code>http://localhost:8000/api/github/webhook</code></li>
+                <li>Generate a webhook secret and save it to your <code>.env</code> file as <code>GITHUB_WEBHOOK_SECRET</code></li>
+                <li>Set Repository permissions:
+                    <ul>
+                        <li>Contents: Read-only (to fetch PR diffs)</li>
+                        <li>Pull requests: Read & write (to analyze PRs and post comments)</li>
+                    </ul>
+                </li>
+                <li>Subscribe to events: Pull request, Push</li>
+                <li>Create the app and generate a private key (download the PEM file)</li>
+                <li>Note your App ID and paste it along with the private key below</li>
+            </ul>
+            <p><a href="https://docs.github.com/en/apps/creating-github-apps" target="_blank">📖 Full GitHub Apps Documentation →</a></p>
+        </div>
+
+        <!-- GitHub App Manager Container -->
+        <div id="github-app-container"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/github-app-manager.js"></script>
+    <script>
+        // Initialize GitHub App Manager
+        const githubAppManager = new GitHubAppManager('github-app-container');
+        githubAppManager.init();
+    </script>
+</body>
+</html>

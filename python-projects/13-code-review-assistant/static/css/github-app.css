@@ -1,0 +1,325 @@
+/**
+ * GitHub App Configuration Styles
+ */
+
+.github-app-manager {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+/* Status Card */
+.status-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 16px;
+}
+
+.status-card.status-success {
+    border-color: #10b981;
+    background: #f0fdf4;
+}
+
+.status-card.status-warning {
+    border-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.status-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.status-icon {
+    font-size: 24px;
+}
+
+.status-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.status-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 16px 0;
+    padding: 16px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.status-item strong {
+    min-width: 120px;
+    color: #6b7280;
+}
+
+.status-item code {
+    flex: 1;
+    padding: 4px 8px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    color: #111827;
+}
+
+.btn-copy {
+    padding: 4px 12px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-copy:hover {
+    background: #2563eb;
+}
+
+.status-description {
+    color: #6b7280;
+    line-height: 1.6;
+}
+
+.status-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+/* Configuration Form */
+.config-form {
+    margin-top: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.form-input,
+.form-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-textarea {
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+
+.form-help {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.config-warning {
+    padding: 12px 16px;
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: 6px;
+    color: #92400e;
+    font-size: 14px;
+    margin: 16px 0;
+}
+
+/* Config Result */
+.config-result {
+    margin-top: 20px;
+}
+
+.alert {
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.alert-success {
+    background: #d1fae5;
+    border: 1px solid #10b981;
+    color: #065f46;
+}
+
+.alert-error {
+    background: #fee2e2;
+    border: 1px solid #ef4444;
+    color: #991b1b;
+}
+
+.alert-warning {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    color: #92400e;
+}
+
+/* Installations */
+.installations-list {
+    display: grid;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.installation-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.installation-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.installation-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid #e5e7eb;
+}
+
+.installation-info {
+    flex: 1;
+}
+
+.installation-info h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 4px;
+}
+
+.installation-type {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #e0e7ff;
+    color: #3730a3;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-right: 8px;
+}
+
+.installation-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #6b7280;
+    background: white;
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    margin-top: 16px;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    padding: 20px;
+    text-align: center;
+    color: #6b7280;
+}
+
+.loading-spinner::before {
+    content: "⏳ ";
+}
+
+/* Toast Animations */
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .status-actions,
+    .form-actions {
+        flex-direction: column;
+    }
+
+    .status-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .status-item strong {
+        min-width: auto;
+    }
+
+    .installation-card {
+        flex-direction: column;
+        text-align: center;
+    }
+}

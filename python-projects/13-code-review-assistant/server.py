@@ -573,6 +573,274 @@ async def github_webhook(request: Request):
 
 
 # ============================================================================
+# GitHub App Configuration Routes
+# ============================================================================
+
+@app.get("/api/github/app/status")
+async def get_github_app_status(user = Depends(get_current_user)):
+    """Get GitHub App configuration status"""
+    from src.core.github_app import get_github_app
+
+    github_app = get_github_app()
+
+    # Check if GitHub App is configured
+    is_configured = github_app.is_configured()
+
+    if not is_configured:
+        return {
+            "configured": False,
+            "app_id": None,
+            "private_key_set": False,
+            "installations": []
+        }
+
+    # Get app info
+    try:
+        # Get list of installations (requires admin permission)
+        installations = []
+
+        return {
+            "configured": True,
+            "app_id": github_app.app_id,
+            "private_key_set": github_app.private_key is not None,
+            "installations": installations,
+            "webhook_url": f"{os.getenv('HOST', 'http://localhost:8000')}/api/github/webhook"
+        }
+    except Exception as e:
+        return {
+            "configured": True,
+            "app_id": github_app.app_id,
+            "private_key_set": github_app.private_key is not None,
+            "error": str(e),
+            "installations": []
+        }
+
+
+@app.post("/api/github/app/config")
+async def update_github_app_config(
+    data: Dict[str, Any],
+    user = Depends(require_admin)
+):
+    """Update GitHub App configuration (admin only)"""
+    app_id = data.get('app_id')
+    private_key = data.get('private_key')
+
+    if not app_id or not private_key:
+        raise HTTPException(
+            status_code=400,
+            detail="app_id and private_key are required"
+        )
+
+    # Validate configuration
+    try:
+        from src.core.github_app import GitHubApp
+
+        # Test the configuration
+        test_app = GitHubApp(app_id=app_id, private_key=private_key)
+
+        # Try to generate a JWT token to validate
+        token = test_app.generate_jwt()
+        if not token:
+            raise ValueError("Failed to generate JWT token")
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid GitHub App configuration: {str(e)}"
+        )
+
+    # Save to environment file (or database)
+    # Note: In production, you'd want to save this securely
+    env_path = os.path.join(os.getcwd(), '.env')
+
+    # Read current .env
+    env_content = ""
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            env_content = f.read()
+
+    # Update or add app_id and private_key
+    lines = env_content.split('\n')
+    app_id_found = False
+    private_key_found = False
+
+    for i, line in enumerate(lines):
+        if line.startswith('GITHUB_APP_ID='):
+            lines[i] = f'GITHUB_APP_ID={app_id}'
+            app_id_found = True
+        elif line.startswith('GITHUB_PRIVATE_KEY='):
+            # Escape newlines in private key
+            escaped_key = private_key.replace('\n', '\\n')
+            lines[i] = f'GITHUB_PRIVATE_KEY="{escaped_key}"'
+            private_key_found = True
+
+    if not app_id_found:
+        lines.append(f'GITHUB_APP_ID={app_id}')
+    if not private_key_found:
+        escaped_key = private_key.replace('\n', '\\n')
+        lines.append(f'GITHUB_PRIVATE_KEY="{escaped_key}"')
+
+    # Write back to .env
+    with open(env_path, 'w') as f:
+        f.write('\n'.join(lines))
+
+    # Reload environment
+    load_dotenv(override=True)
+
+    return {
+        "success": True,
+        "message": "GitHub App configuration updated successfully",
+        "restart_required": True
+    }
+
+
+@app.get("/api/github/app/installations")
+async def get_github_app_installations(user = Depends(get_current_user)):
+    """Get list of GitHub App installations"""
+    from src.core.github_app import get_github_app
+    import requests
+
+    github_app = get_github_app()
+
+    if not github_app.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="GitHub App is not configured"
+        )
+
+    try:
+        # Generate JWT token
+        jwt_token = github_app.generate_jwt()
+
+        # Get installations
+        headers = {
+            'Authorization': f'Bearer {jwt_token}',
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+
+        response = requests.get(
+            f'{github_app.github_api_url}/app/installations',
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to fetch installations: {response.text}"
+            )
+
+        installations = response.json()
+
+        # Format installation data
+        formatted_installations = []
+        for installation in installations:
+            formatted_installations.append({
+                'id': installation['id'],
+                'account': {
+                    'login': installation['account']['login'],
+                    'type': installation['account']['type'],
+                    'avatar_url': installation['account']['avatar_url']
+                },
+                'repository_selection': installation.get('repository_selection'),
+                'created_at': installation.get('created_at'),
+                'updated_at': installation.get('updated_at')
+            })
+
+        return {
+            "success": True,
+            "installations": formatted_installations,
+            "count": len(formatted_installations)
+        }
+
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch installations: {str(e)}"
+        )
+
+
+@app.post("/api/github/app/test")
+async def test_github_app_connection(user = Depends(require_admin)):
+    """Test GitHub App connectivity (admin only)"""
+    from src.core.github_app import get_github_app
+    import requests
+
+    github_app = get_github_app()
+
+    if not github_app.is_configured():
+        return {
+            "success": False,
+            "configured": False,
+            "error": "GitHub App is not configured"
+        }
+
+    try:
+        # Test JWT generation
+        jwt_token = github_app.generate_jwt()
+        if not jwt_token:
+            return {
+                "success": False,
+                "configured": True,
+                "jwt_generation": False,
+                "error": "Failed to generate JWT token"
+            }
+
+        # Test API connectivity
+        headers = {
+            'Authorization': f'Bearer {jwt_token}',
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+
+        response = requests.get(
+            f'{github_app.github_api_url}/app',
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "configured": True,
+                "jwt_generation": True,
+                "api_connectivity": False,
+                "error": f"API returned {response.status_code}: {response.text}"
+            }
+
+        app_info = response.json()
+
+        return {
+            "success": True,
+            "configured": True,
+            "jwt_generation": True,
+            "api_connectivity": True,
+            "app_info": {
+                "id": app_info.get('id'),
+                "name": app_info.get('name'),
+                "owner": app_info.get('owner', {}).get('login'),
+                "html_url": app_info.get('html_url')
+            }
+        }
+
+    except requests.RequestException as e:
+        return {
+            "success": False,
+            "configured": True,
+            "jwt_generation": True,
+            "api_connectivity": False,
+            "error": f"Network error: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "configured": True,
+            "error": str(e)
+        }
+
+
+# ============================================================================
 # Pull Request Routes
 # ============================================================================
 
@@ -1147,6 +1415,18 @@ async def settings_page(request: Request, user = Depends(get_current_user_option
         return RedirectResponse(url="/login")
 
     return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "user": user
+    })
+
+
+@app.get("/settings/github-app", response_class=HTMLResponse)
+async def github_app_page(request: Request, user = Depends(get_current_user_optional)):
+    """GitHub App configuration page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("github-app.html", {
         "request": request,
         "user": user
     })
