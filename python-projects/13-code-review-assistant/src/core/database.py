@@ -809,6 +809,15 @@ class CustomRule(Base):
     # Status
     enabled = Column(Boolean, default=True)
 
+    # Sharing and marketplace
+    visibility = Column(String(20), default='private')  # private, public, unlisted
+    is_featured = Column(Boolean, default=False)  # Featured in marketplace
+    original_author = Column(String(200))  # Original author if forked
+    forked_from = Column(String(100))  # Original rule ID if forked
+    fork_count = Column(Integer, default=0)  # Number of times forked
+    download_count = Column(Integer, default=0)  # Number of times downloaded
+    tags = Column(String(500))  # Comma-separated tags for searching
+
     # Metadata
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -817,6 +826,7 @@ class CustomRule(Base):
 
     # Relationships
     user = relationship('User', backref='custom_rules')
+    ratings = relationship('RuleRating', back_populates='rule', cascade='all, delete-orphan')
 
     def to_dict(self) -> Dict:
         """Convert CustomRule to dictionary."""
@@ -835,6 +845,13 @@ class CustomRule(Base):
             'fix_suggestion': self.fix_suggestion,
             'auto_fixable': self.auto_fixable,
             'enabled': self.enabled,
+            'visibility': self.visibility,
+            'is_featured': self.is_featured,
+            'original_author': self.original_author,
+            'forked_from': self.forked_from,
+            'fork_count': self.fork_count,
+            'download_count': self.download_count,
+            'tags': self.tags.split(',') if self.tags else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None,
@@ -843,6 +860,49 @@ class CustomRule(Base):
 
     def __repr__(self):
         return f"<CustomRule(id={self.id}, name={self.name}, enabled={self.enabled})>"
+
+
+class RuleRating(Base):
+    """Ratings and reviews for custom rules in the marketplace."""
+    __tablename__ = 'rule_ratings'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    rule_id = Column(String(100), ForeignKey('custom_rules.id'), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+
+    # Rating
+    rating = Column(Integer, nullable=False)  # 1-5 stars
+    review = Column(Text)  # Optional review text
+    helpful_count = Column(Integer, default=0)  # Number of users who found this helpful
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Composite index for unique user+rule rating
+    __table_args__ = (
+        Index('idx_rule_user_rating', 'rule_id', 'user_id', unique=True),
+    )
+
+    # Relationships
+    rule = relationship('CustomRule', back_populates='ratings')
+    user = relationship('User', backref='rule_ratings')
+
+    def to_dict(self) -> Dict:
+        """Convert RuleRating to dictionary."""
+        return {
+            'id': self.id,
+            'rule_id': self.rule_id,
+            'user_id': self.user_id,
+            'rating': self.rating,
+            'review': self.review,
+            'helpful_count': self.helpful_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<RuleRating(id={self.id}, rule_id={self.rule_id}, rating={self.rating})>"
 
 
 class Plugin(Base):

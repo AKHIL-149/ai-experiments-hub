@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rule Marketplace - Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/github-app.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #2d3748;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 1rem;
+        }
+
+        .main-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .filters-section {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            color: #2d3748;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 0.5rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.875rem;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-end;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .section-header h2 {
+            color: #2d3748;
+            font-size: 1.5rem;
+        }
+
+        .featured-section {
+            margin-bottom: 2rem;
+        }
+
+        .rules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .rule-card {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .rule-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .rule-card.featured {
+            border-color: #f6ad55;
+            background: linear-gradient(135deg, #fef5e7 0%, #ffeaa7 100%);
+        }
+
+        .rule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+
+        .rule-title h3 {
+            color: #2d3748;
+            font-size: 1.25rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .rule-author {
+            color: #718096;
+            font-size: 0.875rem;
+        }
+
+        .rule-badges {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            align-items: flex-end;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-featured {
+            background: #f6ad55;
+            color: #744210;
+        }
+
+        .severity-critical {
+            background: #fc8181;
+            color: white;
+        }
+
+        .severity-error {
+            background: #f56565;
+            color: white;
+        }
+
+        .severity-warning {
+            background: #ecc94b;
+            color: #744210;
+        }
+
+        .severity-info {
+            background: #4299e1;
+            color: white;
+        }
+
+        .rule-description {
+            color: #4a5568;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+
+        .rule-meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .rule-meta-item {
+            color: #718096;
+        }
+
+        .rule-meta-item strong {
+            color: #2d3748;
+        }
+
+        .rule-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .tag {
+            background: #e2e8f0;
+            color: #2d3748;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+
+        .rule-stats {
+            display: flex;
+            justify-content: space-around;
+            padding: 1rem 0;
+            border-top: 2px solid #e2e8f0;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 1rem;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #718096;
+            text-transform: uppercase;
+        }
+
+        .rating-display {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .stars {
+            display: flex;
+            gap: 0.125rem;
+        }
+
+        .star {
+            color: #ecc94b;
+            font-size: 1rem;
+        }
+
+        .star.empty {
+            color: #e2e8f0;
+        }
+
+        .rating-text {
+            color: #718096;
+            font-size: 0.875rem;
+        }
+
+        .rule-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .rule-actions button {
+            flex: 1;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .modal-header h3 {
+            color: #2d3748;
+            font-size: 1.5rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #718096;
+        }
+
+        .close-btn:hover {
+            color: #2d3748;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            color: #2d3748;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .spinner {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #718096;
+        }
+
+        .empty-state h3 {
+            color: #2d3748;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 2px solid #48bb78;
+        }
+
+        .alert-error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 2px solid #f56565;
+        }
+
+        .alert-info {
+            background: #bee3f8;
+            color: #2c5282;
+            border: 2px solid #4299e1;
+        }
+
+        .review-item {
+            background: #f7fafc;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border-left: 4px solid #667eea;
+        }
+
+        .review-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .review-author {
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .review-date {
+            color: #718096;
+            font-size: 0.875rem;
+        }
+
+        .review-text {
+            color: #4a5568;
+            line-height: 1.5;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+
+        <div class="header">
+            <h1>Rule Marketplace</h1>
+            <p>Discover, share, and collaborate on custom analysis rules</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label for="filter-category">Category</label>
+                        <select id="filter-category">
+                            <option value="">All Categories</option>
+                            <option value="security">Security</option>
+                            <option value="performance">Performance</option>
+                            <option value="style">Style</option>
+                            <option value="best-practices">Best Practices</option>
+                            <option value="maintainability">Maintainability</option>
+                            <option value="documentation">Documentation</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filter-language">Language</label>
+                        <select id="filter-language">
+                            <option value="">All Languages</option>
+                            <option value="python">Python</option>
+                            <option value="javascript">JavaScript</option>
+                            <option value="typescript">TypeScript</option>
+                            <option value="java">Java</option>
+                            <option value="go">Go</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filter-search">Search</label>
+                        <input type="text" id="filter-search" placeholder="Search rules...">
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filter-sort">Sort By</label>
+                        <select id="filter-sort">
+                            <option value="popular">Most Popular</option>
+                            <option value="recent">Most Recent</option>
+                            <option value="rating">Highest Rated</option>
+                            <option value="forks">Most Forked</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-actions">
+                        <button class="btn btn-primary btn-sm" onclick="applyFilters()">Apply Filters</button>
+                        <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="alert-container"></div>
+
+            <!-- Featured Rules Section -->
+            <div class="featured-section" id="featured-section">
+                <div class="section-header">
+                    <h2>Featured Rules</h2>
+                </div>
+                <div id="featured-loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Loading featured rules...</p>
+                </div>
+                <div id="featured-container" class="rules-grid"></div>
+            </div>
+
+            <!-- Browse Rules Section -->
+            <div class="section-header">
+                <h2>Browse Rules</h2>
+                <button class="btn btn-success" onclick="showMyRulesModal()">My Rules</button>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Loading rules...</p>
+            </div>
+
+            <div id="rules-container" class="rules-grid"></div>
+
+            <div id="empty-state" class="empty-state" style="display: none;">
+                <h3>No Rules Found</h3>
+                <p>Try adjusting your filters or search query</p>
+            </div>
+
+            <!-- Pagination -->
+            <div id="pagination" class="pagination" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="previousPage()" id="prev-btn">Previous</button>
+                <span id="page-info">Page 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="nextPage()" id="next-btn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rule Details Modal -->
+    <div id="rule-details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="details-rule-name">Rule Details</h3>
+                <button class="close-btn" onclick="closeDetailsModal()">&times;</button>
+            </div>
+
+            <div id="rule-details-content"></div>
+
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                <button type="button" class="btn btn-primary" onclick="forkCurrentRule()">Fork Rule</button>
+                <button type="button" class="btn btn-success" onclick="showRateModal()">Rate Rule</button>
+                <button type="button" class="btn btn-secondary" onclick="closeDetailsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rate Rule Modal -->
+    <div id="rate-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Rate & Review</h3>
+                <button class="close-btn" onclick="closeRateModal()">&times;</button>
+            </div>
+
+            <form id="rate-form" onsubmit="submitRating(event)">
+                <div class="form-group">
+                    <label>Rating *</label>
+                    <div class="stars" id="rating-input">
+                        <span class="star" data-value="1" onclick="selectRating(1)">★</span>
+                        <span class="star" data-value="2" onclick="selectRating(2)">★</span>
+                        <span class="star" data-value="3" onclick="selectRating(3)">★</span>
+                        <span class="star" data-value="4" onclick="selectRating(4)">★</span>
+                        <span class="star" data-value="5" onclick="selectRating(5)">★</span>
+                    </div>
+                    <input type="hidden" id="rating-value" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="review-text">Review (Optional)</label>
+                    <textarea id="review-text" rows="4" placeholder="Share your experience with this rule..."></textarea>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Submit Rating</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeRateModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- My Rules Modal -->
+    <div id="my-rules-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>My Rules</h3>
+                <button class="close-btn" onclick="closeMyRulesModal()">&times;</button>
+            </div>
+
+            <div class="form-group">
+                <button class="btn btn-primary" onclick="showExportModal()">Export Rules</button>
+                <button class="btn btn-success" onclick="showImportModal()">Import Rules</button>
+            </div>
+
+            <div id="my-rules-container"></div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Export Rules</h3>
+                <button class="close-btn" onclick="closeExportModal()">&times;</button>
+            </div>
+
+            <div class="alert alert-info">
+                Select rules to export as JSON. You can share these files with others or import them later.
+            </div>
+
+            <div id="export-rules-list"></div>
+
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                <button type="button" class="btn btn-primary" onclick="exportSelectedRules()">Export Selected</button>
+                <button type="button" class="btn btn-secondary" onclick="closeExportModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Import Rules</h3>
+                <button class="close-btn" onclick="closeImportModal()">&times;</button>
+            </div>
+
+            <form id="import-form" onsubmit="importRules(event)">
+                <div class="form-group">
+                    <label for="import-file">Select JSON File *</label>
+                    <input type="file" id="import-file" accept=".json" required>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="import-overwrite">
+                        Overwrite existing rules with same ID
+                    </label>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Import</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/marketplace.js"></script>
+</body>
+</html>

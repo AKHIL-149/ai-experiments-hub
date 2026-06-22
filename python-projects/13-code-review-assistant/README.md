@@ -1,9 +1,9 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.15 (Plugin System)
-**Status**: Production-Ready with Extensible Plugin Architecture & Complete Notification System
+**Version**: 0.5.16 (Rule Sharing & Marketplace)
+**Status**: Production-Ready with Extensible Plugin Architecture, Rule Marketplace & Complete Notification System
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, visual custom rule builder, extensible plugin system, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
 ## 🚀 Features
 
@@ -71,6 +71,19 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 - **Language Support**: Per-plugin language support configuration
 - **Statistics Tracking**: Plugin load count, execution count, error tracking
 
+### Rule Marketplace
+- **Rule Sharing**: Publish custom analysis rules to community marketplace
+- **Visibility Controls**: Private, public, and unlisted visibility options
+- **Fork & Import**: Fork public rules to customize for your needs
+- **Export/Import**: Export rules as JSON for sharing and backup
+- **Rating & Reviews**: 5-star rating system with written reviews
+- **Discovery**: Browse marketplace with filters (category, language, search)
+- **Sorting**: Sort by popularity, recency, rating, or fork count
+- **Featured Rules**: Curated collection of high-quality rules
+- **Statistics**: Track download count, fork count, and usage metrics
+- **Pagination**: Efficient browsing of large rule collections
+- **Bulk Operations**: Export/import multiple rules at once
+
 ### Production Features
 - **Notifications**: In-app notification system with 10 types, preferences, event-driven architecture
 - **Logging**: Structured logging with correlation IDs, sensitive data masking, export capabilities
@@ -81,7 +94,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 1090+
+- **Total Tests**: 1120+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
@@ -98,7 +111,8 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - Notification UI tests: 20 tests (100% passing)
   - Custom rule service tests: 24 tests (100% passing)
   - Rule builder endpoint tests: 28 tests (100% passing)
-  - Plugin system tests: 30 tests (100% passing)
+  - Plugin system tests: 23 tests (100% passing)
+  - Rule marketplace tests: 30 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -113,7 +127,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 - **Frontend**: Vanilla JavaScript ES6+, Chart.js 4.4.0, Highlight.js 11.9.0
 - **Analysis**: Python AST, Radon (complexity), custom rule engines
 
-### Database Schema (16 Models)
+### Database Schema (17 Models)
 1. **User** - Authentication & authorization with RBAC
 2. **UserSession** - Session management with TTL
 3. **Repository** - GitHub repo tracking and sync
@@ -128,8 +142,9 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 12. **EmailConfiguration** - Email SMTP configuration
 13. **DiscordConfiguration** - Discord webhook configuration
 14. **NotificationRule** - Conditional notification rules
-15. **CustomRule** - User-defined custom analysis rules
+15. **CustomRule** - User-defined custom analysis rules with marketplace support
 16. **Plugin** - Installed plugin metadata and statistics
+17. **RuleRating** - Marketplace rule ratings and reviews
 
 ## 🚦 Quick Start
 

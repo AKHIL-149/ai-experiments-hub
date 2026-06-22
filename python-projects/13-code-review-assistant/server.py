@@ -4575,6 +4575,287 @@ async def test_rule(
 
 
 # ============================================================================
+# Rule Marketplace API
+# ============================================================================
+
+class PublishRuleRequest(BaseModel):
+    """Request model for publishing a rule"""
+    tags: Optional[List[str]] = None
+
+
+class RateRuleRequest(BaseModel):
+    """Request model for rating a rule"""
+    rating: int
+    review: Optional[str] = None
+
+
+@app.get("/api/marketplace/rules")
+async def get_marketplace_rules(
+    category: Optional[str] = None,
+    language: Optional[str] = None,
+    search: Optional[str] = None,
+    sort_by: str = 'popular',
+    limit: int = 50,
+    offset: int = 0,
+    user = Depends(get_current_user_optional)
+):
+    """
+    Get rules from the marketplace.
+
+    Query parameters:
+    - category: Filter by category
+    - language: Filter by language
+    - search: Search query
+    - sort_by: Sort order (popular, recent, rating, forks)
+    - limit: Results per page
+    - offset: Pagination offset
+    """
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        result = marketplace_service.get_marketplace_rules(
+            category=category,
+            language=language,
+            search=search,
+            sort_by=sort_by,
+            limit=limit,
+            offset=offset
+        )
+
+        return {
+            "success": True,
+            **result
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get marketplace rules: {str(e)}")
+
+
+@app.get("/api/marketplace/featured")
+async def get_featured_rules(
+    limit: int = 10,
+    user = Depends(get_current_user_optional)
+):
+    """Get featured rules from the marketplace."""
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        rules = marketplace_service.get_featured_rules(limit=limit)
+
+        return {
+            "success": True,
+            "rules": rules
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get featured rules: {str(e)}")
+
+
+@app.post("/api/marketplace/rules/{rule_id}/fork")
+async def fork_rule(
+    rule_id: str,
+    user = Depends(get_current_user)
+):
+    """Fork a public rule to user's collection."""
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        result = marketplace_service.fork_rule(rule_id, user.id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fork rule: {str(e)}")
+
+
+@app.post("/api/marketplace/rules/{rule_id}/rate")
+async def rate_rule(
+    rule_id: str,
+    request: RateRuleRequest,
+    user = Depends(get_current_user)
+):
+    """Rate a rule in the marketplace."""
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        result = marketplace_service.rate_rule(
+            rule_id=rule_id,
+            user_id=user.id,
+            rating=request.rating,
+            review=request.review
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rate rule: {str(e)}")
+
+
+@app.get("/api/marketplace/rules/{rule_id}/ratings")
+async def get_rule_ratings(
+    rule_id: str,
+    limit: int = 10,
+    offset: int = 0,
+    user = Depends(get_current_user_optional)
+):
+    """Get ratings for a specific rule."""
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        result = marketplace_service.get_rule_ratings(
+            rule_id=rule_id,
+            limit=limit,
+            offset=offset
+        )
+
+        return {
+            "success": True,
+            **result
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get ratings: {str(e)}")
+
+
+@app.post("/api/rules/custom/{rule_id}/publish")
+async def publish_rule(
+    rule_id: str,
+    request: PublishRuleRequest,
+    user = Depends(get_current_user)
+):
+    """Publish a custom rule to the marketplace."""
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        result = marketplace_service.publish_rule(
+            rule_id=rule_id,
+            user_id=user.id,
+            tags=request.tags
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to publish rule: {str(e)}")
+
+
+@app.post("/api/rules/custom/{rule_id}/unpublish")
+async def unpublish_rule(
+    rule_id: str,
+    user = Depends(get_current_user)
+):
+    """Unpublish a rule from the marketplace."""
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+        result = marketplace_service.unpublish_rule(
+            rule_id=rule_id,
+            user_id=user.id
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unpublish rule: {str(e)}")
+
+
+@app.get("/api/rules/export")
+async def export_rules(
+    rule_ids: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """
+    Export user's custom rules to JSON.
+
+    Query parameters:
+    - rule_ids: Comma-separated list of rule IDs (exports all if omitted)
+    """
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+
+        ids_list = rule_ids.split(',') if rule_ids else None
+        rules = marketplace_service.export_rules_bulk(user.id, ids_list)
+
+        return {
+            "success": True,
+            "rules": rules,
+            "count": len(rules)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to export rules: {str(e)}")
+
+
+@app.post("/api/rules/import")
+async def import_rules(
+    rules: List[Dict[str, Any]],
+    overwrite: bool = False,
+    user = Depends(get_current_user)
+):
+    """
+    Import rules from JSON.
+
+    Body:
+    - rules: List of rule data dictionaries
+    - overwrite: Whether to overwrite existing rules with same ID
+    """
+    try:
+        from src.services.rule_marketplace_service import RuleMarketplaceService
+
+        marketplace_service = RuleMarketplaceService()
+
+        results = []
+        for rule_data in rules:
+            result = marketplace_service.import_rule(
+                rule_data=rule_data,
+                user_id=user.id,
+                overwrite=overwrite
+            )
+            results.append(result)
+
+        success_count = sum(1 for r in results if r['success'])
+
+        return {
+            "success": True,
+            "imported": success_count,
+            "total": len(rules),
+            "results": results
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import rules: {str(e)}")
+
+
+# ============================================================================
 # Plugin Management API
 # ============================================================================
 
