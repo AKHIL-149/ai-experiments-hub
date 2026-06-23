@@ -268,11 +268,17 @@ class CodeFile(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     pull_request_id = Column(String(36), ForeignKey('pull_requests.id'), nullable=False, index=True)
     file_path = Column(String(1000), nullable=False)
-    file_hash = Column(String(64))  # SHA256 hash of content
-    language = Column(String(50))
+    file_hash = Column(String(64), index=True)  # SHA256 hash of content - indexed for deduplication
+    language = Column(String(50), index=True)  # Indexed for language-specific queries
     lines_of_code = Column(Integer)
     parsed_data_json = Column(JSON)  # Cached ParsedModule from parser
-    last_analyzed_at = Column(DateTime)
+    last_analyzed_at = Column(DateTime, index=True)  # Indexed for staleness checks
+
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_file_pr_language', 'pull_request_id', 'language'),
+        Index('idx_file_hash_language', 'file_hash', 'language'),
+    )
 
     # Relationships
     pull_request = relationship('PullRequest', back_populates='code_files')
@@ -443,7 +449,13 @@ class Review(Base):
     suggestions_count = Column(Integer, default=0)
     summary = Column(Text)
     approved = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_review_pr_created', 'pull_request_id', 'created_at'),
+        Index('idx_review_reviewer_created', 'reviewer_id', 'created_at'),
+    )
 
     # Relationships
     pull_request = relationship('PullRequest', back_populates='reviews')

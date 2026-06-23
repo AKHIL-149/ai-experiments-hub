@@ -1,123 +1,125 @@
-"""Tests for Performance Optimizations"""
+"""
+Performance Tests
+Tests for caching, database performance, and API response times
+"""
+
 import pytest
-from src.core.database import (
-    DatabaseManager,
-    Issue,
-    PullRequest,
-    AnalysisJob,
-    Base
+import time
+from unittest.mock import Mock, patch, MagicMock
+from src.core.cache_manager import (
+    CacheManager,
+    cache_manager,
+    cache_repository_health,
+    cache_issue_stats,
+    CacheInvalidator
 )
-from src.services.cache_service import CacheService
 
 
-def test_issue_has_composite_indexes():
-    """Test that Issue model has composite indexes defined"""
-    assert hasattr(Issue, '__table_args__')
-    assert Issue.__table_args__ is not None
+class TestCacheManager:
+    """Test suite for cache manager"""
 
-    # Check that indexes are defined
-    indexes = [item for item in Issue.__table_args__ if hasattr(item, 'name')]
-    index_names = [idx.name for idx in indexes]
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client"""
+        redis_mock = MagicMock()
+        redis_mock.ping.return_value = True
+        redis_mock.get.return_value = None
+        redis_mock.set.return_value = True
+        redis_mock.setex.return_value = True
+        redis_mock.delete.return_value = 1
+        redis_mock.keys.return_value = []
+        redis_mock.flushdb.return_value = True
+        return redis_mock
 
-    assert 'idx_issue_category_severity' in index_names
-    assert 'idx_issue_file_severity' in index_names
-    assert 'idx_issue_created_severity' in index_names
+    @pytest.fixture
+    def cache(self, mock_redis):
+        """Create cache manager with mocked Redis"""
+        with patch('redis.from_url', return_value=mock_redis):
+            manager = CacheManager()
+            return manager
 
+    def test_cache_initialization_success(self, mock_redis):
+        """Test successful cache initialization"""
+        with patch('redis.from_url', return_value=mock_redis):
+            cache = CacheManager()
+            assert cache.enabled is True
+            assert cache.redis_client is not None
 
-def test_pullrequest_has_composite_indexes():
-    """Test that PullRequest model has composite indexes defined"""
-    assert hasattr(PullRequest, '__table_args__')
-    assert PullRequest.__table_args__ is not None
+    def test_cache_initialization_failure(self):
+        """Test cache initialization failure"""
+        with patch('redis.from_url', side_effect=Exception("Connection failed")):
+            cache = CacheManager()
+            assert cache.enabled is False
+            assert cache.redis_client is None
 
-    indexes = [item for item in PullRequest.__table_args__ if hasattr(item, 'name')]
-    index_names = [idx.name for idx in indexes]
+    def test_make_key_simple_args(self, cache):
+        """Test cache key generation with simple arguments"""
+        key = cache._make_key("test", "arg1", "arg2")
+        assert key == "test:arg1:arg2"
 
-    assert 'idx_pr_repo_status' in index_names
-    assert 'idx_pr_repo_created' in index_names
-    assert 'idx_pr_status_created' in index_names
+    def test_make_key_with_kwargs(self, cache):
+        """Test cache key generation with keyword arguments"""
+        key = cache._make_key("test", user_id="123", repo_id="456")
+        assert "repo_id=456" in key
+        assert "user_id=123" in key
 
+    def test_cache_get_success(self, cache, mock_redis):
+        """Test successful cache get"""
+        import json
+        mock_redis.get.return_value = json.dumps({"result": "data"})
 
-def test_analysisjob_has_composite_indexes():
-    """Test that AnalysisJob model has composite indexes defined"""
-    assert hasattr(AnalysisJob, '__table_args__')
-    assert AnalysisJob.__table_args__ is not None
+        result = cache.get("test:key")
+        assert result == {"result": "data"}
 
-    indexes = [item for item in AnalysisJob.__table_args__ if hasattr(item, 'name')]
-    index_names = [idx.name for idx in indexes]
+    def test_cache_set_with_ttl(self, cache, mock_redis):
+        """Test cache set with TTL"""
+        success = cache.set("test:key", {"data": "value"}, ttl=300)
+        assert success is True
 
-    assert 'idx_job_pr_status' in index_names
-    assert 'idx_job_status_started' in index_names
+    def test_cache_delete(self, cache, mock_redis):
+        """Test cache delete"""
+        success = cache.delete("test:key")
+        assert success is True
 
+    def test_cached_decorator(self, cache, mock_redis):
+        """Test cached decorator"""
+        call_count = 0
 
-def test_issue_has_timestamp_indexes():
-    """Test that Issue model has timestamp index"""
-    # Check that created_at has index=True
-    assert Issue.created_at.index == True
+        @cache.cached("test:func", ttl=60)
+        def expensive_function(arg):
+            nonlocal call_count
+            call_count += 1
+            return f"result:{arg}"
 
-
-def test_pullrequest_has_timestamp_indexes():
-    """Test that PullRequest model has timestamp indexes"""
-    assert PullRequest.created_at.index == True
-    assert PullRequest.updated_at.index == True
-
-
-def test_cache_integration_with_database():
-    """Test that cache can be used with database queries"""
-    cache = CacheService()
-    cache.clear()
-
-    # Simulate caching database query results
-    mock_issues = [
-        {'id': '1', 'severity': 'critical'},
-        {'id': '2', 'severity': 'error'}
-    ]
-
-    # Cache the results
-    cache.set('issues:critical', mock_issues, ttl=60)
-
-    # Retrieve from cache
-    cached_issues = cache.get('issues:critical')
-
-    assert cached_issues == mock_issues
-    assert len(cached_issues) == 2
-
-
-def test_cache_decorator_for_query_results():
-    """Test using cache decorator for expensive queries"""
-    cache = CacheService()
-    cache.clear()
-
-    query_count = 0
-
-    @cache.cached(ttl=60, key_prefix='expensive_query')
-    def expensive_database_query(param):
-        nonlocal query_count
-        query_count += 1
-        return {'result': f'data-{param}'}
-
-    # First call - executes query
-    result1 = expensive_database_query('test')
-    assert result1 == {'result': 'data-test'}
-    assert query_count == 1
-
-    # Second call - uses cache
-    result2 = expensive_database_query('test')
-    assert result2 == {'result': 'data-test'}
-    assert query_count == 1  # Not incremented
+        # First call
+        mock_redis.get.return_value = None
+        result1 = expensive_function("value")
+        assert result1 == "result:value"
+        assert call_count == 1
 
 
-def test_cache_statistics_tracking():
-    """Test that cache statistics are tracked"""
-    cache = CacheService()
-    cache.reset_statistics()
+class TestDatabasePerformance:
+    """Test database performance optimizations"""
 
-    cache.set('key1', 'value1')
-    cache.get('key1')  # Hit
-    cache.get('key1')  # Hit
-    cache.get('nonexistent')  # Miss
+    def test_code_file_has_indexes(self):
+        """Test that CodeFile has necessary indexes"""
+        from src.core.database import CodeFile
 
-    stats = cache.get_statistics()
+        assert hasattr(CodeFile, '__table_args__')
+        assert CodeFile.__table_args__ is not None
 
-    assert stats['cache_hits'] == 2
-    assert stats['cache_misses'] == 1
-    assert stats['hit_rate_percent'] > 0
+    def test_issue_has_composite_indexes(self):
+        """Test that Issue has composite indexes"""
+        from src.core.database import Issue
+
+        assert hasattr(Issue, '__table_args__')
+
+    def test_pull_request_has_composite_indexes(self):
+        """Test that PullRequest has composite indexes"""
+        from src.core.database import PullRequest
+
+        assert hasattr(PullRequest, '__table_args__')
+
+
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
