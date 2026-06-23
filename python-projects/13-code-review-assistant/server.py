@@ -2166,6 +2166,107 @@ async def post_pr_review_to_github(
         }
 
 
+@app.post("/api/prs/{pr_id}/assign-reviewers")
+async def assign_pr_reviewers(
+    pr_id: str,
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """
+    Automatically assign reviewers to a pull request.
+
+    Args:
+        pr_id: Pull request ID
+        data: {
+            "strategy": "balanced" | "expertise" | "round_robin",
+            "num_reviewers": int (default 2)
+        }
+    """
+    try:
+        from src.services.review_assignment_service import review_assignment_service
+
+        strategy = data.get('strategy', 'balanced')
+        num_reviewers = data.get('num_reviewers', 2)
+
+        result = review_assignment_service.assign_reviewers(
+            pr_id=pr_id,
+            strategy=strategy,
+            num_reviewers=num_reviewers
+        )
+
+        if not result.get('success'):
+            raise HTTPException(status_code=400, detail=result.get('error'))
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign reviewers: {str(e)}")
+
+
+@app.get("/api/prs/{pr_id}/approval-status")
+async def get_pr_approval_status(
+    pr_id: str,
+    required_approvals: int = 1,
+    require_owner_approval: bool = False,
+    user = Depends(get_current_user)
+):
+    """
+    Check if PR has sufficient approvals for merge.
+
+    Args:
+        pr_id: Pull request ID
+        required_approvals: Minimum number of approvals required
+        require_owner_approval: Whether code owner approval is required
+    """
+    try:
+        from src.services.review_assignment_service import review_assignment_service
+
+        result = review_assignment_service.check_review_approval(
+            pr_id=pr_id,
+            required_approvals=required_approvals,
+            require_owner_approval=require_owner_approval
+        )
+
+        if not result.get('success'):
+            raise HTTPException(status_code=404, detail=result.get('error'))
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to check approval status: {str(e)}")
+
+
+@app.get("/api/users/{user_id}/reviewer-stats")
+async def get_user_reviewer_stats(
+    user_id: str,
+    days: int = 30,
+    user = Depends(get_current_user)
+):
+    """
+    Get review statistics for a user.
+
+    Args:
+        user_id: User ID
+        days: Number of days to analyze (default 30)
+    """
+    try:
+        from src.services.review_assignment_service import review_assignment_service
+
+        stats = review_assignment_service.get_reviewer_stats(
+            user_id=user_id,
+            days=days
+        )
+
+        return stats
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get reviewer stats: {str(e)}")
+
+
 # ============================================================================
 # Template Routes
 # ============================================================================
