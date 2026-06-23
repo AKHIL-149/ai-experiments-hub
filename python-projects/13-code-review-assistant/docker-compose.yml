@@ -1,21 +1,23 @@
 version: '3.8'
 
 services:
-  # Redis - Message broker and cache
+  # Redis - Message broker, cache, and Celery backend
   redis:
     image: redis:7-alpine
     container_name: code-review-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - code-review-network
 
   # PostgreSQL - Production database (optional, comment out to use SQLite)
   postgres:
@@ -23,20 +25,23 @@ services:
     container_name: code-review-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: codereviewer
-      POSTGRES_USER: reviewer
+      POSTGRES_DB: ${POSTGRES_DB:-codereviewer}
+      POSTGRES_USER: ${POSTGRES_USER:-reviewer}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U reviewer"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reviewer}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - code-review-network
 
-  # FastAPI Application
+  # FastAPI Application Server
   app:
     build:
       context: .
@@ -44,104 +49,176 @@ services:
     container_name: code-review-app
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - .env
     environment:
-      # Server
+      # Override .env with Docker-specific settings
       HOST: 0.0.0.0
       PORT: 8000
-      ALLOWED_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
 
-      # Database (choose one)
-      # SQLite (default)
-      DATABASE_URL: sqlite:///./data/database.db
-      # PostgreSQL (uncomment to use)
-      # DATABASE_URL: postgresql://reviewer:${POSTGRES_PASSWORD:-changeme}@postgres:5432/codereviewer
+      # Database - Choose SQLite or PostgreSQL
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/database.db}
+      # For PostgreSQL, use: postgresql://${POSTGRES_USER:-reviewer}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-codereviewer}
 
-      # Authentication
-      SESSION_TTL_DAYS: 30
-      COOKIE_SECURE: "false"
+      # Redis/Celery
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
 
-      # GitHub
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
-
-      # Git
-      GIT_CLONE_DIR: ./data/repos
-
-      # LLM (configure one)
-      OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-
-      # Analysis
-      COMPLEXITY_THRESHOLD_WARN: 10
-      COMPLEXITY_THRESHOLD_ERROR: 15
-
-      # Celery/Redis
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      REDIS_URL: redis://redis:6379/2
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ./data/logs/app.log
     volumes:
       - app-data:/app/data
+      - app-logs:/app/data/logs
     depends_on:
       redis:
         condition: service_healthy
+      # Uncomment for PostgreSQL
       # postgres:
       #   condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - code-review-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Celery Worker
+  # Celery Worker - Async task processing
   worker:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: code-review-worker
     restart: unless-stopped
-    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    command: celery -A celery_app worker --loglevel=${CELERY_LOG_LEVEL:-info} --concurrency=${CELERY_WORKERS:-4} --max-tasks-per-child=1000
+    env_file:
+      - .env
     environment:
       # Database
-      DATABASE_URL: sqlite:///./data/database.db
-      # PostgreSQL (uncomment to use)
-      # DATABASE_URL: postgresql://reviewer:${POSTGRES_PASSWORD:-changeme}@postgres:5432/codereviewer
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/database.db}
 
-      # Celery/Redis
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      REDIS_URL: redis://redis:6379/2
+      # Redis/Celery
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
 
-      # GitHub
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-
-      # Git
-      GIT_CLONE_DIR: ./data/repos
-
-      # LLM
-      OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ./data/logs/worker.log
     volumes:
       - app-data:/app/data
+      - app-logs:/app/data/logs
     depends_on:
       redis:
         condition: service_healthy
-      # postgres:
-      #   condition: service_healthy
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - code-review-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Celery Beat - Scheduled task scheduler
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-review-beat
+    restart: unless-stopped
+    command: celery -A celery_app beat --loglevel=${CELERY_LOG_LEVEL:-info}
+    env_file:
+      - .env
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/database.db}
+
+      # Redis/Celery
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ./data/logs/beat.log
+    volumes:
+      - app-data:/app/data
+      - app-logs:/app/data/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    networks:
+      - code-review-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Flower - Celery monitoring (optional, for development)
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-review-flower
+    restart: unless-stopped
+    command: celery -A celery_app flower --port=5555 --broker=redis://redis:6379/1
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    networks:
+      - code-review-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+# Named volumes for data persistence
 volumes:
   redis-data:
     driver: local
+    name: code-review-redis-data
   postgres-data:
     driver: local
+    name: code-review-postgres-data
   app-data:
     driver: local
+    name: code-review-app-data
+  app-logs:
+    driver: local
+    name: code-review-app-logs
 
+# Custom network
 networks:
-  default:
+  code-review-network:
+    driver: bridge
     name: code-review-network

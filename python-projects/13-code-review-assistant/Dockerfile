@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for AI Code Review Assistant
-# Production-ready with minimal image size
+# Production-ready with minimal image size and security hardening
 
-# Stage 1: Builder
+# Stage 1: Builder - Install dependencies
 FROM python:3.11-slim as builder
 
 WORKDIR /app
@@ -9,53 +9,66 @@ WORKDIR /app
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Stage 2: Runtime
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt .
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+# Install Python dependencies in virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY src/ ./src/
-COPY static/ ./static/
-COPY templates/ ./templates/
-COPY server.py .
-COPY celery_app.py .
+# Stage 2: Runtime - Minimal production image
+FROM python:3.11-slim
 
-# Create data directory
-RUN mkdir -p data/repos
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    APP_HOME=/app \
+    LOG_LEVEL=INFO
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && \
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user and directories for security
+RUN useradd -m -u 1000 -s /bin/bash appuser && \
+    mkdir -p /app/data/repos /app/data/logs && \
     chown -R appuser:appuser /app
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy application code with proper ownership
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser static/ ./static/
+COPY --chown=appuser:appuser templates/ ./templates/
+COPY --chown=appuser:appuser scripts/ ./scripts/
+COPY --chown=appuser:appuser server.py .
+COPY --chown=appuser:appuser celery_app.py .
+COPY --chown=appuser:appuser .env.example .env.example
 
 # Switch to non-root user
 USER appuser
 
-# Expose port
+# Expose application port
 EXPOSE 8000
 
-# Health check
+# Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Default command (can be overridden)
-CMD ["python", "server.py"]
+# Default command (override in docker-compose for different services)
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
