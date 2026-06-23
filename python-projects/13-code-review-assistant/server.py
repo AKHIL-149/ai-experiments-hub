@@ -4396,6 +4396,169 @@ async def predict_code_smells(
 
 
 # ============================================================================
+# Historical Analytics Endpoints
+# ============================================================================
+
+@app.get("/api/analytics/repository/{repository_id}/health")
+async def get_repository_health(
+    repository_id: str,
+    time_window_days: int = 30,
+    user = Depends(get_current_user)
+):
+    """
+    Get repository health score and metrics.
+
+    Query parameters:
+    - time_window_days: Days to analyze (default 30)
+
+    Returns health score (0-100), grade, issues per KLOC, and trend
+    """
+    from src.services.historical_analytics_service import historical_analytics_service
+
+    try:
+        health = historical_analytics_service.get_repository_health_score(
+            repository_id=repository_id,
+            time_window_days=time_window_days
+        )
+
+        return {
+            "success": True,
+            "score": health.score,
+            "grade": health.grade,
+            "issues_per_kloc": health.issues_per_kloc,
+            "critical_issues": health.critical_issues,
+            "total_issues": health.total_issues,
+            "trend": health.trend
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating health score: {str(e)}")
+
+
+@app.get("/api/analytics/repository/{repository_id}/trends")
+async def get_quality_trends(
+    repository_id: str,
+    days: int = 90,
+    granularity: str = 'daily',
+    user = Depends(get_current_user)
+):
+    """
+    Get time-series quality trends.
+
+    Query parameters:
+    - days: Number of days to analyze (default 90)
+    - granularity: 'daily', 'weekly', or 'monthly' (default 'daily')
+
+    Returns trend data for total issues, critical issues, health score, and issues per KLOC
+    """
+    from src.services.historical_analytics_service import historical_analytics_service
+
+    if granularity not in ['daily', 'weekly', 'monthly']:
+        raise HTTPException(status_code=400, detail="Invalid granularity. Must be 'daily', 'weekly', or 'monthly'")
+
+    try:
+        trends = historical_analytics_service.get_quality_trends(
+            repository_id=repository_id,
+            days=days,
+            granularity=granularity
+        )
+
+        return {
+            "success": True,
+            "repository_id": repository_id,
+            "time_period": f"{days} days",
+            "granularity": granularity,
+            **trends
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting quality trends: {str(e)}")
+
+
+@app.get("/api/analytics/repository/{repository_id}/developers")
+async def get_developer_contributions(
+    repository_id: str,
+    days: int = 30,
+    user = Depends(get_current_user)
+):
+    """
+    Get developer contribution analysis.
+
+    Query parameters:
+    - days: Days to analyze (default 30)
+
+    Returns statistics for each developer including PRs, reviews, issues, and quality scores
+    """
+    from src.services.historical_analytics_service import historical_analytics_service
+
+    try:
+        analysis = historical_analytics_service.get_developer_contribution_analysis(
+            repository_id=repository_id,
+            days=days
+        )
+
+        return {
+            "success": True,
+            "repository_id": repository_id,
+            "time_period": f"{days} days",
+            "developers": analysis,
+            "total_developers": len(analysis)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing developer contributions: {str(e)}")
+
+
+@app.get("/api/analytics/repository/{repository_id}/heatmap")
+async def get_technical_debt_heatmap(
+    repository_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get technical debt heatmap showing problem areas in the codebase.
+
+    Returns files sorted by debt score with detailed metrics for each
+    """
+    from src.services.historical_analytics_service import historical_analytics_service
+
+    try:
+        heatmap = historical_analytics_service.get_technical_debt_heatmap(
+            repository_id=repository_id
+        )
+
+        return {
+            "success": True,
+            "repository_id": repository_id,
+            **heatmap
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating heatmap: {str(e)}")
+
+
+@app.get("/api/analytics/repository/{repository_id}/quality-gate")
+async def get_quality_gate_status(
+    repository_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get quality gate metrics and SLO status.
+
+    Returns overall gate status (passed/failed) and individual SLO metrics
+    """
+    from src.services.historical_analytics_service import historical_analytics_service
+
+    try:
+        metrics = historical_analytics_service.get_quality_gate_metrics(
+            repository_id=repository_id
+        )
+
+        return {
+            "success": True,
+            "repository_id": repository_id,
+            **metrics
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking quality gate: {str(e)}")
+
+
+# ============================================================================
 # Repository Endpoints
 # ============================================================================
 
