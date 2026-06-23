@@ -2481,6 +2481,18 @@ async def schedules_page(request: Request, user = Depends(get_current_user_optio
     })
 
 
+@app.get("/teams", response_class=HTMLResponse)
+async def teams_page(request: Request, user = Depends(get_current_user_optional)):
+    """Team dashboard page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("team_dashboard.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/repositories/new", response_class=HTMLResponse)
 async def repository_add_page(request: Request, user = Depends(get_current_user_optional)):
     """Add repository page"""
@@ -5412,6 +5424,58 @@ async def get_team_invitations(team_id: str, status: Optional[str] = None, user=
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}/analytics")
+async def get_team_analytics(team_id: str, user=Depends(get_current_user)):
+    """Get team analytics including issue trends and health metrics."""
+    try:
+        from src.services.team_analytics_service import team_analytics_service
+
+        analytics = team_analytics_service.get_team_analytics(team_id)
+        return analytics
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team analytics: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}/repositories")
+async def get_team_repositories(team_id: str, user=Depends(get_current_user)):
+    """Get all repositories for a team with health metrics."""
+    try:
+        from src.services.team_analytics_service import team_analytics_service
+
+        repositories = team_analytics_service.get_team_repositories(team_id)
+        return {"repositories": repositories}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team repositories: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}/leaderboard")
+async def get_team_leaderboard(team_id: str, user=Depends(get_current_user)):
+    """Get team member leaderboard ranked by contributions."""
+    try:
+        from src.services.team_analytics_service import team_analytics_service
+
+        leaderboard = team_analytics_service.get_team_leaderboard(team_id)
+        return {"leaderboard": leaderboard}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team leaderboard: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}/activity")
+async def get_team_activity(team_id: str, limit: int = 50, user=Depends(get_current_user)):
+    """Get recent team activity feed."""
+    try:
+        from src.services.team_analytics_service import team_analytics_service
+
+        activity = team_analytics_service.get_team_activity(team_id, limit)
+        return {"activity": activity}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team activity: {str(e)}")
 
 
 @app.post("/api/invitations/{token}/accept")

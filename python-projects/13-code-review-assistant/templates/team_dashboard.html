@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Dashboard - AI Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/team-dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏢 Team Dashboard</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/repositories">Repositories</a>
+                <a href="/teams" class="active">Teams</a>
+                <a href="/issues">Issues</a>
+                <a href="/settings">Settings</a>
+                <a href="/logout">Logout</a>
+            </nav>
+        </header>
+
+        <main>
+            <!-- Team Selector -->
+            <section id="team-selector">
+                <label for="current-team">Current Team:</label>
+                <select id="current-team">
+                    <option value="">Select a team...</option>
+                </select>
+            </section>
+
+            <div id="team-content" style="display: none;">
+                <!-- Team Overview -->
+                <section id="team-overview" class="dashboard-section">
+                    <h2>Overview</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">👥</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="member-count">0</div>
+                                <div class="stat-label">Team Members</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📦</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="repo-count">0</div>
+                                <div class="stat-label">Repositories</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">⚠️</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="issue-count">0</div>
+                                <div class="stat-label">Open Issues</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">✅</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="health-score">-</div>
+                                <div class="stat-label">Avg Health Score</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Shared Repositories -->
+                <section id="shared-repositories" class="dashboard-section">
+                    <div class="section-header">
+                        <h2>Shared Repositories</h2>
+                        <button id="add-repo-btn" class="btn btn-primary">+ Add Repository</button>
+                    </div>
+                    <div id="repositories-grid" class="repositories-grid">
+                        <!-- Repositories will be loaded here -->
+                    </div>
+                </section>
+
+                <!-- Team Analytics -->
+                <section id="team-analytics" class="dashboard-section">
+                    <h2>Team Analytics</h2>
+                    <div class="analytics-grid">
+                        <div class="analytics-card">
+                            <h3>Issues by Severity</h3>
+                            <canvas id="severity-chart"></canvas>
+                        </div>
+                        <div class="analytics-card">
+                            <h3>Issues by Category</h3>
+                            <canvas id="category-chart"></canvas>
+                        </div>
+                        <div class="analytics-card">
+                            <h3>Repository Health Trends</h3>
+                            <canvas id="health-trend-chart"></canvas>
+                        </div>
+                        <div class="analytics-card">
+                            <h3>Activity Overview</h3>
+                            <canvas id="activity-chart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Team Leaderboard -->
+                <section id="team-leaderboard" class="dashboard-section">
+                    <h2>Team Leaderboard</h2>
+                    <div class="leaderboard">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Member</th>
+                                    <th>Role</th>
+                                    <th>PRs Reviewed</th>
+                                    <th>Issues Found</th>
+                                    <th>Contributions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leaderboard-body">
+                                <!-- Leaderboard will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Activity Feed -->
+                <section id="activity-feed" class="dashboard-section">
+                    <h2>Recent Activity</h2>
+                    <div id="activity-list" class="activity-list">
+                        <!-- Activity items will be loaded here -->
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/team-dashboard.js"></script>
+</body>
+</html>
