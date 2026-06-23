@@ -1,9 +1,9 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.18 (Scheduled Analysis & Automated Scanning)
-**Status**: Production-Ready with Extensible Plugin Architecture, Rule Marketplace, Complete Notification System & Automated Scheduled Analysis
+**Version**: 0.5.20 (Team Collaboration & Review Workflows)
+**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace & Comprehensive Notifications
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features team collaboration with automated reviewer assignment, shared workspaces with analytics dashboards, async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
 ## 🚀 Features
 
@@ -107,6 +107,32 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - View run history and details
 - **Async Execution**: Background processing via Celery workers
 
+### Team Collaboration
+- **Teams & Organizations**: Create teams with hierarchical role-based access control
+  - Owner, Admin, Member, Viewer roles with granular permissions
+  - Team invitations with token-based acceptance
+  - Team settings and visibility controls
+- **Shared Workspaces**: Collaborative team dashboards with comprehensive analytics
+  - Team overview stats (members, repositories, issues, health score)
+  - Shared repository pools across team members
+  - Team analytics with Chart.js visualizations (severity, category, health trends)
+  - Team leaderboard ranking members by contributions
+  - Activity feed tracking team analyses and reviews
+- **Automated Review Assignment**: Intelligent reviewer routing with multiple strategies
+  - **Balanced Assignment**: Distributes reviews based on current workload
+  - **Expertise Assignment**: Routes to reviewers with file modification history
+  - **Round Robin Assignment**: Evenly distributes reviews across team
+  - Excludes PR authors from assignment pool
+  - Respects team roles and permissions
+- **Code Ownership Tracking**: CODEOWNERS file support for ownership mapping
+  - Glob pattern matching for file ownership
+  - Automatic owner identification for changed files
+  - Required owner approval workflows
+- **Review Workflows**: Approval validation and merge readiness checks
+  - Configurable approval requirements (count, owner approval)
+  - Reviewer performance statistics and metrics
+  - Approval rate tracking and workload analytics
+
 ### Production Features
 - **Notifications**: In-app notification system with 10 types, preferences, event-driven architecture
 - **Logging**: Structured logging with correlation IDs, sensitive data masking, export capabilities
@@ -117,7 +143,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 1120+
+- **Total Tests**: 1130+
 - **Coverage**: 90%+
 - **Test Suites**:
   - Parser tests: 30 Java tests, 44 JavaScript/TypeScript tests, 32 registry tests (100% passing)
@@ -137,6 +163,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - Plugin system tests: 23 tests (100% passing)
   - Rule marketplace tests: 30 tests (100% passing)
   - Schedule service tests: 24 tests (100% passing)
+  - Team management tests: 10 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -828,6 +855,61 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.20 - Review Assignment & Workflows (Phase 5 Complete - 100%)
+**Commit 13.5.20 (AKHIL-165)** - Implemented automated review assignment and workflows:
+- ReviewAssignmentService for managing review workflows
+  * assign_reviewers() with 3 strategies (balanced, expertise, round_robin)
+  * parse_codeowners() - CODEOWNERS file format parsing
+  * get_file_owners() - File ownership mapping with glob patterns
+  * check_review_approval() - PR approval status validation
+  * get_reviewer_stats() - Reviewer performance metrics
+- Balanced assignment: Routes to reviewers with lowest current workload
+- Expertise assignment: Routes based on file modification history
+- Round robin assignment: Distributes reviews evenly across team
+- CODEOWNERS pattern matching for code ownership tracking
+- Approval workflow validation with configurable rules
+- Reviewer workload tracking and performance analytics
+- 3 new API endpoints (assign-reviewers, approval-status, reviewer-stats)
+- Excludes PR authors from reviewer candidates
+- Respects team roles and permissions
+- Total tests: 1130+
+
+### Version 0.5.19 - Shared Workspaces & Team Analytics (98% Complete)
+**Commit 13.5.19 (AKHIL-164)** - Implemented shared workspaces and team analytics:
+- TeamAnalyticsService for team-level metrics aggregation
+  * get_team_analytics() - Issues by severity/category across team repos
+  * get_team_repositories() - Team repos with health scores
+  * get_team_leaderboard() - Member rankings by contribution score
+  * get_team_activity() - Recent team activities (analyses, reviews)
+- Team dashboard UI (team_dashboard.html) with comprehensive analytics
+  * Team selector dropdown with overview stats
+  * Shared repositories grid with health metrics
+  * Chart.js visualizations (severity, category, health trend, activity)
+  * Team leaderboard table with rankings
+  * Activity feed with icons and timestamps
+- Dashboard JavaScript (team-dashboard.js, 420 lines)
+  * Parallel data loading with Promise.all()
+  * Chart.js integration for 4 analytics charts
+  * Dynamic rendering for repositories and leaderboard
+- Responsive CSS (team-dashboard.css, 390 lines) with gradient stat cards
+- 4 new API endpoints (analytics, repositories, leaderboard, activity)
+- Added "Teams" link to main navigation
+- Total tests: 1130+
+
+### Version 0.5.17b - Team Management Tests & Fixes (95% Complete)
+**Commit 13.5.17b** - Added team management tests and SQLAlchemy 2.0 fixes:
+- 10 comprehensive team management tests (test_team_basic.py)
+  * Team creation, retrieval, and deletion
+  * Member addition and role management
+  * Team invitations and permissions
+  * All tests passing with unique ID fixtures
+- Fixed SQLAlchemy 2.0 compatibility issue in TeamService
+  * Changed func.case() to case() import for proper sorting
+  * Removed deprecated func usage
+- Added Any type import to database.py
+- Tests use success/error dict pattern from TeamService API
+- Total tests: 1130+
+
 ### Version 0.5.15 - Plugin System (103% Complete)
 **Commit 13.5.15** - Implemented extensible plugin architecture:
 - Plugin base classes (plugin_base.py, 371 lines) with abstract interfaces
@@ -996,5 +1078,5 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ---
 
-**Project 13 - Phase 5.14 Complete**
-Production-ready with visual custom rule builder, complete notification UI, digest & batching system, advanced rules engine, multi-channel notifications, GitHub App UI, webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨
+**Project 13 - Phase 5 Complete (Team Collaboration)**
+Production-ready with team collaboration, automated review assignment, shared workspaces with analytics dashboards, visual custom rule builder, complete notification UI, digest & batching system, advanced rules engine, multi-channel notifications, GitHub App UI, webhook-triggered PR analysis, multi-language support, and comprehensive monitoring ✨
