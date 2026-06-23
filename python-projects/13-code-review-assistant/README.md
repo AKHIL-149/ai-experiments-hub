@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.20 (Team Collaboration & Review Workflows)
-**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace & Comprehensive Notifications
+**Version**: 0.5.25 (Production Hardening)
+**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations & Production Middleware
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features team collaboration with automated reviewer assignment, shared workspaces with analytics dashboards, async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
@@ -854,6 +854,59 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 ---
 
 ## 📈 Recent Updates
+
+### Version 0.5.25 - Production Hardening (92% Complete)
+**Commit 13.5.11 (AKHIL-170)** - Implemented production-grade middleware and configuration validation:
+- RateLimiter for API protection:
+  * Redis-based token bucket algorithm
+  * Per-user and per-IP rate limiting
+  * Sliding window with automatic cleanup
+  * In-memory fallback for development
+  * Configurable limits per endpoint
+  * HTTP 429 responses with Retry-After headers
+- RateLimitMiddleware:
+  * Global rate limiting (100 req/min)
+  * Auth endpoints: login (5/min), register (5/5min)
+  * Analysis endpoints: 10/min
+  * Rate limit headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+- StructuredLogger for secure logging:
+  * JSON-formatted logs with timestamps
+  * Sensitive data masking (passwords, tokens, API keys)
+  * Pattern matching for JWT, GitHub tokens, secrets
+  * Recursive masking for nested data structures
+  * Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+- LoggingMiddleware:
+  * Correlation IDs for request tracing (UUID v4)
+  * Request/response logging with duration metrics
+  * Client IP detection (X-Forwarded-For support)
+  * User activity tracking
+  * X-Correlation-ID response headers
+- ErrorHandler with standardized responses:
+  * ErrorResponse.create() for consistent error format
+  * HTTP exception handler
+  * Validation error handler with field details
+  * Database exception handlers (IntegrityError, OperationalError)
+  * Generic exception handler with correlation IDs
+  * Retry decorator for transient failures (exponential backoff)
+- ConfigValidator for startup validation:
+  * 20+ configuration rules with validators
+  * Three levels: REQUIRED, RECOMMENDED, OPTIONAL
+  * Environment variable validation (format, range, pattern)
+  * Default value handling
+  * Validation report with errors/warnings/info
+  * Health check for dependencies (database, Redis, Celery)
+- Configuration rules:
+  * Server: HOST, PORT, ALLOWED_ORIGINS
+  * Database: DATABASE_URL with format validation
+  * Redis: REDIS_URL, CELERY_BROKER_URL, CELERY_RESULT_BACKEND
+  * Security: SESSION_TTL_DAYS, COOKIE_SECURE
+  * GitHub: GITHUB_TOKEN (format validation), GITHUB_WEBHOOK_SECRET
+  * LLM: OLLAMA_API_URL, ANTHROPIC_API_KEY, OPENAI_API_KEY
+  * Analysis: Complexity thresholds with range validation
+- Middleware package with exports
+- Updated .env.example with Redis and complexity thresholds
+- 15+ production hardening tests
+- Total tests: 1205+
 
 ### Version 0.5.24 - Performance Optimizations (90% Complete)
 **Commit 13.5.24 (AKHIL-169)** - Implemented caching and database performance optimizations:
