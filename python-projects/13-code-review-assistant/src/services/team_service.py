@@ -6,7 +6,7 @@ import secrets
 import uuid
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_
 
 from src.core.database import (
     DatabaseManager, Team, TeamMember, TeamInvitation,
@@ -239,16 +239,16 @@ class TeamService:
             if not include_inactive:
                 query = query.filter(TeamMember.is_active == True)
 
-            results = query.order_by(
-                # Order: owner first, then admin, member, viewer
-                func.case(
-                    (TeamMember.role == 'owner', 1),
-                    (TeamMember.role == 'admin', 2),
-                    (TeamMember.role == 'member', 3),
-                    (TeamMember.role == 'viewer', 4),
-                    else_=5
-                )
-            ).all()
+            # Order: owner first, then admin, member, viewer
+            from sqlalchemy import case
+            role_order = case(
+                (TeamMember.role == 'owner', 1),
+                (TeamMember.role == 'admin', 2),
+                (TeamMember.role == 'member', 3),
+                (TeamMember.role == 'viewer', 4),
+                else_=5
+            )
+            results = query.order_by(role_order).all()
 
             members = []
             for member, user in results:
