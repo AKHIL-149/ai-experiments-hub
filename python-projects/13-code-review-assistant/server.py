@@ -5160,6 +5160,323 @@ async def get_plugin_manifest(
 
 
 # ============================================================================
+# Team Management Endpoints
+# ============================================================================
+
+@app.post("/api/teams")
+async def create_team(request: Request, user=Depends(get_current_user)):
+    """Create a new team."""
+    try:
+        from src.services.team_service import TeamService
+
+        data = await request.json()
+        team_service = TeamService()
+
+        result = team_service.create_team(
+            name=data['name'],
+            slug=data['slug'],
+            user_id=user.id,
+            description=data.get('description'),
+            visibility=data.get('visibility', 'private')
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create team: {str(e)}")
+
+
+@app.get("/api/teams")
+async def get_user_teams(user=Depends(get_current_user)):
+    """Get all teams for the current user."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        teams = team_service.get_user_teams(user.id)
+
+        return {"teams": teams}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get teams: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}")
+async def get_team(team_id: str, user=Depends(get_current_user)):
+    """Get team details."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        team = team_service.get_team(team_id, user.id)
+
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+
+        return team
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team: {str(e)}")
+
+
+@app.put("/api/teams/{team_id}")
+async def update_team(team_id: str, request: Request, user=Depends(get_current_user)):
+    """Update team settings."""
+    try:
+        from src.services.team_service import TeamService
+
+        data = await request.json()
+        team_service = TeamService()
+
+        result = team_service.update_team(team_id, user.id, **data)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update team: {str(e)}")
+
+
+@app.delete("/api/teams/{team_id}")
+async def delete_team(team_id: str, user=Depends(get_current_user)):
+    """Delete a team."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        result = team_service.delete_team(team_id, user.id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete team: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}/members")
+async def get_team_members(team_id: str, user=Depends(get_current_user)):
+    """Get all team members."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        members = team_service.get_team_members(team_id)
+
+        return {"members": members}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get members: {str(e)}")
+
+
+@app.post("/api/teams/{team_id}/members")
+async def add_team_member(team_id: str, request: Request, user=Depends(get_current_user)):
+    """Add a member to the team."""
+    try:
+        from src.services.team_service import TeamService
+
+        data = await request.json()
+        team_service = TeamService()
+
+        result = team_service.add_member(
+            team_id=team_id,
+            user_id=data['user_id'],
+            inviter_id=user.id,
+            role=data.get('role', 'member')
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to add member: {str(e)}")
+
+
+@app.delete("/api/teams/{team_id}/members/{user_id}")
+async def remove_team_member(team_id: str, user_id: str, user=Depends(get_current_user)):
+    """Remove a member from the team."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        result = team_service.remove_member(team_id, user_id, user.id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove member: {str(e)}")
+
+
+@app.put("/api/teams/{team_id}/members/{user_id}/role")
+async def update_member_role(team_id: str, user_id: str, request: Request, user=Depends(get_current_user)):
+    """Update a member's role."""
+    try:
+        from src.services.team_service import TeamService
+
+        data = await request.json()
+        team_service = TeamService()
+
+        result = team_service.update_member_role(
+            team_id=team_id,
+            user_id=user_id,
+            new_role=data['role'],
+            updater_id=user.id
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
+
+
+@app.post("/api/teams/{team_id}/invitations")
+async def create_team_invitation(team_id: str, request: Request, user=Depends(get_current_user)):
+    """Create a team invitation."""
+    try:
+        from src.services.team_service import TeamService
+
+        data = await request.json()
+        team_service = TeamService()
+
+        result = team_service.create_invitation(
+            team_id=team_id,
+            inviter_id=user.id,
+            email=data.get('email'),
+            user_id=data.get('user_id'),
+            role=data.get('role', 'member'),
+            expires_in_days=data.get('expires_in_days', 7)
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create invitation: {str(e)}")
+
+
+@app.get("/api/teams/{team_id}/invitations")
+async def get_team_invitations(team_id: str, status: Optional[str] = None, user=Depends(get_current_user)):
+    """Get team invitations."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        invitations = team_service.get_team_invitations(team_id, status)
+
+        return {"invitations": invitations}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
+
+
+@app.post("/api/invitations/{token}/accept")
+async def accept_team_invitation(token: str, user=Depends(get_current_user)):
+    """Accept a team invitation."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        result = team_service.accept_invitation(token, user.id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to accept invitation: {str(e)}")
+
+
+@app.post("/api/invitations/{token}/decline")
+async def decline_team_invitation(token: str, user=Depends(get_current_user)):
+    """Decline a team invitation."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        result = team_service.decline_invitation(token, user.id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to decline invitation: {str(e)}")
+
+
+@app.delete("/api/invitations/{invitation_id}")
+async def cancel_team_invitation(invitation_id: str, user=Depends(get_current_user)):
+    """Cancel a team invitation."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        result = team_service.cancel_invitation(invitation_id, user.id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cancel invitation: {str(e)}")
+
+
+@app.get("/api/me/invitations")
+async def get_my_invitations(user=Depends(get_current_user)):
+    """Get pending invitations for the current user."""
+    try:
+        from src.services.team_service import TeamService
+
+        team_service = TeamService()
+        invitations = team_service.get_user_invitations(user.id, user.email)
+
+        return {"invitations": invitations}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
+
+
+# ============================================================================
 # Run server
 # ============================================================================
 

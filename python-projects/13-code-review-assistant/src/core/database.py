@@ -155,6 +155,7 @@ class Repository(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    team_id = Column(String(36), ForeignKey('teams.id'), index=True)  # Optional team ownership
     name = Column(String(255), nullable=False)
     github_url = Column(String(500), nullable=False)
     clone_path = Column(String(500))
@@ -789,6 +790,7 @@ class CustomRule(Base):
 
     id = Column(String(100), primary_key=True)  # User-defined rule ID (e.g., CUSTOM001)
     user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    team_id = Column(String(36), ForeignKey('teams.id'), index=True)  # Optional team ownership
 
     # Rule metadata
     name = Column(String(200), nullable=False)
@@ -911,6 +913,7 @@ class Plugin(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    team_id = Column(String(36), ForeignKey('teams.id'), index=True)  # Optional team ownership
 
     # Plugin metadata
     name = Column(String(200), nullable=False, unique=True, index=True)
@@ -974,6 +977,162 @@ class Plugin(Base):
 
     def __repr__(self):
         return f"<Plugin(id={self.id}, name={self.name}, version={self.version}, status={self.status})>"
+
+
+class Team(Base):
+    """Teams/Organizations for collaborative code review."""
+    __tablename__ = 'teams'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False, index=True)
+    slug = Column(String(200), unique=True, nullable=False, index=True)  # URL-friendly identifier
+    description = Column(Text)
+
+    # Settings
+    visibility = Column(String(20), default='private')  # private, public
+    allow_member_invites = Column(Boolean, default=False)  # Can members invite others
+
+    # Billing/Plan (for future use)
+    plan = Column(String(50), default='free')  # free, pro, enterprise
+
+    # Statistics
+    member_count = Column(Integer, default=0)
+    repository_count = Column(Integer, default=0)
+    rule_count = Column(Integer, default=0)
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    members = relationship('TeamMember', back_populates='team', cascade='all, delete-orphan')
+    invitations = relationship('TeamInvitation', back_populates='team', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict:
+        """Convert Team to dictionary."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'slug': self.slug,
+            'description': self.description,
+            'visibility': self.visibility,
+            'allow_member_invites': self.allow_member_invites,
+            'plan': self.plan,
+            'member_count': self.member_count,
+            'repository_count': self.repository_count,
+            'rule_count': self.rule_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<Team(id={self.id}, name={self.name}, slug={self.slug})>"
+
+
+class TeamMember(Base):
+    """Team membership with role-based access control."""
+    __tablename__ = 'team_members'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    team_id = Column(String(36), ForeignKey('teams.id'), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+
+    # Role: owner, admin, member, viewer
+    # owner: full control (only one per team)
+    # admin: manage members, settings, resources
+    # member: create/edit own resources, view team resources
+    # viewer: read-only access
+    role = Column(String(20), nullable=False, default='member')
+
+    # Permissions
+    can_manage_members = Column(Boolean, default=False)
+    can_manage_settings = Column(Boolean, default=False)
+    can_create_rules = Column(Boolean, default=True)
+    can_manage_plugins = Column(Boolean, default=False)
+
+    # Status
+    is_active = Column(Boolean, default=True)
+
+    # Metadata
+    joined_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_active_at = Column(DateTime)
+
+    # Composite unique index
+    __table_args__ = (
+        Index('idx_team_user_membership', 'team_id', 'user_id', unique=True),
+    )
+
+    # Relationships
+    team = relationship('Team', back_populates='members')
+    user = relationship('User', backref='team_memberships')
+
+    def to_dict(self) -> Dict:
+        """Convert TeamMember to dictionary."""
+        return {
+            'id': self.id,
+            'team_id': self.team_id,
+            'user_id': self.user_id,
+            'role': self.role,
+            'can_manage_members': self.can_manage_members,
+            'can_manage_settings': self.can_manage_settings,
+            'can_create_rules': self.can_create_rules,
+            'can_manage_plugins': self.can_manage_plugins,
+            'is_active': self.is_active,
+            'joined_at': self.joined_at.isoformat() if self.joined_at else None,
+            'last_active_at': self.last_active_at.isoformat() if self.last_active_at else None
+        }
+
+    def __repr__(self):
+        return f"<TeamMember(id={self.id}, team_id={self.team_id}, user_id={self.user_id}, role={self.role})>"
+
+
+class TeamInvitation(Base):
+    """Pending invitations to join a team."""
+    __tablename__ = 'team_invitations'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    team_id = Column(String(36), ForeignKey('teams.id'), nullable=False, index=True)
+
+    # Invitee (can be by email or user_id)
+    email = Column(String(255), index=True)  # For users not yet registered
+    user_id = Column(String(36), ForeignKey('users.id'), index=True)  # For existing users
+
+    # Invitation details
+    invited_by_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    role = Column(String(20), nullable=False, default='member')
+    token = Column(String(100), unique=True, nullable=False, index=True)  # Unique invitation token
+
+    # Status
+    status = Column(String(20), default='pending')  # pending, accepted, declined, expired
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    expires_at = Column(DateTime, nullable=False)  # Invitation expiry
+    responded_at = Column(DateTime)
+
+    # Relationships
+    team = relationship('Team', back_populates='invitations')
+    invited_by = relationship('User', foreign_keys=[invited_by_id], backref='sent_invitations')
+    user = relationship('User', foreign_keys=[user_id], backref='received_invitations')
+
+    def to_dict(self) -> Dict:
+        """Convert TeamInvitation to dictionary."""
+        return {
+            'id': self.id,
+            'team_id': self.team_id,
+            'email': self.email,
+            'user_id': self.user_id,
+            'invited_by_id': self.invited_by_id,
+            'role': self.role,
+            'token': self.token,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'responded_at': self.responded_at.isoformat() if self.responded_at else None
+        }
+
+    def __repr__(self):
+        return f"<TeamInvitation(id={self.id}, team_id={self.team_id}, status={self.status})>"
 
 
 class DatabaseManager:
