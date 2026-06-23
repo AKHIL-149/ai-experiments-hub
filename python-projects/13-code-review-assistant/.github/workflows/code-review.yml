@@ -1,0 +1,209 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: 'Minimum severity to fail (info, warning, error, critical)'
+        required: false
+        default: 'error'
+      max_issues:
+        description: 'Maximum number of issues before failing'
+        required: false
+        default: '10'
+
+env:
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  code-analysis:
+    name: Analyze Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run AI Code Review
+        id: review
+        run: |
+          python cli.py analyze \
+            --path . \
+            --severity-threshold ${{ github.event.inputs.severity_threshold || 'error' }} \
+            --max-issues ${{ github.event.inputs.max_issues || '10' }} \
+            --output-format json \
+            --output-file review-results.json \
+            --exit-on-threshold
+        continue-on-error: true
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: code-review-results
+          path: review-results.json
+          retention-days: 30
+
+      - name: Generate summary report
+        if: always()
+        run: |
+          python cli.py report \
+            --input review-results.json \
+            --format markdown \
+            --output report.md
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      - name: Set job status
+        if: steps.review.outcome == 'failure'
+        run: |
+          echo "Code review found critical issues"
+          exit 1
+
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run security scan
+        run: |
+          python cli.py analyze \
+            --path . \
+            --categories security \
+            --severity-threshold critical \
+            --exit-on-threshold
+
+      - name: Upload security results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-scan-results
+          path: security-results.json
+          retention-days: 90
+
+  multi-language-analysis:
+    name: Multi-Language Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [python, javascript, java, go, rust]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Analyze ${{ matrix.language }} files
+        run: |
+          python cli.py analyze \
+            --path . \
+            --language ${{ matrix.language }} \
+            --output-file ${{ matrix.language }}-results.json
+        continue-on-error: true
+
+      - name: Upload ${{ matrix.language }} results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: ${{ matrix.language }}-analysis
+          path: ${{ matrix.language }}-results.json
+          retention-days: 30
+
+  quality-gate:
+    name: Quality Gate Check
+    runs-on: ubuntu-latest
+    needs: [code-analysis, security-scan]
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Download analysis results
+        uses: actions/download-artifact@v3
+        with:
+          name: code-review-results
+
+      - name: Check quality gate
+        run: |
+          python cli.py quality-gate \
+            --config .code-review-config.yml \
+            --results review-results.json \
+            --strict
+
+      - name: Generate quality badge
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python cli.py badge \
+            --results review-results.json \
+            --output-file quality-badge.svg
+
+      - name: Upload badge
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v3
+        with:
+          name: quality-badge
+          path: quality-badge.svg

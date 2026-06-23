@@ -1,0 +1,273 @@
+// Jenkins Pipeline for AI Code Review
+
+pipeline {
+    agent {
+        docker {
+            image 'python:3.10'
+            args '-u root:root'
+        }
+    }
+
+    environment {
+        SEVERITY_THRESHOLD = "${params.SEVERITY_THRESHOLD ?: 'error'}"
+        MAX_ISSUES = "${params.MAX_ISSUES ?: '10'}"
+        VIRTUAL_ENV = "${WORKSPACE}/venv"
+    }
+
+    parameters {
+        choice(
+            name: 'SEVERITY_THRESHOLD',
+            choices: ['info', 'warning', 'error', 'critical'],
+            description: 'Minimum severity to fail build'
+        )
+        string(
+            name: 'MAX_ISSUES',
+            defaultValue: '10',
+            description: 'Maximum number of issues before failing'
+        )
+        booleanParam(
+            name: 'SECURITY_SCAN_ONLY',
+            defaultValue: false,
+            description: 'Run security scan only'
+        )
+        booleanParam(
+            name: 'FAIL_ON_QUALITY_GATE',
+            defaultValue: true,
+            description: 'Fail build if quality gate fails'
+        )
+    }
+
+    stages {
+        stage('Setup') {
+            steps {
+                echo 'Setting up Python environment...'
+                sh '''
+                    python -m venv ${VIRTUAL_ENV}
+                    . ${VIRTUAL_ENV}/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                echo 'Running security analysis...'
+                sh '''
+                    . ${VIRTUAL_ENV}/bin/activate
+                    python cli.py analyze \
+                        --path . \
+                        --categories security \
+                        --severity-threshold critical \
+                        --output-format json \
+                        --output-file security-results.json
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'security-results.json', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Code Analysis') {
+            when {
+                expression { !params.SECURITY_SCAN_ONLY }
+            }
+            steps {
+                echo "Running code analysis (threshold: ${SEVERITY_THRESHOLD}, max issues: ${MAX_ISSUES})..."
+                script {
+                    def exitCode = sh(
+                        script: """
+                            . ${VIRTUAL_ENV}/bin/activate
+                            python cli.py analyze \
+                                --path . \
+                                --severity-threshold ${SEVERITY_THRESHOLD} \
+                                --max-issues ${MAX_ISSUES} \
+                                --output-format json \
+                                --output-file review-results.json \
+                                --exit-on-threshold
+                        """,
+                        returnStatus: true
+                    )
+
+                    if (exitCode != 0) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "⚠️ Code analysis found issues (exit code: ${exitCode})"
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'review-results.json', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Generate Reports') {
+            when {
+                expression { !params.SECURITY_SCAN_ONLY }
+            }
+            parallel {
+                stage('Markdown Report') {
+                    steps {
+                        sh '''
+                            . ${VIRTUAL_ENV}/bin/activate
+                            python cli.py report \
+                                --input review-results.json \
+                                --format markdown \
+                                --output code-review-report.md
+                        '''
+                    }
+                }
+
+                stage('HTML Report') {
+                    steps {
+                        sh '''
+                            . ${VIRTUAL_ENV}/bin/activate
+                            python cli.py report \
+                                --input review-results.json \
+                                --format html \
+                                --output code-review-report.html
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: '*.md,*.html', allowEmptyArchive: true
+                    publishHTML([
+                        reportDir: '.',
+                        reportFiles: 'code-review-report.html',
+                        reportName: 'Code Review Report',
+                        keepAll: true
+                    ])
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when {
+                expression { params.FAIL_ON_QUALITY_GATE && !params.SECURITY_SCAN_ONLY }
+            }
+            steps {
+                echo 'Checking quality gate...'
+                script {
+                    def exitCode = sh(
+                        script: """
+                            . ${VIRTUAL_ENV}/bin/activate
+                            python cli.py quality-gate \
+                                --results review-results.json \
+                                --max-critical 0 \
+                                --max-error 5 \
+                                --max-warning 20 \
+                                --max-total 50
+                        """,
+                        returnStatus: true
+                    )
+
+                    if (exitCode != 0) {
+                        currentBuild.result = 'FAILURE'
+                        error('Quality gate failed')
+                    } else {
+                        echo '✅ Quality gate passed'
+                    }
+                }
+            }
+        }
+
+        stage('Generate Badge') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh '''
+                    . ${VIRTUAL_ENV}/bin/activate
+                    python cli.py badge \
+                        --results review-results.json \
+                        --output-file quality-badge.svg
+                '''
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'quality-badge.svg', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Publish Results') {
+            when {
+                expression { !params.SECURITY_SCAN_ONLY }
+            }
+            steps {
+                script {
+                    // Read results
+                    def results = readJSON file: 'review-results.json'
+                    def summary = results.summary
+
+                    // Set build description
+                    currentBuild.description = """
+                        Issues: ${summary.total_issues}
+                        Critical: ${summary.by_severity.critical}
+                        Errors: ${summary.by_severity.error}
+                    """.stripIndent()
+
+                    // Add badge
+                    def critical = summary.by_severity.critical
+                    def errors = summary.by_severity.error
+
+                    if (critical > 0) {
+                        addBadge(icon: 'error.gif', text: "${critical} critical issues")
+                    } else if (errors > 0) {
+                        addBadge(icon: 'warning.gif', text: "${errors} errors")
+                    } else {
+                        addBadge(icon: 'success.gif', text: 'Passed')
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up...'
+            sh 'rm -rf ${VIRTUAL_ENV}'
+        }
+
+        success {
+            echo '✅ Build succeeded'
+        }
+
+        unstable {
+            echo '⚠️ Build unstable - code quality issues found'
+        }
+
+        failure {
+            echo '❌ Build failed - critical issues or quality gate failed'
+        }
+    }
+}
+
+// Declarative pipeline for multi-branch
+pipeline {
+    agent any
+
+    triggers {
+        // Run nightly on main branch
+        cron(env.BRANCH_NAME == 'main' ? 'H 2 * * *' : '')
+
+        // Trigger on PR events
+        issueCommentTrigger('.*test this please.*')
+    }
+
+    options {
+        // Keep last 30 builds
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+
+        // Timeout after 1 hour
+        timeout(time: 1, unit: 'HOURS')
+
+        // Don't allow concurrent builds
+        disableConcurrentBuilds()
+    }
+}

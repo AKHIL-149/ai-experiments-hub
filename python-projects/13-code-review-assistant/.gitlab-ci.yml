@@ -1,0 +1,229 @@
+# GitLab CI Configuration for AI Code Review
+
+image: python:3.10
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  SEVERITY_THRESHOLD: "error"
+  MAX_ISSUES: "10"
+
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+stages:
+  - test
+  - analyze
+  - report
+  - quality-gate
+
+before_script:
+  - python -V
+  - pip install virtualenv
+  - virtualenv venv
+  - source venv/bin/activate
+  - pip install -r requirements.txt
+
+# Run tests first
+test:
+  stage: test
+  script:
+    - pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 1 week
+
+# Security analysis (high priority)
+security-scan:
+  stage: analyze
+  script:
+    - |
+      python cli.py analyze \
+        --path . \
+        --categories security \
+        --severity-threshold critical \
+        --output-format json \
+        --output-file security-results.json \
+        --exit-on-threshold
+  artifacts:
+    paths:
+      - security-results.json
+    expire_in: 30 days
+  allow_failure: false
+
+# Full code analysis
+code-analysis:
+  stage: analyze
+  script:
+    - |
+      python cli.py analyze \
+        --path . \
+        --severity-threshold ${SEVERITY_THRESHOLD} \
+        --max-issues ${MAX_ISSUES} \
+        --output-format json \
+        --output-file review-results.json \
+        --exit-on-threshold
+  artifacts:
+    paths:
+      - review-results.json
+    expire_in: 30 days
+  allow_failure: true
+
+# Python-specific analysis
+python-analysis:
+  stage: analyze
+  script:
+    - |
+      python cli.py analyze \
+        --path . \
+        --language python \
+        --output-format json \
+        --output-file python-results.json
+  artifacts:
+    paths:
+      - python-results.json
+    expire_in: 30 days
+  only:
+    changes:
+      - "**/*.py"
+
+# JavaScript-specific analysis
+javascript-analysis:
+  stage: analyze
+  script:
+    - |
+      python cli.py analyze \
+        --path . \
+        --language javascript \
+        --output-format json \
+        --output-file javascript-results.json
+  artifacts:
+    paths:
+      - javascript-results.json
+    expire_in: 30 days
+  only:
+    changes:
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.ts"
+      - "**/*.tsx"
+
+# Generate markdown report
+generate-report:
+  stage: report
+  dependencies:
+    - code-analysis
+  script:
+    - |
+      python cli.py report \
+        --input review-results.json \
+        --format markdown \
+        --output code-review-report.md
+    - cat code-review-report.md
+  artifacts:
+    paths:
+      - code-review-report.md
+    expire_in: 90 days
+
+# Generate HTML report
+generate-html-report:
+  stage: report
+  dependencies:
+    - code-analysis
+  script:
+    - |
+      python cli.py report \
+        --input review-results.json \
+        --format html \
+        --output code-review-report.html
+  artifacts:
+    paths:
+      - code-review-report.html
+    expire_in: 90 days
+
+# Quality gate check
+quality-gate:
+  stage: quality-gate
+  dependencies:
+    - code-analysis
+    - security-scan
+  script:
+    - |
+      python cli.py quality-gate \
+        --results review-results.json \
+        --max-critical 0 \
+        --max-error 5 \
+        --max-warning 20 \
+        --max-total 50
+  allow_failure: false
+  only:
+    - main
+    - master
+    - develop
+
+# Generate quality badge (main branch only)
+generate-badge:
+  stage: quality-gate
+  dependencies:
+    - code-analysis
+  script:
+    - |
+      python cli.py badge \
+        --results review-results.json \
+        --output-file quality-badge.svg
+  artifacts:
+    paths:
+      - quality-badge.svg
+    expire_in: 30 days
+  only:
+    - main
+    - master
+
+# Merge request analysis
+mr-analysis:
+  stage: analyze
+  script:
+    - |
+      echo "Analyzing merge request changes..."
+      python cli.py analyze \
+        --path . \
+        --severity-threshold warning \
+        --output-format markdown \
+        --output-file mr-review.md
+    - cat mr-review.md
+  artifacts:
+    paths:
+      - mr-review.md
+    expire_in: 7 days
+  only:
+    - merge_requests
+
+# Scheduled daily analysis
+nightly-analysis:
+  stage: analyze
+  script:
+    - |
+      python cli.py analyze \
+        --path . \
+        --severity-threshold info \
+        --output-format json \
+        --output-file nightly-results.json
+    - |
+      python cli.py report \
+        --input nightly-results.json \
+        --format markdown \
+        --output nightly-report.md
+  artifacts:
+    paths:
+      - nightly-results.json
+      - nightly-report.md
+    expire_in: 90 days
+  only:
+    - schedules

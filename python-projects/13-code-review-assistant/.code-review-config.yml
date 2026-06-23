@@ -1,0 +1,178 @@
+# AI Code Review Configuration File
+# Place this file in your repository root to customize code review behavior
+
+# Analysis settings
+analysis:
+  # Languages to analyze (empty = all detected languages)
+  languages:
+    - python
+    - javascript
+    - java
+    - go
+    - rust
+
+  # Categories to check
+  categories:
+    - security
+    - smell
+    - complexity
+
+  # Minimum severity to report
+  severity_threshold: info
+
+  # File patterns to exclude
+  exclude_patterns:
+    - node_modules/**
+    - .git/**
+    - __pycache__/**
+    - venv/**
+    - .venv/**
+    - dist/**
+    - build/**
+    - "*.min.js"
+    - "*.min.css"
+
+  # File patterns to include (overrides excludes)
+  include_patterns:
+    - "src/**/*.py"
+    - "src/**/*.js"
+    - "src/**/*.ts"
+    - "lib/**/*.java"
+
+# Quality gates
+quality_gates:
+  # Maximum issues by severity before failing
+  max_critical: 0
+  max_error: 5
+  max_warning: 20
+  max_info: 100
+
+  # Maximum total issues
+  max_total: 50
+
+  # Require code coverage (if available)
+  min_coverage: 80
+
+  # Complexity thresholds
+  max_function_complexity: 15
+  max_file_complexity: 50
+
+# CI/CD integration
+ci:
+  # Fail pipeline on quality gate failure
+  fail_on_quality_gate: true
+
+  # Block pull requests with critical issues
+  block_pr_on_critical: true
+
+  # Post comments on pull requests
+  comment_on_pr: true
+
+  # Update commit status
+  update_commit_status: true
+
+# Notification settings
+notifications:
+  # Notify on analysis completion
+  on_completion: true
+
+  # Notify only when issues found
+  only_on_issues: true
+
+  # Channels
+  slack:
+    enabled: false
+    webhook_url: ""
+    channel: "#code-review"
+
+  email:
+    enabled: false
+    recipients:
+      - team@example.com
+    smtp_server: smtp.example.com
+    smtp_port: 587
+
+# Custom rules
+custom_rules:
+  # Enable custom rule processing
+  enabled: true
+
+  # Path to custom rules directory
+  rules_dir: .code-review-rules/
+
+# Reporting
+reports:
+  # Generate reports
+  enabled: true
+
+  # Report formats to generate
+  formats:
+    - json
+    - markdown
+    - html
+
+  # Save reports to
+  output_dir: code-review-reports/
+
+  # Include in artifacts
+  artifact: true
+
+# Pre-commit hook settings
+pre_commit:
+  # Severity threshold for pre-commit
+  severity_threshold: error
+
+  # Maximum issues before blocking commit
+  max_issues: 5
+
+  # Run on staged files only
+  staged_only: true
+
+# Advanced settings
+advanced:
+  # Enable AI-powered insights
+  ai_insights: true
+
+  # AI provider (ollama, anthropic, openai)
+  ai_provider: ollama
+
+  # Max concurrent file analysis
+  max_workers: 4
+
+  # Timeout per file (seconds)
+  timeout: 30
+
+  # Cache analysis results
+  cache_enabled: true
+  cache_ttl: 3600  # 1 hour
+
+# Issue-specific configuration
+issues:
+  # Ignore specific rules
+  ignored_rules:
+    # - SECURITY_001
+    # - SMELL_LONG_METHOD
+
+  # Custom severity overrides
+  severity_overrides:
+    # COMPLEXITY_HIGH: warning  # Downgrade from error to warning
+
+  # Per-file rule configuration
+  file_rules:
+    # "tests/**/*.py":
+    #   ignored_rules:
+    #     - SMELL_LONG_METHOD  # Allow long test methods
+
+# Dashboard settings (for self-hosted instances)
+dashboard:
+  # Enable web dashboard
+  enabled: true
+
+  # Port to run on
+  port: 8000
+
+  # Authentication required
+  auth_required: true
+
+  # Public repositories visible without auth
+  public_repos: false
