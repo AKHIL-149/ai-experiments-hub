@@ -855,6 +855,72 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.22 - Advanced AI Features & Refactoring (87% Complete)
+**Commit 13.5.22 (AKHIL-167)** - Implemented AI-powered refactoring and code generation:
+- AIRefactoringService for intelligent code improvements
+  * generate_multi_step_refactoring() - Sequential refactoring chains with dependencies
+  * apply_automated_fix() - Automated issue fixing with test generation
+  * estimate_technical_debt() - Time/cost metrics and recommendations
+  * ai_pair_programming() - Interactive AI code assistance
+  * predict_code_smells() - LLM-based code smell prediction
+- RefactoringChain dataclass for sequential refactoring steps
+- RefactoringType enum (extract_method, rename, simplify, optimize, security_fix, etc.)
+- Technical debt estimation:
+  * Debt ratio calculation (issues per 1000 LOC)
+  * Time estimates: critical=4h, error=2h, warning=1h, info=0.5h
+  * Cost calculation at $100/hour rate
+  * Categorized debt levels (low <5, medium <15, high <30, critical >30)
+  * Prioritized recommendations by severity
+- 5 new API endpoints:
+  * POST /api/refactor/multi-step - Generate refactoring chains
+  * POST /api/refactor/auto-fix/{issue_id} - Apply automated fixes
+  * GET /api/technical-debt - Debt estimation with recommendations
+  * POST /api/ai/pair-programming - Interactive code assistance
+  * POST /api/ai/predict-smells - Predict code issues
+- 20+ AI refactoring tests, 15+ API endpoint tests
+- Total tests: 1165+
+
+### Version 0.5.21 - CI/CD Integration & CLI Tool (85% Complete)
+**Commit 13.5.21 (AKHIL-166)** - Implemented CI/CD integration and command-line tool:
+- CLI tool (cli.py) with 4 subcommands:
+  * analyze - Analyze code files with filtering and thresholds
+  * report - Generate reports in text/JSON/markdown/HTML
+  * quality-gate - Check quality thresholds with exit codes
+  * badge - Generate SVG quality badges
+- GitHub Actions workflow (.github/workflows/code-review.yml)
+  * Multi-language parallel analysis (Python, JavaScript, Java, Go, Rust)
+  * Security scan with critical threshold
+  * Quality gate enforcement with configurable thresholds
+  * Report generation (markdown + HTML)
+  * Badge creation for main branch
+  * Workflow dispatch with custom parameters
+- GitLab CI configuration (.gitlab-ci.yml)
+  * 4-stage pipeline (test, analyze, report, quality-gate)
+  * Security scan with zero-failure tolerance
+  * Parallel language-specific analysis
+  * Nightly scheduled analysis
+  * MR-specific analysis with markdown reports
+- Jenkins pipeline (Jenkinsfile)
+  * Docker-based Python 3.10 environment
+  * Parameterized builds (severity threshold, max issues)
+  * Parallel report generation (markdown + HTML)
+  * Build badge integration
+  * Multi-branch pipeline support
+- Pre-commit hook generator (scripts/generate-pre-commit-hook.py)
+  * Configurable severity threshold and max issues
+  * Staged files only analysis
+  * Automatic hook installation to .git/hooks
+- Configuration file (.code-review-config.yml)
+  * Analysis settings (languages, categories, exclusions)
+  * Quality gate thresholds
+  * CI/CD integration options
+  * Notification channels (Slack, Email)
+  * Pre-commit hook settings
+- Exit code based quality enforcement for CI/CD pipelines
+- Multi-format reporting (text, JSON, markdown, HTML)
+- 25+ CI integration tests (to be implemented)
+- Total tests: 1130+
+
 ### Version 0.5.20 - Review Assignment & Workflows (Phase 5 Complete - 100%)
 **Commit 13.5.20 (AKHIL-165)** - Implemented automated review assignment and workflows:
 - ReviewAssignmentService for managing review workflows
