@@ -4202,6 +4202,200 @@ async def get_refactoring_stats(
 
 
 # ============================================================================
+# AI Refactoring Endpoints
+# ============================================================================
+
+@app.post("/api/refactor/multi-step")
+async def generate_multi_step_refactoring(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """
+    Generate a multi-step refactoring chain to fix multiple issues.
+
+    Required fields:
+    - code: Original code to refactor
+    - language: Programming language
+    - issues: List of issues to fix
+
+    Optional fields:
+    - max_steps: Maximum number of refactoring steps (default 5)
+    """
+    from src.services.ai_refactoring_service import ai_refactoring_service
+
+    # Validate required fields
+    required_fields = ['code', 'language', 'issues']
+    for field in required_fields:
+        if field not in data:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+
+    try:
+        refactoring_chain = ai_refactoring_service.generate_multi_step_refactoring(
+            code=data['code'],
+            language=data['language'],
+            issues=data['issues'],
+            max_steps=data.get('max_steps', 5)
+        )
+
+        return {
+            "success": True,
+            "steps": refactoring_chain.steps,
+            "original_code": refactoring_chain.original_code,
+            "final_code": refactoring_chain.final_code,
+            "confidence": refactoring_chain.confidence,
+            "explanation": refactoring_chain.explanation,
+            "estimated_time": refactoring_chain.estimated_time
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating refactoring: {str(e)}")
+
+
+@app.post("/api/refactor/auto-fix/{issue_id}")
+async def apply_automated_fix(
+    issue_id: str,
+    generate_test: bool = True,
+    user = Depends(get_current_user)
+):
+    """
+    Automatically apply a fix for an issue.
+
+    Query parameters:
+    - generate_test: Whether to generate a test for the fix (default true)
+    """
+    from src.services.ai_refactoring_service import ai_refactoring_service
+
+    try:
+        result = ai_refactoring_service.apply_automated_fix(
+            issue_id=issue_id,
+            generate_test=generate_test
+        )
+
+        if not result.get('success'):
+            raise HTTPException(status_code=404, detail=result.get('error', 'Unknown error'))
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error applying fix: {str(e)}")
+
+
+@app.get("/api/technical-debt")
+async def get_technical_debt_estimation(
+    user = Depends(get_current_user)
+):
+    """
+    Get technical debt estimation for all analyzed code.
+
+    Returns metrics including:
+    - Total files, LOC, and issues
+    - Debt ratio (issues per 1000 LOC)
+    - Estimated hours and cost to fix
+    - Prioritized recommendations
+    """
+    from src.services.ai_refactoring_service import ai_refactoring_service
+    from src.core.database import CodeFile, Issue
+
+    with db_manager.get_session() as db:
+        # Get all code files
+        code_files = db.query(CodeFile).all()
+        code_file_data = [{
+            'file_path': cf.file_path,
+            'lines_of_code': cf.lines_of_code or 0,
+            'language': cf.language
+        } for cf in code_files]
+
+        # Get all issues
+        issues = db.query(Issue).all()
+        issue_data = [{
+            'severity': i.severity.value if hasattr(i.severity, 'value') else i.severity,
+            'category': i.category.value if hasattr(i.category, 'value') else i.category,
+            'title': i.title
+        } for i in issues]
+
+        try:
+            debt_estimation = ai_refactoring_service.estimate_technical_debt(
+                code_files=code_file_data,
+                issues=issue_data
+            )
+
+            return {
+                "success": True,
+                **debt_estimation
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error estimating technical debt: {str(e)}")
+
+
+@app.post("/api/ai/pair-programming")
+async def ai_pair_programming(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """
+    AI pair programming mode - interactive code assistance.
+
+    Required fields:
+    - prompt: User's request or question
+
+    Optional fields:
+    - context: Optional context (current_file, issues, recent_changes)
+    - language: Programming language (default 'python')
+    """
+    from src.services.ai_refactoring_service import ai_refactoring_service
+
+    # Validate required fields
+    if 'prompt' not in data:
+        raise HTTPException(status_code=400, detail="Missing required field: prompt")
+
+    try:
+        result = ai_refactoring_service.ai_pair_programming(
+            prompt=data['prompt'],
+            context=data.get('context'),
+            language=data.get('language', 'python')
+        )
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error in AI pair programming: {str(e)}")
+
+
+@app.post("/api/ai/predict-smells")
+async def predict_code_smells(
+    data: Dict[str, Any],
+    user = Depends(get_current_user)
+):
+    """
+    Predict potential code smells using AI.
+
+    Required fields:
+    - code: Code to analyze
+    - language: Programming language
+    """
+    from src.services.ai_refactoring_service import ai_refactoring_service
+
+    # Validate required fields
+    required_fields = ['code', 'language']
+    for field in required_fields:
+        if field not in data:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+
+    try:
+        smells = ai_refactoring_service.predict_code_smells(
+            code=data['code'],
+            language=data['language']
+        )
+
+        return {
+            "success": True,
+            "code_smells": smells,
+            "count": len(smells)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error predicting code smells: {str(e)}")
+
+
+# ============================================================================
 # Repository Endpoints
 # ============================================================================
 
