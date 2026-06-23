@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.25 (Production Hardening)
-**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations & Production Middleware
+**Version**: 0.5.26 (Docker Deployment)
+**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations, Production Middleware & Container Deployment
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features team collaboration with automated reviewer assignment, shared workspaces with analytics dashboards, async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
@@ -854,6 +854,53 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 ---
 
 ## 📈 Recent Updates
+
+### Version 0.5.26 - Docker Deployment (94% Complete)
+**Commit 13.5.12 (AKHIL-171)** - Implemented production-ready Docker deployment:
+- Enhanced Dockerfile with multi-stage build:
+  * Builder stage with virtual environment isolation
+  * Runtime stage with minimal image size (Python 3.11-slim)
+  * Non-root user (appuser, UID 1000) for security
+  * Proper file ownership and permissions (--chown=appuser:appuser)
+  * Health check endpoint (/api/health) with retries
+  * Uvicorn server with 4 workers for performance
+  * Environment variables: PYTHONUNBUFFERED, PYTHONDONTWRITEBYTECODE
+  * ca-certificates for HTTPS support
+- Comprehensive docker-compose.yml:
+  * Redis service with persistence and 256MB memory limit
+  * PostgreSQL service (optional, 15-alpine)
+  * FastAPI app with health checks and logging rotation
+  * Celery worker with concurrency 4 and max-tasks-per-child
+  * Celery beat for scheduled task management
+  * Flower monitoring (optional, --profile monitoring)
+  * Named volumes: redis-data, postgres-data, app-data, app-logs
+  * Custom bridge network (code-review-network)
+  * Log rotation: 10MB max-size, 3 files
+  * Health-based dependencies (service_healthy conditions)
+  * Environment variable defaults with ${VAR:-default} syntax
+- Docker management scripts:
+  * start.sh - Start services with --build and --monitoring flags
+  * stop.sh - Stop services with optional --remove flag
+  * logs.sh - View logs with service filtering and --follow
+  * reset.sh - Complete environment reset with confirmation
+  * All scripts executable with proper shebangs
+  * Color-coded output for better UX
+  * .env file management and validation
+- .dockerignore optimization:
+  * Exclude .git, __pycache__, test files
+  * Exclude data/, logs/, databases
+  * Exclude .env, IDE files (vscode, idea)
+  * Exclude documentation and CI/CD files
+  * Optimized Docker build context size
+- 35+ Docker deployment tests:
+  * Dockerfile multi-stage build verification
+  * Virtual environment and non-root user tests
+  * docker-compose service configuration tests
+  * Volume and network validation
+  * Script existence and permissions checks
+  * Production readiness tests (layer optimization, cache cleanup)
+  * Health check and logging validation
+- Total tests: 1240+
 
 ### Version 0.5.25 - Production Hardening (92% Complete)
 **Commit 13.5.11 (AKHIL-170)** - Implemented production-grade middleware and configuration validation:
