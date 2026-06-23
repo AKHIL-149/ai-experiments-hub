@@ -855,6 +855,47 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 
 ## 📈 Recent Updates
 
+### Version 0.5.23 - Historical Analytics & Quality Tracking (88% Complete)
+**Commit 13.5.23 (AKHIL-168)** - Implemented historical analytics and time-series tracking:
+- HistoricalAnalyticsService for trend analysis and quality tracking
+  * get_repository_health_score() - 0-100 score with grade (A+ to F)
+  * get_quality_trends() - Time-series data (daily/weekly/monthly)
+  * get_developer_contribution_analysis() - Developer performance metrics
+  * get_technical_debt_heatmap() - File-level debt visualization
+  * get_quality_gate_metrics() - SLO compliance checking
+- Repository health scoring:
+  * 0-100 point scale with letter grades
+  * Deductions: critical=-15, error=-5, warning=-2, info=-0.5
+  * Issues per KLOC metric
+  * Trend analysis (improving/stable/declining)
+  * Period-over-period comparison
+- Time-series quality trends:
+  * Configurable granularity (daily/weekly/monthly)
+  * Total issues, critical issues, health score, issues/KLOC
+  * Time bucket aggregation with labeled data points
+  * Trend visualization data
+- Developer contribution analysis:
+  * PRs created and reviewed per developer
+  * Files modified tracking
+  * Issues introduced by developer
+  * Quality score (inverse of issues per PR)
+  * Contribution score (PRs×10 + reviews×5)
+  * Severity distribution per developer
+- Technical debt heatmap:
+  * File-level debt scoring and density
+  * Debt levels (low <0.1, medium <0.3, high <0.5, critical >0.5)
+  * Severity distribution per file
+  * Sorted by debt score (highest first)
+- Quality gate metrics and SLOs:
+  * Health score minimum: 80
+  * Critical issues max: 0
+  * Issues per KLOC max: 10
+  * Acceptable trends: improving, stable
+  * Overall pass/fail status
+- 5 new API endpoints (health, trends, developers, heatmap, quality-gate)
+- 15+ historical analytics tests
+- Total tests: 1180+
+
 ### Version 0.5.22 - Advanced AI Features & Refactoring (87% Complete)
 **Commit 13.5.22 (AKHIL-167)** - Implemented AI-powered refactoring and code generation:
 - AIRefactoringService for intelligent code improvements
