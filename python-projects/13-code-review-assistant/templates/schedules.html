@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scheduled Analysis - AI Code Review Assistant</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/schedules.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📅 Scheduled Analysis</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/repositories">Repositories</a>
+                <a href="/schedules" class="active">Schedules</a>
+                <a href="/issues">Issues</a>
+                <a href="/settings">Settings</a>
+                <a href="/logout">Logout</a>
+            </nav>
+        </header>
+
+        <main>
+            <!-- Schedules List -->
+            <section id="schedules-section">
+                <div class="section-header">
+                    <h2>Analysis Schedules</h2>
+                    <button id="create-schedule-btn" class="btn btn-primary">+ Create Schedule</button>
+                </div>
+
+                <div class="filters">
+                    <select id="repository-filter">
+                        <option value="">All Repositories</option>
+                    </select>
+                    <label>
+                        <input type="checkbox" id="enabled-only-filter">
+                        Enabled Only
+                    </label>
+                </div>
+
+                <div id="schedules-list" class="schedules-grid">
+                    <!-- Schedules will be loaded here -->
+                </div>
+            </section>
+
+            <!-- Recent Runs -->
+            <section id="runs-section" style="margin-top: 40px;">
+                <h2>Recent Runs</h2>
+                <div id="runs-list">
+                    <!-- Runs will be loaded here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Create/Edit Schedule Modal -->
+    <div id="schedule-modal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3 id="modal-title">Create Schedule</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="schedule-form">
+                    <div class="form-section">
+                        <h4>Basic Information</h4>
+                        <div class="form-group">
+                            <label for="schedule-name">Name *</label>
+                            <input type="text" id="schedule-name" required placeholder="e.g., Daily Security Scan">
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-repository">Repository *</label>
+                            <select id="schedule-repository" required>
+                                <option value="">Select Repository</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-description">Description</label>
+                            <textarea id="schedule-description" rows="3" placeholder="Optional description"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4>Schedule Configuration</h4>
+                        <div class="form-group">
+                            <label for="schedule-type">Schedule Type *</label>
+                            <select id="schedule-type" required>
+                                <option value="daily">Daily (Midnight UTC)</option>
+                                <option value="weekly">Weekly (Sunday Midnight UTC)</option>
+                                <option value="interval">Interval</option>
+                                <option value="cron">Custom Cron</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="interval-group" style="display: none;">
+                            <label for="schedule-interval">Interval (minutes)</label>
+                            <input type="number" id="schedule-interval" min="1" placeholder="e.g., 60 for hourly">
+                        </div>
+                        <div class="form-group" id="cron-group" style="display: none;">
+                            <label for="schedule-cron">Cron Expression</label>
+                            <input type="text" id="schedule-cron" placeholder="e.g., 0 0 * * *">
+                            <small>Format: minute hour day month day_of_week</small>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4>Analysis Configuration</h4>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="analyze-all-files" checked>
+                                Analyze all Python files
+                            </label>
+                        </div>
+                        <div class="form-group" id="patterns-group" style="display: none;">
+                            <label for="file-patterns">File Patterns (one per line)</label>
+                            <textarea id="file-patterns" rows="3" placeholder="e.g., src/**/*.py&#10;tests/**/*.py"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="severity-threshold">Minimum Severity</label>
+                            <select id="severity-threshold">
+                                <option value="info">Info</option>
+                                <option value="warning">Warning</option>
+                                <option value="error">Error</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4>Notifications</h4>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="notify-on-completion">
+                                Notify on completion
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="notify-on-issues" checked>
+                                Notify when issues found
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="notification-emails">Email Addresses (one per line)</label>
+                            <textarea id="notification-emails" rows="3" placeholder="email@example.com"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="slack-webhook">Slack Webhook URL</label>
+                            <input type="url" id="slack-webhook" placeholder="https://hooks.slack.com/...">
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Schedule</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run Details Modal -->
+    <div id="run-modal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>Run Details</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="run-details">
+                    <!-- Run details will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/schedules.js"></script>
+</body>
+</html>

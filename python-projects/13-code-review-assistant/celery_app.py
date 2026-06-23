@@ -38,12 +38,17 @@ celery_app.conf.task_routes = {
     'src.workers.analysis_worker.*': {'queue': 'analysis'},
     'src.workers.pr_worker.*': {'queue': 'pr_review'},
     'src.workers.notification_worker.*': {'queue': 'notifications'},
+    'src.workers.schedule_worker.*': {'queue': 'scheduled'},
 }
 
 # Celery Beat schedule for periodic tasks
 from celery.schedules import crontab
 
 celery_app.conf.beat_schedule = {
+    'check-due-schedules': {
+        'task': 'schedule_worker.check_due_schedules',
+        'schedule': 60.0,  # Every 60 seconds
+    },
     'send-daily-digests': {
         'task': 'notification_worker.send_daily_digests',
         'schedule': crontab(hour=9, minute=0),  # Daily at 9:00 AM UTC

@@ -1,9 +1,9 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.16 (Rule Sharing & Marketplace)
-**Status**: Production-Ready with Extensible Plugin Architecture, Rule Marketplace & Complete Notification System
+**Version**: 0.5.18 (Scheduled Analysis & Automated Scanning)
+**Status**: Production-Ready with Extensible Plugin Architecture, Rule Marketplace, Complete Notification System & Automated Scheduled Analysis
 
-An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
+An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
 ## 🚀 Features
 
@@ -84,6 +84,29 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 - **Pagination**: Efficient browsing of large rule collections
 - **Bulk Operations**: Export/import multiple rules at once
 
+### Scheduled Analysis & Automated Scanning
+- **Flexible Scheduling**: 4 schedule types (daily, weekly, interval, custom cron)
+- **Cron Expression Support**: Full cron syntax with croniter validation
+- **Automated Execution**: Celery Beat periodic task checks for due schedules every minute
+- **Configurable Analysis**:
+  - Analyze all files or specific patterns (glob support)
+  - Custom rule selection and severity thresholds
+  - Repository-specific schedules
+- **Notifications**:
+  - Email and Slack webhook integration
+  - Notify on completion or only when issues found
+  - Multiple recipients support
+- **Run Tracking**:
+  - Detailed execution history with status, duration, and results
+  - Issue counts by severity (critical, error, warning, info)
+  - Files analyzed and error logging
+- **Management UI**:
+  - Visual schedule creation and editing
+  - Enable/disable schedules
+  - Manual trigger for immediate runs
+  - View run history and details
+- **Async Execution**: Background processing via Celery workers
+
 ### Production Features
 - **Notifications**: In-app notification system with 10 types, preferences, event-driven architecture
 - **Logging**: Structured logging with correlation IDs, sensitive data masking, export capabilities
@@ -113,6 +136,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
   - Rule builder endpoint tests: 28 tests (100% passing)
   - Plugin system tests: 23 tests (100% passing)
   - Rule marketplace tests: 30 tests (100% passing)
+  - Schedule service tests: 24 tests (100% passing)
   - Endpoint tests: 200+ tests (auth requirement verified)
   - E2E tests: 15 comprehensive workflow tests
   - Integration tests: 365+ tests
@@ -127,7 +151,7 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 - **Frontend**: Vanilla JavaScript ES6+, Chart.js 4.4.0, Highlight.js 11.9.0
 - **Analysis**: Python AST, Radon (complexity), custom rule engines
 
-### Database Schema (17 Models)
+### Database Schema (22 Models)
 1. **User** - Authentication & authorization with RBAC
 2. **UserSession** - Session management with TTL
 3. **Repository** - GitHub repo tracking and sync
@@ -145,6 +169,11 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 15. **CustomRule** - User-defined custom analysis rules with marketplace support
 16. **Plugin** - Installed plugin metadata and statistics
 17. **RuleRating** - Marketplace rule ratings and reviews
+18. **Team** - Teams/Organizations for collaborative code review
+19. **TeamMember** - Team membership with role-based access control
+20. **TeamInvitation** - Pending invitations to join a team
+21. **AnalysisSchedule** - Scheduled recurring analysis for repositories
+22. **ScheduledRun** - Individual execution run of a scheduled analysis
 
 ## 🚦 Quick Start
 
@@ -587,6 +616,20 @@ Each plugin tracks:
   * Signature verification (HMAC-SHA256)
   * Event routing (ping, pull_request, push, installation)
   * Automatic PR analysis queuing
+
+**Scheduled Analysis** (10 endpoints)
+- `POST /api/schedules` - Create schedule
+- `GET /api/schedules` - List schedules (with filters)
+- `GET /api/schedules/{schedule_id}` - Get schedule details
+- `PUT /api/schedules/{schedule_id}` - Update schedule
+- `DELETE /api/schedules/{schedule_id}` - Delete schedule
+- `POST /api/schedules/{schedule_id}/toggle` - Enable/disable
+- `POST /api/schedules/{schedule_id}/trigger` - Trigger manual run
+- `GET /api/schedules/{schedule_id}/runs` - Get schedule runs
+- `GET /api/runs/{run_id}` - Get run details
+  * Supports: daily, weekly, interval, cron schedules
+  * Notifications: email and Slack webhooks
+  * Run tracking: status, duration, issue counts
 
 **Full API documentation**: [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger UI)
 

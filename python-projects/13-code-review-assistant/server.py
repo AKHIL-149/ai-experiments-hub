@@ -20,6 +20,7 @@ from src.core.database import (
 from src.core.auth_manager import AuthManager, UserRole
 from src.services.code_analyzer_service import CodeAnalyzerService
 from src.services.pr_service import PullRequestService
+from src.services.schedule_service import ScheduleService
 from src.workers.analysis_worker import (
     analyze_file_task,
     get_analysis_results,
@@ -2465,6 +2466,18 @@ async def repositories_page(request: Request, user = Depends(get_current_user_op
         "request": request,
         "user": user,
         "stats": stats
+    })
+
+
+@app.get("/schedules", response_class=HTMLResponse)
+async def schedules_page(request: Request, user = Depends(get_current_user_optional)):
+    """Scheduled analysis page"""
+    if not user:
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse("schedules.html", {
+        "request": request,
+        "user": user
     })
 
 
@@ -5474,6 +5487,213 @@ async def get_my_invitations(user=Depends(get_current_user)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
+
+
+# ============================================================================
+# Scheduled Analysis Endpoints
+# ============================================================================
+
+@app.post("/api/schedules")
+async def create_schedule(request: Request, user=Depends(get_current_user)):
+    """Create a new analysis schedule."""
+    try:
+        data = await request.json()
+
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            schedule = schedule_service.create_schedule(
+                repository_id=data.get('repository_id'),
+                user_id=user.id,
+                name=data.get('name'),
+                schedule_type=data.get('schedule_type'),
+                cron_expression=data.get('cron_expression'),
+                interval_minutes=data.get('interval_minutes'),
+                description=data.get('description'),
+                analyze_all_files=data.get('analyze_all_files', True),
+                file_patterns=data.get('file_patterns'),
+                enabled_rules=data.get('enabled_rules'),
+                severity_threshold=data.get('severity_threshold', 'info'),
+                notify_on_completion=data.get('notify_on_completion', False),
+                notify_on_issues=data.get('notify_on_issues', True),
+                notification_emails=data.get('notification_emails'),
+                slack_webhook_url=data.get('slack_webhook_url')
+            )
+
+            return schedule
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create schedule: {str(e)}")
+
+
+@app.get("/api/schedules")
+async def list_schedules(
+    repository_id: Optional[str] = None,
+    enabled_only: bool = False,
+    user=Depends(get_current_user)
+):
+    """List all schedules for the current user."""
+    try:
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            schedules = schedule_service.list_schedules(
+                user_id=user.id,
+                repository_id=repository_id,
+                enabled_only=enabled_only
+            )
+
+            return {"schedules": schedules}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list schedules: {str(e)}")
+
+
+@app.get("/api/schedules/{schedule_id}")
+async def get_schedule(schedule_id: str, user=Depends(get_current_user)):
+    """Get schedule details."""
+    try:
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            schedule = schedule_service.get_schedule(schedule_id, user_id=user.id)
+
+            if not schedule:
+                raise HTTPException(status_code=404, detail="Schedule not found")
+
+            return schedule
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get schedule: {str(e)}")
+
+
+@app.put("/api/schedules/{schedule_id}")
+async def update_schedule(schedule_id: str, request: Request, user=Depends(get_current_user)):
+    """Update schedule settings."""
+    try:
+        data = await request.json()
+
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            schedule = schedule_service.update_schedule(
+                schedule_id=schedule_id,
+                user_id=user.id,
+                **data
+            )
+
+            return schedule
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update schedule: {str(e)}")
+
+
+@app.delete("/api/schedules/{schedule_id}")
+async def delete_schedule(schedule_id: str, user=Depends(get_current_user)):
+    """Delete a schedule."""
+    try:
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            result = schedule_service.delete_schedule(schedule_id, user.id)
+
+            return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete schedule: {str(e)}")
+
+
+@app.post("/api/schedules/{schedule_id}/toggle")
+async def toggle_schedule(schedule_id: str, request: Request, user=Depends(get_current_user)):
+    """Enable or disable a schedule."""
+    try:
+        data = await request.json()
+        enabled = data.get('enabled', True)
+
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            schedule = schedule_service.toggle_schedule(schedule_id, user.id, enabled)
+
+            return schedule
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle schedule: {str(e)}")
+
+
+@app.post("/api/schedules/{schedule_id}/trigger")
+async def trigger_schedule(schedule_id: str, user=Depends(get_current_user)):
+    """Manually trigger a schedule to run immediately."""
+    try:
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            run = schedule_service.trigger_schedule(schedule_id, user.id)
+
+            return run
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger schedule: {str(e)}")
+
+
+@app.get("/api/schedules/{schedule_id}/runs")
+async def get_schedule_runs(
+    schedule_id: str,
+    status: Optional[str] = None,
+    limit: int = 50,
+    user=Depends(get_current_user)
+):
+    """Get runs for a specific schedule."""
+    try:
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+
+            # Verify user has access to this schedule
+            schedule = schedule_service.get_schedule(schedule_id, user_id=user.id)
+            if not schedule:
+                raise HTTPException(status_code=404, detail="Schedule not found")
+
+            runs = schedule_service.list_runs(
+                schedule_id=schedule_id,
+                status=status,
+                limit=limit
+            )
+
+            return {"runs": runs}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get runs: {str(e)}")
+
+
+@app.get("/api/runs/{run_id}")
+async def get_run(run_id: str, user=Depends(get_current_user)):
+    """Get run details."""
+    try:
+        with get_db_session() as session:
+            schedule_service = ScheduleService(session)
+            run = schedule_service.get_run(run_id)
+
+            if not run:
+                raise HTTPException(status_code=404, detail="Run not found")
+
+            # Verify user has access to this run's schedule
+            schedule = schedule_service.get_schedule(run['schedule_id'], user_id=user.id)
+            if not schedule:
+                raise HTTPException(status_code=404, detail="Schedule not found")
+
+            return run
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get run: {str(e)}")
 
 
 # ============================================================================

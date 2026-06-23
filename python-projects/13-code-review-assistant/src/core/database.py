@@ -1135,6 +1135,142 @@ class TeamInvitation(Base):
         return f"<TeamInvitation(id={self.id}, team_id={self.team_id}, status={self.status})>"
 
 
+class AnalysisSchedule(Base):
+    """Scheduled recurring analysis for repositories."""
+    __tablename__ = 'analysis_schedules'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    repository_id = Column(String(36), ForeignKey('repositories.id'), nullable=False, index=True)
+
+    # Schedule configuration
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    schedule_type = Column(String(20), nullable=False, default='cron')  # cron, interval, daily, weekly
+    cron_expression = Column(String(100))  # For cron type: "0 0 * * *" = daily at midnight
+    interval_minutes = Column(Integer)  # For interval type: 60 = every hour
+
+    # Analysis configuration
+    analyze_all_files = Column(Boolean, default=True)
+    file_patterns = Column(Text)  # JSON array of glob patterns
+    enabled_rules = Column(Text)  # JSON array of rule IDs, null = all rules
+    severity_threshold = Column(String(20), default='info')  # info, warning, error, critical
+
+    # Notification settings
+    notify_on_completion = Column(Boolean, default=False)
+    notify_on_issues = Column(Boolean, default=True)
+    notification_emails = Column(Text)  # JSON array of email addresses
+    slack_webhook_url = Column(String(500))
+
+    # Status
+    enabled = Column(Boolean, default=True)
+    last_run_at = Column(DateTime)
+    next_run_at = Column(DateTime)
+    run_count = Column(Integer, default=0)
+
+    # Metadata
+    created_by_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    repository = relationship('Repository', backref='schedules')
+    created_by = relationship('User', backref='created_schedules')
+    runs = relationship('ScheduledRun', back_populates='schedule', cascade='all, delete-orphan')
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        import json
+        return {
+            'id': self.id,
+            'repository_id': self.repository_id,
+            'name': self.name,
+            'description': self.description,
+            'schedule_type': self.schedule_type,
+            'cron_expression': self.cron_expression,
+            'interval_minutes': self.interval_minutes,
+            'analyze_all_files': self.analyze_all_files,
+            'file_patterns': json.loads(self.file_patterns) if self.file_patterns else [],
+            'enabled_rules': json.loads(self.enabled_rules) if self.enabled_rules else None,
+            'severity_threshold': self.severity_threshold,
+            'notify_on_completion': self.notify_on_completion,
+            'notify_on_issues': self.notify_on_issues,
+            'notification_emails': json.loads(self.notification_emails) if self.notification_emails else [],
+            'slack_webhook_url': self.slack_webhook_url,
+            'enabled': self.enabled,
+            'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
+            'next_run_at': self.next_run_at.isoformat() if self.next_run_at else None,
+            'run_count': self.run_count,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<AnalysisSchedule(id={self.id}, name={self.name}, enabled={self.enabled})>"
+
+
+class ScheduledRun(Base):
+    """Individual execution run of a scheduled analysis."""
+    __tablename__ = 'scheduled_runs'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    schedule_id = Column(String(36), ForeignKey('analysis_schedules.id'), nullable=False, index=True)
+
+    # Execution details
+    status = Column(String(20), default='pending')  # pending, running, completed, failed, cancelled
+    celery_task_id = Column(String(100), index=True)
+
+    # Results
+    files_analyzed = Column(Integer, default=0)
+    issues_found = Column(Integer, default=0)
+    critical_issues = Column(Integer, default=0)
+    error_issues = Column(Integer, default=0)
+    warning_issues = Column(Integer, default=0)
+    info_issues = Column(Integer, default=0)
+
+    # Timing
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    duration_seconds = Column(Float)
+
+    # Output
+    error_message = Column(Text)  # If status = failed
+    result_summary = Column(Text)  # JSON with detailed results
+    notification_sent = Column(Boolean, default=False)
+
+    # Metadata
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    # Relationships
+    schedule = relationship('AnalysisSchedule', back_populates='runs')
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        import json
+        return {
+            'id': self.id,
+            'schedule_id': self.schedule_id,
+            'status': self.status,
+            'celery_task_id': self.celery_task_id,
+            'files_analyzed': self.files_analyzed,
+            'issues_found': self.issues_found,
+            'critical_issues': self.critical_issues,
+            'error_issues': self.error_issues,
+            'warning_issues': self.warning_issues,
+            'info_issues': self.info_issues,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'duration_seconds': self.duration_seconds,
+            'error_message': self.error_message,
+            'result_summary': json.loads(self.result_summary) if self.result_summary else None,
+            'notification_sent': self.notification_sent,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def __repr__(self):
+        return f"<ScheduledRun(id={self.id}, schedule_id={self.schedule_id}, status={self.status})>"
+
+
 class DatabaseManager:
     """Manages database connections and sessions."""
 
