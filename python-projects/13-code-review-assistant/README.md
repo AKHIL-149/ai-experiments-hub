@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.29 (Security Audit & Fixes)
-**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations, Production Middleware, Container Deployment, Mobile-First Design, Comprehensive Testing & Security Hardening
+**Version**: 0.5.30 (Documentation & Guides)
+**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations, Production Middleware, Container Deployment, Mobile-First Design, Comprehensive Testing, Security Hardening & Complete Documentation
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features team collaboration with automated reviewer assignment, shared workspaces with analytics dashboards, async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
@@ -854,6 +854,227 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 ---
 
 ## 📈 Recent Updates
+
+### Version 0.5.30 - Documentation & Guides (99% Complete)
+**Commit 13.5.16 (AKHIL-175)** - Created comprehensive documentation suite with guides and validation tests:
+- Complete deployment guide ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), 22,306 bytes):
+  * Prerequisites (required software, credentials, system requirements)
+  * Local development deployment (6-step setup with verification)
+  * Docker deployment with docker-compose:
+    - Multi-service architecture (FastAPI, Celery worker, Celery beat, Redis, PostgreSQL)
+    - Volume configuration for data persistence
+    - Environment variable configuration
+    - Container orchestration and networking
+  * Production deployment (comprehensive 8-step guide):
+    - System user creation and directory setup
+    - Virtual environment and dependency installation
+    - Environment configuration for production
+    - Systemd service configurations:
+      + FastAPI application service (restart policies, environment)
+      + Celery worker service (async task processing)
+      + Celery beat service (scheduled tasks)
+    - Nginx reverse proxy configuration:
+      + SSL/TLS setup with Let's Encrypt
+      + HTTP to HTTPS redirect
+      + WebSocket proxying for real-time features
+      + Security headers and rate limiting
+    - Firewall configuration (UFW)
+    - SSL certificate setup and auto-renewal
+  * Cloud deployment guides:
+    - AWS Elastic Beanstalk deployment
+    - AWS ECS (Elastic Container Service) with Docker
+    - Google Cloud Platform (Cloud Run)
+    - Microsoft Azure App Service
+  * Post-deployment configuration:
+    - Admin user creation
+    - GitHub webhook setup and verification
+    - Testing checklist
+  * Monitoring & maintenance:
+    - Prometheus metrics integration
+    - Log management (application, Celery, Nginx, Redis)
+    - Database backup strategies
+    - Redis persistence configuration
+  * Scaling strategies:
+    - Horizontal scaling (load balancing, session storage)
+    - Vertical scaling (resource allocation)
+    - Database scaling (connection pooling, read replicas)
+  * Troubleshooting section for common deployment issues
+- Comprehensive user guide ([docs/USER_GUIDE.md](docs/USER_GUIDE.md), 22,469 bytes):
+  * Getting started (accessing application, first-time setup)
+  * User registration and authentication
+  * Repository management:
+    - Adding repositories (GitHub URL, token configuration)
+    - Syncing repositories (fetch latest changes)
+    - Viewing repository details (branches, commits, activity)
+    - Deleting repositories
+  * Analyzing code:
+    - Single file analysis (upload, drag-and-drop)
+    - Multiple file analysis (batch processing)
+    - Understanding analysis results (severity levels, categories, confidence scores)
+  * Pull request reviews:
+    - Importing PRs from GitHub (PR number, branch information)
+    - Viewing PR details (diff viewer, file changes)
+    - Reviewing analysis results (inline comments, suggestions)
+    - Submitting reviews to GitHub (comment posting, review status)
+  * Viewing issues:
+    - Issue browser with advanced filtering (severity, category, file, date range)
+    - Saved filter presets
+    - Bulk actions (dismiss, export)
+  * Refactoring suggestions:
+    - Viewing suggestions with code examples
+    - Accepting/rejecting refactorings
+    - Confidence score interpretation
+  * Team collaboration:
+    - Creating teams and inviting members
+    - Shared workspaces with team analytics
+    - Automated reviewer assignment rules
+  * Scheduled analysis:
+    - Creating schedules (daily, weekly, interval, custom cron)
+    - Managing schedules (enable/disable, edit, delete)
+    - Viewing schedule execution history
+  * Notifications:
+    - Email and Slack integration
+    - Notification rules and conditions
+    - Digest configuration
+  * Analytics & dashboards:
+    - Health scores and quality trends
+    - Technical debt tracking
+    - Developer analytics
+    - Quality gates
+  * Custom rules:
+    - Rule builder interface
+    - Rule types (AST, regex, complexity)
+    - Testing and validation
+  * Plugins:
+    - Plugin manager
+    - Installing and enabling plugins
+    - Plugin types and capabilities
+  * Settings & configuration
+  * Keyboard shortcuts reference
+  * Getting help and support
+- Troubleshooting guide ([docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md), 23,161 bytes):
+  * 10 major troubleshooting categories with symptoms → solutions pattern:
+  * Application issues:
+    - Application won't start (port conflicts, missing dependencies)
+    - Import errors (virtual environment, PATH issues)
+    - Application crashes (log analysis, debugging)
+  * Database issues:
+    - Connection errors (URL format, permissions, network)
+    - SQLite database locked (concurrent access, recovery)
+    - Slow queries (indexing, query optimization)
+    - Migration failures (rollback, manual fixes)
+  * Redis & Celery issues:
+    - Redis connection refused (service status, network)
+    - Celery workers not processing tasks (broker connection, worker logs)
+    - Task failures (error handling, retry configuration)
+    - Redis memory issues (eviction policy, monitoring)
+  * GitHub integration issues:
+    - Authentication failures (token validation, permissions)
+    - Webhook not triggering (configuration, signature verification)
+    - Rate limiting (API quotas, caching strategies)
+    - Repository cloning failures (credentials, network, disk space)
+  * Analysis issues:
+    - Analysis fails or hangs (parser errors, timeouts, resource limits)
+    - No issues detected (rule configuration, thresholds)
+    - Parser errors (syntax validation, language detection)
+    - Unsupported language (language registry, custom parsers)
+  * Performance issues:
+    - Slow analysis (file size limits, parallel processing, caching)
+    - Slow UI (browser caching, CDN, code splitting)
+    - High memory usage (memory profiling, optimization)
+  * Docker issues:
+    - Containers won't start (logs, resource constraints)
+    - Volume permission issues (user mapping, chmod)
+    - Network connectivity (docker network, DNS)
+    - Build failures (cache, dependencies, base image)
+  * Authentication issues:
+    - Cannot login (credentials, session expiry, cookies)
+    - Session expired (TTL configuration, logout)
+    - Permission denied (RBAC, role assignment)
+  * Network issues:
+    - Cannot access application (firewall, binding, ports)
+    - CORS errors (allowed origins, credentials)
+    - SSL certificate errors (trust chain, renewal)
+  * LLM integration issues:
+    - Ollama connection errors (service status, API URL)
+    - Anthropic API errors (API key, rate limits)
+    - OpenAI API errors (quota, authentication)
+- API reference documentation ([docs/API_REFERENCE.md](docs/API_REFERENCE.md), 21,579 bytes):
+  * Base URL and API versioning
+  * Authentication documentation:
+    - Session-based authentication with cookies
+    - Login/logout flows
+    - Token management
+  * Rate limiting:
+    - Global rate limits (100 req/min)
+    - Endpoint-specific limits (analysis: 10 req/min)
+    - Rate limit headers (X-RateLimit-*)
+  * Error handling:
+    - Consistent error response format
+    - HTTP status codes (400, 401, 403, 404, 429, 500)
+    - Common error scenarios
+  * Pagination:
+    - Offset/limit pagination
+    - Cursor-based pagination
+    - Total count headers
+  * Complete endpoint documentation:
+    - Authentication endpoints (register, login, logout, me)
+    - Repository endpoints (create, list, get, update, delete, sync)
+    - Pull request endpoints (import, list, get, review, submit)
+    - Analysis endpoints (file, code, repository, job status)
+    - Issue endpoints (list with filters, get, dismiss)
+    - Refactoring endpoints (get, accept)
+    - Team endpoints (create, list, invite, members)
+    - Analytics endpoints (health, trends, technical debt)
+    - Webhook endpoints (GitHub events)
+  * Request/response examples:
+    - Example requests with all parameters
+    - Example responses with complete data structures
+    - Error response examples
+  * Code examples in multiple languages:
+    - Python (using requests library)
+    - JavaScript (using fetch API)
+    - cURL (command-line examples)
+  * WebSocket/SSE documentation for real-time updates
+  * OpenAPI/Swagger integration link
+- Documentation validation tests ([tests/test_documentation.py](tests/test_documentation.py), 44 tests):
+  * TestDocumentationFiles (6 tests):
+    - Verifies existence of README.md, SECURITY.md, DEPLOYMENT.md, USER_GUIDE.md, TROUBLESHOOTING.md, API_REFERENCE.md
+  * TestREADMEContent (5 tests):
+    - Version number present, features section, installation instructions, usage examples, recent updates
+  * TestDeploymentGuide (5 tests):
+    - Prerequisites, Docker instructions, production section, environment config, troubleshooting
+  * TestUserGuide (5 tests):
+    - Getting started, authentication, repository management, analysis section, examples
+  * TestTroubleshootingGuide (4 tests):
+    - Table of contents, common issues (application, database, Redis/Celery), solutions with code blocks
+  * TestAPIReference (5 tests):
+    - Base URL, authentication section, endpoints list, code examples (curl/python/javascript), error handling
+  * TestSecurityDocumentation (3 tests):
+    - Vulnerability reporting process, supported versions, security best practices
+  * TestDocumentationLinks (3 tests):
+    - README links to documentation, deployment links to troubleshooting, user guide links to API reference
+  * TestDocumentationCompleteness (3 tests):
+    - All features documented, deployment options documented, common errors documented
+  * TestCodeExamples (3 tests):
+    - API reference has curl examples, Python examples, deployment guide has shell commands
+  * TestDocumentationStructure (2 tests):
+    - All guides have table of contents, proper markdown heading hierarchy
+- Test results:
+  * 44/44 documentation tests passed ✓
+  * Validates documentation completeness, structure, and quality
+  * Ensures all required sections and examples are present
+  * Total test suite: 1497+ tests (1453 + 44 new tests)
+- Documentation features:
+  * Comprehensive coverage of all application features
+  * Step-by-step deployment instructions for local, Docker, production, and cloud
+  * Troubleshooting guide with symptoms → solutions pattern
+  * Complete API reference with code examples in 3 languages
+  * Automated validation to maintain documentation quality
+  * Cross-referenced documentation for easy navigation
+  * Code examples with syntax highlighting
+  * Table of contents for all major guides
+  * Proper markdown structure and formatting
 
 ### Version 0.5.29 - Security Audit & Fixes (98% Complete)
 **Commit 13.5.15 (AKHIL-174)** - Implemented comprehensive security audit and hardening:
