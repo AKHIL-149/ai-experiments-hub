@@ -1,0 +1,477 @@
+/**
+ * Responsive CSS Framework
+ * Mobile-first responsive design with breakpoints
+ */
+
+/* ============================================
+   CSS Variables for Responsive Design
+   ============================================ */
+:root {
+    /* Breakpoints */
+    --mobile: 480px;
+    --tablet: 768px;
+    --desktop: 1024px;
+    --wide: 1200px;
+
+    /* Spacing scales */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+
+    /* Touch target minimum size */
+    --touch-target-min: 44px;
+
+    /* Font sizes for mobile */
+    --font-size-mobile-xs: 0.75rem;
+    --font-size-mobile-sm: 0.875rem;
+    --font-size-mobile-base: 1rem;
+    --font-size-mobile-lg: 1.125rem;
+    --font-size-mobile-xl: 1.25rem;
+}
+
+/* ============================================
+   Base Responsive Utilities
+   ============================================ */
+
+/* Container with responsive padding */
+.container-responsive {
+    width: 100%;
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 0 var(--spacing-md);
+}
+
+@media (max-width: 768px) {
+    .container-responsive {
+        padding: 0 var(--spacing-sm);
+    }
+}
+
+/* Responsive grid */
+.grid-responsive {
+    display: grid;
+    gap: var(--spacing-md);
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+@media (max-width: 768px) {
+    .grid-responsive {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+}
+
+/* Flex responsive utilities */
+.flex-responsive {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+}
+
+@media (max-width: 768px) {
+    .flex-responsive {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+}
+
+/* ============================================
+   Touch-Friendly Components
+   ============================================ */
+
+/* Ensure all interactive elements meet minimum touch target size */
+button,
+a.button,
+input[type="button"],
+input[type="submit"],
+.btn {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+    padding: 0.75rem 1.5rem;
+}
+
+@media (max-width: 768px) {
+    button,
+    a.button,
+    input[type="button"],
+    input[type="submit"],
+    .btn {
+        font-size: var(--font-size-mobile-base);
+        padding: 0.875rem 1.75rem;
+    }
+}
+
+/* Touch-friendly form inputs */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+select,
+textarea {
+    min-height: var(--touch-target-min);
+    font-size: 16px; /* Prevents zoom on iOS */
+}
+
+@media (max-width: 768px) {
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="search"],
+    select,
+    textarea {
+        font-size: 16px; /* Always 16px minimum on mobile */
+    }
+}
+
+/* Touch-friendly checkboxes and radio buttons */
+input[type="checkbox"],
+input[type="radio"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+@media (max-width: 768px) {
+    input[type="checkbox"],
+    input[type="radio"] {
+        width: 24px;
+        height: 24px;
+    }
+}
+
+/* ============================================
+   Responsive Navigation
+   ============================================ */
+
+.nav-responsive {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+}
+
+.nav-menu {
+    display: flex;
+    gap: var(--spacing-md);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Mobile navigation */
+@media (max-width: 768px) {
+    .nav-responsive {
+        flex-wrap: wrap;
+        padding: var(--spacing-sm);
+    }
+
+    .nav-menu {
+        flex-direction: column;
+        width: 100%;
+        display: none;
+    }
+
+    .nav-menu.active {
+        display: flex;
+    }
+
+    .nav-toggle {
+        display: block;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: var(--spacing-sm);
+    }
+
+    .nav-toggle span {
+        display: block;
+        width: 25px;
+        height: 3px;
+        background: var(--text-color, #333);
+        margin: 5px 0;
+        transition: 0.3s;
+    }
+}
+
+@media (min-width: 769px) {
+    .nav-toggle {
+        display: none;
+    }
+}
+
+/* ============================================
+   Responsive Cards
+   ============================================ */
+
+.card-responsive {
+    background: white;
+    border-radius: 8px;
+    padding: var(--spacing-lg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+@media (max-width: 768px) {
+    .card-responsive {
+        padding: var(--spacing-md);
+        border-radius: 4px;
+    }
+}
+
+/* ============================================
+   Responsive Tables
+   ============================================ */
+
+.table-responsive-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+    .table-responsive {
+        display: block;
+    }
+
+    .table-responsive thead {
+        display: none;
+    }
+
+    .table-responsive tbody,
+    .table-responsive tr,
+    .table-responsive td {
+        display: block;
+    }
+
+    .table-responsive tr {
+        margin-bottom: var(--spacing-md);
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: var(--spacing-sm);
+    }
+
+    .table-responsive td {
+        text-align: right;
+        padding: var(--spacing-sm);
+        position: relative;
+        border: none;
+    }
+
+    .table-responsive td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: var(--spacing-sm);
+        font-weight: bold;
+        text-align: left;
+    }
+}
+
+/* ============================================
+   Responsive Typography
+   ============================================ */
+
+h1, .h1 { font-size: 2.5rem; }
+h2, .h2 { font-size: 2rem; }
+h3, .h3 { font-size: 1.75rem; }
+h4, .h4 { font-size: 1.5rem; }
+h5, .h5 { font-size: 1.25rem; }
+h6, .h6 { font-size: 1rem; }
+
+@media (max-width: 768px) {
+    h1, .h1 { font-size: 1.75rem; }
+    h2, .h2 { font-size: 1.5rem; }
+    h3, .h3 { font-size: 1.25rem; }
+    h4, .h4 { font-size: 1.125rem; }
+    h5, .h5 { font-size: 1rem; }
+    h6, .h6 { font-size: 0.875rem; }
+}
+
+/* ============================================
+   Responsive Modals
+   ============================================ */
+
+.modal-responsive {
+    max-width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+    .modal-responsive {
+        max-width: 95%;
+        max-height: 95vh;
+        border-radius: 8px 8px 0 0;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        margin: 0 auto;
+    }
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+/* Show/Hide on different screen sizes */
+.hide-mobile {
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+.show-mobile {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .show-mobile {
+        display: block !important;
+    }
+}
+
+.hide-tablet {
+    display: block;
+}
+
+@media (min-width: 769px) and (max-width: 1023px) {
+    .hide-tablet {
+        display: none !important;
+    }
+}
+
+.show-tablet {
+    display: none;
+}
+
+@media (min-width: 769px) and (max-width: 1023px) {
+    .show-tablet {
+        display: block !important;
+    }
+}
+
+/* Responsive spacing utilities */
+@media (max-width: 768px) {
+    .p-mobile-0 { padding: 0 !important; }
+    .p-mobile-1 { padding: var(--spacing-xs) !important; }
+    .p-mobile-2 { padding: var(--spacing-sm) !important; }
+    .p-mobile-3 { padding: var(--spacing-md) !important; }
+
+    .m-mobile-0 { margin: 0 !important; }
+    .m-mobile-1 { margin: var(--spacing-xs) !important; }
+    .m-mobile-2 { margin: var(--spacing-sm) !important; }
+    .m-mobile-3 { margin: var(--spacing-md) !important; }
+}
+
+/* Responsive text alignment */
+@media (max-width: 768px) {
+    .text-mobile-center { text-align: center !important; }
+    .text-mobile-left { text-align: left !important; }
+    .text-mobile-right { text-align: right !important; }
+}
+
+/* ============================================
+   Responsive Images
+   ============================================ */
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+.img-responsive {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* ============================================
+   Responsive Code Blocks
+   ============================================ */
+
+pre,
+code {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+    pre {
+        font-size: 0.75rem;
+        padding: var(--spacing-sm);
+    }
+}
+
+/* ============================================
+   Landscape Orientation
+   ============================================ */
+
+@media (max-width: 768px) and (orientation: landscape) {
+    .modal-responsive {
+        max-height: 80vh;
+    }
+
+    .nav-menu {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    .card-responsive {
+        box-shadow: none;
+        border: 1px solid #ddd;
+    }
+
+    a[href]:after {
+        content: " (" attr(href) ")";
+    }
+}
+
+/* ============================================
+   Accessibility Enhancements
+   ============================================ */
+
+/* Focus visible for keyboard navigation */
+@media (prefers-reduced-motion: no-preference) {
+    * {
+        scroll-behavior: smooth;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .card-responsive {
+        border: 2px solid currentColor;
+    }
+
+    button,
+    .btn {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
