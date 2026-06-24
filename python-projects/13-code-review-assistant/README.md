@@ -1,7 +1,7 @@
 # AI Code Review & Refactoring Assistant
 
-**Version**: 0.5.28 (Integration & Load Testing)
-**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations, Production Middleware, Container Deployment, Mobile-First Design & Comprehensive Testing
+**Version**: 0.5.29 (Security Audit & Fixes)
+**Status**: Production-Ready with Team Collaboration, Automated Review Assignment, Shared Workspaces, Plugin Architecture, Rule Marketplace, Comprehensive Notifications, Performance Optimizations, Production Middleware, Container Deployment, Mobile-First Design, Comprehensive Testing & Security Hardening
 
 An intelligent code review system that analyzes Python, JavaScript/TypeScript, Java, Go, and Rust code, detects issues, suggests refactorings, and integrates with GitHub pull requests. Features team collaboration with automated reviewer assignment, shared workspaces with analytics dashboards, async processing, AI-powered insights, real-time analytics, intelligent language auto-detection, webhook-triggered automatic PR analysis, scheduled automated scans, visual custom rule builder, extensible plugin system, rule marketplace for sharing analysis rules, and comprehensive production monitoring.
 
@@ -854,6 +854,102 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 ---
 
 ## 📈 Recent Updates
+
+### Version 0.5.29 - Security Audit & Fixes (98% Complete)
+**Commit 13.5.15 (AKHIL-174)** - Implemented comprehensive security audit and hardening:
+- Security audit script ([scripts/security_audit.py](scripts/security_audit.py)):
+  * 10 audit categories: secrets, SQL injection, XSS, authentication, dependencies, file permissions, environment config, security headers, input validation, cryptography
+  * Pattern-based vulnerability scanning with regex detection
+  * Hardcoded secret detection (passwords, API keys, GitHub tokens, OpenAI keys)
+  * SQL injection detection (string formatting, concatenation, f-strings in queries)
+  * XSS vulnerability scanning in templates (unsafe filters, raw HTML)
+  * Authentication implementation audit (password hashing, session management)
+  * Dependency vulnerability checking (requirements pinning, outdated packages)
+  * File permission auditing (world-writable files, SSH keys, config files)
+  * Environment configuration validation (.env files, secrets management)
+  * Security header verification (CSP, HSTS, X-Frame-Options)
+  * Input validation checks (Pydantic usage, sanitization)
+  * Cryptography usage audit (weak algorithms: MD5, SHA1)
+  * Scoring system (100-point scale with letter grades A-F)
+  * JSON report export with findings, statistics, and recommendations
+  * CLI interface with severity filtering and report generation
+  * Executable script with proper permissions
+- Security headers middleware ([src/middleware/security_headers.py](src/middleware/security_headers.py)):
+  * SecurityHeadersMiddleware implementing BaseHTTPMiddleware
+  * X-Content-Type-Options: nosniff (prevents MIME sniffing)
+  * X-Frame-Options: DENY (prevents clickjacking)
+  * X-XSS-Protection: 1; mode=block (legacy XSS filter)
+  * Strict-Transport-Security (HSTS) for production (max-age=31536000)
+  * Content-Security-Policy with restrictive directives:
+    - default-src 'self' (only allow same-origin resources)
+    - script-src 'self' 'unsafe-inline' 'unsafe-eval' (scripts with fallback)
+    - style-src 'self' 'unsafe-inline' (styles with inline support)
+    - img-src 'self' data: https: (images from safe sources)
+    - frame-ancestors 'none' (prevent embedding)
+    - base-uri 'self', form-action 'self' (form security)
+  * Referrer-Policy: strict-origin-when-cross-origin (referrer control)
+  * Permissions-Policy: geolocation=(), microphone=(), camera=() (feature restrictions)
+  * CSPReportMiddleware for violation reporting and monitoring
+  * Environment-aware configuration (production vs development)
+  * Helper functions: validate_cors_origin, sanitize_redirect_url, generate_nonce
+  * Server header removal for security obscurity
+- Security policy documentation ([SECURITY.md](SECURITY.md)):
+  * Supported versions table with security support status
+  * Vulnerability reporting process:
+    - 48-hour initial response SLA
+    - 30-day fix for critical vulnerabilities
+    - 90-day disclosure policy
+    - Security advisory publication
+  * Security best practices for users (12 sections):
+    - Configuration hardening (HTTPS, secure cookies, HSTS)
+    - GitHub integration security (token permissions, webhook secrets)
+    - Network security (firewall rules, CORS, VPN)
+    - Database security (connection encryption, backups, access control)
+    - Docker deployment security (resource limits, network isolation)
+  * Security best practices for developers (5 sections):
+    - Code security (input validation, parameterized queries, output encoding)
+    - Authentication/authorization (password hashing, session management, RBAC)
+    - Input validation (Pydantic, file uploads, path traversal prevention)
+    - Dependencies (automated scanning, version pinning, license review)
+    - Logging security (sensitive data masking, secure log storage)
+  * Known security considerations (4 areas)
+  * Implemented security controls checklist (14 controls ✅):
+    - Password hashing (bcrypt), HTTPS enforcement, Security headers
+    - CSRF protection, XSS prevention, SQL injection prevention
+    - Rate limiting, Session management, Input validation
+    - Secrets management, Audit logging, RBAC, Secure dependencies
+    - Docker non-root user
+  * Security roadmap (5 planned features ⬜):
+    - Two-factor authentication (2FA)
+    - OAuth2/OIDC integration
+    - Automated audit logging
+    - SAST/DAST integration
+    - Regular penetration testing
+  * Pre-deployment security checklist (8 items)
+  * Post-deployment security checklist (7 items)
+  * Incident response process with defined steps
+  * Security resources and tools (monitoring, scanning, hardening)
+- Comprehensive security tests ([tests/test_security.py](tests/test_security.py)):
+  * TestPasswordSecurity: bcrypt hashing, minimum length, plaintext storage prevention
+  * TestSQLInjectionPrevention: parameterized queries, ORM safety
+  * TestXSSPrevention: template auto-escaping, unsafe filter detection
+  * TestCSRFProtection: token validation for state changes
+  * TestSecurityHeaders: All header configurations tested (X-Content-Type-Options, X-Frame-Options, CSP, HSTS)
+  * TestAuthenticationSecurity: session expiration, secure cookies, token randomness
+  * TestRateLimiting: rate limiter functionality and API compatibility
+  * TestInputValidation: Pydantic models, file size limits, path traversal prevention
+  * TestSecretsManagement: hardcoded secret detection (excludes fixtures), .gitignore verification, environment variable usage
+  * TestCryptography: weak algorithm detection (MD5, SHA1), secrets module usage
+  * TestDependencySecurity: requirements.txt validation, version pinning
+  * TestGitHubSecurity: webhook signature verification, token permissions
+  * TestDockerSecurity: non-root user validation, minimal layers
+  * TestLoggingSecurity: sensitive data masking, log masking function
+  * TestCORSSecurity: origin whitelisting, wildcard prevention
+  * TestSecurityAudit: script existence and executability
+  * TestSecurityDocumentation: SECURITY.md completeness, reporting process, supported versions
+  * 42 comprehensive security tests
+- Total tests: 1409+ (1367 previous + 42 security)
+- Progress: 97% → 98% complete
 
 ### Version 0.5.28 - Integration & Load Testing (97% Complete)
 **Commit 13.5.14 (AKHIL-173)** - Implemented comprehensive integration and load testing:
