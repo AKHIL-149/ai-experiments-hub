@@ -2773,6 +2773,14 @@ async def register_page(request: Request):
     })
 
 
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page(request: Request):
+    """Terms of Service page"""
+    return templates.TemplateResponse("terms.html", {
+        "request": request
+    })
+
+
 @app.get("/logout", response_class=HTMLResponse)
 async def logout_page(response: Response, session_token: Optional[str] = Cookie(None)):
     """Logout page - clears session and redirects"""

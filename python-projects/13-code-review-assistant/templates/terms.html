@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service - AI Code Review Assistant{% endblock %}
+
+{% block content %}
+<div class="legal-container">
+    <div class="legal-content">
+        <h1>Terms of Service</h1>
+        <p class="last-updated">Last Updated: December 2024</p>
+
+        <div class="legal-section">
+            <h2>1. Acceptance of Terms</h2>
+            <p>
+                By accessing and using the AI Code Review & Refactoring Assistant ("Service"), you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to these terms, please do not use this Service.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>2. Description of Service</h2>
+            <p>
+                The Service provides automated code analysis, review, and refactoring suggestions using artificial intelligence and static analysis techniques. The Service supports multiple programming languages including Python, JavaScript, TypeScript, Java, Go, and Rust.
+            </p>
+            <p>
+                Features include:
+            </p>
+            <ul>
+                <li>Automated code analysis and security vulnerability detection</li>
+                <li>Code quality metrics and complexity analysis</li>
+                <li>AI-powered refactoring suggestions</li>
+                <li>GitHub pull request integration</li>
+                <li>Team collaboration and analytics</li>
+                <li>Custom rule creation and plugin system</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>3. User Accounts</h2>
+            <h3>3.1 Registration</h3>
+            <p>
+                To use certain features of the Service, you must register for an account. You agree to provide accurate, current, and complete information during registration and to update such information to keep it accurate, current, and complete.
+            </p>
+
+            <h3>3.2 Account Security</h3>
+            <p>
+                You are responsible for safeguarding your account password and for any activities or actions under your account. You agree to notify us immediately of any unauthorized use of your account.
+            </p>
+
+            <h3>3.3 Account Termination</h3>
+            <p>
+                We reserve the right to suspend or terminate your account if you violate these Terms of Service or engage in activities that could harm the Service or other users.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>4. User Content and Code</h2>
+            <h3>4.1 Your Content</h3>
+            <p>
+                You retain all rights to the code and content you upload to the Service. By uploading code to the Service, you grant us a limited, non-exclusive license to analyze, process, and store your code solely for the purpose of providing the Service.
+            </p>
+
+            <h3>4.2 Code Privacy</h3>
+            <p>
+                We will not share your code with third parties except as necessary to provide the Service (e.g., AI providers for analysis) or as required by law. See our Privacy Policy for more details.
+            </p>
+
+            <h3>4.3 Prohibited Content</h3>
+            <p>
+                You may not upload code or content that:
+            </p>
+            <ul>
+                <li>Violates any applicable law or regulation</li>
+                <li>Contains malware, viruses, or malicious code intended to harm others</li>
+                <li>Infringes on intellectual property rights of others</li>
+                <li>Contains personal data of others without proper authorization</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>5. GitHub Integration</h2>
+            <h3>5.1 GitHub Access</h3>
+            <p>
+                When you connect your GitHub account, you authorize the Service to access repositories, pull requests, and related data as specified in the GitHub permissions prompt.
+            </p>
+
+            <h3>5.2 GitHub Token Security</h3>
+            <p>
+                GitHub tokens are stored securely and encrypted. You may revoke access at any time through your GitHub account settings or through the Service.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>6. AI-Powered Features</h2>
+            <h3>6.1 AI Analysis</h3>
+            <p>
+                The Service uses artificial intelligence models (including but not limited to Ollama, Anthropic Claude, and OpenAI) to provide code analysis and suggestions. AI-generated suggestions are provided "as-is" and should be reviewed before implementation.
+            </p>
+
+            <h3>6.2 Accuracy</h3>
+            <p>
+                While we strive for accuracy, AI-generated suggestions may not always be correct or appropriate for your specific use case. You are responsible for reviewing and testing all suggestions before implementation.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>7. Acceptable Use</h2>
+            <p>
+                You agree not to:
+            </p>
+            <ul>
+                <li>Use the Service for any illegal purpose or in violation of any laws</li>
+                <li>Attempt to gain unauthorized access to the Service or its systems</li>
+                <li>Interfere with or disrupt the Service or servers</li>
+                <li>Use automated systems to access the Service without permission</li>
+                <li>Reverse engineer, decompile, or disassemble the Service</li>
+                <li>Remove, alter, or obscure any proprietary notices</li>
+                <li>Use the Service to analyze code you don't have rights to access</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>8. Intellectual Property</h2>
+            <h3>8.1 Service Ownership</h3>
+            <p>
+                The Service, including its original content, features, and functionality, is owned by us and is protected by international copyright, trademark, patent, trade secret, and other intellectual property laws.
+            </p>
+
+            <h3>8.2 User Content</h3>
+            <p>
+                You retain ownership of all code and content you upload. Analysis results, metrics, and insights generated by the Service are provided to you for your use.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>9. Third-Party Services</h2>
+            <p>
+                The Service integrates with third-party services including:
+            </p>
+            <ul>
+                <li>GitHub (for repository access and PR integration)</li>
+                <li>AI providers (Ollama, Anthropic, OpenAI)</li>
+                <li>Notification services (email, Slack)</li>
+            </ul>
+            <p>
+                Your use of these third-party services is subject to their respective terms of service and privacy policies.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>10. Data and Privacy</h2>
+            <p>
+                Our collection and use of personal information in connection with the Service is described in our <a href="/privacy">Privacy Policy</a>.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>11. Disclaimer of Warranties</h2>
+            <p>
+                THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+            </p>
+            <p>
+                We do not warrant that:
+            </p>
+            <ul>
+                <li>The Service will be uninterrupted, secure, or error-free</li>
+                <li>The results obtained from the Service will be accurate or reliable</li>
+                <li>The quality of the Service will meet your expectations</li>
+                <li>Any errors in the Service will be corrected</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>12. Limitation of Liability</h2>
+            <p>
+                TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL WE BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, DATA, USE, OR OTHER INTANGIBLE LOSSES, RESULTING FROM:
+            </p>
+            <ul>
+                <li>Your use or inability to use the Service</li>
+                <li>Any unauthorized access to or use of our servers and/or any personal information stored therein</li>
+                <li>Any bugs, viruses, or other harmful code that may be transmitted through the Service</li>
+                <li>Any errors or omissions in any content or for any loss or damage incurred as a result of the use of any content posted, emailed, transmitted, or otherwise made available through the Service</li>
+                <li>Implementation of AI-generated suggestions</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>13. Indemnification</h2>
+            <p>
+                You agree to indemnify, defend, and hold harmless the Service, its affiliates, and their respective officers, directors, employees, and agents from any claims, liabilities, damages, losses, and expenses, including reasonable attorneys' fees, arising out of or in any way connected with your access to or use of the Service or violation of these Terms.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>14. Changes to Terms</h2>
+            <p>
+                We reserve the right to modify these Terms at any time. We will notify users of any material changes via email or through the Service. Your continued use of the Service after changes indicates your acceptance of the modified Terms.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>15. Termination</h2>
+            <p>
+                You may terminate your account at any time through the Service settings. We may terminate or suspend your account and access to the Service immediately, without prior notice, for conduct that we believe violates these Terms or is harmful to other users, us, or third parties, or for any other reason.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>16. Governing Law</h2>
+            <p>
+                These Terms shall be governed by and construed in accordance with the laws of your jurisdiction, without regard to its conflict of law provisions.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>17. Dispute Resolution</h2>
+            <p>
+                Any disputes arising from these Terms or the Service shall be resolved through good-faith negotiations. If negotiations fail, disputes may be resolved through arbitration or court proceedings as permitted by applicable law.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>18. Severability</h2>
+            <p>
+                If any provision of these Terms is found to be unenforceable or invalid, that provision shall be limited or eliminated to the minimum extent necessary so that the Terms shall otherwise remain in full force and effect.
+            </p>
+        </div>
+
+        <div class="legal-section">
+            <h2>19. Contact Information</h2>
+            <p>
+                If you have any questions about these Terms, please contact us at:
+            </p>
+            <p>
+                <strong>Email:</strong> support@codereviewassistant.example.com<br>
+                <strong>Security Issues:</strong> See our <a href="/security">Security Policy</a>
+            </p>
+        </div>
+
+        <div class="legal-footer">
+            <p><a href="/privacy" class="btn btn-secondary">Privacy Policy</a> <a href="/" class="btn btn-primary">Back to Home</a></p>
+        </div>
+    </div>
+</div>
+
+<style>
+.legal-container {
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 0 20px;
+}
+
+.legal-content {
+    background: var(--bg-secondary, #fff);
+    padding: 40px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.legal-content h1 {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    color: var(--text-primary, #333);
+}
+
+.last-updated {
+    color: var(--text-secondary, #666);
+    font-style: italic;
+    margin-bottom: 30px;
+}
+
+.legal-section {
+    margin: 30px 0;
+}
+
+.legal-section h2 {
+    font-size: 1.75rem;
+    margin: 25px 0 15px 0;
+    color: var(--text-primary, #333);
+    border-bottom: 2px solid var(--border-color, #e0e0e0);
+    padding-bottom: 10px;
+}
+
+.legal-section h3 {
+    font-size: 1.25rem;
+    margin: 20px 0 10px 0;
+    color: var(--text-primary, #444);
+}
+
+.legal-section p {
+    margin: 15px 0;
+    line-height: 1.8;
+    color: var(--text-secondary, #555);
+}
+
+.legal-section ul {
+    margin: 15px 0;
+    padding-left: 25px;
+}
+
+.legal-section li {
+    margin: 8px 0;
+    line-height: 1.6;
+    color: var(--text-secondary, #555);
+}
+
+.legal-section a {
+    color: var(--primary-color, #007bff);
+    text-decoration: underline;
+}
+
+.legal-section a:hover {
+    color: var(--primary-dark, #0056b3);
+}
+
+.legal-footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 2px solid var(--border-color, #e0e0e0);
+    text-align: center;
+}
+
+.legal-footer .btn {
+    margin: 0 10px;
+}
+
+@media (max-width: 768px) {
+    .legal-container {
+        margin: 20px auto;
+    }
+
+    .legal-content {
+        padding: 20px;
+    }
+
+    .legal-content h1 {
+        font-size: 2rem;
+    }
+
+    .legal-section h2 {
+        font-size: 1.5rem;
+    }
+}
+</style>
+{% endblock %}
