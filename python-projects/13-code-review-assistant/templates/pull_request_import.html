@@ -173,5 +173,18 @@ async function importPR(event) {
         submitBtn.textContent = 'Import Pull Request';
     }
 }
+
+// Pre-select repository from query parameter if provided
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const repositoryId = urlParams.get('repository_id');
+
+    if (repositoryId) {
+        const repositorySelect = document.getElementById('repository');
+        if (repositorySelect) {
+            repositorySelect.value = repositoryId;
+        }
+    }
+});
 </script>
 {% endblock %}

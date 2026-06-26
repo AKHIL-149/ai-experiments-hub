@@ -458,7 +458,8 @@ async function loadIssues() {
 }
 
 function importPullRequests() {
-    alert('Pull request import will be implemented in the next phase (13.3.13-15)');
+    // Navigate to PR import page with pre-selected repository
+    window.location.href = `/pull-requests/import?repository_id=${REPO_ID}`;
 }
 
 function showSettingsModal() {
