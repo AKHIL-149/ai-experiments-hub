@@ -2781,6 +2781,14 @@ async def terms_page(request: Request):
     })
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request):
+    """Privacy Policy page"""
+    return templates.TemplateResponse("privacy.html", {
+        "request": request
+    })
+
+
 @app.get("/logout", response_class=HTMLResponse)
 async def logout_page(response: Response, session_token: Optional[str] = Cookie(None)):
     """Logout page - clears session and redirects"""
