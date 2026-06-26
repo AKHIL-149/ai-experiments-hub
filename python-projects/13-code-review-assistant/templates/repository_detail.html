@@ -35,6 +35,39 @@
         </div>
     </div>
 
+    <!-- Status Alert -->
+    {% if repository.status == 'pending' %}
+    <div class="alert alert-info" id="statusAlert">
+        <div class="alert-content">
+            <div class="alert-icon">⏳</div>
+            <div class="alert-message">
+                <strong>Repository is being cloned...</strong>
+                <p>Your repository is currently being cloned from GitHub. This page will automatically refresh when cloning is complete. You can also manually refresh to check the status.</p>
+            </div>
+        </div>
+    </div>
+    {% elif repository.status == 'cloning' %}
+    <div class="alert alert-info" id="statusAlert">
+        <div class="alert-content">
+            <div class="alert-icon">⏳</div>
+            <div class="alert-message">
+                <strong>Cloning in progress...</strong>
+                <p>Repository is being cloned from GitHub. This may take a few moments. The page will refresh automatically when complete.</p>
+            </div>
+        </div>
+    </div>
+    {% elif repository.status == 'error' %}
+    <div class="alert alert-danger" id="statusAlert">
+        <div class="alert-content">
+            <div class="alert-icon">❌</div>
+            <div class="alert-message">
+                <strong>Repository clone failed</strong>
+                <p>There was an error cloning the repository. Please check your GitHub URL and token, then try syncing again.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Repository Info Card -->
     <div class="card">
         <div class="card-header">
@@ -54,7 +87,18 @@
                 </div>
                 <div class="info-item">
                     <span class="info-label">Status:</span>
-                    <span class="badge badge-{{ repository.status }}">{{ repository.status }}</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="badge badge-{{ repository.status }}">{{ repository.status }}</span>
+                        {% if repository.status == 'pending' %}
+                        <span class="status-help" title="Repository is being cloned from GitHub">⏳ Cloning...</span>
+                        {% elif repository.status == 'cloning' %}
+                        <span class="status-help" title="Repository clone in progress">⏳ In Progress</span>
+                        {% elif repository.status == 'ready' %}
+                        <span class="status-help" title="Repository is ready for analysis">✅ Ready</span>
+                        {% elif repository.status == 'error' %}
+                        <span class="status-help" title="Clone failed - check settings">❌ Failed</span>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="info-item">
                     <span class="info-label">Clone Path:</span>
@@ -353,6 +397,83 @@ const REPO_ID = '{{ repository.id }}';
     padding: 20px;
 }
 
+/* Alert Boxes */
+.alert {
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-radius: 8px;
+    border: 1px solid;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.alert-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.alert-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.alert-message {
+    flex: 1;
+}
+
+.alert-message strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+}
+
+.alert-message p {
+    margin: 0;
+    opacity: 0.9;
+    line-height: 1.5;
+}
+
+.alert-info {
+    background: #e3f2fd;
+    border-color: #2196f3;
+    color: #0d47a1;
+}
+
+.alert-danger {
+    background: #ffebee;
+    border-color: #f44336;
+    color: #b71c1c;
+}
+
+.alert-success {
+    background: #e8f5e9;
+    border-color: #4caf50;
+    color: #1b5e20;
+}
+
+/* Status Help Text */
+.status-help {
+    font-size: 0.9rem;
+    color: #586069;
+    font-style: italic;
+    cursor: help;
+}
+
+.status-help:hover {
+    color: #24292e;
+}
+
 @media (max-width: 768px) {
     .header-actions {
         width: 100%;
@@ -362,15 +483,31 @@ const REPO_ID = '{{ repository.id }}';
         flex-direction: column;
         align-items: flex-start;
     }
+
+    .alert-content {
+        flex-direction: column;
+        gap: 12px;
+    }
 }
 </style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+const REPO_STATUS = '{{ repository.status }}';
+
 document.addEventListener('DOMContentLoaded', function() {
     loadPullRequests();
     loadIssues();
+
+    // Auto-refresh if repository is pending or cloning
+    if (REPO_STATUS === 'pending' || REPO_STATUS === 'cloning') {
+        console.log('Repository status:', REPO_STATUS, '- Will auto-refresh in 5 seconds');
+        setTimeout(() => {
+            console.log('Auto-refreshing to check repository status...');
+            location.reload();
+        }, 5000); // Refresh every 5 seconds
+    }
 });
 
 async function syncRepository() {
