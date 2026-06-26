@@ -33,6 +33,16 @@ celery_app.conf.update(
 # Auto-discover tasks from workers module
 celery_app.autodiscover_tasks(['src.workers'])
 
+# Explicitly import worker modules to ensure tasks are registered
+try:
+    from src.workers import analysis_worker
+    from src.workers import repository_worker
+    from src.workers import pr_worker
+    from src.workers import notification_worker
+    from src.workers import schedule_worker
+except ImportError as e:
+    print(f"Warning: Could not import some worker modules: {e}")
+
 # Task routes
 celery_app.conf.task_routes = {
     'src.workers.analysis_worker.*': {'queue': 'analysis'},
