@@ -49,7 +49,7 @@
 
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
-                                <span>🔍 Analyze Code</span>
+                                <span>Analyze Code</span>
                             </button>
                             <button type="button" class="btn btn-secondary" onclick="document.getElementById('file').value=''; updateFileDisplay();">
                                 Clear
@@ -64,7 +64,7 @@
         <div class="status-section" id="statusSection" style="display: none;">
             <div class="card">
                 <div class="card-header">
-                    <h2>⏳ Analysis Status</h2>
+                    <h2>Analysis Status</h2>
                 </div>
                 <div class="card-body">
                     <div class="status-info">
@@ -104,10 +104,7 @@
         <div class="results-section" id="resultsSection" style="display: none;">
             <div class="card">
                 <div class="card-header">
-                    <h2>📊 Analysis Results</h2>
-                    <button class="btn btn-sm btn-secondary" onclick="downloadReport()">
-                        Download Report
-                    </button>
+                    <h2>Analysis Results</h2>
                 </div>
                 <div class="card-body">
                     <!-- Summary Stats -->
@@ -170,7 +167,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     }
 
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span>⏳ Uploading...</span>';
+    submitBtn.innerHTML = '<span>Uploading...</span>';
 
     try {
         const response = await fetch('/api/analyze/file', {
@@ -187,12 +184,12 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
         } else {
             alert('Error: ' + (data.error || 'Upload failed'));
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>🔍 Analyze Code</span>';
+            submitBtn.innerHTML = '<span>Analyze Code</span>';
         }
     } catch (error) {
         alert('Error: ' + error.message);
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<span>🔍 Analyze Code</span>';
+        submitBtn.innerHTML = '<span>Analyze Code</span>';
     }
 });
 
@@ -267,7 +264,7 @@ function displayResults(result) {
     summary.innerHTML = `
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-icon">⚠️</div>
+                <div class="stat-icon"></div>
                 <div class="stat-info">
                     <div class="stat-value">${report.total_issues}</div>
                     <div class="stat-label">Total Issues</div>
@@ -288,7 +285,7 @@ function displayResults(result) {
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon">📊</div>
+                <div class="stat-icon"></div>
                 <div class="stat-info">
                     <div class="stat-value">${report.health_score.grade}</div>
                     <div class="stat-label">Grade</div>
@@ -356,7 +353,7 @@ function displayResults(result) {
     } else {
         issuesDetail.innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">✅</div>
+                <div class="empty-icon"></div>
                 <h3>No issues found!</h3>
                 <p>Your code looks clean and follows best practices.</p>
             </div>
@@ -387,14 +384,10 @@ function resetForm() {
     document.getElementById('uploadForm').reset();
     updateFileDisplay();
     document.getElementById('submitBtn').disabled = false;
-    document.getElementById('submitBtn').innerHTML = '<span>🔍 Analyze Code</span>';
+    document.getElementById('submitBtn').innerHTML = '<span>Analyze Code</span>';
     currentJobId = null;
 }
 
-function downloadReport() {
-    // TODO: Implement report download
-    alert('Report download coming soon!');
-}
 
 function formatBytes(bytes) {
     if (bytes === 0) return '0 Bytes';
