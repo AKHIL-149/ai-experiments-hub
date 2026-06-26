@@ -20,10 +20,13 @@
             <span class="badge badge-{{ repository.status }}">{{ repository.status }}</span>
         </div>
         <div class="header-actions">
+            <button class="btn btn-primary" onclick="analyzeRepository()" id="analyzeBtn">
+                🔍 Analyze Repository
+            </button>
             <button class="btn btn-secondary" onclick="syncRepository()" id="syncBtn">
                 🔄 Sync Repository
             </button>
-            <button class="btn btn-primary" onclick="importPullRequests()">
+            <button class="btn btn-secondary" onclick="importPullRequests()">
                 ⬇️ Import Pull Requests
             </button>
             <button class="btn btn-secondary" onclick="showSettingsModal()">
@@ -460,6 +463,41 @@ async function loadIssues() {
 function importPullRequests() {
     // Navigate to PR import page with pre-selected repository
     window.location.href = `/pull-requests/import?repository_id=${REPO_ID}`;
+}
+
+async function analyzeRepository() {
+    if (!confirm('This will analyze all code files in the repository. This may take several minutes depending on repository size. Continue?')) {
+        return;
+    }
+
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const originalText = analyzeBtn.textContent;
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = '⏳ Analyzing...';
+
+    try {
+        const response = await fetch(`/api/repositories/${REPO_ID}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            alert(`✅ Analysis started successfully!\n\nJob ID: ${result.job_id}\n\nAnalyzing ${result.file_count || 'all'} files. You can view results in the Issues tab.`);
+            // Refresh the page to show updated stats
+            window.location.reload();
+        } else {
+            alert('❌ Failed to start analysis: ' + (result.detail || result.error || 'Unknown error'));
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = originalText;
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = originalText;
+    }
 }
 
 function showSettingsModal() {

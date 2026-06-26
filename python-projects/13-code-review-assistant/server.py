@@ -23,6 +23,7 @@ from src.services.pr_service import PullRequestService
 from src.services.schedule_service import ScheduleService
 from src.workers.analysis_worker import (
     analyze_file_task,
+    analyze_repository_task,
     get_analysis_results,
     get_all_cached_analyses
 )
@@ -4867,6 +4868,49 @@ async def get_repository_status(
             "success": True,
             "repository": repo_dict,
             "job": job_status
+        }
+
+
+@app.post("/api/repositories/{repository_id}/analyze")
+async def analyze_repository(
+    repository_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Analyze all code files in the repository.
+
+    This endpoint triggers an asynchronous analysis of all supported code files
+    in the repository. Supported languages: Python, JavaScript, TypeScript, Java, Go, Rust.
+
+    Returns:
+        Job ID for tracking analysis progress
+    """
+    with db_manager.get_session() as db:
+        # Verify repository exists and user owns it
+        repo = db.query(Repository).filter(
+            Repository.id == repository_id,
+            Repository.user_id == user.id
+        ).first()
+
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # Check if repository has been cloned
+        if not repo.clone_path or not os.path.exists(repo.clone_path):
+            raise HTTPException(
+                status_code=400,
+                detail="Repository not cloned yet. Please sync the repository first."
+            )
+
+        # Start analysis task
+        task = analyze_repository_task.delay(repository_id=repository_id)
+
+        return {
+            "success": True,
+            "message": "Repository analysis started",
+            "job_id": task.id,
+            "repository_id": repository_id,
+            "repository_name": repo.name
         }
 
 

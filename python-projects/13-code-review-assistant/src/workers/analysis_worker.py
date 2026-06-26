@@ -138,3 +138,139 @@ def analyze_uploaded_file_task(
             'error': str(e),
             'file_path': file_path
         }
+
+
+@celery_app.task(name='src.workers.analysis_worker.analyze_repository_task', bind=True)
+def analyze_repository_task(
+    self,
+    repository_id: str
+) -> Dict[str, Any]:
+    """
+    Analyze all code files in a repository.
+
+    Args:
+        repository_id: Repository ID to analyze
+
+    Returns:
+        Analysis results dictionary with issue count and summary
+    """
+    from pathlib import Path
+    from src.core.database import DatabaseManager, Repository, CodeFile, Issue
+    from src.parsers.parser_registry import ParserRegistry
+
+    db_manager = DatabaseManager()
+
+    try:
+        with db_manager.get_session() as session:
+            # Get repository
+            repository = session.query(Repository).filter_by(id=repository_id).first()
+            if not repository:
+                return {'success': False, 'error': 'Repository not found'}
+
+            if not repository.clone_path or not os.path.exists(repository.clone_path):
+                return {'success': False, 'error': 'Repository not cloned yet. Please sync first.'}
+
+            self.update_state(state='PROGRESS', meta={'status': 'Discovering files...'})
+
+            # Initialize services
+            analyzer_service = CodeAnalyzerService(session)
+            parser_registry = ParserRegistry()
+
+            repo_path = Path(repository.clone_path)
+
+            # Find all supported code files
+            supported_extensions = {
+                '.py': 'python',
+                '.js': 'javascript',
+                '.jsx': 'javascript',
+                '.ts': 'typescript',
+                '.tsx': 'typescript',
+                '.java': 'java',
+                '.go': 'go',
+                '.rs': 'rust'
+            }
+
+            files_to_analyze = []
+            for ext, lang in supported_extensions.items():
+                files_to_analyze.extend([(f, lang) for f in repo_path.rglob(f'*{ext}')])
+
+            # Filter out common non-code directories
+            excluded_dirs = {'node_modules', 'venv', '.venv', 'dist', 'build', '__pycache__', '.git'}
+            files_to_analyze = [
+                (f, lang) for f, lang in files_to_analyze
+                if not any(excl in f.parts for excl in excluded_dirs)
+            ]
+
+            total_files = len(files_to_analyze)
+            if total_files == 0:
+                return {
+                    'success': True,
+                    'message': 'No supported code files found',
+                    'files_analyzed': 0,
+                    'issues_found': 0
+                }
+
+            self.update_state(state='PROGRESS', meta={
+                'status': f'Analyzing {total_files} files...',
+                'total': total_files,
+                'current': 0
+            })
+
+            total_issues = 0
+            files_analyzed = 0
+
+            for idx, (file_path, language) in enumerate(files_to_analyze, 1):
+                try:
+                    # Read file
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        code = f.read()
+
+                    # Skip empty files
+                    if not code.strip():
+                        continue
+
+                    relative_path = str(file_path.relative_to(repo_path))
+
+                    # Analyze file
+                    result = analyzer_service.analyze_code(
+                        code=code,
+                        language=language,
+                        file_path=relative_path
+                    )
+
+                    if result.get('success') and result.get('issues'):
+                        total_issues += len(result['issues'])
+
+                    files_analyzed += 1
+
+                    # Update progress every 10 files
+                    if idx % 10 == 0:
+                        self.update_state(state='PROGRESS', meta={
+                            'status': f'Analyzing files... ({idx}/{total_files})',
+                            'total': total_files,
+                            'current': idx,
+                            'issues_found': total_issues
+                        })
+
+                except Exception as e:
+                    # Log error but continue with other files
+                    print(f"Error analyzing {file_path}: {e}")
+                    continue
+
+            return {
+                'success': True,
+                'repository_id': repository_id,
+                'repository_name': repository.name,
+                'files_analyzed': files_analyzed,
+                'total_files': total_files,
+                'issues_found': total_issues,
+                'message': f'Analyzed {files_analyzed} files, found {total_issues} issues'
+            }
+
+    except Exception as e:
+        self.update_state(state='FAILURE', meta={'error': str(e)})
+        return {
+            'success': False,
+            'error': str(e),
+            'repository_id': repository_id
+        }
