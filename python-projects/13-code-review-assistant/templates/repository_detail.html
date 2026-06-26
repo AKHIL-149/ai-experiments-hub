@@ -21,16 +21,16 @@
         </div>
         <div class="header-actions">
             <button class="btn btn-primary" onclick="analyzeRepository()" id="analyzeBtn">
-                🔍 Analyze Repository
+                Analyze Repository
             </button>
             <button class="btn btn-secondary" onclick="syncRepository()" id="syncBtn">
-                🔄 Sync Repository
+                Sync Repository
             </button>
             <button class="btn btn-secondary" onclick="importPullRequests()">
-                ⬇️ Import Pull Requests
+                Import Pull Requests
             </button>
             <button class="btn btn-secondary" onclick="showSettingsModal()">
-                ⚙️ Settings
+                Settings
             </button>
         </div>
     </div>
@@ -39,7 +39,7 @@
     {% if repository.status == 'pending' %}
     <div class="alert alert-info" id="statusAlert">
         <div class="alert-content">
-            <div class="alert-icon">⏳</div>
+            <div class="alert-icon info-icon"></div>
             <div class="alert-message">
                 <strong>Repository is being cloned...</strong>
                 <p>Your repository is currently being cloned from GitHub. This page will automatically refresh when cloning is complete. You can also manually refresh to check the status.</p>
@@ -49,7 +49,7 @@
     {% elif repository.status == 'cloning' %}
     <div class="alert alert-info" id="statusAlert">
         <div class="alert-content">
-            <div class="alert-icon">⏳</div>
+            <div class="alert-icon info-icon"></div>
             <div class="alert-message">
                 <strong>Cloning in progress...</strong>
                 <p>Repository is being cloned from GitHub. This may take a few moments. The page will refresh automatically when complete.</p>
@@ -59,7 +59,7 @@
     {% elif repository.status == 'error' %}
     <div class="alert alert-danger" id="statusAlert">
         <div class="alert-content">
-            <div class="alert-icon">❌</div>
+            <div class="alert-icon error-icon"></div>
             <div class="alert-message">
                 <strong>Repository clone failed</strong>
                 <p>There was an error cloning the repository. Please check your GitHub URL and token, then try syncing again.</p>
@@ -71,7 +71,7 @@
     <!-- Repository Info Card -->
     <div class="card">
         <div class="card-header">
-            <h2>📁 Repository Information</h2>
+            <h2>Repository Information</h2>
         </div>
         <div class="card-body">
             <div class="info-grid">
@@ -90,13 +90,13 @@
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span class="badge badge-{{ repository.status }}">{{ repository.status }}</span>
                         {% if repository.status == 'pending' %}
-                        <span class="status-help" title="Repository is being cloned from GitHub">⏳ Cloning...</span>
+                        <span class="status-help" title="Repository is being cloned from GitHub">Cloning...</span>
                         {% elif repository.status == 'cloning' %}
-                        <span class="status-help" title="Repository clone in progress">⏳ In Progress</span>
+                        <span class="status-help" title="Repository clone in progress">In Progress</span>
                         {% elif repository.status == 'ready' %}
-                        <span class="status-help" title="Repository is ready for analysis">✅ Ready</span>
+                        <span class="status-help status-ready" title="Repository is ready for analysis">Ready</span>
                         {% elif repository.status == 'error' %}
-                        <span class="status-help" title="Clone failed - check settings">❌ Failed</span>
+                        <span class="status-help status-error" title="Clone failed - check settings">Failed</span>
                         {% endif %}
                     </div>
                 </div>
@@ -119,28 +119,28 @@
     <!-- Statistics -->
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-icon">🔀</div>
+            <div class="stat-icon stat-pr"></div>
             <div class="stat-info">
                 <div class="stat-value" id="prCount">{{ stats.pull_requests_count or 0 }}</div>
                 <div class="stat-label">Pull Requests</div>
             </div>
         </div>
         <div class="stat-card">
-            <div class="stat-icon">⚠️</div>
+            <div class="stat-icon stat-issues"></div>
             <div class="stat-info">
                 <div class="stat-value" id="issuesCount">{{ stats.total_issues or 0 }}</div>
                 <div class="stat-label">Issues Found</div>
             </div>
         </div>
         <div class="stat-card">
-            <div class="stat-icon">✅</div>
+            <div class="stat-icon stat-reviews"></div>
             <div class="stat-info">
                 <div class="stat-value" id="reviewsCount">{{ stats.reviews_count or 0 }}</div>
                 <div class="stat-label">Reviews</div>
             </div>
         </div>
         <div class="stat-card">
-            <div class="stat-icon">📊</div>
+            <div class="stat-icon stat-health"></div>
             <div class="stat-info">
                 <div class="stat-value" id="healthScore">{{ stats.health_score or '-' }}</div>
                 <div class="stat-label">Health Score</div>
@@ -151,10 +151,10 @@
     <!-- Pull Requests -->
     <div class="card">
         <div class="card-header">
-            <h2>🔀 Recent Pull Requests</h2>
+            <h2> Recent Pull Requests</h2>
             <div class="header-actions">
                 <button class="btn btn-sm btn-primary" onclick="importPullRequests()">
-                    ⬇️ Import PRs
+                    Import PRs
                 </button>
             </div>
         </div>
@@ -167,7 +167,7 @@
                 <div id="pullRequestsList" style="display: none;"></div>
                 <div id="prEmptyState" style="display: none;">
                     <div class="empty-state">
-                        <div class="empty-icon">🔀</div>
+                        <div class="empty-icon"></div>
                         <h3>No pull requests</h3>
                         <p>Import pull requests from GitHub to start code review</p>
                         <button class="btn btn-primary" onclick="importPullRequests()">Import Pull Requests</button>
@@ -180,7 +180,7 @@
     <!-- Recent Issues -->
     <div class="card">
         <div class="card-header">
-            <h2>⚠️ Recent Issues</h2>
+            <h2>Recent Issues</h2>
             <a href="/issues?repository={{ repository.id }}" class="btn btn-sm btn-secondary">View All</a>
         </div>
         <div class="card-body">
@@ -192,7 +192,7 @@
                 <div id="issuesList" style="display: none;"></div>
                 <div id="issuesEmptyState" style="display: none;">
                     <div class="empty-state">
-                        <div class="empty-icon">✅</div>
+                        <div class="empty-icon"></div>
                         <h3>No issues found</h3>
                         <p>No code issues have been detected yet</p>
                     </div>
@@ -204,7 +204,7 @@
     <!-- Danger Zone -->
     <div class="card danger-card">
         <div class="card-header">
-            <h2>⚠️ Danger Zone</h2>
+            <h2>Danger Zone</h2>
         </div>
         <div class="card-body">
             <div class="danger-section">
@@ -213,7 +213,7 @@
                     <p>Once you delete a repository, there is no going back. This will remove all associated pull requests, reviews, and issues.</p>
                 </div>
                 <button class="btn btn-danger" onclick="deleteRepository()">
-                    🗑️ Delete Repository
+                    Delete Repository
                 </button>
             </div>
         </div>
@@ -224,7 +224,7 @@
 <div id="settingsModal" class="modal" style="display: none;">
     <div class="modal-content">
         <div class="modal-header">
-            <h2>⚙️ Repository Settings</h2>
+            <h2>Repository Settings</h2>
             <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
         </div>
         <div class="modal-body">
@@ -474,6 +474,75 @@ const REPO_ID = '{{ repository.id }}';
     color: #24292e;
 }
 
+.status-ready {
+    color: #28a745;
+    font-weight: 500;
+}
+
+.status-error {
+    color: #d73a49;
+    font-weight: 500;
+}
+
+/* Professional Icons using CSS */
+.info-icon::before,
+.error-icon::before,
+.stat-pr::before,
+.stat-issues::before,
+.stat-reviews::before,
+.stat-health::before {
+    font-weight: bold;
+    font-size: 18px;
+    display: inline-block;
+}
+
+.info-icon::before {
+    content: 'i';
+    background: #2196f3;
+    color: white;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-style: italic;
+    font-family: serif;
+}
+
+.error-icon::before {
+    content: '!';
+    background: #f44336;
+    color: white;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: serif;
+}
+
+.stat-pr::before {
+    content: 'PR';
+    color: #0366d6;
+}
+
+.stat-issues::before {
+    content: '!';
+    color: #e36209;
+}
+
+.stat-reviews::before {
+    content: '✓';
+    color: #28a745;
+}
+
+.stat-health::before {
+    content: '%';
+    color: #6f42c1;
+}
+
 @media (max-width: 768px) {
     .header-actions {
         width: 100%;
@@ -513,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function() {
 async function syncRepository() {
     const btn = document.getElementById('syncBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ Syncing...';
+    btn.textContent = 'Syncing...';
 
     try {
         const response = await fetch(`/api/repositories/${REPO_ID}/sync`, {
@@ -531,7 +600,7 @@ async function syncRepository() {
         showError('Sync failed: ' + error.message);
     } finally {
         btn.disabled = false;
-        btn.textContent = '🔄 Sync Repository';
+        btn.textContent = 'Sync Repository';
     }
 }
 
@@ -610,7 +679,7 @@ async function analyzeRepository() {
     const analyzeBtn = document.getElementById('analyzeBtn');
     const originalText = analyzeBtn.textContent;
     analyzeBtn.disabled = true;
-    analyzeBtn.textContent = '⏳ Analyzing...';
+    analyzeBtn.textContent = 'Analyzing...';
 
     try {
         const response = await fetch(`/api/repositories/${REPO_ID}/analyze`, {
@@ -622,11 +691,11 @@ async function analyzeRepository() {
         const result = await response.json();
 
         if (response.ok && result.success) {
-            alert(`✅ Analysis started successfully!\n\nJob ID: ${result.job_id}\n\nAnalyzing ${result.file_count || 'all'} files. You can view results in the Issues tab.`);
+            alert(` Analysis started successfully!\n\nJob ID: ${result.job_id}\n\nAnalyzing ${result.file_count || 'all'} files. You can view results in the Issues tab.`);
             // Refresh the page to show updated stats
             window.location.reload();
         } else {
-            alert('❌ Failed to start analysis: ' + (result.detail || result.error || 'Unknown error'));
+            alert('Failed to start analysis: ' + (result.detail || result.error || 'Unknown error'));
             analyzeBtn.disabled = false;
             analyzeBtn.textContent = originalText;
         }
