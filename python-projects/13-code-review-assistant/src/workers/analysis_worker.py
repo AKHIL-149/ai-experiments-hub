@@ -173,7 +173,7 @@ def analyze_repository_task(
             self.update_state(state='PROGRESS', meta={'status': 'Discovering files...'})
 
             # Initialize services
-            analyzer_service = CodeAnalyzerService(session)
+            analyzer_service = CodeAnalyzerService()
             parser_registry = ParserRegistry()
 
             repo_path = Path(repository.clone_path)
@@ -233,13 +233,19 @@ def analyze_repository_task(
 
                     # Analyze file
                     result = analyzer_service.analyze_code(
-                        code=code,
-                        language=language,
+                        source_code=code,
                         file_path=relative_path
                     )
 
-                    if result.get('success') and result.get('issues'):
-                        total_issues += len(result['issues'])
+                    # Fix: issues are in result['report']['issues'], not result['issues']
+                    if result.get('success'):
+                        report = result.get('report', {})
+                        issues = report.get('issues', [])
+                        if issues:
+                            total_issues += len(issues)
+                            print(f"Found {len(issues)} issues in {relative_path}:")
+                            for issue in issues[:3]:  # Print first 3 issues
+                                print(f"  [{issue.get('severity')}] {issue.get('title')}")
 
                     files_analyzed += 1
 
