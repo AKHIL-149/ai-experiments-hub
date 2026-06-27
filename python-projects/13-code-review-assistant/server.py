@@ -3850,6 +3850,7 @@ async def list_issues(
     category: Optional[str] = None,
     file_path: Optional[str] = None,
     job_id: Optional[str] = None,
+    repository: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     user = Depends(get_current_user)
@@ -3862,12 +3863,71 @@ async def list_issues(
     - category: Filter by category (security, smell, complexity)
     - file_path: Filter by file path (partial match)
     - job_id: Filter by analysis job ID
+    - repository: Filter by repository ID
     - limit: Maximum number of issues to return (default 50)
     - offset: Number of issues to skip (default 0)
     """
     all_issues = []
 
-    # Get all cached analyses
+    # If repository filter is provided, get issues from database
+    if repository:
+        with db_manager.get_session() as db:
+            from src.core.database import Issue, CodeFile
+
+            # Query issues for this repository
+            query = db.query(Issue).join(CodeFile).filter(CodeFile.repository_id == repository)
+
+            # Apply filters
+            if severity:
+                query = query.filter(Issue.severity == severity.lower())
+            if category:
+                query = query.filter(Issue.category == category.lower())
+            if file_path:
+                query = query.filter(CodeFile.file_path.contains(file_path))
+
+            # Get total count before pagination
+            total = query.count()
+
+            # Apply pagination and fetch
+            issues_db = query.order_by(
+                Issue.severity.desc(),
+                Issue.created_at.desc()
+            ).limit(limit).offset(offset).all()
+
+            # Convert to dict
+            all_issues = [
+                {
+                    'id': issue.id,
+                    'title': issue.title,
+                    'description': issue.description,
+                    'severity': issue.severity.value,
+                    'category': issue.category.value,
+                    'rule_id': issue.rule_id,
+                    'file_path': issue.code_file.file_path,
+                    'line_number': issue.line_number,
+                    'column_number': issue.column_number,
+                    'code_snippet': issue.code_snippet,
+                    'confidence': issue.confidence,
+                    'created_at': issue.created_at.isoformat() if issue.created_at else None
+                }
+                for issue in issues_db
+            ]
+
+            return {
+                "success": True,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "issues": all_issues,
+                "filters": {
+                    "severity": severity,
+                    "category": category,
+                    "file_path": file_path,
+                    "repository": repository
+                }
+            }
+
+    # Otherwise, get from cached analyses (legacy behavior)
     analyses = get_all_cached_analyses()
 
     # Collect issues from all analyses
