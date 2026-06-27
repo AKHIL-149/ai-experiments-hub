@@ -3995,10 +3995,38 @@ async def get_issue(
     """
     Get detailed information about a specific issue.
 
-    Note: This implementation uses in-memory cache.
-    Issue IDs are synthetic based on position in results.
+    Supports both database UUIDs and legacy synthetic IDs.
     """
-    # Since we're using in-memory cache, find issue across all analyses
+    # Try to find in database first (repository analysis issues)
+    with db_manager.get_session() as db:
+        from src.core.database import Issue, CodeFile
+
+        issue = db.query(Issue).filter(Issue.id == issue_id).first()
+
+        if issue:
+            return {
+                "success": True,
+                "issue": {
+                    "id": issue.id,
+                    "title": issue.title,
+                    "description": issue.description,
+                    "severity": issue.severity.value,
+                    "category": issue.category.value,
+                    "rule_id": issue.rule_id,
+                    "file_path": issue.code_file.file_path,
+                    "line_number": issue.line_number,
+                    "column_number": issue.column_number,
+                    "code_snippet": issue.code_snippet,
+                    "confidence": issue.confidence,
+                    "ai_explanation": issue.ai_explanation,
+                    "fix_suggestion": issue.fix_suggestion,
+                    "created_at": issue.created_at.isoformat() if issue.created_at else None,
+                    "repository_id": issue.code_file.repository_id,
+                    "repository_name": issue.code_file.repository.name if issue.code_file.repository else None
+                }
+            }
+
+    # Fallback to in-memory cache for legacy file upload issues
     analyses = get_all_cached_analyses()
 
     for analysis in analyses:
