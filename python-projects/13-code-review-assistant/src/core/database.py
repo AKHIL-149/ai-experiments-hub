@@ -168,6 +168,7 @@ class Repository(Base):
     # Relationships
     user = relationship('User', back_populates='repositories')
     pull_requests = relationship('PullRequest', back_populates='repository', cascade='all, delete-orphan')
+    code_files = relationship('CodeFile', back_populates='repository', cascade='all, delete-orphan')
 
     def to_dict(self) -> Dict:
         """Convert repository to dictionary."""
@@ -262,11 +263,12 @@ class PullRequest(Base):
 
 
 class CodeFile(Base):
-    """Code files analyzed in pull requests."""
+    """Code files analyzed in pull requests or repositories."""
     __tablename__ = 'code_files'
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    pull_request_id = Column(String(36), ForeignKey('pull_requests.id'), nullable=False, index=True)
+    pull_request_id = Column(String(36), ForeignKey('pull_requests.id'), nullable=True, index=True)  # Nullable for repository analysis
+    repository_id = Column(String(36), ForeignKey('repositories.id'), nullable=True, index=True)  # For repository-level analysis
     file_path = Column(String(1000), nullable=False)
     file_hash = Column(String(64), index=True)  # SHA256 hash of content - indexed for deduplication
     language = Column(String(50), index=True)  # Indexed for language-specific queries
@@ -277,11 +279,13 @@ class CodeFile(Base):
     # Composite indexes for common query patterns
     __table_args__ = (
         Index('idx_file_pr_language', 'pull_request_id', 'language'),
+        Index('idx_file_repo_language', 'repository_id', 'language'),
         Index('idx_file_hash_language', 'file_hash', 'language'),
     )
 
     # Relationships
     pull_request = relationship('PullRequest', back_populates='code_files')
+    repository = relationship('Repository', back_populates='code_files')
     issues = relationship('Issue', back_populates='code_file', cascade='all, delete-orphan')
     refactorings = relationship('Refactoring', back_populates='code_file', cascade='all, delete-orphan')
 
@@ -290,6 +294,7 @@ class CodeFile(Base):
         return {
             'id': self.id,
             'pull_request_id': self.pull_request_id,
+            'repository_id': self.repository_id,
             'file_path': self.file_path,
             'file_hash': self.file_hash,
             'language': self.language,

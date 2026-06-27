@@ -237,15 +237,51 @@ def analyze_repository_task(
                         file_path=relative_path
                     )
 
-                    # Fix: issues are in result['report']['issues'], not result['issues']
+                    # Save results to database
                     if result.get('success'):
+                        from src.core.database import CodeFile, Issue, IssueCategory, IssueSeverity
+                        from datetime import datetime
+                        import hashlib
+
                         report = result.get('report', {})
-                        issues = report.get('issues', [])
-                        if issues:
-                            total_issues += len(issues)
-                            print(f"Found {len(issues)} issues in {relative_path}:")
-                            for issue in issues[:3]:  # Print first 3 issues
-                                print(f"  [{issue.get('severity')}] {issue.get('title')}")
+                        issues_data = report.get('issues', [])
+
+                        # Create or update CodeFile record
+                        file_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()
+                        stats = report.get('stats', {})
+
+                        code_file = CodeFile(
+                            repository_id=repository_id,
+                            file_path=relative_path,
+                            file_hash=file_hash,
+                            language=language,
+                            lines_of_code=stats.get('code_lines', len(code.splitlines())),
+                            last_analyzed_at=datetime.utcnow()
+                        )
+                        session.add(code_file)
+                        session.flush()  # Get the code_file.id
+
+                        # Create Issue records
+                        for issue_data in issues_data:
+                            issue = Issue(
+                                code_file_id=code_file.id,
+                                category=IssueCategory(issue_data['category']),
+                                severity=IssueSeverity(issue_data['severity']),
+                                rule_id=issue_data['rule_id'],
+                                title=issue_data['title'],
+                                description=issue_data['description'],
+                                line_number=issue_data.get('line_number'),
+                                column_number=issue_data.get('column_number'),
+                                code_snippet=issue_data.get('code_snippet'),
+                                confidence=issue_data.get('confidence', 1.0)
+                            )
+                            session.add(issue)
+                            total_issues += 1
+
+                        session.commit()
+
+                        if issues_data:
+                            print(f"Saved {len(issues_data)} issues for {relative_path}")
 
                     files_analyzed += 1
 
