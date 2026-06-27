@@ -570,6 +570,55 @@ class GitHubService:
         except Exception as e:
             return False, f"Failed to create review: {str(e)}"
 
+    def create_issue(
+        self,
+        repo_url: str,
+        title: str,
+        body: str,
+        labels: Optional[List[str]] = None
+    ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Create an issue in a GitHub repository.
+
+        Args:
+            repo_url: GitHub repository URL
+            title: Issue title
+            body: Issue description
+            labels: Optional list of label names
+
+        Returns:
+            Tuple of (success, issue_dict, error_message)
+        """
+        try:
+            # Get repository
+            success, repo, error = self.get_repository(repo_url)
+            if not success:
+                return False, None, error
+
+            # Create issue
+            if labels:
+                issue = repo.create_issue(title=title, body=body, labels=labels)
+            else:
+                issue = repo.create_issue(title=title, body=body)
+
+            # Return issue info
+            issue_info = {
+                'number': issue.number,
+                'title': issue.title,
+                'body': issue.body,
+                'state': issue.state,
+                'html_url': issue.html_url,
+                'created_at': issue.created_at.isoformat(),
+                'github_id': issue.id
+            }
+
+            return True, issue_info, None
+
+        except GithubException as e:
+            return False, None, f"Failed to create issue: {e.data.get('message', str(e))}"
+        except Exception as e:
+            return False, None, f"Error: {str(e)}"
+
     def close(self):
         """Close the GitHub client connection."""
         if hasattr(self, 'client'):

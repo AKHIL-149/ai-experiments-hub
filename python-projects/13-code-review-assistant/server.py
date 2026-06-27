@@ -4048,6 +4048,143 @@ async def get_issue(
     raise HTTPException(status_code=404, detail="Issue not found")
 
 
+@app.post("/api/issues/{issue_id}/create-github-issue")
+async def create_github_issue_from_code_issue(
+    issue_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Create a GitHub issue from a code analysis issue.
+
+    Args:
+        issue_id: The code analysis issue ID
+
+    Returns:
+        GitHub issue information
+    """
+    try:
+        # Get the issue from database
+        with db_manager.get_session() as db:
+            from src.core.database import Issue, CodeFile, Repository
+
+            issue = db.query(Issue).filter(Issue.id == issue_id).first()
+
+            if not issue:
+                raise HTTPException(status_code=404, detail="Issue not found")
+
+            # Get repository information
+            repository = issue.code_file.repository if issue.code_file else None
+
+            if not repository:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Issue is not associated with a repository. Cannot create GitHub issue."
+                )
+
+            if not repository.github_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Repository does not have a GitHub URL configured."
+                )
+
+            # Format issue body for GitHub
+            severity_emoji = {
+                'info': 'ℹ️',
+                'warning': '⚠️',
+                'error': '❌',
+                'critical': '🚨'
+            }
+
+            category_emoji = {
+                'security': '🔒',
+                'smell': '👃',
+                'complexity': '🧩',
+                'performance': '⚡',
+                'best_practice': '✅'
+            }
+
+            emoji_severity = severity_emoji.get(issue.severity.value, '')
+            emoji_category = category_emoji.get(issue.category.value, '')
+
+            issue_body = f"""## {emoji_severity} Code Issue Detected by AI Code Review Assistant
+
+**Severity:** {issue.severity.value.upper()}
+**Category:** {emoji_category} {issue.category.value.title()}
+**Rule:** `{issue.rule_id}`
+
+### Description
+{issue.description}
+
+### Location
+- **File:** `{issue.code_file.file_path}`
+- **Line:** {issue.line_number or 'N/A'}
+{f"- **Column:** {issue.column_number}" if issue.column_number else ""}
+
+### Code Snippet
+```{issue.code_file.language or 'text'}
+{issue.code_snippet or 'N/A'}
+```
+
+### Confidence
+{issue.confidence * 100:.0f}%
+
+{f"### AI Explanation\\n{issue.ai_explanation}\\n" if issue.ai_explanation else ""}
+
+{f"### Suggested Fix\\n{issue.fix_suggestion}\\n" if issue.fix_suggestion else ""}
+
+---
+*This issue was automatically detected and reported by [AI Code Review Assistant](https://github.com/AKHIL-149/ai-experiments-hub)*
+"""
+
+            # Create GitHub issue using GitHubService
+            from src.services.github_service import GitHubService
+
+            # Get GitHub token from environment or repository settings
+            github_token = os.getenv('GITHUB_TOKEN')
+            if not github_token:
+                raise HTTPException(
+                    status_code=500,
+                    detail="GitHub token not configured. Set GITHUB_TOKEN environment variable."
+                )
+
+            github_service = GitHubService(github_token=github_token)
+
+            # Create the issue
+            issue_title = f"[{issue.severity.value.upper()}] {issue.title}"
+
+            # Determine labels based on category and severity
+            labels = [issue.category.value, issue.severity.value]
+
+            success, github_issue, error = github_service.create_issue(
+                repo_url=repository.github_url,
+                title=issue_title,
+                body=issue_body,
+                labels=labels
+            )
+
+            if not success:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create GitHub issue: {error}"
+                )
+
+            return {
+                "success": True,
+                "message": "GitHub issue created successfully",
+                "github_issue": github_issue,
+                "code_issue_id": issue_id
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating GitHub issue: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error: {str(e)}"
+        )
+
+
 @app.get("/api/issues/summary/stats")
 async def get_issues_stats(
     user = Depends(get_current_user)
