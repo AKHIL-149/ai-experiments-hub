@@ -3869,25 +3869,30 @@ async def list_issues(
     """
     all_issues = []
 
-    # If repository filter is provided, get issues from database
-    if repository:
-        with db_manager.get_session() as db:
-            from src.core.database import Issue, CodeFile
+    # Try to get issues from database first (supports both repository-specific and all issues)
+    with db_manager.get_session() as db:
+        from src.core.database import Issue, CodeFile
 
-            # Query issues for this repository
-            query = db.query(Issue).join(CodeFile).filter(CodeFile.repository_id == repository)
+        # Build query
+        query = db.query(Issue).join(CodeFile)
 
-            # Apply filters
-            if severity:
-                query = query.filter(Issue.severity == severity.lower())
-            if category:
-                query = query.filter(Issue.category == category.lower())
-            if file_path:
-                query = query.filter(CodeFile.file_path.contains(file_path))
+        # Apply repository filter if provided
+        if repository:
+            query = query.filter(CodeFile.repository_id == repository)
 
-            # Get total count before pagination
-            total = query.count()
+        # Apply other filters
+        if severity:
+            query = query.filter(Issue.severity == severity.lower())
+        if category:
+            query = query.filter(Issue.category == category.lower())
+        if file_path:
+            query = query.filter(CodeFile.file_path.contains(file_path))
 
+        # Get total count before pagination
+        total = query.count()
+
+        # If there are database issues, return them
+        if total > 0:
             # Apply pagination and fetch
             issues_db = query.order_by(
                 Issue.severity.desc(),
@@ -3927,7 +3932,7 @@ async def list_issues(
                 }
             }
 
-    # Otherwise, get from cached analyses (legacy behavior)
+    # Fallback to cached analyses if no database issues (legacy behavior for file uploads)
     analyses = get_all_cached_analyses()
 
     # Collect issues from all analyses
