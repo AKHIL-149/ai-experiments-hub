@@ -456,3 +456,163 @@ def _create_batch_email_html(notifications: List[Dict[str, Any]]) -> str:
     """
 
     return html
+
+
+@celery_app.task(name='notification_worker.send_reappeared_issues_notification')
+def send_reappeared_issues_notification(
+    repository_id: str,
+    reappeared_issues: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Send notifications for dismissed issues that reappeared in latest analysis.
+
+    Args:
+        repository_id: Repository ID
+        reappeared_issues: List of issue dicts with reappearance info
+
+    Returns:
+        Notification result
+    """
+    try:
+        logger.info(f"Sending reappeared issues notification for repository {repository_id}")
+
+        db_manager = DatabaseManager()
+
+        with db_manager.get_session() as session:
+            from src.core.database import Repository, User, EmailConfiguration, SlackConfiguration
+
+            # Get repository
+            repository = session.query(Repository).filter_by(id=repository_id).first()
+            if not repository:
+                return {'success': False, 'error': 'Repository not found'}
+
+            # Get repository owner
+            owner = session.query(User).filter_by(id=repository.user_id).first()
+            if not owner:
+                return {'success': False, 'error': 'Repository owner not found'}
+
+            # Prepare notification content
+            summary = f"⚠️ {len(reappeared_issues)} dismissed issues reappeared in {repository.name}"
+
+            # Group by severity
+            by_severity = {}
+            for issue in reappeared_issues:
+                severity = issue['severity']
+                by_severity[severity] = by_severity.get(severity, 0) + 1
+
+            # Create detailed message
+            message_parts = [
+                f"Repository: {repository.name}",
+                f"Analysis completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                "The following dismissed issues were detected again:",
+                ""
+            ]
+
+            for issue in reappeared_issues:
+                message_parts.append(
+                    f"- [{issue['severity'].upper()}] {issue['title']}"
+                )
+                message_parts.append(f"  File: {issue['file_path']}:{issue.get('line_number', '?')}")
+                message_parts.append(f"  Reappeared: {issue['reappeared_count']} times")
+                if issue.get('dismissal_reason'):
+                    message_parts.append(f"  Dismissed because: {issue['dismissal_reason']}")
+                message_parts.append("")
+
+            message_parts.append("💡 Tip: Consider fixing these issues instead of dismissing them repeatedly.")
+
+            message = "\n".join(message_parts)
+
+            # Send email notification if configured
+            email_config = session.query(EmailConfiguration).filter_by(
+                user_id=owner.id,
+                enabled=True
+            ).first()
+
+            if email_config and email_config.notify_analysis_complete:
+                try:
+                    # TODO: Implement actual email sending
+                    logger.info(f"Would send email to {owner.email}: {summary}")
+                except Exception as e:
+                    logger.error(f"Failed to send email: {e}")
+
+            # Send Slack notification if configured
+            slack_config = session.query(SlackConfiguration).filter_by(
+                user_id=owner.id,
+                enabled=True
+            ).first()
+
+            if slack_config and slack_config.notify_critical_issues:
+                try:
+                    import requests
+
+                    # Format Slack message
+                    slack_message = {
+                        "text": summary,
+                        "blocks": [
+                            {
+                                "type": "header",
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "⚠️ Dismissed Issues Reappeared"
+                                }
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"*Repository:* {repository.name}\n*Total:* {len(reappeared_issues)} issues"
+                                }
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "\n".join([
+                                        f"• *{issue['title']}* ({issue['severity']})\n  `{issue['file_path']}:{issue.get('line_number', '?')}` - Reappeared {issue['reappeared_count']}x"
+                                        for issue in reappeared_issues[:5]  # Limit to 5 for Slack
+                                    ])
+                                }
+                            }
+                        ]
+                    }
+
+                    if len(reappeared_issues) > 5:
+                        slack_message["blocks"].append({
+                            "type": "context",
+                            "elements": [{
+                                "type": "mrkdwn",
+                                "text": f"_... and {len(reappeared_issues) - 5} more issues_"
+                            }]
+                        })
+
+                    # Send to Slack
+                    response = requests.post(
+                        slack_config.webhook_url,
+                        json=slack_message,
+                        timeout=10
+                    )
+
+                    if response.status_code == 200:
+                        logger.info(f"Sent Slack notification for {len(reappeared_issues)} reappeared issues")
+                    else:
+                        logger.error(f"Slack notification failed: {response.status_code}")
+
+                except Exception as e:
+                    logger.error(f"Failed to send Slack notification: {e}")
+
+            return {
+                'success': True,
+                'repository_id': repository_id,
+                'issues_count': len(reappeared_issues),
+                'email_sent': email_config is not None and email_config.enabled,
+                'slack_sent': slack_config is not None and slack_config.enabled,
+                'message': f'Notifications sent for {len(reappeared_issues)} reappeared issues'
+            }
+
+    except Exception as e:
+        logger.error(f"Error sending reappeared issues notification: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }

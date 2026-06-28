@@ -368,6 +368,22 @@ class Issue(Base):
     fix_confidence = Column(Float)  # Confidence in the fix (0.0 to 1.0)
     can_auto_apply = Column(Boolean, default=False)  # Whether fix can be auto-applied
 
+    # Issue fingerprinting and tracking
+    fingerprint = Column(String(64), index=True)  # SHA256 hash for deduplication
+    last_seen_at = Column(DateTime, nullable=True)  # Last time this issue was detected
+    resolved = Column(Boolean, default=False, index=True)  # True if not seen in latest analysis
+    resolved_at = Column(DateTime, nullable=True)  # When it was marked as resolved
+
+    # Dismissal tracking
+    dismissed = Column(Boolean, default=False, index=True)
+    dismissed_at = Column(DateTime, nullable=True)
+    dismissed_by = Column(String(36), ForeignKey('users.id'), nullable=True)
+    dismissal_reason = Column(Text, nullable=True)
+
+    # Reappearance tracking (for dismissed issues that keep showing up)
+    reappeared_count = Column(Integer, default=0)  # How many times dismissed issue reappeared
+    last_reappeared_at = Column(DateTime, nullable=True)  # Last time it reappeared after dismissal
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Composite indexes for common query patterns
@@ -375,6 +391,7 @@ class Issue(Base):
         Index('idx_issue_category_severity', 'category', 'severity'),
         Index('idx_issue_file_severity', 'code_file_id', 'severity'),
         Index('idx_issue_created_severity', 'created_at', 'severity'),
+        Index('idx_issue_fingerprint_file', 'fingerprint', 'code_file_id'),
     )
 
     # Relationships
@@ -395,6 +412,16 @@ class Issue(Base):
             'column_number': self.column_number,
             'code_snippet': self.code_snippet,
             'confidence': self.confidence,
+            'fingerprint': self.fingerprint,
+            'last_seen_at': self.last_seen_at.isoformat() if self.last_seen_at else None,
+            'resolved': self.resolved,
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
+            'dismissed': self.dismissed,
+            'dismissed_at': self.dismissed_at.isoformat() if self.dismissed_at else None,
+            'dismissed_by': self.dismissed_by,
+            'dismissal_reason': self.dismissal_reason,
+            'reappeared_count': self.reappeared_count,
+            'last_reappeared_at': self.last_reappeared_at.isoformat() if self.last_reappeared_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 

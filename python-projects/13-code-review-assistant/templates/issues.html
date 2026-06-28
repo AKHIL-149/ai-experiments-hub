@@ -380,7 +380,10 @@ function renderIssuesTable(issues) {
     `).join('');
 }
 
+let currentViewingIssueId = null;
+
 async function viewIssueDetail(issueId) {
+    currentViewingIssueId = issueId;
     try {
         const response = await fetch(`/api/issues/${issueId}`);
         const data = await response.json();
@@ -457,9 +460,42 @@ function closeModal() {
     document.getElementById('issueModal').style.display = 'none';
 }
 
-function dismissIssue() {
-    // TODO: Implement issue dismissal
-    alert('Dismiss functionality coming soon!');
+async function dismissIssue() {
+    if (!currentViewingIssueId) {
+        alert('No issue selected');
+        return;
+    }
+
+    const reason = prompt('Enter dismissal reason (optional):');
+
+    // User cancelled the prompt
+    if (reason === null) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/issues/${currentViewingIssueId}/dismiss`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ reason: reason || null })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            alert('Issue dismissed successfully');
+            closeModal();
+            refreshIssues();
+        } else {
+            alert('Failed to dismiss issue: ' + (data.detail || data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error dismissing issue:', error);
+        alert('Error dismissing issue: ' + error.message);
+    }
 }
 
 function previousPage() {

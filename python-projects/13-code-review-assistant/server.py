@@ -4185,6 +4185,114 @@ async def create_github_issue_from_code_issue(
         )
 
 
+@app.post("/api/issues/{issue_id}/dismiss")
+async def dismiss_issue(
+    issue_id: str,
+    reason: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """
+    Dismiss an issue as false positive or not relevant.
+
+    Args:
+        issue_id: The issue ID to dismiss
+        reason: Optional reason for dismissal
+
+    Returns:
+        Success status and updated issue information
+    """
+    try:
+        with db_manager.get_session() as db:
+            from src.core.database import Issue
+            from datetime import datetime
+
+            # Get the issue
+            issue = db.query(Issue).filter(Issue.id == issue_id).first()
+
+            if not issue:
+                raise HTTPException(status_code=404, detail="Issue not found")
+
+            # Mark as dismissed
+            issue.dismissed = True
+            issue.dismissed_at = datetime.utcnow()
+            issue.dismissed_by = user.id
+            issue.dismissal_reason = reason
+
+            db.commit()
+
+            return {
+                "success": True,
+                "message": "Issue dismissed successfully",
+                "issue": {
+                    "id": issue.id,
+                    "dismissed": issue.dismissed,
+                    "dismissed_at": issue.dismissed_at.isoformat(),
+                    "dismissed_by": user.username,
+                    "dismissal_reason": issue.dismissal_reason
+                }
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error dismissing issue: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to dismiss issue: {str(e)}"
+        )
+
+
+@app.post("/api/issues/{issue_id}/restore")
+async def restore_issue(
+    issue_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Restore a dismissed issue.
+
+    Args:
+        issue_id: The issue ID to restore
+
+    Returns:
+        Success status and updated issue information
+    """
+    try:
+        with db_manager.get_session() as db:
+            from src.core.database import Issue
+
+            # Get the issue
+            issue = db.query(Issue).filter(Issue.id == issue_id).first()
+
+            if not issue:
+                raise HTTPException(status_code=404, detail="Issue not found")
+
+            # Restore the issue
+            issue.dismissed = False
+            issue.dismissed_at = None
+            issue.dismissed_by = None
+            issue.dismissal_reason = None
+
+            db.commit()
+
+            return {
+                "success": True,
+                "message": "Issue restored successfully",
+                "issue": {
+                    "id": issue.id,
+                    "dismissed": issue.dismissed
+                }
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error restoring issue: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to restore issue: {str(e)}"
+        )
+
+
 @app.get("/api/issues/summary/stats")
 async def get_issues_stats(
     user = Depends(get_current_user)

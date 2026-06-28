@@ -218,6 +218,8 @@ def analyze_repository_task(
 
             total_issues = 0
             files_analyzed = 0
+            seen_fingerprints = set()  # Track fingerprints seen in this analysis
+            reappeared_issues = []  # Track dismissed issues that reappeared
 
             for idx, (file_path, language) in enumerate(files_to_analyze, 1):
                 try:
@@ -261,22 +263,68 @@ def analyze_repository_task(
                         session.add(code_file)
                         session.flush()  # Get the code_file.id
 
-                        # Create Issue records
+                        # Create Issue records with deduplication
                         for issue_data in issues_data:
-                            issue = Issue(
-                                code_file_id=code_file.id,
-                                category=IssueCategory(issue_data['category']),
-                                severity=IssueSeverity(issue_data['severity']),
-                                rule_id=issue_data['rule_id'],
-                                title=issue_data['title'],
-                                description=issue_data['description'],
-                                line_number=issue_data.get('line_number'),
-                                column_number=issue_data.get('column_number'),
-                                code_snippet=issue_data.get('code_snippet'),
-                                confidence=issue_data.get('confidence', 1.0)
-                            )
-                            session.add(issue)
-                            total_issues += 1
+                            # Generate fingerprint for deduplication
+                            fingerprint_data = f"{relative_path}:{issue_data.get('line_number', 0)}:{issue_data['rule_id']}"
+                            fingerprint = hashlib.sha256(fingerprint_data.encode('utf-8')).hexdigest()
+
+                            # Check if issue already exists
+                            existing_issue = session.query(Issue).join(CodeFile).filter(
+                                Issue.fingerprint == fingerprint,
+                                CodeFile.repository_id == repository_id
+                            ).first()
+
+                            if existing_issue:
+                                # Track that we saw this issue
+                                seen_fingerprints.add(fingerprint)
+
+                                # Update existing issue
+                                existing_issue.last_seen_at = datetime.utcnow()
+
+                                # If issue was dismissed but keeps appearing, track reappearance
+                                if existing_issue.dismissed:
+                                    existing_issue.reappeared_count += 1
+                                    existing_issue.last_reappeared_at = datetime.utcnow()
+                                    print(f"⚠️  Dismissed issue reappeared (count: {existing_issue.reappeared_count}): {existing_issue.title}")
+
+                                    # Add to notification list
+                                    reappeared_issues.append({
+                                        'id': existing_issue.id,
+                                        'title': existing_issue.title,
+                                        'severity': existing_issue.severity.value,
+                                        'file_path': relative_path,
+                                        'line_number': existing_issue.line_number,
+                                        'reappeared_count': existing_issue.reappeared_count,
+                                        'dismissed_by': existing_issue.dismissed_by,
+                                        'dismissal_reason': existing_issue.dismissal_reason
+                                    })
+
+                                # Mark as not resolved if it was previously resolved
+                                if existing_issue.resolved:
+                                    existing_issue.resolved = False
+                                    existing_issue.resolved_at = None
+
+                            else:
+                                # Track that we saw this new issue
+                                seen_fingerprints.add(fingerprint)
+                                # Create new issue
+                                issue = Issue(
+                                    code_file_id=code_file.id,
+                                    category=IssueCategory(issue_data['category']),
+                                    severity=IssueSeverity(issue_data['severity']),
+                                    rule_id=issue_data['rule_id'],
+                                    title=issue_data['title'],
+                                    description=issue_data['description'],
+                                    line_number=issue_data.get('line_number'),
+                                    column_number=issue_data.get('column_number'),
+                                    code_snippet=issue_data.get('code_snippet'),
+                                    confidence=issue_data.get('confidence', 1.0),
+                                    fingerprint=fingerprint,
+                                    last_seen_at=datetime.utcnow()
+                                )
+                                session.add(issue)
+                                total_issues += 1
 
                         session.commit()
 
@@ -299,6 +347,39 @@ def analyze_repository_task(
                     print(f"Error analyzing {file_path}: {e}")
                     continue
 
+            # Mark issues as resolved if they weren't seen in this analysis
+            print("\n🔍 Checking for resolved issues...")
+            all_repo_issues = session.query(Issue).join(CodeFile).filter(
+                CodeFile.repository_id == repository_id,
+                Issue.resolved == False  # Only check unresolved issues
+            ).all()
+
+            resolved_count = 0
+            for issue in all_repo_issues:
+                if issue.fingerprint and issue.fingerprint not in seen_fingerprints:
+                    # Issue not seen in this analysis - mark as resolved
+                    issue.resolved = True
+                    issue.resolved_at = datetime.utcnow()
+                    resolved_count += 1
+                    print(f"✅ Marked as resolved: {issue.title} (in {issue.code_file.file_path})")
+
+            if resolved_count > 0:
+                session.commit()
+                print(f"\n✅ Marked {resolved_count} issues as resolved (not detected in latest analysis)")
+
+            # Send notifications for reappeared dismissed issues
+            if reappeared_issues:
+                print(f"\n📧 Sending notifications for {len(reappeared_issues)} reappeared dismissed issues...")
+                try:
+                    from src.workers.notification_worker import send_reappeared_issues_notification
+                    # Queue notification task
+                    send_reappeared_issues_notification.delay(
+                        repository_id=repository_id,
+                        reappeared_issues=reappeared_issues
+                    )
+                except Exception as e:
+                    print(f"Warning: Could not queue notification task: {e}")
+
             return {
                 'success': True,
                 'repository_id': repository_id,
@@ -306,7 +387,9 @@ def analyze_repository_task(
                 'files_analyzed': files_analyzed,
                 'total_files': total_files,
                 'issues_found': total_issues,
-                'message': f'Analyzed {files_analyzed} files, found {total_issues} issues'
+                'resolved_count': resolved_count,
+                'reappeared_count': len(reappeared_issues),
+                'message': f'Analyzed {files_analyzed} files, found {total_issues} issues, resolved {resolved_count}, {len(reappeared_issues)} dismissed issues reappeared'
             }
 
     except Exception as e:
