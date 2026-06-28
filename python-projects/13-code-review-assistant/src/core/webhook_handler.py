@@ -56,8 +56,15 @@ class WebhookHandler:
         Returns:
             True if signature is valid
         """
+        # Check if in production mode
+        is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
+
         if not self.secret:
-            # If no secret configured, skip verification (development only)
+            # In production, webhook secret is required
+            if is_production:
+                raise ValueError("GitHub webhook secret is required in production. Set GITHUB_WEBHOOK_SECRET environment variable.")
+            # In development, allow skipping verification (but log warning)
+            print("⚠️  WARNING: Webhook signature verification skipped (development mode)")
             return True
 
         # GitHub sends signature as 'sha256=<hash>'
