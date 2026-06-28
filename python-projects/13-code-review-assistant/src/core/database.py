@@ -21,7 +21,8 @@ from sqlalchemy import (
     JSON,
     ForeignKey,
     Enum,
-    Index
+    Index,
+    CheckConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker, Session
@@ -281,6 +282,10 @@ class CodeFile(Base):
         Index('idx_file_pr_language', 'pull_request_id', 'language'),
         Index('idx_file_repo_language', 'repository_id', 'language'),
         Index('idx_file_hash_language', 'file_hash', 'language'),
+        CheckConstraint(
+            '(pull_request_id IS NOT NULL) OR (repository_id IS NOT NULL)',
+            name='chk_codefile_has_parent'
+        ),
     )
 
     # Relationships
@@ -288,6 +293,13 @@ class CodeFile(Base):
     repository = relationship('Repository', back_populates='code_files')
     issues = relationship('Issue', back_populates='code_file', cascade='all, delete-orphan')
     refactorings = relationship('Refactoring', back_populates='code_file', cascade='all, delete-orphan')
+
+    def __init__(self, **kwargs):
+        """Initialize CodeFile with validation."""
+        super().__init__(**kwargs)
+        # Validate that at least one parent reference is set
+        if not self.pull_request_id and not self.repository_id:
+            raise ValueError("CodeFile must have either pull_request_id or repository_id set")
 
     def to_dict(self) -> Dict:
         """Convert code file to dictionary."""
