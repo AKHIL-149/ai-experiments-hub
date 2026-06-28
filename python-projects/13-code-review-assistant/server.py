@@ -61,6 +61,18 @@ app.add_middleware(
 
 
 # ============================================================================
+# Startup Event - Initialize Cache
+# ============================================================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
+    from src.services.cache_service import init_cache_from_env
+    init_cache_from_env()
+    print("✅ Cache service initialized")
+
+
+# ============================================================================
 # Error Handling Middleware
 # ============================================================================
 
@@ -3319,6 +3331,13 @@ async def get_health_score(user = Depends(get_current_user)):
     - category_breakdown: Breakdown by category
     """
     from src.services.analytics_service import analytics_service
+    from src.services.cache_service import cache_service
+
+    # Check cache first (TTL: 5 minutes)
+    cache_key = f"analytics:health_score:{user.id}"
+    cached_result = cache_service.get(cache_key)
+    if cached_result is not None:
+        return JSONResponse(cached_result)
 
     # Get all cached analyses
     analyses = get_all_cached_analyses()
@@ -3330,6 +3349,9 @@ async def get_health_score(user = Depends(get_current_user)):
 
     # Calculate health score
     result = analytics_service.calculate_health_score(all_issues)
+
+    # Cache the result (TTL: 300 seconds = 5 minutes)
+    cache_service.set(cache_key, result, ttl=300)
 
     return JSONResponse(result)
 
@@ -3350,6 +3372,13 @@ async def get_analytics_trends(
     Returns array of trend data points with date and issue counts
     """
     from src.services.analytics_service import analytics_service
+    from src.services.cache_service import cache_service
+
+    # Check cache first (TTL: 10 minutes)
+    cache_key = f"analytics:trends:{user.id}:{days}:{grouping}"
+    cached_result = cache_service.get(cache_key)
+    if cached_result is not None:
+        return JSONResponse(cached_result)
 
     # Get all cached analyses
     analyses = get_all_cached_analyses()
@@ -3360,6 +3389,9 @@ async def get_analytics_trends(
         days=days,
         grouping=grouping
     )
+
+    # Cache the result (TTL: 600 seconds = 10 minutes)
+    cache_service.set(cache_key, trends, ttl=600)
 
     return JSONResponse(trends)
 
@@ -3382,12 +3414,22 @@ async def get_repository_analytics(user = Depends(get_current_user)):
     - health_score: Overall health score
     """
     from src.services.analytics_service import analytics_service
+    from src.services.cache_service import cache_service
+
+    # Check cache first (TTL: 15 minutes)
+    cache_key = f"analytics:repository:{user.id}"
+    cached_result = cache_service.get(cache_key)
+    if cached_result is not None:
+        return JSONResponse(cached_result)
 
     # Get all cached analyses
     analyses = get_all_cached_analyses()
 
     # Calculate repository metrics
     metrics = analytics_service.calculate_repository_metrics(analyses)
+
+    # Cache the result (TTL: 900 seconds = 15 minutes)
+    cache_service.set(cache_key, metrics, ttl=900)
 
     return JSONResponse(metrics)
 
