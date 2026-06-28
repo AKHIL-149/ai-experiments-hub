@@ -531,8 +531,93 @@ def send_reappeared_issues_notification(
 
             if email_config and email_config.notify_analysis_complete:
                 try:
-                    # TODO: Implement actual email sending
-                    logger.info(f"Would send email to {owner.email}: {summary}")
+                    from src.services.email_service import EmailService
+
+                    # Initialize email service with configuration
+                    email_service = EmailService(
+                        smtp_host=email_config.smtp_host,
+                        smtp_port=email_config.smtp_port,
+                        smtp_username=email_config.smtp_username,
+                        smtp_password=email_config.smtp_password,
+                        smtp_use_tls=email_config.smtp_use_tls,
+                        from_email=email_config.from_email,
+                        from_name=email_config.from_name
+                    )
+
+                    # Build HTML email body
+                    issues_html = ""
+                    for issue in reappeared_issues[:5]:  # Limit to top 5 in email
+                        issues_html += f"""
+                        <div style="border-left: 4px solid #ff9800; padding: 10px; margin: 10px 0; background: white; border-radius: 4px;">
+                            <strong style="color: #333;">{issue['title']}</strong><br>
+                            <span style="color: #666; font-size: 14px;">
+                                📁 {issue['file_path']}:{issue.get('line_number', '?')}
+                            </span><br>
+                            <span style="background: #ff9800; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; display: inline-block; margin-top: 5px;">
+                                {issue['severity'].upper()}
+                            </span>
+                            <span style="color: #ff9800; margin-left: 10px;">
+                                🔄 Reappeared {issue['reappeared_count']}x
+                            </span>
+                        </div>
+                        """
+
+                    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: #ff9800; color: white; padding: 25px; border-radius: 8px 8px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }}
+        .button {{ display: inline-block; background: #ff9800; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 20px; }}
+        .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0; font-size: 24px;">⚠️ Dismissed Issues Reappeared</h1>
+            <p style="margin: 10px 0 0 0; opacity: 0.9;">Repository: {repository.name}</p>
+        </div>
+        <div class="content">
+            <p><strong>{len(reappeared_issues)}</strong> previously dismissed issues have reappeared in the latest analysis.</p>
+
+            <h3 style="margin-top: 25px; color: #333;">Reappeared Issues:</h3>
+            {issues_html}
+
+            {f'<p style="color: #666; font-size: 14px; margin-top: 15px;"><em>...and {len(reappeared_issues) - 5} more issues</em></p>' if len(reappeared_issues) > 5 else ''}
+
+            <p style="margin-top: 25px; padding: 15px; background: #fff3cd; border-left: 4px solid #ff9800; border-radius: 4px;">
+                💡 <strong>Tip:</strong> Consider fixing these issues instead of dismissing them repeatedly.
+            </p>
+
+            <a href="http://localhost:8000/issues" class="button">Review All Issues</a>
+        </div>
+        <div class="footer">
+            <p>AI Code Review Assistant | Automated Code Quality Analysis</p>
+            <p style="margin-top: 5px;">Analyzed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+        </div>
+    </div>
+</body>
+</html>
+                    """
+
+                    # Send email
+                    result = email_service.send_email(
+                        to_email=email_config.to_email or owner.email,
+                        subject=f"⚠️ Dismissed Issues Reappeared - {repository.name}",
+                        html_body=html_body,
+                        text_body=message,  # Use the plain text message we already built
+                        reply_to=email_config.reply_to
+                    )
+
+                    if result['success']:
+                        logger.info(f"Email sent successfully to {email_config.to_email or owner.email}")
+                    else:
+                        logger.error(f"Failed to send email: {result.get('error')}")
+
                 except Exception as e:
                     logger.error(f"Failed to send email: {e}")
 
