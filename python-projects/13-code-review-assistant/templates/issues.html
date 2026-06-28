@@ -522,8 +522,88 @@ function refreshIssues() {
 }
 
 function exportIssues() {
-    // TODO: Implement CSV export
-    alert('Export functionality coming soon!');
+    if (!filteredIssues || filteredIssues.length === 0) {
+        alert('No issues to export');
+        return;
+    }
+
+    try {
+        // CSV headers
+        const headers = [
+            'Category',
+            'Severity',
+            'Title',
+            'Description',
+            'File Path',
+            'Line Number',
+            'Column Number',
+            'Code Snippet',
+            'Confidence',
+            'Rule ID',
+            'Dismissed',
+            'Dismissal Reason',
+            'Resolved',
+            'Reappeared Count',
+            'Created At'
+        ];
+
+        // Convert issues to CSV rows
+        const csvRows = [headers.join(',')];
+
+        filteredIssues.forEach(issue => {
+            const row = [
+                escapeCSV(issue.category || ''),
+                escapeCSV(issue.severity || ''),
+                escapeCSV(issue.title || ''),
+                escapeCSV(issue.description || ''),
+                escapeCSV(issue.file_path || ''),
+                issue.line_number || '',
+                issue.column_number || '',
+                escapeCSV(issue.code_snippet || ''),
+                issue.confidence ? (issue.confidence * 100).toFixed(0) + '%' : '',
+                escapeCSV(issue.rule_id || ''),
+                issue.dismissed ? 'Yes' : 'No',
+                escapeCSV(issue.dismissal_reason || ''),
+                issue.resolved ? 'Yes' : 'No',
+                issue.reappeared_count || '0',
+                issue.created_at || ''
+            ];
+            csvRows.push(row.join(','));
+        });
+
+        // Create CSV content
+        const csvContent = csvRows.join('\n');
+
+        // Create blob and download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `code-review-issues-${timestamp}.csv`;
+
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log(`Exported ${filteredIssues.length} issues to ${filename}`);
+    } catch (error) {
+        console.error('Error exporting issues:', error);
+        alert('Failed to export issues: ' + error.message);
+    }
+}
+
+function escapeCSV(value) {
+    if (value === null || value === undefined) return '';
+    const stringValue = String(value);
+    // Escape quotes and wrap in quotes if contains comma, quote, or newline
+    if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return '"' + stringValue.replace(/"/g, '""') + '"';
+    }
+    return stringValue;
 }
 
 function showLoading() {
