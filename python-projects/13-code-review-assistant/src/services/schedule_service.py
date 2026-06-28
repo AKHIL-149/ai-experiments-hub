@@ -323,11 +323,11 @@ class ScheduleService:
         self.session.commit()
         self.session.refresh(run)
 
-        # TODO: Trigger Celery task
-        # from src.workers.schedule_worker import run_scheduled_analysis
-        # task = run_scheduled_analysis.delay(run.id)
-        # run.celery_task_id = task.id
-        # self.session.commit()
+        # Trigger Celery task
+        from src.workers.schedule_worker import run_scheduled_analysis
+        task = run_scheduled_analysis.delay(run.id)
+        run.celery_task_id = task.id
+        self.session.commit()
 
         return run.to_dict()
 
