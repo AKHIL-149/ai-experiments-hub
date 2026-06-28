@@ -352,8 +352,11 @@ function updateDisplay() {
 
 function renderIssuesTable(issues) {
     const tbody = document.getElementById('issuesTableBody');
-    tbody.innerHTML = issues.map((issue, idx) => `
-        <tr onclick="viewIssueDetail('${issue.source_filename}_${idx}')">
+    tbody.innerHTML = issues.map((issue, idx) => {
+        // Use real issue ID if available (database issues), otherwise use synthetic ID (cached issues)
+        const issueId = issue.id || `${issue.source_filename}_${idx}`;
+        return `
+        <tr onclick="viewIssueDetail('${issueId}')">
             <td>
                 <span class="badge badge-${issue.severity}">${issue.severity}</span>
             </td>
@@ -372,12 +375,12 @@ function renderIssuesTable(issues) {
                 }
             </td>
             <td>
-                <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); viewIssueDetail('${issue.source_filename}_${idx}')">
+                <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); viewIssueDetail('${issueId}')">
                     View
                 </button>
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 }
 
 let currentViewingIssueId = null;
