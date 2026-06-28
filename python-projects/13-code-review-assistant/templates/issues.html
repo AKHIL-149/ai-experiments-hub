@@ -354,7 +354,7 @@ function renderIssuesTable(issues) {
     const tbody = document.getElementById('issuesTableBody');
     tbody.innerHTML = issues.map((issue, idx) => {
         // Use real issue ID if available (database issues), otherwise use synthetic ID (cached issues)
-        const issueId = issue.id || `${issue.source_filename}_${idx}`;
+        const issueId = issue.id || (issue.source_filename ? `${issue.source_filename}_${idx}` : `issue_${idx}`);
         return `
         <tr onclick="viewIssueDetail('${issueId}')">
             <td>
