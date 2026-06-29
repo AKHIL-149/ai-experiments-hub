@@ -40,6 +40,7 @@ try:
     from src.workers import pr_worker
     from src.workers import notification_worker
     from src.workers import schedule_worker
+    from src.workers import cleanup_worker
 except ImportError as e:
     print(f"Warning: Could not import some worker modules: {e}")
 
@@ -49,6 +50,7 @@ celery_app.conf.task_routes = {
     'src.workers.pr_worker.*': {'queue': 'pr_review'},
     'src.workers.notification_worker.*': {'queue': 'notifications'},
     'src.workers.schedule_worker.*': {'queue': 'scheduled'},
+    'src.workers.cleanup_worker.*': {'queue': 'maintenance'},
 }
 
 # Celery Beat schedule for periodic tasks
@@ -66,6 +68,11 @@ celery_app.conf.beat_schedule = {
     'send-weekly-digests': {
         'task': 'notification_worker.send_weekly_digests',
         'schedule': crontab(hour=9, minute=0, day_of_week=1),  # Monday at 9:00 AM UTC
+    },
+    # Cleanup tasks
+    'cleanup-scheduled': {
+        'task': 'scheduled_cleanup',
+        'schedule': crontab(hour=2, minute=0),  # Daily at 2:00 AM UTC
     },
 }
 
