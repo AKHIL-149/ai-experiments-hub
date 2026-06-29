@@ -49,6 +49,10 @@ app = FastAPI(
     description="Intelligent code review system with GitHub integration"
 )
 
+# Request ID Middleware (first - needed by other middleware)
+from src.middleware.request_id import RequestIDMiddleware
+app.add_middleware(RequestIDMiddleware)
+
 # CORS configuration
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
 app.add_middleware(

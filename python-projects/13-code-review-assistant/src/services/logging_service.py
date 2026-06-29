@@ -50,6 +50,16 @@ class JSONFormatter(logging.Formatter):
                 'traceback': self.formatException(record.exc_info) if record.exc_info else None
             }
 
+        # Try to get request ID from context if not already set
+        if not hasattr(record, 'request_id'):
+            try:
+                from src.middleware.request_id import get_request_id
+                request_id = get_request_id()
+                if request_id and request_id != 'no-request-id':
+                    log_data['request_id'] = request_id
+            except (ImportError, Exception):
+                pass  # Ignore if middleware not available
+
         # Add extra fields if present
         if hasattr(record, 'correlation_id'):
             log_data['correlation_id'] = record.correlation_id
