@@ -4470,10 +4470,11 @@ async def create_github_issue_from_code_issue(
 
             # Get GitHub token from environment or repository settings
             github_token = os.getenv('GITHUB_TOKEN')
-            if not github_token:
+            if not github_token or github_token == 'ghp_your_personal_access_token_here':
                 raise HTTPException(
-                    status_code=500,
-                    detail="GitHub token not configured. Set GITHUB_TOKEN environment variable."
+                    status_code=400,
+                    detail="GitHub token not configured. Please set a valid GITHUB_TOKEN in your .env file. "
+                           "Get a token from https://github.com/settings/tokens with 'repo' scope."
                 )
 
             github_service = GitHubService(github_token=github_token)
