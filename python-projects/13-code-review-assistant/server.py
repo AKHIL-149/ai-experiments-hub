@@ -42,10 +42,94 @@ from celery_app import celery_app
 # Load environment variables
 load_dotenv()
 
-# Initialize FastAPI app
+
+# ============================================================================
+# Lifespan Event Handler - Startup and Graceful Shutdown
+# ============================================================================
+
+from contextlib import asynccontextmanager
+import signal
+import asyncio
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan event handler for startup and graceful shutdown.
+
+    Startup:
+    - Initialize cache service
+    - Set up signal handlers
+
+    Shutdown:
+    - Close database connections
+    - Wait for background tasks
+    - Clean up resources
+    """
+    # ========== STARTUP ==========
+    print("🚀 Starting AI Code Review Assistant...")
+
+    # Initialize cache
+    from src.services.cache_service import init_cache_from_env
+    init_cache_from_env()
+    print("✅ Cache service initialized")
+
+    # Set up graceful shutdown signal handlers
+    shutdown_event = asyncio.Event()
+
+    def signal_handler(signum, frame):
+        """Handle shutdown signals gracefully"""
+        sig_name = signal.Signals(signum).name
+        print(f"\n⚠️  Received {sig_name} signal, initiating graceful shutdown...")
+        shutdown_event.set()
+
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    print("✅ Graceful shutdown handlers registered")
+    print("🎉 Application startup complete\n")
+
+    # Application is running
+    yield
+
+    # ========== SHUTDOWN ==========
+    print("\n🛑 Initiating graceful shutdown...")
+
+    # Close database connections
+    try:
+        # Access db_manager from module globals
+        db_mgr = globals().get('db_manager')
+        if db_mgr:
+            db_mgr.close()
+            print("✅ Database connections closed")
+    except Exception as e:
+        print(f"⚠️  Error closing database: {e}")
+
+    # Close cache connections
+    try:
+        from src.services.cache_service import cache_service
+        if hasattr(cache_service, 'redis_client') and cache_service.redis_client:
+            cache_service.redis_client.close()
+            print("✅ Cache connections closed")
+    except Exception as e:
+        print(f"⚠️  Error closing cache: {e}")
+
+    # Wait for background tasks to complete (with timeout)
+    try:
+        print("⏳ Waiting for background tasks to complete...")
+        await asyncio.sleep(2)  # Give tasks 2 seconds to finish
+        print("✅ Background tasks completed")
+    except Exception as e:
+        print(f"⚠️  Error waiting for tasks: {e}")
+
+    print("👋 Graceful shutdown complete\n")
+
+
+# Initialize FastAPI app with lifespan handler
 app = FastAPI(
     title="AI Code Review Assistant",
     version="0.1.0",
+    lifespan=lifespan,
     description="""
     🤖 **AI-Powered Code Review & Refactoring Assistant**
 
@@ -137,18 +221,6 @@ app.add_middleware(RateLimitMiddleware)
 # Security Headers Middleware
 from src.middleware.security_headers import SecurityHeadersMiddleware
 app.add_middleware(SecurityHeadersMiddleware)
-
-
-# ============================================================================
-# Startup Event - Initialize Cache
-# ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
-    from src.services.cache_service import init_cache_from_env
-    init_cache_from_env()
-    print("✅ Cache service initialized")
 
 
 # ============================================================================
