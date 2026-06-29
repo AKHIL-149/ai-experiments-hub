@@ -4501,6 +4501,7 @@ async def create_github_issue_from_code_issue(
                 "success": True,
                 "message": "GitHub issue created successfully",
                 "github_issue": github_issue,
+                "github_url": github_issue.get('html_url'),  # Frontend expects this
                 "code_issue_id": issue_id
             }
 

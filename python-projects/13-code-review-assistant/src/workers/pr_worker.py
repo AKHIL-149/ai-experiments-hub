@@ -193,7 +193,7 @@ def analyze_pr_task(
                     issues_count = result['report']['total_issues']
                     total_issues += issues_count
 
-                    # Store file analysis in database
+                    # Store file analysis and issues in database
                     with db_manager.get_session() as db:
                         code_file = CodeFile(
                             pull_request_id=pr_id,
@@ -203,6 +203,44 @@ def analyze_pr_task(
                             last_analyzed_at=datetime.utcnow()
                         )
                         db.add(code_file)
+                        db.flush()  # Get code_file.id
+
+                        # Store issues in database and generate refactorings
+                        from src.services.refactoring_service import RefactoringService
+                        from src.services.ai_analysis_service import AIAnalysisService
+
+                        ai_service = AIAnalysisService()
+                        refactoring_service = RefactoringService(db=db, ai_service=ai_service)
+
+                        for issue_data in result['report'].get('issues', []):
+                            issue = Issue(
+                                code_file_id=code_file.id,
+                                category=issue_data.get('category', 'unknown'),
+                                severity=issue_data.get('severity', 'info'),
+                                rule_id=issue_data.get('rule_id', ''),
+                                title=issue_data.get('title', ''),
+                                description=issue_data.get('description', ''),
+                                line_number=issue_data.get('line_number'),
+                                code_snippet=issue_data.get('code_snippet', ''),
+                                confidence=issue_data.get('confidence', 0.5)
+                            )
+                            db.add(issue)
+                            db.flush()  # Get issue.id
+
+                            # Generate refactoring suggestion for this issue
+                            if issue.code_snippet:
+                                try:
+                                    success, refactoring, error = refactoring_service.generate_refactoring_from_issue(
+                                        issue_id=issue.id,
+                                        code_file_id=code_file.id,
+                                        code_snippet=issue.code_snippet,
+                                        language='python'
+                                    )
+                                    if not success:
+                                        print(f"Warning: Could not generate refactoring for issue {issue.id}: {error}")
+                                except Exception as e:
+                                    print(f"Error generating refactoring for issue {issue.id}: {str(e)}")
+
                         db.commit()
 
                     analyzed_files.append({
@@ -617,7 +655,14 @@ def analyze_pr_webhook(
                         db.commit()
                         db.refresh(code_file)
 
-                        # Store issues in database
+                        # Initialize refactoring service
+                        from src.services.refactoring_service import RefactoringService
+                        from src.services.ai_analysis_service import AIAnalysisService
+
+                        ai_service = AIAnalysisService()
+                        refactoring_service = RefactoringService(db=db, ai_service=ai_service)
+
+                        # Store issues in database and generate refactorings
                         for issue_data in result['report'].get('issues', []):
                             issue = Issue(
                                 code_file_id=code_file.id,
@@ -632,6 +677,21 @@ def analyze_pr_webhook(
                             )
                             db.add(issue)
                             all_issues.append(issue_data)
+                            db.flush()  # Get issue.id
+
+                            # Generate refactoring suggestion for this issue
+                            if issue.code_snippet:
+                                try:
+                                    success, refactoring, error = refactoring_service.generate_refactoring_from_issue(
+                                        issue_id=issue.id,
+                                        code_file_id=code_file.id,
+                                        code_snippet=issue.code_snippet,
+                                        language=language or 'python'
+                                    )
+                                    if not success:
+                                        print(f"Warning: Could not generate refactoring for issue {issue.id}: {error}")
+                                except Exception as e:
+                                    print(f"Error generating refactoring for issue {issue.id}: {str(e)}")
 
                         db.commit()
 

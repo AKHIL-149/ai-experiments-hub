@@ -263,6 +263,13 @@ def analyze_repository_task(
                         session.add(code_file)
                         session.flush()  # Get the code_file.id
 
+                        # Initialize refactoring service for generating suggestions
+                        from src.services.refactoring_service import RefactoringService
+                        from src.services.ai_analysis_service import AIAnalysisService
+
+                        ai_service = AIAnalysisService()
+                        refactoring_service = RefactoringService(db=session, ai_service=ai_service)
+
                         # Create Issue records with deduplication
                         for issue_data in issues_data:
                             # Generate fingerprint for deduplication
@@ -324,7 +331,22 @@ def analyze_repository_task(
                                     last_seen_at=datetime.utcnow()
                                 )
                                 session.add(issue)
+                                session.flush()  # Get issue.id
                                 total_issues += 1
+
+                                # Generate refactoring suggestion for new issues
+                                if issue.code_snippet:
+                                    try:
+                                        success, refactoring, error = refactoring_service.generate_refactoring_from_issue(
+                                            issue_id=issue.id,
+                                            code_file_id=code_file.id,
+                                            code_snippet=issue.code_snippet,
+                                            language=language
+                                        )
+                                        if not success:
+                                            print(f"Warning: Could not generate refactoring for issue {issue.id}: {error}")
+                                    except Exception as e:
+                                        print(f"Error generating refactoring for issue {issue.id}: {str(e)}")
 
                         session.commit()
 
