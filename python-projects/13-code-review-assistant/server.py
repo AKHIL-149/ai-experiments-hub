@@ -222,6 +222,14 @@ app.add_middleware(RateLimitMiddleware)
 from src.middleware.security_headers import SecurityHeadersMiddleware
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Response Compression Middleware (gzip)
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,  # Only compress responses larger than 1KB
+    compresslevel=6     # Balance between compression ratio and CPU usage (1-9)
+)
+
 
 # ============================================================================
 # Error Handling Middleware
