@@ -2,10 +2,6 @@
 
 {% block title %}Issues - AI Code Review Assistant{% endblock %}
 
-{% block extra_css %}
-<link rel="stylesheet" href="/static/css/rule-builder.css">
-{% endblock %}
-
 {% block content %}
 <div class="container">
     <div class="page-header">
@@ -389,21 +385,9 @@ function renderIssuesTable(issues) {
 
 let currentViewingIssueId = null;
 
-async function viewIssueDetail(issueId) {
-    currentViewingIssueId = issueId;
-    try {
-        const response = await fetch(`/api/issues/${issueId}`);
-        const data = await response.json();
-
-        if (data.success) {
-            showIssueModal(data.issue);
-        } else {
-            alert('Issue not found');
-        }
-    } catch (error) {
-        console.error('Error loading issue:', error);
-        alert('Error loading issue details');
-    }
+function viewIssueDetail(issueId) {
+    // Navigate to issue detail page instead of showing modal
+    window.location.href = `/issues/${issueId}`;
 }
 
 function showIssueModal(issue) {
