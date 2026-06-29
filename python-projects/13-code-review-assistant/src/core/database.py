@@ -1344,7 +1344,7 @@ class DatabaseManager:
 
     def __init__(self, db_url: Optional[str] = None):
         """
-        Initialize database manager.
+        Initialize database manager with connection pooling.
 
         Args:
             db_url: Database URL. If None, uses SQLite in ./data/database.db
@@ -1354,11 +1354,31 @@ class DatabaseManager:
             db_dir.mkdir(parents=True, exist_ok=True)
             db_url = f"sqlite:///{db_dir}/database.db"
 
-        self.engine = create_engine(
-            db_url,
-            echo=False,
-            pool_pre_ping=True
-        )
+        # Determine if using SQLite or a production database
+        is_sqlite = db_url.startswith('sqlite')
+
+        # Connection pool configuration
+        pool_config = {
+            'echo': False,
+            'pool_pre_ping': True,  # Verify connections before using
+        }
+
+        if not is_sqlite:
+            # Production database (PostgreSQL, MySQL, etc.)
+            pool_config.update({
+                'pool_size': int(os.getenv('DB_POOL_SIZE', '10')),  # Number of connections to maintain
+                'max_overflow': int(os.getenv('DB_MAX_OVERFLOW', '20')),  # Additional connections when pool is full
+                'pool_timeout': int(os.getenv('DB_POOL_TIMEOUT', '30')),  # Seconds to wait for connection
+                'pool_recycle': int(os.getenv('DB_POOL_RECYCLE', '3600')),  # Recycle connections after 1 hour
+            })
+        else:
+            # SQLite doesn't support connection pooling the same way
+            # Use NullPool for SQLite to avoid threading issues
+            from sqlalchemy.pool import StaticPool
+            pool_config['poolclass'] = StaticPool
+            pool_config['connect_args'] = {'check_same_thread': False}
+
+        self.engine = create_engine(db_url, **pool_config)
 
         # Create all tables
         Base.metadata.create_all(self.engine)
@@ -1383,6 +1403,22 @@ class DatabaseManager:
                 session.query(User).all()
         """
         return self.SessionLocal()
+
+    def get_pool_status(self) -> Dict[str, Any]:
+        """
+        Get database connection pool status for monitoring.
+
+        Returns:
+            Dictionary with pool statistics
+        """
+        pool = self.engine.pool
+        return {
+            'pool_size': pool.size() if hasattr(pool, 'size') else 0,
+            'checked_in': pool.checkedin() if hasattr(pool, 'checkedin') else 0,
+            'checked_out': pool.checkedout() if hasattr(pool, 'checkedout') else 0,
+            'overflow': pool.overflow() if hasattr(pool, 'overflow') else 0,
+            'total_connections': pool.size() + pool.overflow() if hasattr(pool, 'size') and hasattr(pool, 'overflow') else 0
+        }
 
     def close(self):
         """Close database connection."""
