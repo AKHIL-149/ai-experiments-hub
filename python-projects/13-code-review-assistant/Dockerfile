@@ -59,6 +59,10 @@ COPY --chown=appuser:appuser scripts/ ./scripts/
 COPY --chown=appuser:appuser server.py .
 COPY --chown=appuser:appuser celery_app.py .
 COPY --chown=appuser:appuser .env.example .env.example
+COPY --chown=appuser:appuser healthcheck.sh .
+
+# Make healthcheck script executable
+RUN chmod +x healthcheck.sh
 
 # Switch to non-root user
 USER appuser
@@ -66,9 +70,13 @@ USER appuser
 # Expose application port
 EXPOSE 8000
 
-# Health check endpoint
+# Health check using dedicated script
+# - interval: How often to run the check (30s)
+# - timeout: How long to wait for check to complete (10s)
+# - start-period: Grace period during startup (40s)
+# - retries: Consecutive failures before marking unhealthy (3)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+    CMD ["/app/healthcheck.sh"]
 
 # Default command (override in docker-compose for different services)
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
