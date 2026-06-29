@@ -254,7 +254,10 @@ async function createGithubIssue(issueId) {
         });
 
         if (!response.ok) {
-            throw new Error('Failed to create GitHub issue');
+            // Parse error response to get detailed error message
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = errorData.detail || 'Failed to create GitHub issue';
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
