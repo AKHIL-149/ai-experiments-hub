@@ -216,12 +216,86 @@ async def require_admin(user = Depends(get_current_user)):
 
 @app.get("/health")
 async def health_check():
-    """Basic health check endpoint for Docker/monitoring"""
-    return {
-        "status": "healthy",
+    """
+    Comprehensive health check endpoint for Docker/monitoring with system metrics
+    Returns overall health status and detailed component checks
+    """
+    import psutil
+    from datetime import datetime
+
+    # Check all components
+    components = {}
+    overall_healthy = True
+
+    # Database check
+    try:
+        with db_manager.get_session() as db:
+            db.execute("SELECT 1")
+            components["database"] = {"status": "healthy", "latency_ms": 0}
+    except Exception as e:
+        components["database"] = {"status": "unhealthy", "error": str(e)}
+        overall_healthy = False
+
+    # Celery check
+    try:
+        inspect = celery_app.control.inspect()
+        active_workers = inspect.active()
+        if active_workers:
+            components["celery"] = {
+                "status": "healthy",
+                "workers": len(active_workers)
+            }
+        else:
+            components["celery"] = {"status": "degraded", "workers": 0}
+    except Exception as e:
+        components["celery"] = {"status": "unhealthy", "error": str(e)}
+        overall_healthy = False
+
+    # Redis/Cache check
+    try:
+        from src.services.cache_service import cache_service
+        test_key = "health_check_test"
+        cache_service.set(test_key, "ok", ttl=10)
+        result = cache_service.get(test_key)
+        components["cache"] = {
+            "status": "healthy" if result == "ok" else "degraded",
+            "backend": "redis" if cache_service.use_redis else "memory"
+        }
+    except Exception as e:
+        components["cache"] = {"status": "degraded", "error": str(e)}
+
+    # System metrics
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+
+        metrics = {
+            "cpu_percent": round(cpu_percent, 2),
+            "memory_percent": round(memory.percent, 2),
+            "memory_available_mb": round(memory.available / (1024 * 1024), 2),
+            "disk_percent": round(disk.percent, 2),
+            "disk_free_gb": round(disk.free / (1024 * 1024 * 1024), 2)
+        }
+    except Exception as e:
+        metrics = {"error": str(e)}
+
+    # Build response
+    response = {
+        "status": "healthy" if overall_healthy else "unhealthy",
         "service": "code-review-assistant",
-        "version": "0.1.0"
+        "version": "0.1.0",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "uptime_seconds": int((datetime.utcnow() - datetime.utcfromtimestamp(psutil.boot_time())).total_seconds()),
+        "components": components,
+        "metrics": metrics
     }
+
+    # Return 503 if unhealthy
+    if not overall_healthy:
+        return JSONResponse(status_code=503, content=response)
+
+    return response
 
 
 @app.get("/api/health/db")
