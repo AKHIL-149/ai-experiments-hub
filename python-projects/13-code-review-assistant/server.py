@@ -46,7 +46,74 @@ load_dotenv()
 app = FastAPI(
     title="AI Code Review Assistant",
     version="0.1.0",
-    description="Intelligent code review system with GitHub integration"
+    description="""
+    🤖 **AI-Powered Code Review & Refactoring Assistant**
+
+    Intelligent code review system with GitHub integration, automated issue detection,
+    and AI-powered refactoring suggestions.
+
+    ## Features
+
+    - 🔍 **Automated Code Analysis**: Detect security issues, code smells, and complexity problems
+    - 🤖 **AI-Powered Insights**: Get intelligent explanations and fix suggestions
+    - 📊 **Analytics Dashboard**: Track code quality metrics over time
+    - 🔔 **Smart Notifications**: Email and Slack alerts for critical issues
+    - 📋 **Issue Management**: Dismiss, track, and resolve code issues
+    - 🔄 **GitHub Integration**: Seamless PR analysis and repository scanning
+
+    ## Getting Started
+
+    1. **Authentication**: Use `/api/auth/login` to get started
+    2. **Add Repository**: POST to `/api/repositories`
+    3. **Analyze Code**: Trigger analysis with `/api/repositories/{id}/analyze`
+    4. **View Results**: Get issues from `/api/issues` or view analytics
+
+    ## Rate Limits
+
+    - Authentication: 5 requests per 5 minutes
+    - Analysis: 10 requests per minute
+    - General API: 100 requests per minute
+
+    ## Support
+
+    - Documentation: See individual endpoint descriptions below
+    - Health Check: `/health` for system status
+    - API Version: v0.1.0
+    """,
+    contact={
+        "name": "AI Code Review Team",
+        "email": "support@codereview.local"
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT"
+    },
+    openapi_tags=[
+        {
+            "name": "Authentication",
+            "description": "User authentication and session management"
+        },
+        {
+            "name": "Repositories",
+            "description": "Repository management and configuration"
+        },
+        {
+            "name": "Analysis",
+            "description": "Code analysis and scanning operations"
+        },
+        {
+            "name": "Issues",
+            "description": "Code issue management and filtering"
+        },
+        {
+            "name": "Analytics",
+            "description": "Code quality metrics and insights"
+        },
+        {
+            "name": "Health",
+            "description": "System health and monitoring endpoints"
+        }
+    ]
 )
 
 # Request ID Middleware (first - needed by other middleware)
@@ -222,11 +289,55 @@ async def require_admin(user = Depends(get_current_user)):
 # Health Check Endpoints
 # ============================================================================
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Comprehensive System Health Check",
+    response_description="System health status with component details and metrics"
+)
 async def health_check():
     """
-    Comprehensive health check endpoint for Docker/monitoring with system metrics
-    Returns overall health status and detailed component checks
+    ## Comprehensive Health Check Endpoint
+
+    Returns detailed system health status including:
+    - Database connectivity and status
+    - Celery worker availability
+    - Redis/Cache status
+    - System metrics (CPU, memory, disk)
+    - Overall health status
+
+    ### Response Codes
+    - **200 OK**: All systems operational
+    - **503 Service Unavailable**: One or more critical components unhealthy
+
+    ### Use Cases
+    - Docker/Kubernetes health checks
+    - Load balancer health probes
+    - Monitoring system integration
+    - Operations dashboard
+
+    ### Example Response
+    ```json
+    {
+      "status": "healthy",
+      "service": "code-review-assistant",
+      "version": "0.1.0",
+      "timestamp": "2026-06-28T10:30:00.000000Z",
+      "uptime_seconds": 3600,
+      "components": {
+        "database": {"status": "healthy"},
+        "celery": {"status": "healthy", "workers": 2},
+        "cache": {"status": "healthy", "backend": "redis"}
+      },
+      "metrics": {
+        "cpu_percent": 15.3,
+        "memory_percent": 45.2,
+        "memory_available_mb": 8192,
+        "disk_percent": 60.5,
+        "disk_free_gb": 120.5
+      }
+    }
+    ```
     """
     import psutil
     from datetime import datetime
