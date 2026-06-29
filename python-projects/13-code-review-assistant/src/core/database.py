@@ -166,6 +166,13 @@ class Repository(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     settings_json = Column(JSON)  # Custom settings per repo
 
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_repo_user_created', 'user_id', 'created_at'),
+        Index('idx_repo_user_status', 'user_id', 'status'),
+        Index('idx_repo_team_created', 'team_id', 'created_at'),
+    )
+
     # Relationships
     user = relationship('User', back_populates='repositories')
     pull_requests = relationship('PullRequest', back_populates='repository', cascade='all, delete-orphan')
@@ -404,6 +411,11 @@ class Issue(Base):
         Index('idx_issue_file_severity', 'code_file_id', 'severity'),
         Index('idx_issue_created_severity', 'created_at', 'severity'),
         Index('idx_issue_fingerprint_file', 'fingerprint', 'code_file_id'),
+        # Indexes for filtering active/dismissed/resolved issues
+        Index('idx_issue_dismissed_resolved', 'dismissed', 'resolved'),
+        Index('idx_issue_severity_dismissed', 'severity', 'dismissed', 'resolved'),
+        # Index for dashboard queries (recent issues)
+        Index('idx_issue_created_desc', 'created_at'),
     )
 
     # Relationships
