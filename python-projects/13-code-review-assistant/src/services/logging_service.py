@@ -24,6 +24,48 @@ class LogLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 
+class JSONFormatter(logging.Formatter):
+    """
+    Custom JSON formatter for structured logging.
+    Outputs logs in JSON format for easy parsing by log aggregation systems.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record as JSON"""
+        log_data = {
+            'timestamp': datetime.fromtimestamp(record.created).isoformat(),
+            'level': record.levelname,
+            'logger': record.name,
+            'message': record.getMessage(),
+            'module': record.module,
+            'function': record.funcName,
+            'line': record.lineno,
+        }
+
+        # Add exception info if present
+        if record.exc_info:
+            log_data['exception'] = {
+                'type': record.exc_info[0].__name__ if record.exc_info[0] else None,
+                'message': str(record.exc_info[1]) if record.exc_info[1] else None,
+                'traceback': self.formatException(record.exc_info) if record.exc_info else None
+            }
+
+        # Add extra fields if present
+        if hasattr(record, 'correlation_id'):
+            log_data['correlation_id'] = record.correlation_id
+
+        if hasattr(record, 'user_id'):
+            log_data['user_id'] = record.user_id
+
+        if hasattr(record, 'request_id'):
+            log_data['request_id'] = record.request_id
+
+        if hasattr(record, 'metadata'):
+            log_data['metadata'] = record.metadata
+
+        return json.dumps(log_data)
+
+
 class LoggingService:
     """
     Centralized logging service with structured logging, correlation IDs,
@@ -57,23 +99,33 @@ class LoggingService:
 
     def _setup_logger(self) -> logging.Logger:
         """Set up Python logger with custom formatting"""
+        import os
+
         logger = logging.getLogger(self.service_name)
         logger.setLevel(logging.DEBUG)
 
         # Remove existing handlers
         logger.handlers.clear()
 
-        # Console handler with JSON formatting
+        # Console handler
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.DEBUG)
 
-        # Custom formatter
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        handler.setFormatter(formatter)
+        # Use JSON formatter in production, human-readable in development
+        use_json_logs = os.getenv('LOG_FORMAT', 'text').lower() == 'json' or \
+                        os.getenv('ENVIRONMENT', 'development') == 'production'
 
+        if use_json_logs:
+            # JSON formatter for production log aggregation
+            formatter = JSONFormatter()
+        else:
+            # Human-readable formatter for development
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+
+        handler.setFormatter(formatter)
         logger.addHandler(handler)
 
         return logger
@@ -250,10 +302,18 @@ class LoggingService:
             if len(self.errors) > self.max_errors:
                 self.errors = self.errors[-self.max_errors:]
 
-        # Log to Python logger
+        # Log to Python logger with extra fields for JSON formatter
         python_level = getattr(logging, level.value)
         log_message = self._format_log_message(log_entry)
-        self.logger.log(python_level, log_message)
+
+        # Pass extra fields to logger for JSON formatter
+        extra = {}
+        if self.correlation_id:
+            extra['correlation_id'] = self.correlation_id
+        if metadata:
+            extra['metadata'] = metadata
+
+        self.logger.log(python_level, log_message, extra=extra if extra else None)
 
         return log_entry
 
