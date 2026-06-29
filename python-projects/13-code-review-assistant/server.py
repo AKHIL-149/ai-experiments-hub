@@ -63,6 +63,10 @@ app.add_middleware(
 from src.middleware.rate_limiter import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware)
 
+# Security Headers Middleware
+from src.middleware.security_headers import SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware)
+
 
 # ============================================================================
 # Startup Event - Initialize Cache
