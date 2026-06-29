@@ -204,6 +204,16 @@ app = FastAPI(
 from src.middleware.request_id import RequestIDMiddleware
 app.add_middleware(RequestIDMiddleware)
 
+# Request/Response Logging Middleware (second - depends on Request ID)
+enable_request_logging = os.getenv('ENABLE_REQUEST_LOGGING', 'false').lower() == 'true'
+if enable_request_logging:
+    from src.middleware.request_response_logger import RequestResponseLoggerMiddleware
+    app.add_middleware(
+        RequestResponseLoggerMiddleware,
+        log_request_body=os.getenv('LOG_REQUEST_BODY', 'false').lower() == 'true',
+        log_response_body=os.getenv('LOG_RESPONSE_BODY', 'false').lower() == 'true'
+    )
+
 # CORS configuration
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
 app.add_middleware(
