@@ -49,3 +49,9 @@ clean:
 
 test:
 	docker-compose exec app pytest tests/ -v
+
+init-db:
+	docker-compose exec app python scripts/init_db.py
+
+seed-data:
+	docker-compose exec app python scripts/seed_sample_data.py
