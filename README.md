@@ -92,6 +92,14 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - Admin dashboard
 - Production-ready architecture
 
+**13. AI Code Review Assistant** (Full-stack) ⚠️ Needs Monitoring
+- Automated code analysis with AI-powered issue detection
+- GitHub integration for PR review and issue creation
+- AI-generated refactoring suggestions with diff preview
+- Real-time analysis with Celery workers
+- Production features: rate limiting, health checks, cleanup tasks
+- _Note: Core features working (231 refactorings generated), requires GitHub token for issue creation, needs monitoring for AI service stability and performance optimization_
+
 ## Tech Stack
 
 **Languages:** Python 3.11+, JavaScript (Node.js 18+)
@@ -143,6 +151,7 @@ ai-experiments-hub/
 │   ├── 01-text-generator/
 │   ├── 02-email-responder/
 │   ├── 04-rag-knowledge-assistant/
+│   ├── 13-code-review-assistant/  # Full-stack production app
 │   └── ...
 └── javascript-projects/
     ├── 03-prompt-playground/
@@ -164,6 +173,7 @@ ai-experiments-hub/
 - [ ] Project 10: Chat Application
 - [ ] Project 11: Research Assistant
 - [ ] Project 12: Content Moderation System
+- [x] Project 13: AI Code Review Assistant ⚠️ (Core complete, needs monitoring)
 
 ## Learning Resources
 
