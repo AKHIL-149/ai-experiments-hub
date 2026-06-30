@@ -84,7 +84,7 @@ cp .env.example .env
 
 4. Initialize database:
 ```bash
-# Coming in next commits
+alembic upgrade head
 ```
 
 5. Start services:
@@ -115,7 +115,7 @@ python server.py
 
 🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (20% complete)
 
-Current Progress: Commit 2/100
+Current Progress: Commit 3/100
 
 ## Implementation Roadmap
 
