@@ -41,40 +41,81 @@ This system demonstrates sophisticated multi-agent coordination where specialize
 
 ### Installation
 
+#### Option 1: Docker (Recommended)
+
+1. Configure environment:
+```bash
+cd python-projects/14-multi-agent-orchestrator
+cp .env.example .env
+# Edit .env with your API keys and settings
+```
+
+2. Build and start services:
+```bash
+make build
+make up
+```
+
+3. View logs:
+```bash
+make logs
+```
+
+4. Access the application:
+- API: http://localhost:8001
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
+
+#### Option 2: Local Development
+
 1. Install dependencies:
 ```bash
 cd python-projects/14-multi-agent-orchestrator
 pip install -r requirements.txt
 ```
 
-2. Configure environment:
+2. Start PostgreSQL and Redis locally
+
+3. Configure environment:
 ```bash
 cp .env.example .env
-# Edit .env with your API keys and settings
+# Edit .env with your settings
 ```
 
-3. Initialize database:
+4. Initialize database:
 ```bash
 # Coming in next commits
 ```
 
-4. Start services:
+5. Start services:
 ```bash
-# Start Redis
-redis-server
-
-# Start Celery worker
+# Terminal 1: Start Celery worker
 celery -A celery_app worker --loglevel=info
 
-# Start FastAPI server
+# Terminal 2: Start Celery Beat
+celery -A celery_app beat --loglevel=info
+
+# Terminal 3: Start FastAPI server
 python server.py
 ```
+
+### Docker Commands
+
+- `make build` - Build Docker images
+- `make up` - Start all services
+- `make down` - Stop all services
+- `make restart` - Restart services
+- `make logs` - View logs
+- `make shell` - Open app container shell
+- `make db-shell` - Open PostgreSQL shell
+- `make redis-shell` - Open Redis CLI
+- `make clean` - Remove containers and volumes
 
 ## Project Status
 
 🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (20% complete)
 
-Current Progress: Commit 1/100
+Current Progress: Commit 2/100
 
 ## Implementation Roadmap
 
