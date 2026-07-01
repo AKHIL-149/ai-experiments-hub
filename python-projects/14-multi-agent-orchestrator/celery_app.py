@@ -89,6 +89,18 @@ celery_app.conf.beat_schedule = {
         'schedule': 600.0,  # Every 10 minutes
     },
 
+    # Process pending tasks every 3 minutes
+    'process-pending-tasks': {
+        'task': 'src.workers.monitoring_worker.process_pending_tasks',
+        'schedule': 180.0,  # Every 3 minutes
+    },
+
+    # Check agent health every 15 minutes
+    'check-agent-health': {
+        'task': 'src.workers.monitoring_worker.check_agent_health',
+        'schedule': 900.0,  # Every 15 minutes
+    },
+
     # Cleanup completed tasks daily at 2 AM UTC
     'cleanup-completed-tasks': {
         'task': 'src.workers.monitoring_worker.cleanup_completed_tasks',

@@ -949,6 +949,197 @@ curl http://localhost:8001/api/ws/stats
 # }
 ```
 
+## Background Task Scheduler
+
+The system uses Celery Beat for scheduling periodic background tasks that monitor system health, clean up old data, and maintain optimal performance.
+
+### Scheduled Tasks
+
+| Task | Schedule | Description |
+|------|----------|-------------|
+| **monitor_queue_health** | Every 5 minutes | Monitor Celery queue health and task distribution |
+| **check_stalled_tasks** | Every 2 minutes | Find and fail tasks stuck in progress for >1 hour |
+| **update_agent_metrics** | Every 10 minutes | Update agent performance metrics |
+| **process_pending_tasks** | Every 3 minutes | Auto-assign pending tasks to available agents |
+| **check_agent_health** | Every 15 minutes | Mark inactive agents as offline |
+| **cleanup_completed_tasks** | Daily at 2 AM UTC | Delete tasks completed >30 days ago |
+| **generate_daily_report** | Daily at 9 AM UTC | Generate daily performance statistics |
+
+### Task Details
+
+#### monitor_queue_health
+Monitors Celery queue health and worker status:
+```python
+{
+    "success": True,
+    "timestamp": "2024-01-15T10:00:00Z",
+    "active_tasks": 5,
+    "scheduled_tasks": 2,
+    "reserved_tasks": 1
+}
+```
+
+#### check_stalled_tasks
+Automatically marks tasks as failed if they've been running for more than 1 hour:
+- Updates task status to FAILED
+- Sets error message: "Task stalled - exceeded timeout"
+- Sends WebSocket notification to subscribers
+- Returns stalled task IDs for monitoring
+
+#### update_agent_metrics
+Aggregates agent status across the system:
+```python
+{
+    "success": True,
+    "timestamp": "2024-01-15T10:00:00Z",
+    "metrics": {
+        "total_agents": 10,
+        "idle_agents": 6,
+        "busy_agents": 3,
+        "error_agents": 0,
+        "offline_agents": 1
+    }
+}
+```
+
+#### process_pending_tasks
+Auto-assigns ready tasks to best available agents:
+- Gets tasks with satisfied dependencies
+- Uses `find_best_agent_for_role()` for smart assignment
+- Considers agent success rate and load balancing
+- Processes up to 20 tasks per run
+
+#### check_agent_health
+Monitors agent responsiveness:
+- Marks agents as OFFLINE if inactive for >30 minutes
+- Clears current task assignments
+- Prevents resource leaks from crashed agents
+
+#### cleanup_completed_tasks
+Removes old completed tasks:
+- Default: Delete tasks older than 30 days
+- Only removes COMPLETED, FAILED, and CANCELLED tasks
+- Configurable retention period
+- Prevents database bloat
+
+#### generate_daily_report
+Creates daily performance summary:
+```python
+{
+    "success": True,
+    "date": "2024-01-14",
+    "tasks": {
+        "total": 150,
+        "completed": 142,
+        "failed": 8,
+        "success_rate": 94.67
+    },
+    "agents": {
+        "total": 10,
+        "active": 9
+    }
+}
+```
+
+### Running Celery Beat
+
+**Development:**
+```bash
+# Start Celery Beat scheduler
+celery -A celery_app beat --loglevel=info
+
+# Or use Makefile
+make celery-beat
+```
+
+**Production (Docker):**
+```yaml
+# Already configured in docker-compose.yml
+services:
+  beat:
+    command: celery -A celery_app beat --loglevel=info
+```
+
+### Monitoring Scheduled Tasks
+
+**Check scheduled tasks:**
+```bash
+# List all scheduled tasks
+celery -A celery_app inspect scheduled
+
+# Check active periodic tasks
+celery -A celery_app inspect active
+```
+
+**View task results:**
+```python
+from celery.result import AsyncResult
+from celery_app import celery_app
+
+# Get task result
+result = AsyncResult('task-id', app=celery_app)
+print(result.state)  # SUCCESS, FAILURE, PENDING
+print(result.result)  # Task return value
+```
+
+### Custom Scheduling
+
+Add custom periodic tasks in [celery_app.py](celery_app.py):
+
+```python
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    # Run every Monday at 8 AM
+    'weekly-cleanup': {
+        'task': 'src.workers.monitoring_worker.custom_task',
+        'schedule': crontab(hour=8, minute=0, day_of_week=1),
+    },
+
+    # Run every 30 seconds
+    'frequent-check': {
+        'task': 'src.workers.monitoring_worker.another_task',
+        'schedule': 30.0,
+    },
+}
+```
+
+### Task Logging
+
+All scheduled tasks log their execution:
+
+```
+[2024-01-15 10:00:00,123: INFO] Monitoring queue health...
+[2024-01-15 10:00:00,456: INFO] Queue health: 5 active, 2 scheduled, 1 reserved
+[2024-01-15 10:02:00,789: INFO] Checking for stalled tasks...
+[2024-01-15 10:02:00,890: WARNING] Found 2 stalled tasks: [123, 456]
+[2024-01-15 10:03:00,012: INFO] Processing pending tasks...
+[2024-01-15 10:03:01,234: INFO] Auto-assigned 5 pending tasks
+```
+
+### Disabling Scheduled Tasks
+
+To disable specific tasks, comment them out in `celery_app.py`:
+
+```python
+celery_app.conf.beat_schedule = {
+    # 'task-to-disable': {
+    #     'task': 'src.workers.monitoring_worker.some_task',
+    #     'schedule': 300.0,
+    # },
+}
+```
+
+Or use environment variables:
+
+```bash
+# Disable Celery Beat entirely
+CELERY_BEAT_ENABLED=false
+
+# Custom configuration
+CELERY_BEAT_SCHEDULE_FILENAME=/path/to/custom/schedule.py
+```
+
 ## Development
 
 ### Running Tests
