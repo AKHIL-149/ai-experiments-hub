@@ -1,5 +1,10 @@
 # Project 14: Multi-Agent Task Orchestrator
 
+[![CI - Tests and Coverage](https://github.com/yourusername/ai-experiments-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/ai-experiments-hub/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 An advanced AI-powered system that coordinates multiple specialized agents to autonomously break down, execute, and monitor complex tasks using LangGraph.
 
 ## Overview
@@ -110,6 +115,72 @@ python server.py
 - `make db-shell` - Open PostgreSQL shell
 - `make redis-shell` - Open Redis CLI
 - `make clean` - Remove containers and volumes
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run unit tests only
+pytest -m unit
+
+# Run integration tests only
+pytest -m integration
+
+# Run with coverage
+pytest --cov=src --cov-report=html --cov-report=term-missing
+
+# Run specific test file
+pytest tests/unit/test_validators.py -v
+
+# Run tests excluding slow/LLM tests
+pytest -m "not slow and not llm"
+```
+
+### Code Quality
+
+```bash
+# Format code with Black
+black src/ tests/
+
+# Sort imports with isort
+isort src/ tests/
+
+# Run linting checks
+flake8 src/ tests/
+
+# Run static analysis
+pylint src/
+
+# Run all quality checks
+black --check src/ tests/ && \
+isort --check-only src/ tests/ && \
+flake8 src/ tests/ && \
+pytest -m unit
+```
+
+### Pre-commit Hooks
+
+Install pre-commit hooks to automatically run code quality checks:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+### CI/CD
+
+The project uses GitHub Actions for continuous integration:
+
+- **Tests**: Runs on Python 3.11 and 3.12 with PostgreSQL and Redis
+- **Code Quality**: Black, isort, Flake8, Pylint checks
+- **Security**: Safety (dependency vulnerabilities) and Bandit (security issues)
+- **Docker Build**: Validates Docker image builds successfully
+
+All checks must pass before merging pull requests.
 
 ## Usage Guide
 
@@ -510,9 +581,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (50% complete)
+🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (55% complete)
 
-Current Progress: Commit 10/100
+Current Progress: Commit 11/100
 
 ## Implementation Roadmap
 
