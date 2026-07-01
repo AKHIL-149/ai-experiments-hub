@@ -164,12 +164,56 @@ pytest -m unit
 
 ### Pre-commit Hooks
 
-Install pre-commit hooks to automatically run code quality checks:
+Pre-commit hooks automatically run code quality checks before each commit, ensuring consistent code quality.
+
+**Installation:**
 
 ```bash
-pip install pre-commit
+# Install development dependencies (includes pre-commit)
+pip install -r requirements-dev.txt
+
+# Install pre-commit hooks
 pre-commit install
 ```
+
+**What Gets Checked:**
+
+The pre-commit hooks run the following checks:
+- **Black**: Code formatting (line length 100)
+- **isort**: Import sorting (Black-compatible)
+- **Flake8**: Linting with additional plugins
+- **pyupgrade**: Upgrade syntax to Python 3.11+
+- **Bandit**: Security vulnerability scanning
+- **Trailing whitespace**: Remove trailing spaces
+- **End of file**: Ensure newline at end
+- **YAML/JSON/TOML**: Validate file syntax
+- **Large files**: Prevent files > 1MB
+- **Merge conflicts**: Detect conflict markers
+- **Hadolint**: Dockerfile linting
+- **ShellCheck**: Shell script analysis
+- **Markdownlint**: Markdown formatting
+
+**Manual Execution:**
+
+```bash
+# Run on all files
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run black --all-files
+
+# Update hook versions
+pre-commit autoupdate
+
+# Skip hooks for a commit (use sparingly)
+git commit --no-verify
+```
+
+**Benefits:**
+- Catches issues before CI/CD
+- Ensures consistent code style
+- Prevents common errors
+- Faster feedback loop
 
 ### CI/CD
 
@@ -581,9 +625,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (55% complete)
+🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (60% complete)
 
-Current Progress: Commit 11/100
+Current Progress: Commit 12/100
 
 ## Implementation Roadmap
 

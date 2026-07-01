@@ -1,0 +1,65 @@
+# Development dependencies for Multi-Agent Task Orchestrator
+# Install with: pip install -r requirements-dev.txt
+
+# Install production dependencies
+-r requirements.txt
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.5.0  # Parallel test execution
+pytest-timeout==2.2.0
+coverage[toml]==7.4.0
+
+# Code Formatting
+black==24.1.1
+isort==5.13.2
+
+# Linting
+flake8==7.0.0
+flake8-docstrings==1.7.0
+flake8-bugbear==24.1.17
+flake8-comprehensions==3.14.0
+flake8-simplify==0.21.0
+pylint==3.0.3
+pydocstyle==6.3.0
+
+# Type Checking
+mypy==1.8.0
+types-redis==4.6.0.20240106
+types-requests==2.31.0.20240106
+
+# Security
+bandit==1.7.6
+safety==3.0.1
+
+# Pre-commit Hooks
+pre-commit==3.6.0
+
+# Documentation
+sphinx==7.2.6
+sphinx-rtd-theme==2.0.0
+sphinx-autodoc-typehints==1.25.2
+
+# Database Tools
+alembic==1.13.1  # Already in requirements.txt but listed for clarity
+
+# Development Utilities
+ipython==8.20.0
+ipdb==0.13.13
+rich==13.7.0  # Better terminal output
+watchdog==4.0.0  # File watching for development
+
+# API Development
+httpx==0.26.0  # Alternative to requests with async support
+faker==22.5.1  # Generate fake data for testing
+
+# Performance Profiling
+py-spy==0.3.14
+memory-profiler==0.61.0
+
+# Code Complexity
+radon==6.0.1
+xenon==0.9.1
