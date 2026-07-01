@@ -228,6 +228,210 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 ```
 
+## Workflows
+
+The system uses LangGraph to orchestrate multi-agent workflows with DAG-based execution.
+
+### Workflow Types
+
+**1. Simple Workflow** (Quick execution)
+```
+research → code → document
+```
+
+**2. Default Workflow** (Complete pipeline)
+```
+research → code → review → test → document
+```
+
+**3. Custom Workflow** (User-defined)
+- Define your own nodes and edges
+- Flexible routing and conditional logic
+
+### Workflow Nodes
+
+| Node | Agent | Purpose |
+|------|-------|---------|
+| **research** | Researcher | Gather information and context |
+| **code** | Coder | Implement solutions and write code |
+| **review** | Reviewer | Review code quality and suggest improvements |
+| **test** | Tester | Create and run tests |
+| **document** | Writer | Generate documentation |
+
+### Execute a Workflow
+
+**Simple workflow example:**
+```bash
+curl -X POST http://localhost:8001/api/workflows/execute \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 1,
+    "task_title": "Build REST API",
+    "task_description": "Build a REST API with FastAPI and PostgreSQL",
+    "task_type": "coding",
+    "priority": 7,
+    "workflow_type": "simple",
+    "input_data": {
+      "framework": "FastAPI",
+      "database": "PostgreSQL"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "task_id": 1,
+  "status": "completed",
+  "progress": 100,
+  "workflow_path": ["start", "research", "code", "document"],
+  "total_tokens": 2100,
+  "total_cost": 0.042,
+  "execution_time": 5.2,
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "Research completed: Research completed successfully"
+    },
+    {
+      "role": "assistant",
+      "content": "Code implementation completed: 50 lines"
+    },
+    {
+      "role": "assistant",
+      "content": "Documentation completed: 500 words"
+    }
+  ],
+  "outputs": {
+    "research": {
+      "findings": "Research findings for: Build a REST API...",
+      "sources": ["source1", "source2"],
+      "summary": "Research completed successfully",
+      "confidence": 0.85
+    },
+    "code": {
+      "code": "# Implementation based on research...",
+      "language": "python",
+      "files_created": ["main.py"],
+      "lines_of_code": 50
+    },
+    "document": {
+      "documentation": "# Build REST API\n\n## Overview...",
+      "sections": ["Overview", "Usage", "API Reference"],
+      "word_count": 500
+    }
+  }
+}
+```
+
+### Custom Workflow
+
+Create a workflow with specific nodes:
+
+```bash
+curl -X POST http://localhost:8001/api/workflows/execute/custom \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 2,
+    "task_title": "Quick Prototype",
+    "task_description": "Create a quick prototype",
+    "nodes": ["research", "code", "test"],
+    "edges": [
+      ["research", "code"],
+      ["code", "test"],
+      ["test", "END"]
+    ],
+    "input_data": {
+      "prototype": true
+    }
+  }'
+```
+
+### List Available Workflows
+
+```bash
+curl http://localhost:8001/api/workflows/workflows \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+[
+  {
+    "type": "default",
+    "description": "Complete workflow with all nodes and routing",
+    "nodes": ["research", "code", "review", "test", "document", "approval"]
+  },
+  {
+    "type": "simple",
+    "description": "Simple linear workflow for quick execution",
+    "nodes": ["research", "code", "document"]
+  },
+  {
+    "type": "custom",
+    "description": "Custom workflow with user-defined nodes and edges",
+    "nodes": "variable"
+  }
+]
+```
+
+### Workflow State
+
+Each workflow maintains state that includes:
+- **Task information**: ID, title, description, type, priority
+- **Execution tracking**: Current node, path, progress
+- **Node outputs**: Results from each executed node
+- **Cost tracking**: Total tokens used and cost
+- **Messages**: Conversation history
+- **Logs**: Execution logs
+
+### Python SDK Example
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8001/api"
+headers = {"Authorization": f"Bearer {access_token}"}
+
+# Execute simple workflow
+response = requests.post(
+    f"{BASE_URL}/workflows/execute",
+    headers=headers,
+    json={
+        "task_id": 1,
+        "task_title": "Implement feature X",
+        "task_description": "Add authentication to the API",
+        "task_type": "coding",
+        "priority": 8,
+        "workflow_type": "simple"
+    }
+)
+
+result = response.json()
+print(f"Workflow status: {result['status']}")
+print(f"Progress: {result['progress']}%")
+print(f"Total cost: ${result['total_cost']:.4f}")
+print(f"Execution time: {result['execution_time']}s")
+
+# Access outputs
+research = result['outputs']['research']
+code = result['outputs']['code']
+print(f"Research summary: {research['summary']}")
+print(f"Lines of code: {code['lines_of_code']}")
+```
+
+### Workflow Features
+
+- **DAG-based execution**: Directed acyclic graph ensures proper task ordering
+- **State management**: Shared state across all nodes
+- **Cost tracking**: Monitor LLM token usage and costs
+- **Progress tracking**: Real-time progress updates
+- **Error handling**: Built-in error handling and recovery
+- **Flexible routing**: Conditional edges based on state
+- **Human-in-the-loop**: Approval gates for critical decisions
+
 ## Development
 
 ### Running Tests
@@ -737,9 +941,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (65% complete)
+🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (70% complete)
 
-Current Progress: Commit 13/100
+Current Progress: Commit 14/100
 
 ## Implementation Roadmap
 

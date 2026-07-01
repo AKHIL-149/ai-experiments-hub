@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
-from src.api import tasks, agents, health, metrics, auth
+from src.api import tasks, agents, health, metrics, auth, workflows
 
 
 @asynccontextmanager
@@ -57,6 +57,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
