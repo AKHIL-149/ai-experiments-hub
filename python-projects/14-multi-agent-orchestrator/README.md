@@ -1140,6 +1140,399 @@ CELERY_BEAT_ENABLED=false
 CELERY_BEAT_SCHEDULE_FILENAME=/path/to/custom/schedule.py
 ```
 
+## Error Tracking and Logging System
+
+The system includes a comprehensive error tracking and logging system that monitors, aggregates, and reports errors across the entire application.
+
+### Error Severity Levels
+
+| Severity | Description | Action |
+|----------|-------------|--------|
+| **LOW** | Minor issues that don't affect functionality | Logged only |
+| **MEDIUM** | Issues that may impact performance or UX | Logged and tracked |
+| **HIGH** | Critical issues affecting functionality | Logged, tracked, and notified |
+| **CRITICAL** | System-breaking errors requiring immediate attention | Logged, tracked, notified, and WebSocket alert |
+
+### Error Categories
+
+The system classifies errors into 8 categories for better organization:
+
+- **TASK_EXECUTION** - Errors during task execution
+- **AGENT_ERROR** - Agent-related failures
+- **WORKFLOW_ERROR** - Workflow orchestration issues
+- **DATABASE_ERROR** - Database operation failures
+- **API_ERROR** - HTTP API errors
+- **VALIDATION_ERROR** - Input validation failures
+- **NETWORK_ERROR** - External API and network issues
+- **SYSTEM_ERROR** - General system errors
+
+### Error Fingerprinting
+
+The error tracker uses fingerprinting to deduplicate similar errors:
+
+```python
+# Errors are fingerprinted using MD5 hash of:
+# - Error type (e.g., ValueError, KeyError)
+# - Error message
+# - Error category
+
+# Same error occurring multiple times gets single fingerprint
+# Tracks occurrence count and last occurrence timestamp
+```
+
+### API Endpoints
+
+**Get Error Summary:**
+```bash
+curl http://localhost:8001/api/errors/summary?hours=24&min_occurrences=1
+
+# Response:
+# {
+#   "time_period_hours": 24,
+#   "total_errors": 15,
+#   "unique_errors": 8,
+#   "errors_by_severity": {
+#     "LOW": 5,
+#     "MEDIUM": 7,
+#     "HIGH": 2,
+#     "CRITICAL": 1
+#   },
+#   "errors_by_category": {
+#     "TASK_EXECUTION": 6,
+#     "DATABASE_ERROR": 3,
+#     "API_ERROR": 4,
+#     "VALIDATION_ERROR": 2
+#   },
+#   "top_errors": [
+#     {
+#       "fingerprint": "a1b2c3d4...",
+#       "error_type": "TaskExecutionError",
+#       "error_message": "Task timeout exceeded",
+#       "category": "TASK_EXECUTION",
+#       "severity": "HIGH",
+#       "count": 8,
+#       "last_seen": "2024-01-15T14:30:00Z"
+#     }
+#   ]
+# }
+```
+
+**Get Error Details:**
+```bash
+curl http://localhost:8001/api/errors/details/{fingerprint}
+
+# Response includes:
+# - Full error details
+# - Stack traces
+# - All occurrences
+# - Context information
+# - Associated tasks/agents
+```
+
+**Get Recovery Suggestions:**
+```bash
+curl http://localhost:8001/api/errors/suggestions/{fingerprint}
+
+# Response:
+# {
+#   "fingerprint": "a1b2c3d4...",
+#   "error_type": "TaskExecutionError",
+#   "suggestions": [
+#     "Check task timeout configuration",
+#     "Review agent resource allocation",
+#     "Verify database connection pool"
+#   ],
+#   "documentation_links": [
+#     "https://docs.example.com/task-timeouts"
+#   ]
+# }
+```
+
+**Clear Old Errors:**
+```bash
+curl -X POST http://localhost:8001/api/errors/clear?hours=48
+
+# Response:
+# {
+#   "cleared_count": 125,
+#   "cutoff_time": "2024-01-13T10:00:00Z"
+# }
+```
+
+**Get Error Categories:**
+```bash
+curl http://localhost:8001/api/errors/categories
+
+# Response:
+# {
+#   "categories": [
+#     "TASK_EXECUTION",
+#     "AGENT_ERROR",
+#     ...
+#   ],
+#   "severities": [
+#     "LOW",
+#     "MEDIUM",
+#     "HIGH",
+#     "CRITICAL"
+#   ]
+# }
+```
+
+**Get Error Statistics:**
+```bash
+curl http://localhost:8001/api/errors/stats
+
+# Response:
+# {
+#   "total_errors": 342,
+#   "unique_fingerprints": 45,
+#   "errors_last_hour": 12,
+#   "errors_last_24h": 156,
+#   "critical_errors_24h": 3,
+#   "most_common_category": "TASK_EXECUTION",
+#   "average_errors_per_hour": 6.5
+# }
+```
+
+### Automatic Error Tracking
+
+Errors are automatically tracked via middleware:
+
+```python
+# All API errors are automatically tracked
+# No manual error tracking needed in route handlers
+
+@router.post("/api/tasks")
+async def create_task(task_data: TaskCreate):
+    # If this raises an exception, it's automatically tracked
+    task = TaskService.create_task(...)
+    return task
+
+# Error is logged with:
+# - HTTP method and path
+# - Request headers
+# - Error type and message
+# - Full traceback
+# - Automatic severity classification
+```
+
+### Manual Error Tracking
+
+Track errors manually in your code:
+
+```python
+from src.core.error_tracker import error_tracker, ErrorSeverity, ErrorCategory
+
+try:
+    # Some operation
+    result = risky_operation()
+except Exception as e:
+    # Track the error with context
+    fingerprint = error_tracker.track_error(
+        error=e,
+        context={
+            "operation": "risky_operation",
+            "user_id": 123,
+            "input_data": {...}
+        },
+        severity=ErrorSeverity.HIGH,
+        category=ErrorCategory.TASK_EXECUTION,
+        task_id=456,
+        agent_id=789
+    )
+
+    # Handle the error
+    logger.error(f"Operation failed with fingerprint: {fingerprint}")
+```
+
+### Error Recovery Suggestions
+
+The system provides intelligent recovery suggestions based on error type:
+
+```python
+# Example suggestions for common errors:
+
+TaskExecutionError:
+  - "Increase task timeout in configuration"
+  - "Check agent availability"
+  - "Review task dependencies"
+
+DatabaseError:
+  - "Check database connection"
+  - "Verify connection pool settings"
+  - "Review database locks"
+
+ValidationError:
+  - "Check input data format"
+  - "Review API schema"
+  - "Verify required fields"
+
+NetworkError:
+  - "Check external API status"
+  - "Verify network connectivity"
+  - "Review timeout settings"
+```
+
+### WebSocket Notifications
+
+High and critical errors trigger real-time WebSocket notifications:
+
+```javascript
+// Connect to WebSocket
+const ws = new WebSocket(`ws://localhost:8001/api/ws?token=${token}`);
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+
+  if (message.data.type === "system_event" &&
+      message.data.event === "error_occurred") {
+
+    const error = message.data.error;
+
+    if (error.severity === "CRITICAL") {
+      // Show critical error alert
+      showCriticalAlert(error);
+    } else if (error.severity === "HIGH") {
+      // Show high priority notification
+      showNotification(error);
+    }
+  }
+};
+```
+
+### Error Aggregation
+
+View aggregated error metrics:
+
+```python
+from src.core.error_tracker import error_tracker
+
+# Get error summary for last 24 hours
+summary = error_tracker.get_error_summary(hours=24, min_occurrences=2)
+
+print(f"Total errors: {summary['total_errors']}")
+print(f"Unique errors: {summary['unique_errors']}")
+
+# Errors by severity
+for severity, count in summary['errors_by_severity'].items():
+    print(f"{severity}: {count}")
+
+# Top errors
+for error in summary['top_errors']:
+    print(f"{error['error_type']}: {error['count']} occurrences")
+```
+
+### Error Logging
+
+All errors are logged with structured data:
+
+```json
+{
+  "timestamp": "2024-01-15T14:30:00.123Z",
+  "level": "ERROR",
+  "fingerprint": "a1b2c3d4e5f6...",
+  "error_type": "TaskExecutionError",
+  "error_message": "Task timeout exceeded",
+  "severity": "HIGH",
+  "category": "TASK_EXECUTION",
+  "context": {
+    "task_id": 456,
+    "agent_id": 789,
+    "timeout": 300
+  },
+  "traceback": "Traceback (most recent call last):\n  File ...",
+  "occurrence_count": 8
+}
+```
+
+### Monitoring Dashboard Integration
+
+The error tracking system exposes metrics for monitoring dashboards:
+
+```bash
+# Prometheus metrics
+curl http://localhost:8001/api/metrics
+
+# Includes:
+# - error_total{severity="HIGH",category="TASK_EXECUTION"}
+# - error_unique_total
+# - error_occurrence_rate
+```
+
+### Error Retention
+
+Configure error retention policy:
+
+```python
+# Clear errors older than 48 hours
+from src.core.error_tracker import error_tracker
+
+cleared = error_tracker.clear_old_errors(hours=48)
+print(f"Cleared {cleared} old errors")
+
+# Or via API
+curl -X POST http://localhost:8001/api/errors/clear?hours=48
+```
+
+### Production Best Practices
+
+**1. Set up error alerts:**
+```python
+# Configure webhooks or email for critical errors
+CRITICAL_ERROR_WEBHOOK = "https://hooks.slack.com/..."
+ERROR_NOTIFICATION_EMAIL = "ops@example.com"
+```
+
+**2. Monitor error rates:**
+```bash
+# Check error stats regularly
+curl http://localhost:8001/api/errors/stats
+
+# Set up alerts for error spikes
+# Alert if errors_last_hour > threshold
+```
+
+**3. Review top errors weekly:**
+```bash
+# Get most common errors
+curl http://localhost:8001/api/errors/summary?hours=168&min_occurrences=5
+
+# Prioritize fixing high-occurrence errors
+```
+
+**4. Archive old errors:**
+```bash
+# Export errors before clearing
+curl http://localhost:8001/api/errors/summary?hours=720 > errors_archive.json
+
+# Clear old errors
+curl -X POST http://localhost:8001/api/errors/clear?hours=720
+```
+
+### Integration with Services
+
+Error tracking is automatically integrated:
+
+```python
+from src.services import TaskService
+from src.core.database import get_db_session
+
+# Service methods automatically track errors
+with get_db_session() as session:
+    try:
+        # If this fails, error is automatically tracked
+        task = TaskService.execute_task_with_workflow(
+            session=session,
+            task_id=123,
+            workflow_type="default"
+        )
+    except Exception as e:
+        # Error already tracked by middleware
+        # Can add additional context if needed
+        pass
+```
+
 ## Development
 
 ### Running Tests
@@ -1649,9 +2042,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (70% complete)
+🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (90% complete)
 
-Current Progress: Commit 14/100
+Current Progress: Commit 18/100
 
 ## Implementation Roadmap
 

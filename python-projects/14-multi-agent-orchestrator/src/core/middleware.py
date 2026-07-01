@@ -75,6 +75,27 @@ class ErrorTrackingMiddleware(BaseHTTPMiddleware):
             return response
 
         except Exception as e:
+            # Track with error tracker
+            from src.core.error_tracker import error_tracker, ErrorSeverity, ErrorCategory
+
+            # Determine severity based on exception type
+            severity = ErrorSeverity.MEDIUM
+            if isinstance(e, (KeyError, ValueError, TypeError)):
+                severity = ErrorSeverity.LOW
+            elif isinstance(e, (ConnectionError, TimeoutError)):
+                severity = ErrorSeverity.HIGH
+
+            error_tracker.track_error(
+                error=e,
+                context={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "headers": dict(request.headers),
+                },
+                severity=severity,
+                category=ErrorCategory.API_ERROR
+            )
+
             # Log unhandled exceptions
             metrics_collector.record_error(
                 error_type=type(e).__name__,
