@@ -432,6 +432,222 @@ print(f"Lines of code: {code['lines_of_code']}")
 - **Flexible routing**: Conditional edges based on state
 - **Human-in-the-loop**: Approval gates for critical decisions
 
+## Service Layer
+
+The system uses a service layer to abstract business logic and database operations, making the code more maintainable and testable.
+
+### Architecture
+
+```
+API Layer (FastAPI)
+    ↓
+Service Layer (Business Logic)
+    ↓
+Database Layer (SQLAlchemy ORM)
+```
+
+### Available Services
+
+**AgentService** - Agent lifecycle management
+- `create_agent()` - Create a new agent
+- `get_agent_by_id()` - Retrieve agent by ID
+- `get_agents_by_role()` - Get agents by role
+- `get_available_agents()` - Get idle agents
+- `assign_agent_to_task()` - Assign agent to task
+- `update_agent_status()` - Update agent status
+- `update_agent_metrics()` - Track performance metrics
+- `find_best_agent_for_role()` - Auto-select best agent
+- `deactivate_agent()` - Deactivate an agent
+
+**TaskService** - Task orchestration and execution
+- `create_task()` - Create a new task
+- `get_task_by_id()` - Retrieve task by ID
+- `update_task_status()` - Update task status
+- `assign_task_to_agent()` - Assign to specific agent
+- `auto_assign_task()` - Auto-assign to best agent
+- `add_task_dependency()` - Add task dependency
+- `get_ready_tasks()` - Get tasks ready to execute
+- `execute_task_with_workflow()` - Execute via workflow
+- `cancel_task()` - Cancel a task
+
+**WorkflowService** - Workflow execution
+- `execute_workflow()` - Execute predefined workflow
+- `execute_custom_workflow()` - Execute custom workflow
+- `get_workflow_info()` - Get workflow details
+- `list_workflows()` - List available workflows
+
+### Usage Examples
+
+#### Using AgentService
+
+```python
+from sqlalchemy.orm import Session
+from src.core.database import get_db_session
+from src.services import AgentService
+from src.models import AgentRole
+
+# Create session
+with get_db_session() as session:
+    # Create a new agent
+    agent = AgentService.create_agent(
+        session=session,
+        name="Code Master",
+        role=AgentRole.CODER,
+        description="Expert Python developer",
+        llm_provider="openai",
+        llm_model="gpt-4-turbo-preview",
+        temperature=0.3
+    )
+    print(f"Created agent: {agent.id}")
+
+    # Get available agents for a role
+    coders = AgentService.get_available_agents(
+        session=session,
+        role=AgentRole.CODER
+    )
+    print(f"Found {len(coders)} available coders")
+
+    # Find best agent for a role (auto-selection)
+    best_agent = AgentService.find_best_agent_for_role(
+        session=session,
+        role=AgentRole.CODER
+    )
+    print(f"Best agent: {best_agent.name}")
+
+    # Get agent metrics
+    metrics = AgentService.get_agent_metrics(session, agent.id)
+    print(f"Success rate: {metrics['success_rate']}%")
+    print(f"Total cost: ${metrics['total_cost']:.2f}")
+```
+
+#### Using TaskService
+
+```python
+from src.services import TaskService, AgentService
+from src.models import AgentRole
+
+with get_db_session() as session:
+    # Create a new task
+    task = TaskService.create_task(
+        session=session,
+        title="Build Authentication API",
+        description="Implement JWT-based auth with FastAPI",
+        task_type="coding",
+        priority=8,
+        input_data={"framework": "FastAPI", "auth_type": "JWT"}
+    )
+    print(f"Created task: {task.id}")
+
+    # Auto-assign task to best available agent
+    task = TaskService.auto_assign_task(
+        session=session,
+        task_id=task.id,
+        required_role=AgentRole.CODER
+    )
+    print(f"Assigned to agent: {task.assigned_agent_id}")
+
+    # Execute task with workflow
+    result = TaskService.execute_task_with_workflow(
+        session=session,
+        task_id=task.id,
+        workflow_type="simple"
+    )
+    print(f"Task status: {result['status']}")
+    print(f"Workflow result: {result['workflow_result']}")
+
+    # Check task progress
+    task = TaskService.get_task_by_id(session, task.id)
+    print(f"Progress: {task.progress_percentage}%")
+    print(f"Status: {task.status.value}")
+```
+
+#### Managing Task Dependencies
+
+```python
+from src.services import TaskService
+
+with get_db_session() as session:
+    # Create dependent tasks
+    research_task = TaskService.create_task(
+        session=session,
+        title="Research authentication methods",
+        description="Compare JWT vs OAuth",
+        task_type="research",
+        priority=9
+    )
+
+    coding_task = TaskService.create_task(
+        session=session,
+        title="Implement authentication",
+        description="Build JWT authentication",
+        task_type="coding",
+        priority=8
+    )
+
+    # Add dependency: coding depends on research
+    TaskService.add_task_dependency(
+        session=session,
+        task_id=coding_task.id,
+        depends_on_task_id=research_task.id,
+        dependency_type="completion",
+        is_blocking=True
+    )
+
+    # Get tasks ready to execute
+    ready_tasks = TaskService.get_ready_tasks(session, limit=10)
+    print(f"Ready tasks: {[t.title for t in ready_tasks]}")
+    # Output: ["Research authentication methods"]
+    # (coding_task is not ready until research_task completes)
+```
+
+#### Workflow Execution with Services
+
+```python
+from src.services import TaskService, WorkflowService
+
+with get_db_session() as session:
+    # Create task
+    task = TaskService.create_task(
+        session=session,
+        title="Build user management API",
+        description="CRUD endpoints for users",
+        task_type="coding",
+        priority=7
+    )
+
+    # Auto-assign to best agent
+    task = TaskService.auto_assign_task(session, task.id)
+
+    # Execute with default workflow (research → code → review → test → document)
+    result = TaskService.execute_task_with_workflow(
+        session=session,
+        task_id=task.id,
+        workflow_type="default"
+    )
+
+    # Check results
+    workflow_state = result['workflow_result']
+    print(f"Status: {workflow_state['status']}")
+    print(f"Total cost: ${workflow_state['total_cost']:.4f}")
+    print(f"Tokens used: {workflow_state['total_tokens']}")
+    print(f"Execution time: {workflow_state['execution_time']}s")
+
+    # Access node outputs
+    research = workflow_state.get('research_output', {})
+    code = workflow_state.get('code_output', {})
+    print(f"Research summary: {research.get('summary')}")
+    print(f"Code files: {code.get('files_created')}")
+```
+
+### Service Layer Benefits
+
+- **Separation of Concerns**: Business logic isolated from API layer
+- **Testability**: Services can be tested independently
+- **Reusability**: Service methods used by API, Celery workers, and scripts
+- **Transaction Management**: Database transactions handled at service level
+- **Error Handling**: Consistent error handling across the application
+- **Validation**: Input validation before database operations
+
 ## Development
 
 ### Running Tests
