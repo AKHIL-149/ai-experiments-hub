@@ -32,15 +32,21 @@ def main():
     print(f"   Message: {status['message']}")
 
     if status['status'] == 'healthy':
+        # Seed default users
+        print("\n3. Seeding default users...")
+        user_result = seed_data.seed_default_users()
+        print(f"   Created: {user_result['created']}")
+        print(f"   Skipped: {user_result['skipped']}")
+
         # Seed agents
-        print("\n3. Seeding default agents...")
+        print("\n4. Seeding default agents...")
         agent_result = seed_data.seed_agents(force=False)
         print(f"   Created: {agent_result['created']}")
         print(f"   Updated: {agent_result['updated']}")
         print(f"   Skipped: {agent_result['skipped']}")
 
         # Get database stats
-        print("\n4. Database statistics:")
+        print("\n5. Database statistics:")
         stats = db_utils.get_database_stats()
         print(f"   Total tasks: {stats['tasks']['total']}")
         print(f"   Total agents: {stats['agents']['total']}")

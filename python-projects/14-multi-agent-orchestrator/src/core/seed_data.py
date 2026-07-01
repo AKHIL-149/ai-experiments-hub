@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 
 from src.core.database import DatabaseManager
 from src.models import Agent, AgentRole, AgentStatus
+from src.models.user import User, UserRole
 from src.core.config import settings
 
 
@@ -302,6 +303,73 @@ class SeedData:
         return {
             'success': True,
             'created': created_count
+        }
+
+    def seed_default_users(self) -> Dict[str, Any]:
+        """
+        Seed default users for development
+
+        Returns:
+            dict: Seeding results
+        """
+        default_users = [
+            {
+                'username': 'admin',
+                'email': 'admin@example.com',
+                'password': 'admin123',  # Change in production!
+                'full_name': 'Administrator',
+                'role': UserRole.ADMIN,
+                'is_superuser': True
+            },
+            {
+                'username': 'user',
+                'email': 'user@example.com',
+                'password': 'user123',  # Change in production!
+                'full_name': 'Regular User',
+                'role': UserRole.USER,
+                'is_superuser': False
+            },
+            {
+                'username': 'viewer',
+                'email': 'viewer@example.com',
+                'password': 'viewer123',  # Change in production!
+                'full_name': 'View Only User',
+                'role': UserRole.VIEWER,
+                'is_superuser': False
+            }
+        ]
+
+        created_count = 0
+        skipped_count = 0
+
+        with self.db_manager.session_scope() as session:
+            for user_config in default_users:
+                # Check if user already exists
+                existing = session.query(User).filter(
+                    (User.username == user_config['username']) |
+                    (User.email == user_config['email'])
+                ).first()
+
+                if existing:
+                    skipped_count += 1
+                    continue
+
+                # Create user with hashed password
+                password = user_config.pop('password')
+                user = User(
+                    **user_config,
+                    hashed_password=User.get_password_hash(password),
+                    is_active=True
+                )
+                session.add(user)
+                created_count += 1
+
+        print(f"✅ Seeded {created_count} default users (skipped {skipped_count} existing)")
+
+        return {
+            'success': True,
+            'created': created_count,
+            'skipped': skipped_count
         }
 
 

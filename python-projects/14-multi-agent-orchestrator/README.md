@@ -116,6 +116,118 @@ python server.py
 - `make redis-shell` - Open Redis CLI
 - `make clean` - Remove containers and volumes
 
+## Authentication
+
+The system uses JWT (JSON Web Tokens) for authentication and role-based access control.
+
+### Default Users
+
+After running `python scripts/init_db.py`, three default users are created:
+
+| Username | Password | Role | Permissions |
+|----------|----------|------|-------------|
+| admin | admin123 | ADMIN | Full access, can manage agents |
+| user | user123 | USER | Can create and manage tasks |
+| viewer | viewer123 | VIEWER | Read-only access |
+
+**⚠️ Change these passwords in production!**
+
+### Authentication Flow
+
+1. **Register** (optional): Create a new user account
+2. **Login**: Get access and refresh tokens
+3. **Use Token**: Include token in `Authorization: Bearer <token>` header
+4. **Refresh**: Get new access token using refresh token
+
+### API Examples
+
+**Register a new user:**
+```bash
+curl -X POST http://localhost:8001/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "newuser",
+    "email": "new@example.com",
+    "password": "securepass123",
+    "full_name": "New User"
+  }'
+```
+
+**Login:**
+```bash
+curl -X POST http://localhost:8001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "admin123"
+  }'
+
+# Response:
+# {
+#   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+#   "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+#   "token_type": "bearer"
+# }
+```
+
+**Get current user info:**
+```bash
+curl http://localhost:8001/api/auth/me \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Use authenticated endpoint:**
+```bash
+# Create a task (requires authentication)
+curl -X POST http://localhost:8001/api/tasks \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "My Task",
+    "description": "Task description",
+    "task_type": "coding",
+    "priority": 5
+  }'
+```
+
+**Refresh token:**
+```bash
+curl -X POST http://localhost:8001/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "<refresh_token>"
+  }'
+```
+
+**Change password:**
+```bash
+curl -X POST http://localhost:8001/api/auth/change-password \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "current_password": "admin123",
+    "new_password": "newsecurepass123"
+  }'
+```
+
+### Role-Based Access Control
+
+- **VIEWER**: Read-only access to tasks and agents
+- **USER**: Can create and manage own tasks
+- **ADMIN**: Full access, can manage agents and all tasks
+
+### Environment Variables
+
+Configure JWT settings in `.env`:
+
+```bash
+# JWT Configuration
+JWT_SECRET_KEY=your-secret-key-change-in-production
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+```
+
 ## Development
 
 ### Running Tests
@@ -625,9 +737,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (60% complete)
+🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (65% complete)
 
-Current Progress: Commit 12/100
+Current Progress: Commit 13/100
 
 ## Implementation Roadmap
 
