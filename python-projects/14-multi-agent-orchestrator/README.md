@@ -648,6 +648,307 @@ with get_db_session() as session:
 - **Error Handling**: Consistent error handling across the application
 - **Validation**: Input validation before database operations
 
+## Real-Time Notifications with WebSockets
+
+The system provides WebSocket endpoints for real-time updates on tasks, agents, and workflows.
+
+### WebSocket Endpoints
+
+**1. General WebSocket** - Subscribe to all updates
+```
+ws://localhost:8001/api/ws?token=<access_token>
+```
+
+**2. Task-Specific WebSocket** - Updates for a specific task
+```
+ws://localhost:8001/api/ws/tasks/{task_id}?token=<access_token>
+```
+
+**3. Agent-Specific WebSocket** - Updates for a specific agent
+```
+ws://localhost:8001/api/ws/agents/{agent_id}?token=<access_token>
+```
+
+### Event Types
+
+**Task Events:**
+- `created` - Task created
+- `status_changed` - Task status updated
+- `assigned` - Task assigned to agent
+- `progress` - Workflow progress update
+
+**Agent Events:**
+- `status_changed` - Agent status updated
+- `assigned` - Agent assigned to task
+- `metrics_updated` - Performance metrics updated
+
+**Workflow Events:**
+- `progress` - Node transition in workflow
+- `completed` - Workflow completed
+- `failed` - Workflow failed
+
+### Message Format
+
+All WebSocket messages follow this format:
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "data": {
+    "type": "task_update",
+    "event": "status_changed",
+    "task_id": 123,
+    "status": "in_progress",
+    "progress": 45
+  }
+}
+```
+
+### JavaScript Client Example
+
+```javascript
+// Connect to WebSocket
+const token = "your_access_token";
+const ws = new WebSocket(`ws://localhost:8001/api/ws?token=${token}`);
+
+ws.onopen = () => {
+  console.log("WebSocket connected");
+
+  // Subscribe to specific task updates
+  ws.send(JSON.stringify({
+    type: "subscribe",
+    room: "task_123"
+  }));
+
+  // Subscribe to all agent updates
+  ws.send(JSON.stringify({
+    type: "subscribe",
+    room: "agents"
+  }));
+};
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+  console.log("Received:", message);
+
+  // Handle different event types
+  if (message.data.type === "task_update") {
+    if (message.data.event === "status_changed") {
+      console.log(`Task ${message.data.task_id} is now ${message.data.status}`);
+      updateTaskUI(message.data.task_id, message.data.status);
+    } else if (message.data.event === "progress") {
+      console.log(`Task ${message.data.task_id} progress: ${message.data.progress}%`);
+      updateProgressBar(message.data.task_id, message.data.progress);
+    }
+  } else if (message.data.type === "agent_update") {
+    if (message.data.event === "assigned") {
+      console.log(`Agent ${message.data.agent_id} assigned to task ${message.data.task_id}`);
+      updateAgentStatus(message.data.agent_id, "busy");
+    }
+  }
+};
+
+ws.onerror = (error) => {
+  console.error("WebSocket error:", error);
+};
+
+ws.onclose = () => {
+  console.log("WebSocket disconnected");
+};
+
+// Send heartbeat every 30 seconds
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: "ping",
+      timestamp: new Date().toISOString()
+    }));
+  }
+}, 30000);
+
+// Unsubscribe from a room
+function unsubscribe(room) {
+  ws.send(JSON.stringify({
+    type: "unsubscribe",
+    room: room
+  }));
+}
+```
+
+### Python Client Example
+
+```python
+import asyncio
+import websockets
+import json
+
+async def connect_websocket():
+    """Connect to WebSocket and receive real-time updates"""
+    token = "your_access_token"
+    uri = f"ws://localhost:8001/api/ws?token={token}"
+
+    async with websockets.connect(uri) as websocket:
+        print("WebSocket connected")
+
+        # Subscribe to task updates
+        await websocket.send(json.dumps({
+            "type": "subscribe",
+            "room": "tasks"
+        }))
+
+        # Subscribe to specific task
+        await websocket.send(json.dumps({
+            "type": "subscribe",
+            "room": "task_123"
+        }))
+
+        # Listen for messages
+        async for message in websocket:
+            data = json.loads(message)
+            print(f"Received: {data}")
+
+            # Handle events
+            if data.get("data", {}).get("type") == "task_update":
+                event = data["data"]["event"]
+                task_id = data["data"]["task_id"]
+
+                if event == "status_changed":
+                    status = data["data"]["status"]
+                    print(f"Task {task_id} status: {status}")
+
+                elif event == "progress":
+                    progress = data["data"]["progress"]
+                    print(f"Task {task_id} progress: {progress}%")
+
+# Run WebSocket client
+asyncio.run(connect_websocket())
+```
+
+### Task-Specific WebSocket Example
+
+```python
+import asyncio
+import websockets
+import json
+
+async def monitor_task(task_id: int):
+    """Monitor a specific task's progress in real-time"""
+    token = "your_access_token"
+    uri = f"ws://localhost:8001/api/ws/tasks/{task_id}?token={token}"
+
+    async with websockets.connect(uri) as websocket:
+        print(f"Connected to task {task_id} updates")
+
+        async for message in websocket:
+            data = json.loads(message)
+
+            if data.get("data", {}).get("event") == "progress":
+                node = data["data"].get("node")
+                progress = data["data"].get("progress")
+                print(f"Task {task_id} at node '{node}': {progress}%")
+
+            elif data.get("data", {}).get("event") == "status_changed":
+                status = data["data"]["status"]
+                print(f"Task {task_id} completed with status: {status}")
+
+                if status in ["completed", "failed", "cancelled"]:
+                    break
+
+# Monitor task execution
+asyncio.run(monitor_task(123))
+```
+
+### Subscription Rooms
+
+You can subscribe to different "rooms" to receive targeted updates:
+
+| Room | Description |
+|------|-------------|
+| `tasks` | All task updates |
+| `task_{id}` | Specific task updates |
+| `agents` | All agent updates |
+| `agent_{id}` | Specific agent updates |
+| `workflows` | All workflow updates |
+
+### WebSocket Commands
+
+Send these commands to control your subscription:
+
+```javascript
+// Subscribe to a room
+ws.send(JSON.stringify({
+  type: "subscribe",
+  room: "task_123"
+}));
+
+// Unsubscribe from a room
+ws.send(JSON.stringify({
+  type: "unsubscribe",
+  room: "task_123"
+}));
+
+// Ping/heartbeat
+ws.send(JSON.stringify({
+  type: "ping",
+  timestamp: new Date().toISOString()
+}));
+
+// Get connection statistics
+ws.send(JSON.stringify({
+  type: "get_stats"
+}));
+```
+
+### Integration with Services
+
+The WebSocket notifications are automatically sent when using services:
+
+```python
+from src.services import TaskService, AgentService
+from src.core.database import get_db_session
+
+# Task updates automatically trigger WebSocket notifications
+with get_db_session() as session:
+    # Creating a task sends "task_update.created" notification
+    task = TaskService.create_task(
+        session=session,
+        title="Build API",
+        description="Create REST API endpoints",
+        task_type="coding",
+        priority=7
+    )
+    # WebSocket notification sent: {"type": "task_update", "event": "created", ...}
+
+    # Status changes send "task_update.status_changed" notification
+    TaskService.update_task_status(session, task.id, TaskStatus.IN_PROGRESS)
+    # WebSocket notification sent: {"type": "task_update", "event": "status_changed", ...}
+
+    # Agent status changes send "agent_update.status_changed" notification
+    AgentService.update_agent_status(session, agent_id=1, status=AgentStatus.BUSY)
+    # WebSocket notification sent: {"type": "agent_update", "event": "status_changed", ...}
+```
+
+### Connection Statistics
+
+Get real-time statistics about active WebSocket connections:
+
+```bash
+curl http://localhost:8001/api/ws/stats
+
+# Response:
+# {
+#   "total_connections": 15,
+#   "total_rooms": 8,
+#   "total_users": 5,
+#   "rooms": {
+#     "tasks": 10,
+#     "task_123": 3,
+#     "agents": 5,
+#     "agent_1": 2
+#   }
+# }
+```
+
 ## Development
 
 ### Running Tests

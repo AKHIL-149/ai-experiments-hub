@@ -4,12 +4,38 @@ Agent service for managing agent operations and lifecycle
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+import asyncio
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from src.models.agent import Agent, AgentRole, AgentStatus
 from src.core.logging import logger
 from src.core.exceptions import AgentNotFoundError, ValidationError
+
+
+def _run_async(coro):
+    """
+    Helper to run async functions from sync code
+
+    Args:
+        coro: Coroutine to run
+
+    Returns:
+        Result of coroutine
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    if loop.is_running():
+        # If loop is running, create task without waiting
+        asyncio.create_task(coro)
+        return None
+    else:
+        # If loop is not running, run until complete
+        return loop.run_until_complete(coro)
 
 
 class AgentService:
@@ -197,6 +223,22 @@ class AgentService:
 
         logger.info(f"Assigned agent {agent_id} to task {task_id}")
 
+        # Send WebSocket notification
+        try:
+            from src.core.websocket import notify_agent_update
+            _run_async(notify_agent_update(
+                agent_id=agent.id,
+                event_type="assigned",
+                data={
+                    "task_id": task_id,
+                    "status": agent.status.value,
+                    "name": agent.name,
+                    "role": agent.role.value
+                }
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
+
         return agent
 
     @staticmethod
@@ -237,6 +279,22 @@ class AgentService:
         session.refresh(agent)
 
         logger.info(f"Updated agent {agent_id} status to {status}")
+
+        # Send WebSocket notification
+        try:
+            from src.core.websocket import notify_agent_update
+            _run_async(notify_agent_update(
+                agent_id=agent.id,
+                event_type="status_changed",
+                data={
+                    "status": agent.status.value,
+                    "current_task_id": agent.current_task_id,
+                    "name": agent.name,
+                    "role": agent.role.value
+                }
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
 
         return agent
 

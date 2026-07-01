@@ -4,11 +4,12 @@ Task service for managing task operations and lifecycle
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+import asyncio
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
 from src.models.task import Task, TaskStatus, TaskDependency
-from src.models.agent import AgentRole
+from src.models.agent import AgentRole, AgentStatus
 from src.services.agent_service import AgentService
 from src.services.workflow_service import workflow_service
 from src.core.logging import logger
@@ -18,6 +19,31 @@ from src.core.exceptions import (
     WorkflowExecutionError,
     AgentNotFoundError
 )
+
+
+def _run_async(coro):
+    """
+    Helper to run async functions from sync code
+
+    Args:
+        coro: Coroutine to run
+
+    Returns:
+        Result of coroutine
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    if loop.is_running():
+        # If loop is running, create task without waiting
+        asyncio.create_task(coro)
+        return None
+    else:
+        # If loop is not running, run until complete
+        return loop.run_until_complete(coro)
 
 
 class TaskService:
@@ -76,6 +102,22 @@ class TaskService:
             session.refresh(task)
 
             logger.info(f"Created task {task.id}: {title}")
+
+            # Send WebSocket notification
+            try:
+                from src.core.websocket import notify_task_update
+                _run_async(notify_task_update(
+                    task_id=task.id,
+                    event_type="created",
+                    data={
+                        "title": task.title,
+                        "task_type": task.task_type,
+                        "priority": task.priority,
+                        "status": task.status.value
+                    }
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to send WebSocket notification: {e}")
 
             return task
 
@@ -159,6 +201,21 @@ class TaskService:
 
         logger.info(f"Updated task {task_id} status to {status}")
 
+        # Send WebSocket notification
+        try:
+            from src.core.websocket import notify_task_update
+            _run_async(notify_task_update(
+                task_id=task.id,
+                event_type="status_changed",
+                data={
+                    "status": task.status.value,
+                    "progress": task.progress_percentage,
+                    "error_message": task.error_message
+                }
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
+
         return task
 
     @staticmethod
@@ -237,6 +294,21 @@ class TaskService:
         session.refresh(task)
 
         logger.info(f"Assigned task {task_id} to agent {agent_id}")
+
+        # Send WebSocket notification
+        try:
+            from src.core.websocket import notify_task_update
+            _run_async(notify_task_update(
+                task_id=task.id,
+                event_type="assigned",
+                data={
+                    "agent_id": agent_id,
+                    "agent_name": agent.name,
+                    "status": task.status.value
+                }
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
 
         return task
 

@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets
 
 
 @asynccontextmanager
@@ -61,6 +61,7 @@ app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"]
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
+app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 
 
 @app.get("/")
