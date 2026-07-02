@@ -5,6 +5,7 @@ Database models
 from src.models.task import Task, TaskStatus, TaskDependency
 from src.models.agent import Agent, AgentRole, AgentStatus
 from src.models.agent_execution import AgentExecution, ExecutionStatus
+from src.models.agent_message import AgentMessage, MessageType, MessagePriority, MessageStatus
 
 __all__ = [
     "Task",
@@ -15,4 +16,8 @@ __all__ = [
     "AgentStatus",
     "AgentExecution",
     "ExecutionStatus",
+    "AgentMessage",
+    "MessageType",
+    "MessagePriority",
+    "MessageStatus",
 ]

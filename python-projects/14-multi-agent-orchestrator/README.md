@@ -3750,6 +3750,402 @@ async with db_session() as session:
     print(f"Cost: ${execution.cost}")
 ```
 
+## Agent Communication
+
+The Multi-Agent Orchestrator includes a comprehensive inter-agent communication system for coordinating multi-agent workflows.
+
+### Message Types
+
+Agents can send different types of messages:
+
+- **REQUEST** - Request for action or information (requires response)
+- **RESPONSE** - Response to a request
+- **BROADCAST** - Broadcast to all agents
+- **NOTIFICATION** - One-way notification
+- **ERROR** - Error message
+- **TASK_ASSIGNMENT** - Task delegation
+
+### Sending Messages
+
+**Direct Message:**
+
+```python
+from src.services.agent_communication import AgentCommunicationService
+from src.models.agent_message import MessageType, MessagePriority
+
+# Send a message from agent 1 to agent 2
+message = AgentCommunicationService.send_message(
+    session=db,
+    sender_agent_id=1,
+    receiver_agent_id=2,
+    content="Please analyze the authentication requirements",
+    message_type=MessageType.REQUEST,
+    priority=MessagePriority.HIGH,
+    subject="Auth Requirements Analysis",
+    payload={
+        "requirements": ["JWT", "OAuth2", "MFA"],
+        "deadline": "2024-01-15"
+    },
+    workflow_id="wf_auth_001",
+    requires_response=True,
+    response_timeout_seconds=300
+)
+
+print(f"Message {message.id} sent")
+```
+
+**Broadcast Message:**
+
+```python
+# Broadcast to all agents in a workflow
+message = AgentCommunicationService.broadcast_message(
+    session=db,
+    sender_agent_id=1,
+    content="Code review phase starting in 5 minutes",
+    subject="Workflow Update",
+    workflow_id="wf_project_001",
+    priority=MessagePriority.NORMAL
+)
+```
+
+**Send Response:**
+
+```python
+# Respond to a message
+response = AgentCommunicationService.send_response(
+    session=db,
+    sender_agent_id=2,
+    original_message_id=message.id,
+    content="Analysis complete. Recommending JWT with refresh tokens.",
+    payload={
+        "recommendation": "JWT",
+        "security_level": "high",
+        "implementation_time": "2 weeks"
+    }
+)
+```
+
+### Message Threading
+
+Group related messages into threads:
+
+```python
+import uuid
+
+# Create a thread ID
+thread_id = f"thread_{uuid.uuid4().hex[:8]}"
+
+# Send initial message
+msg1 = AgentCommunicationService.send_message(
+    session=db,
+    sender_agent_id=1,
+    receiver_agent_id=2,
+    content="What's the best database for this project?",
+    thread_id=thread_id,
+    requires_response=True
+)
+
+# Response in same thread
+msg2 = AgentCommunicationService.send_response(
+    session=db,
+    sender_agent_id=2,
+    original_message_id=msg1.id,
+    content="I recommend PostgreSQL for ACID compliance"
+)
+
+# Get entire thread
+thread_messages = AgentCommunicationService.get_thread(
+    session=db,
+    thread_id=thread_id
+)
+
+for msg in thread_messages:
+    print(f"{msg.sender_agent_id}: {msg.content}")
+```
+
+### Reading Messages
+
+**Get Inbox:**
+
+```python
+# Get all messages for an agent
+inbox = AgentCommunicationService.get_inbox(
+    session=db,
+    agent_id=2,
+    unread_only=False,
+    limit=50
+)
+
+for message in inbox:
+    print(f"From: Agent {message.sender_agent_id}")
+    print(f"Subject: {message.subject}")
+    print(f"Content: {message.content}")
+    print(f"Status: {message.status}")
+    print("---")
+```
+
+**Get Unread Messages:**
+
+```python
+# Get only unread messages
+unread = AgentCommunicationService.get_inbox(
+    session=db,
+    agent_id=2,
+    unread_only=True
+)
+
+print(f"You have {len(unread)} unread messages")
+```
+
+**Mark as Read:**
+
+```python
+# Mark message as read
+AgentCommunicationService.mark_as_read(
+    session=db,
+    message_id=message.id,
+    agent_id=2
+)
+```
+
+### Message API Endpoints
+
+**Send Message via API:**
+
+```bash
+curl -X POST http://localhost:8001/api/messages/send?sender_agent_id=1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver_agent_id": 2,
+    "content": "Please review the authentication code",
+    "message_type": "request",
+    "priority": "high",
+    "subject": "Code Review Request",
+    "requires_response": true,
+    "workflow_id": "wf_001"
+  }'
+```
+
+**Get Inbox via API:**
+
+```bash
+# Get all messages
+curl http://localhost:8001/api/messages/inbox/2
+
+# Get unread only
+curl http://localhost:8001/api/messages/inbox/2?unread_only=true
+```
+
+**Send Response via API:**
+
+```bash
+curl -X POST http://localhost:8001/api/messages/respond/123?sender_agent_id=2 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Review complete. Code looks good!",
+    "payload": {
+      "status": "approved",
+      "issues_found": 0
+    }
+  }'
+```
+
+**Broadcast via API:**
+
+```bash
+curl -X POST "http://localhost:8001/api/messages/broadcast?sender_agent_id=1&content=Workflow%20complete&priority=normal"
+```
+
+**Get Thread via API:**
+
+```bash
+curl http://localhost:8001/api/messages/thread/thread_abc123
+```
+
+**Mark as Read via API:**
+
+```bash
+curl -X PATCH "http://localhost:8001/api/messages/123/read?agent_id=2"
+```
+
+**Get Message Statistics:**
+
+```bash
+# Overall statistics
+curl http://localhost:8001/api/messages/statistics
+
+# Agent-specific statistics
+curl http://localhost:8001/api/messages/statistics?agent_id=2
+
+# Workflow-specific statistics
+curl http://localhost:8001/api/messages/statistics?workflow_id=wf_001
+```
+
+### Workflow Integration
+
+Agents can communicate during workflow execution:
+
+```python
+from src.workflows import BaseWorkflow, WorkflowConfig, WorkflowState
+from src.workflows.agent_graph import AgentGraph
+from src.services.agent_communication import AgentCommunicationService
+from langgraph.graph import END
+
+class CollaborativeWorkflow(BaseWorkflow):
+    """Workflow with agent communication"""
+
+    def __init__(self):
+        config = WorkflowConfig(
+            name="Collaborative Workflow",
+            description="Agents communicate during execution"
+        )
+        super().__init__(config)
+
+    def build_graph(self):
+        agent_graph = AgentGraph("collaborative")
+
+        # Research agent sends findings to code agent
+        agent_graph.add_agent_node("research", "research")
+        agent_graph.add_agent_node("code", "code")
+
+        # Custom node to send message
+        async def send_research_results(state):
+            workflow_state = WorkflowState(**state)
+            research_output = workflow_state.agent_results.get("research", {})
+
+            # Send message from research agent to code agent
+            with db_session() as db:
+                message = AgentCommunicationService.send_message(
+                    session=db,
+                    sender_agent_id=1,  # Research agent
+                    receiver_agent_id=2,  # Code agent
+                    content="Research complete. Key findings attached.",
+                    message_type=MessageType.NOTIFICATION,
+                    payload=research_output.get("output"),
+                    workflow_id=workflow_state.workflow_id
+                )
+                db.commit()
+
+            return state
+
+        agent_graph.graph.add_node("send_message", send_research_results)
+        agent_graph.add_edge("research", "send_message")
+        agent_graph.add_edge("send_message", "code")
+        agent_graph.add_edge("code", END)
+
+        graph = agent_graph.build()
+        graph.set_entry_point("research")
+        return graph
+```
+
+### Message Priorities
+
+Messages support four priority levels:
+
+- **LOW** - Background notifications
+- **NORMAL** - Standard communication (default)
+- **HIGH** - Important requests requiring attention
+- **URGENT** - Critical messages requiring immediate response
+
+Agents can process high-priority messages first:
+
+```python
+# Get high-priority messages
+high_priority = AgentCommunicationService.get_messages(
+    session=db,
+    agent_id=2,
+    priority=MessagePriority.HIGH,
+    unread_only=True
+)
+```
+
+### Message Expiration
+
+Set expiration times for time-sensitive messages:
+
+```python
+# Message expires in 1 hour
+message = AgentCommunicationService.send_message(
+    session=db,
+    sender_agent_id=1,
+    receiver_agent_id=2,
+    content="Please respond within 1 hour",
+    expires_in_seconds=3600  # 1 hour
+)
+
+# Clean up expired messages
+deleted_count = AgentCommunicationService.delete_expired_messages(session=db)
+print(f"Deleted {deleted_count} expired messages")
+```
+
+### Communication Patterns
+
+**Request-Response Pattern:**
+
+```python
+# Agent 1 requests information
+request = AgentCommunicationService.send_message(
+    session=db,
+    sender_agent_id=1,
+    receiver_agent_id=2,
+    content="What database schema do you recommend?",
+    message_type=MessageType.REQUEST,
+    requires_response=True,
+    response_timeout_seconds=300
+)
+
+# Agent 2 responds
+response = AgentCommunicationService.send_response(
+    session=db,
+    sender_agent_id=2,
+    original_message_id=request.id,
+    content="I recommend a normalized schema with...",
+    payload={"schema": "..."}
+)
+
+# Check if response received
+if request.response_received:
+    print("Request answered!")
+```
+
+**Task Delegation Pattern:**
+
+```python
+# Coordinator delegates task to specialist
+delegation = AgentCommunicationService.send_message(
+    session=db,
+    sender_agent_id=1,  # Coordinator
+    receiver_agent_id=3,  # Specialist
+    content="Please implement user authentication",
+    message_type=MessageType.TASK_ASSIGNMENT,
+    priority=MessagePriority.HIGH,
+    payload={
+        "task_id": 123,
+        "requirements": ["JWT", "OAuth2"],
+        "deadline": "2024-01-20"
+    },
+    requires_response=True
+)
+```
+
+**Broadcast Notification Pattern:**
+
+```python
+# Workflow coordinator broadcasts status update
+broadcast = AgentCommunicationService.broadcast_message(
+    session=db,
+    sender_agent_id=1,
+    content="Phase 1 complete. Starting Phase 2.",
+    subject="Workflow Progress Update",
+    workflow_id="wf_project_001",
+    payload={
+        "phase": 2,
+        "completion_percentage": 33,
+        "next_milestone": "Code review"
+    }
+)
+```
+
 ## Development
 
 ### Running Tests
@@ -4409,9 +4805,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (25% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (30% complete)
 
-Current Progress: Commit 25/100 - Workflow API Endpoints Complete
+Current Progress: Commit 26/100 - Agent Communication System Complete
 
 ## Implementation Roadmap
 
