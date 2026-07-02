@@ -3166,6 +3166,590 @@ print(f"Code gen cost: ${code_result.cost}")
 print(f"Total cost: ${research_result.cost + plan_result.cost + code_result.cost}")
 ```
 
+## LangGraph Workflows
+
+The Multi-Agent Orchestrator uses [LangGraph](https://github.com/langchain-ai/langgraph) for building sophisticated multi-agent workflows with conditional routing, parallel execution, and state management.
+
+### Core Concepts
+
+**StateGraph**: LangGraph's graph execution engine that passes state between nodes
+**Nodes**: Execution points (agents, conditional logic, parallel execution)
+**Edges**: Connections between nodes (direct or conditional)
+**State**: Shared data structure passed between nodes
+**Conditional Routing**: Dynamic path selection based on state
+
+### BaseWorkflow
+
+All workflows inherit from `BaseWorkflow` and implement `build_graph()`.
+
+**Example - Custom Workflow:**
+
+```python
+from src.workflows import BaseWorkflow, WorkflowConfig, WorkflowState
+from src.workflows.agent_graph import AgentGraph
+from langgraph.graph import END
+
+class CustomWorkflow(BaseWorkflow):
+    def __init__(self):
+        config = WorkflowConfig(
+            name="Custom Workflow",
+            description="My custom multi-agent workflow",
+            version="1.0.0",
+            timeout_seconds=600,
+            max_retries=2,
+            parallel_execution=True
+        )
+        super().__init__(config)
+
+    def build_graph(self):
+        # Create agent graph
+        agent_graph = AgentGraph("custom_workflow")
+
+        # Add agent nodes
+        agent_graph.add_agent_node(
+            name="research",
+            agent_type="research",
+            description="Research the topic"
+        )
+
+        agent_graph.add_agent_node(
+            name="write",
+            agent_type="writer",
+            description="Write content based on research"
+        )
+
+        # Add edges
+        agent_graph.add_edge("research", "write")
+        agent_graph.add_edge("write", END)
+
+        # Build and set entry point
+        graph = agent_graph.build()
+        graph.set_entry_point("research")
+
+        return graph
+
+# Use the workflow
+workflow = CustomWorkflow()
+result = await workflow.execute(
+    input_data={"topic": "quantum computing basics"},
+    workflow_id="custom_001"
+)
+
+print(f"Status: {result.status}")
+print(f"Output: {result.output_data}")
+print(f"Total Cost: ${result.total_cost}")
+print(f"Duration: {result.execution_time_seconds}s")
+```
+
+### AgentGraph Builder
+
+`AgentGraph` provides a fluent API for building LangGraph StateGraphs.
+
+**Adding Agent Nodes:**
+
+```python
+from src.workflows.agent_graph import AgentGraph
+
+agent_graph = AgentGraph("my_workflow")
+
+# Add single agent node
+agent_graph.add_agent_node(
+    name="research",
+    agent_type="research",
+    description="Research the topic"
+)
+
+# Add multiple nodes
+agent_graph.add_agent_node("code", "code", "Generate code")
+agent_graph.add_agent_node("review", "code", "Review generated code")
+```
+
+**Adding Edges:**
+
+```python
+# Direct edge (always goes to next node)
+agent_graph.add_edge("research", "code")
+agent_graph.add_edge("code", "review")
+agent_graph.add_edge("review", END)
+```
+
+**Conditional Routing:**
+
+```python
+def check_quality(state: Dict[str, Any]) -> str:
+    """Route based on agent output"""
+    workflow_state = WorkflowState(**state)
+
+    review_result = workflow_state.agent_results.get("review", {})
+    review_output = review_result.get("output", {})
+
+    # Check if review found issues
+    explanation = review_output.get("explanation", "")
+    if any(word in explanation.lower() for word in ["issue", "problem", "bug"]):
+        return "needs_fix"
+
+    return "approved"
+
+# Add conditional edge
+agent_graph.add_conditional_edge(
+    source="review",
+    condition=check_quality,
+    condition_map={
+        "approved": END,
+        "needs_fix": "fix"
+    }
+)
+```
+
+**Parallel Execution:**
+
+```python
+# Execute multiple agents in parallel
+agent_graph.add_parallel_node(
+    name="parallel_analysis",
+    agent_types=["research", "data_analyst"],
+    description="Research and analyze in parallel"
+)
+
+# Results aggregated in state.agent_results
+agent_graph.add_edge("parallel_analysis", "planning")
+```
+
+**Conditional Nodes:**
+
+```python
+def evaluate_complexity(state: Dict[str, Any]) -> str:
+    """Evaluate plan complexity"""
+    workflow_state = WorkflowState(**state)
+    plan = workflow_state.agent_results.get("planning", {})
+    tasks = plan.get("output", {}).get("tasks", [])
+
+    return "complex" if len(tasks) > 5 else "simple"
+
+agent_graph.add_conditional_node(
+    name="complexity_check",
+    condition=evaluate_complexity,
+    description="Route based on plan complexity"
+)
+
+agent_graph.add_conditional_edge(
+    source="complexity_check",
+    condition=evaluate_complexity,
+    condition_map={
+        "simple": "simple_execution",
+        "complex": "complex_execution"
+    }
+)
+```
+
+### Pre-Built Workflow Templates
+
+The system includes three production-ready workflow templates.
+
+#### ResearchWriteWorkflow
+
+Sequential workflow: Research → Write
+
+**Use Case**: Generate well-researched content
+
+```python
+from src.workflows import ResearchWriteWorkflow
+
+workflow = ResearchWriteWorkflow()
+result = await workflow.execute(
+    input_data={
+        "topic": "advantages of microservices architecture",
+        "depth": "deep",
+        "content_type": "blog_post",
+        "style": "professional"
+    }
+)
+
+# Workflow automatically:
+# 1. Research agent researches the topic
+# 2. Writer agent creates content based on research
+print(result.agent_results["research"]["output"]["findings"])
+print(result.agent_results["write"]["output"]["content"])
+```
+
+#### CodeReviewWorkflow
+
+Code generation with automatic review and fixes.
+
+**Flow**: Generate → Review → (Conditionally) Fix
+
+**Use Case**: Generate production-quality code
+
+```python
+from src.workflows import CodeReviewWorkflow
+
+workflow = CodeReviewWorkflow()
+result = await workflow.execute(
+    input_data={
+        "task_type": "generate",
+        "language": "python",
+        "requirements": """
+        Create a REST API endpoint for user authentication
+        with JWT tokens, rate limiting, and input validation.
+        """
+    }
+)
+
+# Workflow automatically:
+# 1. Code agent generates code
+# 2. Review agent checks for issues
+# 3. If issues found, fix agent applies corrections
+# 4. If no issues, workflow completes
+
+code = result.agent_results["code_generation"]["output"]["code"]
+review = result.agent_results["code_review"]["output"]
+
+if "apply_fixes" in result.agent_results:
+    fixed_code = result.agent_results["apply_fixes"]["output"]["code"]
+    print(f"Code was fixed:\n{fixed_code}")
+else:
+    print(f"Code approved on first pass:\n{code}")
+```
+
+**Conditional Logic:**
+
+```python
+# Review decision function
+def check_review_result(state: Dict[str, Any]) -> str:
+    workflow_state = WorkflowState(**state)
+    review = workflow_state.agent_results.get("code_review", {})
+
+    # Check for error in review
+    if review.get("error"):
+        return "needs_fix"
+
+    # Check explanation for issues
+    explanation = review.get("output", {}).get("explanation", "")
+    issue_keywords = ["issue", "problem", "bug", "error", "fix"]
+
+    if any(word in explanation.lower() for word in issue_keywords):
+        return "needs_fix"
+
+    return "approved"
+```
+
+#### AnalysisPlanningWorkflow
+
+Parallel analysis with conditional execution.
+
+**Flow**: (Research + Analysis in Parallel) → Plan → (Conditionally) Execute
+
+**Use Case**: Complex projects requiring thorough analysis
+
+```python
+from src.workflows import AnalysisPlanningWorkflow
+
+workflow = AnalysisPlanningWorkflow()
+result = await workflow.execute(
+    input_data={
+        "goal": "Build a scalable chat application",
+        "data": {
+            "expected_users": 100000,
+            "concurrent_connections": 5000,
+            "message_volume": "1M/day"
+        }
+    }
+)
+
+# Workflow automatically:
+# 1. Research and data analysis run in PARALLEL
+# 2. Planner creates execution plan
+# 3. Routes to simple or complex execution based on plan size
+
+research = result.agent_results["parallel_analysis"]["research"]["output"]
+analysis = result.agent_results["parallel_analysis"]["data_analyst"]["output"]
+plan = result.agent_results["planning"]["output"]
+
+# Check which execution path was taken
+if "simple_execution" in result.agent_results:
+    print("Simple execution path")
+else:
+    print("Complex execution path (>5 tasks)")
+```
+
+**Complexity Routing:**
+
+```python
+def check_plan_complexity(state: Dict[str, Any]) -> str:
+    workflow_state = WorkflowState(**state)
+    plan = workflow_state.agent_results.get("planning", {})
+    tasks = plan.get("output", {}).get("tasks", [])
+
+    # Route based on task count
+    return "complex" if len(tasks) > 5 else "simple"
+```
+
+### Workflow State Management
+
+`WorkflowState` tracks execution state throughout the workflow.
+
+**State Fields:**
+
+```python
+@dataclass
+class WorkflowState:
+    workflow_id: str                          # Unique workflow ID
+    input_data: Dict[str, Any]                # Original input
+    output_data: Optional[Dict[str, Any]]     # Final output
+    agent_results: Dict[str, Any]             # Results from each agent
+    current_node: Optional[str]               # Current execution node
+    status: WorkflowStatus                    # PENDING/RUNNING/COMPLETED/FAILED
+    error: Optional[str]                      # Error message if failed
+    started_at: datetime                      # Start timestamp
+    completed_at: Optional[datetime]          # Completion timestamp
+    total_cost: float                         # Accumulated cost
+    total_tokens: int                         # Accumulated tokens
+    execution_time_seconds: Optional[float]   # Total duration
+```
+
+**Accessing State:**
+
+```python
+# In condition functions
+def my_condition(state: Dict[str, Any]) -> str:
+    workflow_state = WorkflowState(**state)
+
+    # Access agent results
+    research_output = workflow_state.agent_results.get("research", {})
+    findings = research_output.get("output", {}).get("findings", [])
+
+    # Access metadata
+    print(f"Workflow ID: {workflow_state.workflow_id}")
+    print(f"Current cost: ${workflow_state.total_cost}")
+    print(f"Tokens used: {workflow_state.total_tokens}")
+
+    # Make routing decision
+    return "detailed" if len(findings) > 10 else "summary"
+```
+
+### Using Workflow Templates
+
+**List Available Templates:**
+
+```python
+from src.workflows import list_workflow_templates
+
+templates = list_workflow_templates()
+for name, description in templates.items():
+    print(f"{name}: {description}")
+
+# Output:
+# research_write: Research a topic then write content about it
+# code_review: Generate code, review it, and apply fixes
+# analysis_planning: Analyze data, create plan, and execute
+```
+
+**Get Template by Name:**
+
+```python
+from src.workflows import get_workflow_template
+
+workflow = get_workflow_template("code_review")
+result = await workflow.execute(
+    input_data={
+        "task_type": "generate",
+        "language": "python",
+        "requirements": "Create a binary search function"
+    }
+)
+```
+
+### Workflow Visualization
+
+Visualize workflow graphs for debugging and documentation.
+
+```python
+from src.workflows import CodeReviewWorkflow
+
+workflow = CodeReviewWorkflow()
+graph = workflow.build_graph()
+
+# Generate visualization
+visualization = workflow.graph_builder.visualize()
+print(visualization)
+```
+
+**Output:**
+
+```
+Workflow: code_review
+Nodes: 3
+Edges: 3
+
+Graph Structure:
+  code_generation (agent: code)
+    └─> code_review (agent: code)
+        ├─> [approved] END
+        └─> [needs_fix] apply_fixes (agent: code)
+            └─> END
+```
+
+### Advanced Workflow Patterns
+
+**Multi-Stage Conditional Workflow:**
+
+```python
+class MultiStageWorkflow(BaseWorkflow):
+    def build_graph(self):
+        agent_graph = AgentGraph("multi_stage")
+
+        # Stage 1: Initial research
+        agent_graph.add_agent_node("initial_research", "research")
+
+        # Stage 2: Depth decision
+        def check_research_depth(state):
+            results = WorkflowState(**state).agent_results["initial_research"]
+            findings = results.get("output", {}).get("findings", [])
+            return "deep_dive" if len(findings) < 5 else "proceed"
+
+        agent_graph.add_conditional_edge(
+            "initial_research",
+            check_research_depth,
+            {
+                "deep_dive": "additional_research",
+                "proceed": "planning"
+            }
+        )
+
+        # Stage 3: Optional additional research
+        agent_graph.add_agent_node("additional_research", "research")
+        agent_graph.add_edge("additional_research", "planning")
+
+        # Stage 4: Planning
+        agent_graph.add_agent_node("planning", "planner")
+        agent_graph.add_edge("planning", END)
+
+        graph = agent_graph.build()
+        graph.set_entry_point("initial_research")
+        return graph
+```
+
+**Parallel Processing with Aggregation:**
+
+```python
+class ParallelAggregationWorkflow(BaseWorkflow):
+    def build_graph(self):
+        agent_graph = AgentGraph("parallel_aggregation")
+
+        # Parallel stage
+        agent_graph.add_parallel_node(
+            "parallel_analysis",
+            agent_types=["research", "data_analyst", "code"],
+            description="Multi-faceted analysis"
+        )
+
+        # Aggregation stage
+        agent_graph.add_agent_node(
+            "aggregation",
+            "planner",
+            description="Synthesize results"
+        )
+
+        # Final output
+        agent_graph.add_agent_node("writer", "writer")
+
+        # Connect stages
+        agent_graph.add_edge("parallel_analysis", "aggregation")
+        agent_graph.add_edge("aggregation", "writer")
+        agent_graph.add_edge("writer", END)
+
+        graph = agent_graph.build()
+        graph.set_entry_point("parallel_analysis")
+        return graph
+```
+
+### Workflow Error Handling
+
+Workflows automatically handle errors and retries.
+
+```python
+# Configure retry behavior
+config = WorkflowConfig(
+    name="Resilient Workflow",
+    timeout_seconds=900,
+    max_retries=3,           # Retry failed nodes up to 3 times
+    retry_on_failure=True,   # Enable automatic retries
+    parallel_execution=True
+)
+
+workflow = MyWorkflow(config)
+
+# Execute with error handling
+try:
+    result = await workflow.execute(input_data=data)
+
+    if result.status == WorkflowStatus.COMPLETED:
+        print("Success!")
+    elif result.status == WorkflowStatus.FAILED:
+        print(f"Failed: {result.error}")
+
+except TimeoutError:
+    print("Workflow exceeded timeout")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+### Workflow Metrics
+
+Track performance and costs across workflow execution.
+
+```python
+result = await workflow.execute(input_data=data)
+
+# Execution metrics
+print(f"Status: {result.status}")
+print(f"Duration: {result.execution_time_seconds}s")
+print(f"Total Cost: ${result.total_cost:.4f}")
+print(f"Total Tokens: {result.total_tokens}")
+
+# Per-agent metrics
+for agent_name, agent_result in result.agent_results.items():
+    output = agent_result.get("output", {})
+    print(f"\n{agent_name}:")
+    print(f"  Cost: ${agent_result.get('cost', 0):.4f}")
+    print(f"  Tokens: {agent_result.get('tokens_used', 0)}")
+    print(f"  Output keys: {list(output.keys())}")
+
+# Workflow timeline
+print(f"\nStarted: {result.started_at}")
+print(f"Completed: {result.completed_at}")
+```
+
+### Integration with Database
+
+Workflows can be linked to tasks for full persistence.
+
+```python
+from src.services.agent_service import AgentService
+
+# Execute workflow and persist to database
+async with db_session() as session:
+    # Get agent for workflow
+    agent = AgentService.get_agent_by_id(session, agent_id=1)
+
+    # Execute via agent service (auto-persists)
+    execution = await AgentService.execute_agent(
+        session=session,
+        agent_id=agent.id,
+        input_data={
+            "topic": "machine learning basics",
+            "workflow": "research_write"
+        },
+        workflow_id="rw_001",
+        task_id=123
+    )
+
+    # Execution record saved to database
+    print(f"Execution ID: {execution.id}")
+    print(f"Status: {execution.status}")
+    print(f"Cost: ${execution.cost}")
+```
+
 ## Development
 
 ### Running Tests
@@ -3676,9 +4260,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (15% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (20% complete)
 
-Current Progress: Commit 23/100 - Agent Database Integration Complete
+Current Progress: Commit 24/100 - LangGraph Workflow Integration Complete
 
 ## Implementation Roadmap
 
