@@ -3971,6 +3971,53 @@ curl http://localhost:8001/api/agents/1/metrics
 curl http://localhost:8001/api/metrics/summary
 ```
 
+#### 8. Workflow Template APIs
+
+```bash
+# List all available workflow templates
+curl http://localhost:8001/api/workflows/templates
+
+# Get template information
+curl http://localhost:8001/api/workflows/templates/research_write
+
+# Execute a workflow template
+curl -X POST http://localhost:8001/api/workflows/templates/research_write/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_data": {
+      "topic": "microservices architecture",
+      "depth": "deep",
+      "content_type": "blog_post",
+      "style": "professional"
+    },
+    "workflow_id": "wf_001"
+  }'
+
+# Execute code review workflow
+curl -X POST http://localhost:8001/api/workflows/templates/code_review/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_data": {
+      "task_type": "generate",
+      "language": "python",
+      "requirements": "Create a binary search function with tests"
+    }
+  }'
+
+# Execute analysis planning workflow
+curl -X POST http://localhost:8001/api/workflows/templates/analysis_planning/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_data": {
+      "goal": "Build a real-time chat application",
+      "data": {
+        "expected_users": 50000,
+        "concurrent_connections": 2000
+      }
+    }
+  }'
+```
+
 ### Common Workflows
 
 #### Workflow 1: Simple Task Execution
@@ -4073,6 +4120,108 @@ Always write production-ready code with proper error handling and documentation.
 }).json()
 
 print(f"Created agent: {agent['name']} (ID: {agent['id']})")
+```
+
+#### Workflow 4: Using LangGraph Templates
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8001/api"
+
+# 1. List available workflow templates
+templates = requests.get(f"{BASE_URL}/workflows/templates").json()
+print(f"Available templates: {list(templates['templates'].keys())}")
+
+# 2. Execute ResearchWrite workflow
+research_write_result = requests.post(
+    f"{BASE_URL}/workflows/templates/research_write/execute",
+    json={
+        "input_data": {
+            "topic": "quantum computing applications in cryptography",
+            "depth": "deep",
+            "focus_areas": ["quantum key distribution", "post-quantum cryptography"],
+            "content_type": "technical_article",
+            "style": "technical",
+            "audience": "security professionals"
+        },
+        "workflow_id": "rw_quantum_crypto_001"
+    }
+).json()
+
+print(f"Workflow ID: {research_write_result['workflow_id']}")
+print(f"Status: {research_write_result['status']}")
+print(f"Total Cost: ${research_write_result['total_cost']:.4f}")
+print(f"Execution Time: {research_write_result['execution_time_seconds']}s")
+
+# Access agent results
+research_output = research_write_result['agent_results']['research']['output']
+write_output = research_write_result['agent_results']['write']['output']
+
+print(f"\nResearch Findings: {len(research_output['findings'])} key points")
+print(f"Article Word Count: {write_output['word_count']}")
+print(f"Article Preview:\n{write_output['content'][:200]}...")
+
+# 3. Execute CodeReview workflow
+code_review_result = requests.post(
+    f"{BASE_URL}/workflows/templates/code_review/execute",
+    json={
+        "input_data": {
+            "task_type": "generate",
+            "language": "python",
+            "requirements": """
+            Create a REST API endpoint for file uploads with:
+            - Size validation (max 10MB)
+            - Type validation (images only)
+            - Async processing
+            - S3 storage integration
+            - Progress tracking
+            """
+        }
+    }
+).json()
+
+# Check if code was fixed
+if "apply_fixes" in code_review_result['agent_results']:
+    print("Code was reviewed and fixed automatically")
+    fixed_code = code_review_result['agent_results']['apply_fixes']['output']['code']
+else:
+    print("Code passed review on first attempt")
+    fixed_code = code_review_result['agent_results']['code_generation']['output']['code']
+
+print(f"\nFinal Code:\n{fixed_code}")
+
+# 4. Execute AnalysisPlanning workflow
+analysis_result = requests.post(
+    f"{BASE_URL}/workflows/templates/analysis_planning/execute",
+    json={
+        "input_data": {
+            "goal": "Build a distributed task queue system",
+            "data": {
+                "expected_tasks_per_second": 10000,
+                "task_types": ["email", "pdf_generation", "data_sync"],
+                "max_task_duration": "5 minutes",
+                "budget": "$30,000"
+            },
+            "constraints": [
+                "Must support priority queues",
+                "Need dead letter queues",
+                "Require visibility into queue depths"
+            ]
+        }
+    }
+).json()
+
+# Check execution path
+plan = analysis_result['agent_results']['planning']['output']
+if "simple_execution" in analysis_result['agent_results']:
+    print(f"Simple execution path (plan has {len(plan['tasks'])} tasks)")
+else:
+    print(f"Complex execution path (plan has {len(plan['tasks'])} tasks)")
+
+print(f"\nParallel Analysis Results:")
+print(f"- Research insights: {len(analysis_result['agent_results']['parallel_analysis']['research']['output']['findings'])}")
+print(f"- Data analysis insights: {len(analysis_result['agent_results']['parallel_analysis']['data_analyst']['output']['insights'])}")
 ```
 
 ### Architecture Details
@@ -4260,9 +4409,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (20% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (25% complete)
 
-Current Progress: Commit 24/100 - LangGraph Workflow Integration Complete
+Current Progress: Commit 25/100 - Workflow API Endpoints Complete
 
 ## Implementation Roadmap
 
