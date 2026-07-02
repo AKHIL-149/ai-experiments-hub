@@ -1866,6 +1866,397 @@ redis-cli CONFIG SET save "900 1 300 10 60 10000"
 # This may indicate they need a higher tier or have inefficient code
 ```
 
+## Caching Layer and Performance Optimization
+
+The system includes a sophisticated caching layer built on Redis for improved performance and reduced database load.
+
+### Caching Features
+
+- **Response Caching** - Automatic HTTP response caching for GET requests
+- **Query Result Caching** - Decorator-based caching for expensive database queries
+- **TTL Management** - Configurable time-to-live per endpoint or function
+- **Cache Invalidation** - Pattern-based and namespace-based invalidation
+- **Cache Statistics** - Real-time cache hit/miss rates and memory usage
+
+### Automatic Response Caching
+
+GET requests are automatically cached based on endpoint configuration:
+
+| Endpoint | Cache TTL | Description |
+|----------|-----------|-------------|
+| `/api/tasks` | 60 seconds | Task list caching |
+| `/api/agents` | 120 seconds | Agent list caching |
+| `/api/agents/available` | 30 seconds | Available agents (frequently changes) |
+| `/api/metrics/summary` | 300 seconds | Metrics summary |
+| `/api/workflows/workflows` | 600 seconds | Workflow definitions (rarely change) |
+| `/api/rate-limits/tiers` | 3600 seconds | Rate limit tiers (static config) |
+
+### Cache Headers
+
+Cached responses include cache headers:
+
+```http
+HTTP/1.1 200 OK
+X-Cache: HIT
+X-Cache-Key: a1b2c3d4e5f6789a
+X-Cache-TTL: 60
+```
+
+- **X-Cache**: `HIT` (cached), `MISS` (fresh), `SKIP` (not cacheable)
+- **X-Cache-Key**: Cache key for debugging
+- **X-Cache-TTL**: Time to live in seconds
+
+### Cache Statistics
+
+View cache performance metrics:
+
+```bash
+curl http://localhost:8001/api/cache/stats \
+  -H "Authorization: Bearer <token>"
+
+# Response:
+# {
+#   "cache_keys": 1250,
+#   "total_keys": 1500,
+#   "hits": 15000,
+#   "misses": 3000,
+#   "hit_rate": 83.33,
+#   "memory_used_mb": 12.5,
+#   "memory_peak_mb": 15.2
+# }
+```
+
+### Clear Cache
+
+Administrators can clear cache:
+
+```bash
+# Clear all cache
+curl -X POST http://localhost:8001/api/cache/clear \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Cleared all cache",
+#   "keys_affected": null
+# }
+
+# Clear specific namespace
+curl -X POST "http://localhost:8001/api/cache/clear?namespace=tasks" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Cleared namespace 'tasks' (125 keys)",
+#   "keys_affected": 125
+# }
+
+# Clear by pattern
+curl -X POST "http://localhost:8001/api/cache/clear?pattern=task_*" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Cleared 87 keys matching 'task_*'",
+#   "keys_affected": 87
+# }
+```
+
+### Invalidate Specific Caches
+
+Invalidate caches after updates:
+
+```bash
+# Invalidate task cache (after creating/updating tasks)
+curl -X POST http://localhost:8001/api/cache/invalidate/tasks \
+  -H "Authorization: Bearer <token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Invalidated task cache",
+#   "keys_affected": 45
+# }
+
+# Invalidate agent cache (after agent changes)
+curl -X POST http://localhost:8001/api/cache/invalidate/agents \
+  -H "Authorization: Bearer <token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Invalidated agent cache",
+#   "keys_affected": 23
+# }
+```
+
+### Function-Level Caching
+
+Use the `@cached` decorator for expensive operations:
+
+```python
+from src.core.cache import cached
+
+# Cache for 10 minutes
+@cached(ttl=600, namespace="tasks")
+def get_task_statistics(user_id: int):
+    """Expensive database aggregation"""
+    # This result will be cached for 10 minutes
+    return expensive_database_query(user_id)
+
+# Usage
+stats = get_task_statistics(user_id=123)
+
+# Invalidate cache for specific arguments
+get_task_statistics.invalidate(user_id=123)
+
+# Invalidate all cached results
+get_task_statistics.invalidate_all()
+```
+
+### Custom Cache Keys
+
+Build custom cache keys:
+
+```python
+from src.core.cache import cache_service
+
+# Set with custom key
+cache_service.set(
+    key="user_123_tasks",
+    value={"tasks": [...]},
+    ttl=300,
+    namespace="user_data"
+)
+
+# Get cached value
+cached_tasks = cache_service.get("user_123_tasks", namespace="user_data")
+
+# Delete specific key
+cache_service.delete("user_123_tasks", namespace="user_data")
+
+# Check if key exists
+exists = cache_service.exists("user_123_tasks", namespace="user_data")
+```
+
+### Cache Namespaces
+
+Organize cache with namespaces:
+
+- **tasks** - Task-related cache
+- **agents** - Agent-related cache
+- **responses** - HTTP response cache
+- **workflows** - Workflow definitions
+- **user_data** - User-specific data
+
+```python
+from src.core.cache import cache_service
+
+# Clear entire namespace
+cache_service.clear_namespace("tasks")
+
+# Delete by pattern in namespace
+cache_service.delete_pattern("task_*", namespace="tasks")
+```
+
+### Cache Warming
+
+Pre-populate cache with frequently accessed data:
+
+```bash
+curl -X POST http://localhost:8001/api/cache/warm \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Cache warming initiated",
+#   "keys_affected": 0
+# }
+```
+
+### Production Best Practices
+
+**1. Monitor cache hit rate:**
+```bash
+# Aim for >70% hit rate
+curl http://localhost:8001/api/cache/stats | jq '.hit_rate'
+```
+
+**2. Set appropriate TTLs:**
+```python
+# Frequently changing data: short TTL
+AVAILABLE_AGENTS_TTL = 30  # 30 seconds
+
+# Rarely changing data: long TTL
+WORKFLOW_DEFINITIONS_TTL = 3600  # 1 hour
+
+# Static configuration: very long TTL
+RATE_LIMIT_TIERS_TTL = 86400  # 24 hours
+```
+
+**3. Invalidate on writes:**
+```python
+from src.core.cache import cache_service
+
+def update_task(task_id: int, updates: dict):
+    # Update database
+    task = db.update(task_id, updates)
+
+    # Invalidate caches
+    cache_service.delete(f"task_{task_id}", namespace="tasks")
+    cache_service.clear_namespace("responses")  # Clear response cache
+
+    return task
+```
+
+**4. Use Redis persistence:**
+```bash
+# Enable RDB snapshots
+redis-cli CONFIG SET save "900 1 300 10 60 10000"
+
+# Enable AOF for better durability
+redis-cli CONFIG SET appendonly yes
+```
+
+**5. Monitor memory usage:**
+```bash
+# Check memory usage
+curl http://localhost:8001/api/cache/stats | jq '.memory_used_mb'
+
+# Set max memory limit
+redis-cli CONFIG SET maxmemory 2gb
+redis-cli CONFIG SET maxmemory-policy allkeys-lru
+```
+
+### Cache Invalidation Patterns
+
+**Pattern 1: Time-based (TTL)**
+- Automatic expiration after TTL
+- Good for data that changes predictably
+
+**Pattern 2: Event-based**
+```python
+from src.core.cache import cache_service
+
+# After creating a task
+task = create_task(...)
+cache_service.clear_namespace("tasks")
+cache_service.clear_namespace("responses")
+```
+
+**Pattern 3: Pattern-based**
+```python
+# Invalidate all task-related caches
+cache_service.delete_pattern("task_*")
+```
+
+**Pattern 4: Lazy invalidation**
+```python
+# Let cache expire naturally, don't invalidate
+# Good for non-critical data
+```
+
+### Caching Strategy by Endpoint
+
+```python
+# High traffic, rarely changes
+GET /api/workflows/workflows → Cache 10 min
+
+# High traffic, changes frequently
+GET /api/agents/available → Cache 30 sec
+
+# Medium traffic, moderate changes
+GET /api/tasks → Cache 1 min
+
+# Low traffic, frequently changes
+GET /api/auth/me → No cache (user-specific)
+
+# Write operations
+POST /PUT /DELETE → No cache, invalidate related caches
+```
+
+### Client-Side Cache Handling
+
+**Respect cache headers:**
+
+```javascript
+fetch('http://localhost:8001/api/tasks', {
+    headers: {
+        'Authorization': `Bearer ${token}`,
+        'Cache-Control': 'no-cache'  // Force fresh response
+    }
+})
+.then(response => {
+    const cacheStatus = response.headers.get('X-Cache');
+    console.log(`Cache status: ${cacheStatus}`);  // HIT, MISS, or SKIP
+    return response.json();
+});
+```
+
+**Handle stale data:**
+
+```python
+import requests
+
+response = requests.get(
+    'http://localhost:8001/api/tasks',
+    headers={'Authorization': f'Bearer {token}'}
+)
+
+# Check if data is cached
+if response.headers.get('X-Cache') == 'HIT':
+    # Data might be stale, consider refreshing
+    pass
+```
+
+### Performance Impact
+
+Expected performance improvements with caching:
+
+| Metric | Without Cache | With Cache | Improvement |
+|--------|---------------|------------|-------------|
+| Response Time | 200ms | 5ms | 97.5% faster |
+| Database Load | 100% | 20% | 80% reduction |
+| API Throughput | 100 req/s | 500 req/s | 5x increase |
+| Server CPU | 60% | 25% | 58% reduction |
+
+### Troubleshooting
+
+**Cache not working:**
+```bash
+# Check Redis connection
+redis-cli ping
+
+# Check cache stats
+curl http://localhost:8001/api/cache/stats
+
+# Look for cache headers in response
+curl -I http://localhost:8001/api/tasks
+```
+
+**High memory usage:**
+```bash
+# Check memory
+curl http://localhost:8001/api/cache/stats | jq '.memory_used_mb'
+
+# Reduce TTLs in src/core/cache_middleware.py
+# Or clear cache
+curl -X POST http://localhost:8001/api/cache/clear
+```
+
+**Stale data:**
+```bash
+# Invalidate specific cache
+curl -X POST http://localhost:8001/api/cache/invalidate/tasks
+
+# Or clear all cache
+curl -X POST http://localhost:8001/api/cache/clear
+```
+
 ## Development
 
 ### Running Tests
@@ -2375,9 +2766,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (95% complete)
+✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 
-Current Progress: Commit 19/100
+Current Progress: Commit 20/100 - Ready for Block Phase 2
 
 ## Implementation Roadmap
 
