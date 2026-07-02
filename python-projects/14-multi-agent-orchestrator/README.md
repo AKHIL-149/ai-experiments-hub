@@ -1533,6 +1533,339 @@ with get_db_session() as session:
         pass
 ```
 
+## Rate Limiting and Request Throttling
+
+The system includes sophisticated rate limiting to prevent API abuse and ensure fair resource allocation across users.
+
+### Rate Limit Tiers
+
+Different user roles have different rate limits:
+
+| Role | Requests/Minute | Description |
+|------|-----------------|-------------|
+| **VIEWER** | 60 | Read-only access, limited requests |
+| **USER** | 120 | Standard user, moderate requests |
+| **ADMIN** | 300 | Administrator, high request limit |
+
+### Endpoint-Specific Limits
+
+Some endpoints have stricter limits regardless of user role:
+
+| Endpoint | Requests/Minute | Reason |
+|----------|-----------------|--------|
+| **POST /api/workflows/execute** | 10 | Resource-intensive workflow execution |
+| **POST /api/tasks** | 30 | Task creation limit |
+| **POST /api/agents** | 20 | Agent creation limit |
+
+### How It Works
+
+The rate limiting system uses:
+
+- **Sliding Window Algorithm** - More accurate than fixed windows
+- **Redis Backend** - Distributed rate limiting across multiple servers
+- **Per-User Tracking** - Each user has independent rate limits
+- **IP-Based Fallback** - Unauthenticated requests limited by IP
+
+### Rate Limit Headers
+
+Every API response includes rate limit headers:
+
+```http
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 115
+X-RateLimit-Reset: 1705334400
+```
+
+- **X-RateLimit-Limit** - Maximum requests allowed in the window
+- **X-RateLimit-Remaining** - Requests remaining in current window
+- **X-RateLimit-Reset** - Unix timestamp when limit resets
+
+### Rate Limit Exceeded Response
+
+When rate limit is exceeded, you receive a `429 Too Many Requests` response:
+
+```bash
+curl -X POST http://localhost:8001/api/tasks \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Test", "description": "Test"}'
+
+# Response (429 Too Many Requests):
+# {
+#   "error": "Rate limit exceeded",
+#   "message": "Rate limit exceeded. Maximum 30 requests per 60 seconds.",
+#   "retry_after": 45
+# }
+
+# Headers:
+# X-RateLimit-Limit: 30
+# X-RateLimit-Remaining: 0
+# X-RateLimit-Reset: 1705334445
+# Retry-After: 45
+```
+
+### Check Your Rate Limit Status
+
+Get your current rate limit information:
+
+```bash
+# Check overall rate limit
+curl http://localhost:8001/api/rate-limits/me \
+  -H "Authorization: Bearer <token>"
+
+# Response:
+# {
+#   "limit": 120,
+#   "remaining": 115,
+#   "reset": 1705334400,
+#   "used": 5
+# }
+
+# Check rate limit for specific endpoint
+curl "http://localhost:8001/api/rate-limits/me?endpoint=/api/tasks" \
+  -H "Authorization: Bearer <token>"
+
+# Response:
+# {
+#   "limit": 30,
+#   "remaining": 28,
+#   "reset": 1705334400,
+#   "used": 2
+# }
+```
+
+### View Available Rate Limit Tiers
+
+See all rate limit tiers and your current tier:
+
+```bash
+curl http://localhost:8001/api/rate-limits/tiers \
+  -H "Authorization: Bearer <token>"
+
+# Response:
+# {
+#   "role_based": {
+#     "viewer": {
+#       "max_requests": 60,
+#       "window_seconds": 60,
+#       "description": "60 requests per minute"
+#     },
+#     "user": {
+#       "max_requests": 120,
+#       "window_seconds": 60,
+#       "description": "120 requests per minute"
+#     },
+#     "admin": {
+#       "max_requests": 300,
+#       "window_seconds": 60,
+#       "description": "300 requests per minute"
+#     }
+#   },
+#   "endpoint_specific": {
+#     "task_create": {
+#       "max_requests": 30,
+#       "window_seconds": 60,
+#       "description": "30 requests per minute"
+#     },
+#     "workflow_execute": {
+#       "max_requests": 10,
+#       "window_seconds": 60,
+#       "description": "10 requests per minute"
+#     },
+#     "agent_create": {
+#       "max_requests": 20,
+#       "window_seconds": 60,
+#       "description": "20 requests per minute"
+#     }
+#   },
+#   "current_user_tier": {
+#     "role": "user",
+#     "max_requests": 120,
+#     "window_seconds": 60
+#   }
+# }
+```
+
+### Reset Rate Limit (Admin)
+
+Administrators can reset rate limits for any user:
+
+```bash
+# Reset your own rate limit
+curl -X POST http://localhost:8001/api/rate-limits/reset/me \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Rate limit reset for user 1"
+# }
+
+# Reset specific user's rate limit (admin only)
+curl -X POST http://localhost:8001/api/rate-limits/reset/user/123 \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Rate limit reset for user 123"
+# }
+
+# Reset specific endpoint rate limit
+curl -X POST "http://localhost:8001/api/rate-limits/reset/me?endpoint=/api/tasks" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response:
+# {
+#   "success": true,
+#   "message": "Rate limit reset for user 1 on endpoint /api/tasks"
+# }
+```
+
+### Exempt Endpoints
+
+The following endpoints are exempt from rate limiting:
+
+- `/api/health/*` - Health check endpoints
+- `/docs` - API documentation
+- `/redoc` - Alternative API documentation
+- `/openapi.json` - OpenAPI specification
+- `/` - Root endpoint
+
+### Handling Rate Limits in Client Code
+
+**Python Example:**
+
+```python
+import requests
+import time
+
+def make_api_request(url, headers, data):
+    """Make API request with rate limit handling"""
+    while True:
+        response = requests.post(url, headers=headers, json=data)
+
+        if response.status_code == 429:
+            # Rate limit exceeded
+            retry_after = int(response.headers.get('Retry-After', 60))
+            print(f"Rate limit exceeded. Retrying after {retry_after} seconds...")
+            time.sleep(retry_after)
+            continue
+
+        # Check remaining requests
+        remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
+        if remaining < 10:
+            print(f"Warning: Only {remaining} requests remaining")
+
+        return response
+
+# Usage
+response = make_api_request(
+    url="http://localhost:8001/api/tasks",
+    headers={"Authorization": f"Bearer {token}"},
+    data={"title": "My Task", "description": "Task description"}
+)
+```
+
+**JavaScript Example:**
+
+```javascript
+async function makeApiRequest(url, options) {
+    while (true) {
+        const response = await fetch(url, options);
+
+        if (response.status === 429) {
+            // Rate limit exceeded
+            const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
+            console.log(`Rate limit exceeded. Retrying after ${retryAfter} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+            continue;
+        }
+
+        // Check remaining requests
+        const remaining = parseInt(response.headers.get('X-RateLimit-Remaining') || '0');
+        if (remaining < 10) {
+            console.warn(`Warning: Only ${remaining} requests remaining`);
+        }
+
+        return response;
+    }
+}
+
+// Usage
+const response = await makeApiRequest('http://localhost:8001/api/tasks', {
+    method: 'POST',
+    headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        title: 'My Task',
+        description: 'Task description'
+    })
+});
+```
+
+### Custom Rate Limits
+
+You can customize rate limits by modifying the tiers in [src/core/rate_limiter.py](src/core/rate_limiter.py):
+
+```python
+class RateLimitTier:
+    """Predefined rate limit tiers"""
+
+    # Customize role-based limits
+    VIEWER = {"max_requests": 100, "window_seconds": 60}  # 100 req/min
+    USER = {"max_requests": 200, "window_seconds": 60}    # 200 req/min
+    ADMIN = {"max_requests": 500, "window_seconds": 60}   # 500 req/min
+
+    # Customize endpoint-specific limits
+    WORKFLOW_EXECUTE = {"max_requests": 20, "window_seconds": 60}  # 20 req/min
+```
+
+### Rate Limit Monitoring
+
+Monitor rate limit usage via Prometheus metrics:
+
+```bash
+# View metrics
+curl http://localhost:8001/api/metrics
+
+# Metrics include:
+# - rate_limit_exceeded_total{endpoint="/api/tasks"}
+# - rate_limit_remaining{user_id="123",endpoint="/api/tasks"}
+# - rate_limit_reset_total{user_id="123"}
+```
+
+### Production Best Practices
+
+**1. Monitor rate limit hits:**
+```bash
+# Check how often users hit rate limits
+curl http://localhost:8001/api/errors/summary?hours=24 | \
+  jq '.top_errors[] | select(.error_type == "RateLimitExceeded")'
+```
+
+**2. Adjust limits for power users:**
+```python
+# Create custom tiers for high-volume users
+# Add to RateLimitTier class:
+POWER_USER = {"max_requests": 1000, "window_seconds": 60}
+```
+
+**3. Use Redis persistence:**
+```bash
+# Ensure Redis persistence is enabled
+redis-cli CONFIG SET save "900 1 300 10 60 10000"
+```
+
+**4. Set up alerts:**
+```python
+# Alert when users frequently hit rate limits
+# This may indicate they need a higher tier or have inefficient code
+```
+
 ## Development
 
 ### Running Tests
@@ -2042,9 +2375,9 @@ Interactive API documentation is available at:
 
 ## Project Status
 
-🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (90% complete)
+🚧 **In Development** - Block Phase 1: Foundation & Infrastructure (95% complete)
 
-Current Progress: Commit 18/100
+Current Progress: Commit 19/100
 
 ## Implementation Roadmap
 

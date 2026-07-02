@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors
+from src.core.rate_limit_middleware import RateLimitMiddleware
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits
 
 
 @asynccontextmanager
@@ -44,6 +45,7 @@ app = FastAPI(
 # Add custom middleware
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(ErrorTrackingMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -63,6 +65,7 @@ app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])
+app.include_router(rate_limits.router, prefix="/api", tags=["Rate Limits"])
 
 
 @app.get("/")
