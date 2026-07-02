@@ -1,7 +1,7 @@
 """
-Agent System
+Base Agent Classes
 
-Provides base agent classes, LLM integration, and agent execution engine.
+Core abstractions for the agent system.
 """
 
 from src.agents.base.agent import BaseAgent, AgentConfig, AgentContext, AgentResult

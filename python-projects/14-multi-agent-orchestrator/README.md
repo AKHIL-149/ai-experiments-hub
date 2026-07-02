@@ -2257,6 +2257,505 @@ curl -X POST http://localhost:8001/api/cache/invalidate/tasks
 curl -X POST http://localhost:8001/api/cache/clear
 ```
 
+## Agent System
+
+The Multi-Agent Orchestrator provides a flexible, extensible agent architecture for building AI-powered task automation systems.
+
+### Architecture Overview
+
+The agent system consists of four main components:
+
+1. **Base Agent** (`BaseAgent`) - Abstract base class for all agents
+2. **LLM Provider** (`LLMProvider`) - Unified interface for multiple LLM providers
+3. **Agent Memory** (`AgentMemory`) - Short-term and long-term memory system
+4. **Agent Executor** (`AgentExecutor`) - Execution engine with error handling and retries
+
+### Creating a Custom Agent
+
+**Step 1: Define Agent Class**
+
+```python
+from src.agents.base import BaseAgent, AgentConfig, AgentContext, AgentResult, AgentStatus
+from src.agents.base import LLMProvider, LLMMessage, LLMRole
+
+class DataAnalystAgent(BaseAgent):
+    """Agent specialized in data analysis tasks"""
+
+    def __init__(self, config: AgentConfig, llm_provider: LLMProvider):
+        super().__init__(config)
+        self.llm = llm_provider
+
+    async def execute(self, context: AgentContext) -> AgentResult:
+        """Execute data analysis task"""
+        started_at = datetime.utcnow()
+
+        try:
+            # Process input
+            result = await self.process(context.input_data)
+
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                output=result,
+                started_at=started_at,
+                completed_at=datetime.utcnow()
+            )
+
+        except Exception as e:
+            return await self.handle_error(e, context)
+
+    async def process(self, input_data: dict) -> Any:
+        """Process data analysis request"""
+        # Build messages for LLM
+        messages = [
+            LLMMessage(role=LLMRole.SYSTEM, content=self.get_system_prompt()),
+            LLMMessage(
+                role=LLMRole.USER,
+                content=f"Analyze this data: {input_data['dataset']}"
+            )
+        ]
+
+        # Call LLM
+        response = await self.llm.generate(messages)
+
+        return {
+            "analysis": response.content,
+            "tokens_used": response.tokens_used,
+            "cost": response.cost
+        }
+```
+
+**Step 2: Configure and Execute**
+
+```python
+from src.agents.base import AgentConfig, AgentContext, AgentExecutor
+from src.agents.base.llm_provider import create_llm_provider
+
+# Create LLM provider
+llm = create_llm_provider(provider="openai", model="gpt-4")
+
+# Configure agent
+config = AgentConfig(
+    name="Data Analyst",
+    description="Analyzes datasets and provides insights",
+    model="gpt-4",
+    temperature=0.3,
+    max_tokens=2000,
+    tools=["pandas", "numpy"],
+    memory_enabled=True
+)
+
+# Create agent
+agent = DataAnalystAgent(config, llm)
+
+# Create executor
+executor = AgentExecutor(agent)
+
+# Execute
+context = AgentContext(
+    task_id="task_123",
+    input_data={"dataset": "sales_data.csv", "query": "monthly trends"}
+)
+
+result = await executor.execute(context)
+
+print(f"Status: {result.status}")
+print(f"Output: {result.output}")
+print(f"Execution Time: {result.execution_time}s")
+```
+
+### LLM Provider Integration
+
+The system supports multiple LLM providers through a unified interface.
+
+**OpenAI Example:**
+
+```python
+from src.agents.base.llm_provider import OpenAIProvider, LLMMessage, LLMRole
+
+# Initialize provider
+llm = OpenAIProvider(
+    model="gpt-4-turbo",
+    api_key="sk-...",  # or set OPENAI_API_KEY env var
+    temperature=0.7,
+    max_tokens=2000
+)
+
+# Generate completion
+messages = [
+    LLMMessage(role=LLMRole.SYSTEM, content="You are a helpful assistant"),
+    LLMMessage(role=LLMRole.USER, content="What is machine learning?")
+]
+
+response = await llm.generate(messages)
+
+print(response.content)
+print(f"Tokens: {response.tokens_used}")
+print(f"Cost: ${response.cost}")
+```
+
+**Anthropic Claude Example:**
+
+```python
+from src.agents.base.llm_provider import AnthropicProvider
+
+# Initialize provider
+llm = AnthropicProvider(
+    model="claude-3-sonnet-20240229",
+    api_key="sk-ant-...",  # or set ANTHROPIC_API_KEY env var
+    temperature=0.5
+)
+
+# Generate completion
+response = await llm.generate(messages)
+```
+
+**Streaming Example:**
+
+```python
+# Stream tokens as they're generated
+async for token in llm.generate_streaming(messages):
+    print(token, end='', flush=True)
+```
+
+**Factory Pattern:**
+
+```python
+from src.agents.base.llm_provider import create_llm_provider
+
+# Create provider using factory
+llm = create_llm_provider(
+    provider="openai",  # or "anthropic"
+    model="gpt-4",
+    temperature=0.7
+)
+```
+
+### Agent Memory System
+
+Agents can maintain short-term and long-term memory for context retention.
+
+**Basic Usage:**
+
+```python
+from src.agents.base import AgentMemory, MemoryType
+
+# Initialize memory
+memory = AgentMemory(
+    max_short_term=10,  # Keep last 10 items
+    max_long_term=100,  # Keep up to 100 important items
+    importance_threshold=0.7  # Items >= 0.7 go to long-term
+)
+
+# Add observations
+memory.add(
+    content="User requested data analysis for Q4 sales",
+    memory_type=MemoryType.OBSERVATION,
+    importance=0.8
+)
+
+# Add actions
+memory.add(
+    content="Generated SQL query: SELECT * FROM sales WHERE quarter = 4",
+    memory_type=MemoryType.ACTION,
+    importance=0.6
+)
+
+# Add results
+memory.add(
+    content="Analysis complete: Revenue increased 23%",
+    memory_type=MemoryType.RESULT,
+    importance=0.9
+)
+
+# Retrieve recent items
+recent = memory.get_recent(n=5)
+for item in recent:
+    print(f"[{item.timestamp}] {item.type}: {item.content}")
+
+# Get important items
+important = memory.get_important(n=5, min_importance=0.7)
+
+# Search memory
+results = memory.search("sales", n=3)
+
+# Get summary
+summary = memory.get_summary(max_items=10)
+print(summary)
+```
+
+**Memory Statistics:**
+
+```python
+stats = memory.get_stats()
+print(f"Short-term: {stats['short_term_count']}")
+print(f"Long-term: {stats['long_term_count']}")
+print(f"Total: {stats['total_items']}")
+```
+
+### Agent Executor
+
+The executor handles agent execution with automatic retries, timeouts, and error handling.
+
+**Configuration:**
+
+```python
+from src.agents.base import AgentExecutor, AgentConfig
+
+# Configure agent with retry settings
+config = AgentConfig(
+    name="Researcher",
+    description="Researches topics and provides summaries",
+    timeout=300,  # 5 minutes
+    retry_on_failure=True,
+    max_retries=3
+)
+
+agent = ResearchAgent(config, llm)
+executor = AgentExecutor(agent)
+```
+
+**Execution with Context:**
+
+```python
+context = AgentContext(
+    task_id="task_456",
+    workflow_id="workflow_789",
+    user_id=123,
+    input_data={"topic": "quantum computing", "depth": "detailed"},
+    metadata={"priority": "high"}
+)
+
+result = await executor.execute(context)
+
+if result.status == AgentStatus.COMPLETED:
+    print(f"Success! Output: {result.output}")
+    print(f"Execution time: {result.execution_time}s")
+    print(f"Tokens used: {result.tokens_used}")
+    print(f"Cost: ${result.cost}")
+else:
+    print(f"Failed: {result.error}")
+```
+
+**Memory Integration:**
+
+```python
+# Executor automatically manages memory
+executor = AgentExecutor(agent, memory=AgentMemory())
+
+# Execute multiple tasks
+for task in tasks:
+    context = AgentContext(task_id=task.id, input_data=task.data)
+    result = await executor.execute(context)
+
+# Memory accumulates across executions
+memory = executor.get_memory()
+print(f"Total memory items: {len(memory)}")
+print(memory.get_summary())
+
+# Clear memory when needed
+executor.clear_memory()
+```
+
+### Agent Configuration
+
+Fine-tune agent behavior with comprehensive configuration options.
+
+```python
+config = AgentConfig(
+    # Identity
+    name="Code Reviewer",
+    description="Reviews code for quality, security, and best practices",
+
+    # LLM Settings
+    model="gpt-4",
+    temperature=0.3,  # Lower for more deterministic output
+    max_tokens=4000,
+
+    # System Prompt (optional)
+    system_prompt="""You are an expert code reviewer.
+    Focus on: security, performance, maintainability, and best practices.
+    Provide actionable feedback with examples.""",
+
+    # Tools
+    tools=["ast_parser", "linter", "security_scanner"],
+
+    # Memory
+    memory_enabled=True,
+    max_memory_items=15,
+
+    # Execution
+    timeout=180,  # 3 minutes
+    retry_on_failure=True,
+    max_retries=2
+)
+```
+
+### Error Handling
+
+**Custom Error Handling:**
+
+```python
+class MyAgent(BaseAgent):
+    async def handle_error(self, error: Exception, context: AgentContext) -> AgentResult:
+        """Custom error handling"""
+        # Log to monitoring system
+        logger.error(f"Agent failed: {error}", extra={
+            "task_id": context.task_id,
+            "input": context.input_data
+        })
+
+        # Check error type
+        if isinstance(error, TimeoutError):
+            return AgentResult(
+                status=AgentStatus.FAILED,
+                error="Task timed out - please simplify the request",
+                metadata={"error_type": "timeout"},
+                started_at=datetime.utcnow()
+            )
+
+        # Default handling
+        return await super().handle_error(error, context)
+```
+
+**Retry Strategy:**
+
+```python
+# Executor automatically retries with exponential backoff
+# Attempt 1: immediate
+# Attempt 2: wait 2 seconds
+# Attempt 3: wait 4 seconds
+# Attempt 4: wait 8 seconds
+
+# Configure retry behavior
+config = AgentConfig(
+    name="API Agent",
+    retry_on_failure=True,
+    max_retries=3,
+    timeout=60
+)
+```
+
+### Agent Status Tracking
+
+Monitor agent execution status in real-time.
+
+```python
+# Check status
+print(f"Agent status: {agent.get_status()}")
+
+# Status transitions:
+# IDLE -> RUNNING -> COMPLETED
+# IDLE -> RUNNING -> FAILED
+# IDLE -> RUNNING -> PAUSED
+
+# Access current context
+if agent.current_context:
+    print(f"Processing task: {agent.current_context.task_id}")
+```
+
+### Cost Tracking
+
+Automatically track LLM API costs.
+
+```python
+# After execution
+result = await executor.execute(context)
+
+print(f"Tokens used: {result.tokens_used}")
+print(f"Prompt tokens: {result.metadata.get('prompt_tokens')}")
+print(f"Completion tokens: {result.metadata.get('completion_tokens')}")
+print(f"Cost: ${result.cost}")
+
+# Cost is calculated per provider:
+# - OpenAI GPT-4: $0.03/1K prompt, $0.06/1K completion
+# - OpenAI GPT-3.5: $0.001/1K prompt, $0.002/1K completion
+# - Claude 3 Opus: $0.015/1K prompt, $0.075/1K completion
+# - Claude 3 Sonnet: $0.003/1K prompt, $0.015/1K completion
+```
+
+### Validation
+
+Implement custom input validation.
+
+```python
+class ValidatedAgent(BaseAgent):
+    async def validate_input(self, input_data: dict) -> bool:
+        """Validate input data"""
+        required_fields = ["query", "context"]
+
+        # Check required fields
+        if not all(field in input_data for field in required_fields):
+            logger.error("Missing required fields")
+            return False
+
+        # Validate data types
+        if not isinstance(input_data["query"], str):
+            logger.error("Query must be a string")
+            return False
+
+        # Validate constraints
+        if len(input_data["query"]) > 1000:
+            logger.error("Query too long (max 1000 chars)")
+            return False
+
+        return True
+```
+
+### Best Practices
+
+**1. Use Appropriate Models:**
+```python
+# Fast tasks: Use GPT-3.5 or Claude Haiku
+fast_config = AgentConfig(name="Classifier", model="gpt-3.5-turbo")
+
+# Complex reasoning: Use GPT-4 or Claude Opus
+smart_config = AgentConfig(name="Strategist", model="gpt-4")
+```
+
+**2. Optimize Temperature:**
+```python
+# Deterministic (code, analysis): 0.0 - 0.3
+code_config = AgentConfig(name="Coder", temperature=0.2)
+
+# Balanced (general): 0.5 - 0.7
+general_config = AgentConfig(name="Assistant", temperature=0.6)
+
+# Creative (writing): 0.8 - 1.0
+creative_config = AgentConfig(name="Writer", temperature=0.9)
+```
+
+**3. Enable Memory for Context:**
+```python
+# For multi-turn conversations
+config = AgentConfig(
+    name="Chatbot",
+    memory_enabled=True,
+    max_memory_items=20  # Last 20 interactions
+)
+```
+
+**4. Set Reasonable Timeouts:**
+```python
+# Quick tasks: 30-60 seconds
+quick_config = AgentConfig(name="Classifier", timeout=30)
+
+# Complex tasks: 120-300 seconds
+complex_config = AgentConfig(name="Analyst", timeout=180)
+```
+
+**5. Handle Errors Gracefully:**
+```python
+result = await executor.execute(context)
+
+if result.status == AgentStatus.FAILED:
+    # Log error
+    logger.error(f"Agent failed: {result.error}")
+
+    # Retry with different strategy
+    # Or escalate to human
+    # Or use fallback agent
+```
+
 ## Development
 
 ### Running Tests
@@ -2767,8 +3266,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (5% complete)
 
-Current Progress: Commit 20/100 - Ready for Block Phase 2
+Current Progress: Commit 21/100 - Base Agent Architecture Implemented
 
 ## Implementation Roadmap
 
