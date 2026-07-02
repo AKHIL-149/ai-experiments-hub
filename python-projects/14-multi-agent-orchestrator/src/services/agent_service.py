@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from src.models.agent import Agent, AgentRole, AgentStatus
+from src.models.agent_execution import AgentExecution, ExecutionStatus
+from src.agents import agent_registry, AgentConfig, AgentContext, AgentResult, AgentExecutor
+from src.agents.base.llm_provider import create_llm_provider
 from src.core.logging import logger
 from src.core.exceptions import AgentNotFoundError, ValidationError
 
@@ -444,3 +447,250 @@ class AgentService:
         logger.info(f"Selected agent {best_agent.id} ({best_agent.name}) for role {role}")
 
         return best_agent
+
+    @staticmethod
+    async def execute_agent(
+        session: Session,
+        agent_id: int,
+        input_data: Dict[str, Any],
+        task_id: Optional[int] = None,
+        workflow_id: Optional[str] = None,
+        user_id: Optional[int] = None,
+        session_id: Optional[str] = None,
+        agent_type: Optional[str] = None
+    ) -> AgentExecution:
+        """
+        Execute an agent and track the execution
+
+        Args:
+            session: Database session
+            agent_id: Agent ID
+            input_data: Input data for agent
+            task_id: Optional task ID
+            workflow_id: Optional workflow ID
+            user_id: Optional user ID
+            session_id: Optional session ID
+            agent_type: Override agent type (defaults to inferred from role)
+
+        Returns:
+            AgentExecution: Execution record
+
+        Raises:
+            AgentNotFoundError: If agent not found
+            ValidationError: If agent is not active
+        """
+        # Get agent from database
+        agent_model = AgentService.get_agent_by_id(session, agent_id)
+
+        if not agent_model.is_active:
+            raise ValidationError(f"Agent {agent_id} is not active")
+
+        # Create execution record
+        execution = AgentExecution(
+            agent_id=agent_id,
+            task_id=task_id,
+            workflow_id=workflow_id,
+            user_id=user_id,
+            session_id=session_id,
+            input_data=input_data,
+            status=ExecutionStatus.PENDING,
+            llm_provider=agent_model.llm_provider,
+            llm_model=agent_model.llm_model,
+            temperature=agent_model.temperature,
+            max_tokens=agent_model.max_tokens
+        )
+
+        session.add(execution)
+        session.flush()
+
+        try:
+            # Update agent status
+            agent_model.status = AgentStatus.BUSY
+            agent_model.current_task_id = task_id
+            session.flush()
+
+            # Create LLM provider
+            llm = create_llm_provider(
+                provider=agent_model.llm_provider,
+                model=agent_model.llm_model
+            )
+
+            # Determine agent type
+            type_to_use = agent_type or AgentService._infer_agent_type(agent_model.role)
+
+            # Create agent instance from registry
+            agent_instance = agent_registry.create_agent(
+                agent_type=type_to_use,
+                llm_provider=llm
+            )
+
+            # Create executor
+            executor = AgentExecutor(agent_instance)
+
+            # Prepare context
+            context = AgentContext(
+                task_id=str(task_id) if task_id else None,
+                workflow_id=workflow_id,
+                user_id=user_id,
+                session_id=session_id,
+                input_data=input_data
+            )
+
+            # Update execution status
+            execution.status = ExecutionStatus.RUNNING
+            execution.started_at = datetime.utcnow()
+            session.flush()
+
+            # Execute agent
+            result = await executor.execute(context)
+
+            # Update execution with results
+            execution.status = ExecutionStatus.COMPLETED if result.status.value == "completed" else ExecutionStatus.FAILED
+            execution.completed_at = datetime.utcnow()
+            execution.output_data = result.output
+            execution.output_metadata = result.metadata
+            execution.tokens_used = result.tokens_used
+            execution.cost = result.cost
+            execution.calculate_execution_time()
+
+            if result.error:
+                execution.error_message = result.error
+                execution.error_type = "AgentExecutionError"
+
+            # Update agent metrics
+            agent_model.update_metrics(
+                task_duration=int(execution.execution_time_seconds or 0),
+                success=execution.is_successful,
+                cost=execution.cost or 0.0
+            )
+
+            # Update token tracking
+            agent_model.total_tokens_used += (execution.tokens_used or 0)
+
+            # Reset agent status
+            agent_model.status = AgentStatus.IDLE
+            agent_model.current_task_id = None
+
+            session.flush()
+
+            logger.info(
+                f"Agent {agent_id} execution {execution.id} completed: "
+                f"status={execution.status}, time={execution.execution_time_seconds}s, "
+                f"cost=${execution.cost}"
+            )
+
+        except Exception as e:
+            # Update execution with error
+            execution.status = ExecutionStatus.FAILED
+            execution.completed_at = datetime.utcnow()
+            execution.error_message = str(e)
+            execution.error_type = type(e).__name__
+            execution.calculate_execution_time()
+
+            # Reset agent status
+            agent_model.status = AgentStatus.ERROR
+            agent_model.current_task_id = None
+
+            # Update failure metrics
+            agent_model.tasks_failed += 1
+
+            session.flush()
+
+            logger.error(f"Agent {agent_id} execution {execution.id} failed: {e}")
+
+        return execution
+
+    @staticmethod
+    def _infer_agent_type(role: AgentRole) -> str:
+        """Infer agent type from role"""
+        role_to_type = {
+            AgentRole.RESEARCHER: "research",
+            AgentRole.CODER: "code",
+            AgentRole.WRITER: "writer",
+            AgentRole.REVIEWER: "code",
+            AgentRole.COORDINATOR: "planner",
+            AgentRole.TESTER: "code"
+        }
+        return role_to_type.get(role, "research")
+
+    @staticmethod
+    def get_agent_executions(
+        session: Session,
+        agent_id: Optional[int] = None,
+        task_id: Optional[int] = None,
+        workflow_id: Optional[str] = None,
+        status: Optional[ExecutionStatus] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[AgentExecution]:
+        """
+        Get agent executions with filters
+
+        Args:
+            session: Database session
+            agent_id: Filter by agent ID
+            task_id: Filter by task ID
+            workflow_id: Filter by workflow ID
+            status: Filter by status
+            limit: Result limit
+            offset: Result offset
+
+        Returns:
+            List of executions
+        """
+        query = session.query(AgentExecution)
+
+        if agent_id:
+            query = query.filter(AgentExecution.agent_id == agent_id)
+        if task_id:
+            query = query.filter(AgentExecution.task_id == task_id)
+        if workflow_id:
+            query = query.filter(AgentExecution.workflow_id == workflow_id)
+        if status:
+            query = query.filter(AgentExecution.status == status)
+
+        return query.order_by(AgentExecution.created_at.desc()).limit(limit).offset(offset).all()
+
+    @staticmethod
+    def get_execution_by_id(session: Session, execution_id: int) -> Optional[AgentExecution]:
+        """Get execution by ID"""
+        return session.query(AgentExecution).filter(AgentExecution.id == execution_id).first()
+
+    @staticmethod
+    def get_agent_statistics(session: Session, agent_id: int) -> Dict[str, Any]:
+        """Get comprehensive agent statistics including executions"""
+        agent = AgentService.get_agent_by_id(session, agent_id)
+
+        total_executions = session.query(AgentExecution).filter(
+            AgentExecution.agent_id == agent_id
+        ).count()
+
+        successful_executions = session.query(AgentExecution).filter(
+            AgentExecution.agent_id == agent_id,
+            AgentExecution.status == ExecutionStatus.COMPLETED
+        ).count()
+
+        failed_executions = session.query(AgentExecution).filter(
+            AgentExecution.agent_id == agent_id,
+            AgentExecution.status == ExecutionStatus.FAILED
+        ).count()
+
+        return {
+            "agent_id": agent_id,
+            "agent_name": agent.name,
+            "agent_role": agent.role.value,
+            "total_executions": total_executions,
+            "successful_executions": successful_executions,
+            "failed_executions": failed_executions,
+            "execution_success_rate": (successful_executions / total_executions * 100) if total_executions > 0 else 0,
+            "total_cost": agent.total_cost,
+            "total_tokens_used": agent.total_tokens_used,
+            "average_execution_time": agent.average_task_duration_seconds,
+            "tasks_completed": agent.tasks_completed,
+            "tasks_failed": agent.tasks_failed,
+            "task_success_rate": (agent.tasks_completed / (agent.tasks_completed + agent.tasks_failed) * 100) if (agent.tasks_completed + agent.tasks_failed) > 0 else 0,
+            "is_active": agent.is_active,
+            "status": agent.status.value,
+            "created_at": agent.created_at.isoformat() if agent.created_at else None,
+            "last_active_at": agent.last_active_at.isoformat() if agent.last_active_at else None
+        }
