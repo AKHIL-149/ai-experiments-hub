@@ -2756,6 +2756,416 @@ if result.status == AgentStatus.FAILED:
     # Or use fallback agent
 ```
 
+## Specialized Agents
+
+The system includes pre-built specialized agents for common tasks.
+
+### Available Agent Types
+
+| Agent Type | Purpose | Use Cases |
+|------------|---------|-----------|
+| **ResearchAgent** | Information gathering | Topic research, fact verification, source synthesis |
+| **CodeAgent** | Code generation/analysis | Code writing, review, debugging, refactoring |
+| **DataAnalystAgent** | Data analysis | Statistical analysis, insights, trend identification |
+| **WriterAgent** | Content creation | Articles, documentation, marketing copy |
+| **PlannerAgent** | Task planning | Task decomposition, project planning, workflow design |
+
+### Research Agent
+
+Specializes in information gathering and research tasks.
+
+**Example:**
+
+```python
+from src.agents import ResearchAgent, AgentContext, AgentExecutor
+from src.agents.base.llm_provider import create_llm_provider
+
+# Create LLM provider
+llm = create_llm_provider(provider="openai", model="gpt-4")
+
+# Create research agent
+agent = ResearchAgent(llm)
+
+# Create executor
+executor = AgentExecutor(agent)
+
+# Execute research task
+context = AgentContext(
+    task_id="research_001",
+    input_data={
+        "topic": "quantum computing applications in cryptography",
+        "depth": "deep",  # shallow, medium, deep
+        "focus_areas": [
+            "post-quantum cryptography",
+            "quantum key distribution",
+            "current implementations"
+        ]
+    }
+)
+
+result = await executor.execute(context)
+
+print(f"Topic: {result.output['topic']}")
+print(f"Findings: {len(result.output['findings'])} key points")
+print(f"Summary:\n{result.output['summary']}")
+print(f"Cost: ${result.cost}")
+```
+
+**Input Parameters:**
+- `topic` (required): Research topic
+- `depth`: `shallow`, `medium`, `deep` (default: `medium`)
+- `focus_areas`: List of specific areas to focus on
+- `research_type`: Type of research (default: `general`)
+
+**Output:**
+- `findings`: Structured list of key findings
+- `summary`: Full research summary
+- `topic`: Research topic
+- `depth`: Research depth used
+
+### Code Agent
+
+Specializes in code generation, analysis, and debugging.
+
+**Example - Code Generation:**
+
+```python
+from src.agents import CodeAgent
+
+llm = create_llm_provider(provider="openai", model="gpt-4")
+agent = CodeAgent(llm)
+executor = AgentExecutor(agent)
+
+context = AgentContext(
+    task_id="code_001",
+    input_data={
+        "task_type": "generate",
+        "language": "python",
+        "requirements": """
+        Create a function that:
+        1. Accepts a list of numbers
+        2. Removes duplicates
+        3. Sorts in descending order
+        4. Returns top N items
+        Include error handling and type hints.
+        """
+    }
+)
+
+result = await executor.execute(context)
+
+print(f"Generated Code:\n{result.output['code']}")
+print(f"Explanation:\n{result.output['explanation']}")
+```
+
+**Example - Code Review:**
+
+```python
+context = AgentContext(
+    task_id="code_002",
+    input_data={
+        "task_type": "review",
+        "language": "python",
+        "code": """
+def process_data(data):
+    result = []
+    for item in data:
+        if item > 0:
+            result.append(item * 2)
+    return result
+        """
+    }
+)
+
+result = await executor.execute(context)
+print(result.output['explanation'])  # Security, performance, quality analysis
+```
+
+**Task Types:**
+- `generate`: Create new code
+- `review`: Analyze code quality and security
+- `debug`: Find and fix bugs
+- `refactor`: Improve code structure
+- `document`: Generate documentation
+
+### Data Analyst Agent
+
+Specializes in data analysis and insights generation.
+
+**Example:**
+
+```python
+from src.agents import DataAnalystAgent
+
+llm = create_llm_provider(provider="openai", model="gpt-4")
+agent = DataAnalystAgent(llm)
+executor = AgentExecutor(agent)
+
+context = AgentContext(
+    task_id="analysis_001",
+    input_data={
+        "data": {
+            "revenue": [100000, 120000, 115000, 135000, 150000],
+            "costs": [60000, 65000, 70000, 72000, 75000],
+            "months": ["Jan", "Feb", "Mar", "Apr", "May"]
+        },
+        "analysis_type": "predictive",  # descriptive, diagnostic, predictive, prescriptive
+        "questions": [
+            "What is the revenue trend?",
+            "What will June revenue be?",
+            "What factors are driving growth?"
+        ]
+    }
+)
+
+result = await executor.execute(context)
+
+print(f"Analysis Type: {result.output['analysis_type']}")
+print(f"Insights: {len(result.output['insights'])} key insights")
+print(f"Recommendations:")
+for rec in result.output['recommendations']:
+    print(f"  - {rec}")
+```
+
+**Analysis Types:**
+- `descriptive`: Summarize data characteristics
+- `diagnostic`: Explain why trends occur
+- `predictive`: Forecast future trends
+- `prescriptive`: Recommend actions
+- `exploratory`: Discover patterns
+
+### Writer Agent
+
+Specializes in content creation and writing.
+
+**Example:**
+
+```python
+from src.agents import WriterAgent
+
+llm = create_llm_provider(provider="openai", model="gpt-4")
+agent = WriterAgent(llm)
+executor = AgentExecutor(agent)
+
+context = AgentContext(
+    task_id="write_001",
+    input_data={
+        "content_type": "blog_post",
+        "topic": "Getting started with microservices architecture",
+        "style": "professional",  # creative, conversational, professional, technical
+        "audience": "software engineers",
+        "length": "medium"  # short, medium, long
+    }
+)
+
+result = await executor.execute(context)
+
+print(f"Content:\n{result.output['content']}")
+print(f"Word Count: {result.output['word_count']}")
+print(f"Sections: {len(result.output['sections'])}")
+```
+
+**Content Types:**
+- `article`: Informative, well-researched pieces
+- `blog_post`: Engaging, conversational content
+- `documentation`: Clear, detailed instructions
+- `marketing_copy`: Persuasive, benefit-focused
+- `report`: Structured, analytical content
+- `email`: Concise, action-oriented
+- `social_media`: Brief, engaging posts
+
+**Styles:**
+- `creative` (temp: 0.9)
+- `conversational` (temp: 0.8)
+- `professional` (temp: 0.6)
+- `technical` (temp: 0.3)
+- `formal` (temp: 0.4)
+- `casual` (temp: 0.7)
+
+### Planner Agent
+
+Specializes in task planning and decomposition.
+
+**Example:**
+
+```python
+from src.agents import PlannerAgent
+
+llm = create_llm_provider(provider="openai", model="gpt-4")
+agent = PlannerAgent(llm)
+executor = AgentExecutor(agent)
+
+context = AgentContext(
+    task_id="plan_001",
+    input_data={
+        "goal": "Build a RESTful API for a task management application",
+        "plan_type": "project_plan",  # task_breakdown, project_plan, workflow_design, strategy
+        "constraints": {
+            "timeline": "2 weeks",
+            "team_size": "2 developers",
+            "tech_stack": "FastAPI, PostgreSQL, Redis"
+        },
+        "context": "Starting from scratch, need authentication and real-time updates"
+    }
+)
+
+result = await executor.execute(context)
+
+print(f"Goal: {result.output['goal']}")
+print(f"Tasks: {len(result.output['tasks'])}")
+print(f"Estimated Time: {result.output['estimated_total_time']}")
+
+for task in result.output['tasks']:
+    print(f"\nTask: {task['name']}")
+    print(f"  Priority: {task['priority']}")
+    print(f"  Time: {task['estimated_time']}")
+    print(f"  Description: {task['description']}")
+```
+
+**Plan Types:**
+- `task_breakdown`: Break goal into specific tasks
+- `project_plan`: Comprehensive project plan
+- `workflow_design`: Process workflow design
+- `strategy`: Strategic planning
+
+### Agent Registry
+
+The agent registry provides centralized management for all agents.
+
+**Basic Usage:**
+
+```python
+from src.agents import agent_registry
+
+# List all available agents
+agents = agent_registry.list_agents()
+for agent_info in agents:
+    print(f"{agent_info['type']}: {agent_info['description']}")
+
+# Create agent from registry
+research_agent = agent_registry.create_agent(
+    agent_type="research",
+    cache_instance=True  # Cache for reuse
+)
+
+# Get cached instance
+cached_agent = agent_registry.get_agent("research")
+
+# Get detailed info
+info = agent_registry.get_agent_info("code")
+print(f"Agent: {info['name']}")
+print(f"Config: {info['config']}")
+```
+
+**Register Custom Agent:**
+
+```python
+from src.agents import BaseAgent, AgentConfig
+
+class CustomAgent(BaseAgent):
+    """Your custom agent implementation"""
+    pass
+
+# Register with the registry
+agent_registry.register_agent("custom", CustomAgent)
+
+# Register default configuration
+config = AgentConfig(
+    name="Custom Agent",
+    description="My specialized agent",
+    model="gpt-4",
+    temperature=0.5
+)
+agent_registry.register_config("custom", config)
+
+# Create instance
+custom_agent = agent_registry.create_agent("custom")
+```
+
+**Registry Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `register_agent(type, class)` | Register a new agent type |
+| `register_config(type, config)` | Register default configuration |
+| `create_agent(type, llm, config, cache)` | Create agent instance |
+| `get_agent(type)` | Get cached agent instance |
+| `list_agents()` | List all registered agents |
+| `get_agent_info(type)` | Get detailed agent information |
+| `clear_cache(type)` | Clear cached instances |
+| `is_registered(type)` | Check if agent type exists |
+
+**Factory Pattern with Registry:**
+
+```python
+from src.agents.base.llm_provider import create_llm_provider
+
+# Create LLM provider once
+llm = create_llm_provider(provider="anthropic", model="claude-3-sonnet-20240229")
+
+# Create multiple agents with same LLM
+research_agent = agent_registry.create_agent("research", llm, cache_instance=True)
+code_agent = agent_registry.create_agent("code", llm, cache_instance=True)
+planner_agent = agent_registry.create_agent("planner", llm, cache_instance=True)
+
+# Reuse cached instances
+same_research_agent = agent_registry.get_agent("research")
+assert research_agent is same_research_agent  # Same instance
+```
+
+### Combining Multiple Agents
+
+Orchestrate multiple specialized agents for complex workflows.
+
+**Example - Research → Plan → Execute:**
+
+```python
+from src.agents import agent_registry, AgentContext, AgentExecutor
+
+# Create LLM provider
+llm = create_llm_provider(provider="openai", model="gpt-4")
+
+# Step 1: Research
+research_agent = agent_registry.create_agent("research", llm)
+research_result = await AgentExecutor(research_agent).execute(
+    AgentContext(
+        task_id="multi_001_research",
+        input_data={"topic": "best practices for API rate limiting"}
+    )
+)
+
+# Step 2: Plan based on research
+planner_agent = agent_registry.create_agent("planner", llm)
+plan_result = await AgentExecutor(planner_agent).execute(
+    AgentContext(
+        task_id="multi_001_plan",
+        input_data={
+            "goal": "Implement rate limiting for our API",
+            "context": research_result.output['summary']
+        }
+    )
+)
+
+# Step 3: Generate code
+code_agent = agent_registry.create_agent("code", llm)
+code_result = await AgentExecutor(code_agent).execute(
+    AgentContext(
+        task_id="multi_001_code",
+        input_data={
+            "task_type": "generate",
+            "language": "python",
+            "requirements": plan_result.output['full_plan']
+        }
+    )
+)
+
+print("Multi-agent workflow complete!")
+print(f"Research cost: ${research_result.cost}")
+print(f"Planning cost: ${plan_result.cost}")
+print(f"Code gen cost: ${code_result.cost}")
+print(f"Total cost: ${research_result.cost + plan_result.cost + code_result.cost}")
+```
+
 ## Development
 
 ### Running Tests
@@ -3266,9 +3676,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (5% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (10% complete)
 
-Current Progress: Commit 21/100 - Base Agent Architecture Implemented
+Current Progress: Commit 22/100 - Specialized Agents Implemented
 
 ## Implementation Roadmap
 
