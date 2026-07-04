@@ -6,6 +6,7 @@ from src.models.task import Task, TaskStatus, TaskDependency
 from src.models.agent import Agent, AgentRole, AgentStatus
 from src.models.agent_execution import AgentExecution, ExecutionStatus
 from src.models.agent_message import AgentMessage, MessageType, MessagePriority, MessageStatus
+from src.models.shared_memory import SharedMemory, MemoryScope, MemoryType
 
 __all__ = [
     "Task",
@@ -20,4 +21,7 @@ __all__ = [
     "MessageType",
     "MessagePriority",
     "MessageStatus",
+    "SharedMemory",
+    "MemoryScope",
+    "MemoryType",
 ]
