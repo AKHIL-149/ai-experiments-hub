@@ -5253,6 +5253,503 @@ Response:
 - Distributed testing
 - Redundancy for critical tasks
 
+## Execution Management
+
+The execution management system handles task queues, execution lifecycle, error recovery, and monitoring for agent executions.
+
+### Task Queue Management
+
+#### Enqueue a Task
+
+Add a task to an agent's queue:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/enqueue \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "task_id": 5,
+    "priority": 10,
+    "scheduled_at": "2024-01-15T10:00:00Z",
+    "context": {
+      "retry_limit": 3,
+      "timeout_seconds": 300
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "agent_id": 1,
+  "task_id": 5,
+  "status": "queued",
+  "priority": 10,
+  "scheduled_at": "2024-01-15T10:00:00",
+  "created_at": "2024-01-10T09:00:00"
+}
+```
+
+Features:
+- **Priority-based scheduling**: Higher priority tasks execute first
+- **Scheduled execution**: Tasks can be scheduled for future execution
+- **Context passing**: Additional context data for execution
+
+#### Get Next Task
+
+Get the next task from an agent's queue:
+
+```bash
+curl http://localhost:8001/api/executions/next/1
+```
+
+Response:
+```json
+{
+  "execution": {
+    "id": 42,
+    "agent_id": 1,
+    "task_id": 5,
+    "status": "queued",
+    "priority": 10,
+    "scheduled_at": "2024-01-15T10:00:00",
+    "created_at": "2024-01-10T09:00:00",
+    "task": {
+      "id": 5,
+      "title": "Process data batch",
+      "description": "Process batch of 1000 records"
+    }
+  }
+}
+```
+
+Queue prioritization:
+1. Priority (descending)
+2. Scheduled time (ascending)
+3. Creation time (ascending)
+
+#### View Agent Queue
+
+Get all tasks in an agent's queue:
+
+```bash
+# Active tasks only
+curl http://localhost:8001/api/executions/queue/1
+
+# Include completed tasks
+curl http://localhost:8001/api/executions/queue/1?include_completed=true&limit=50
+```
+
+Response:
+```json
+{
+  "agent_id": 1,
+  "count": 5,
+  "executions": [
+    {
+      "id": 42,
+      "task_id": 5,
+      "status": "queued",
+      "priority": 10,
+      "attempts": 0,
+      "created_at": "2024-01-10T09:00:00",
+      "task_title": "Process data batch"
+    },
+    {
+      "id": 43,
+      "task_id": 6,
+      "status": "running",
+      "priority": 5,
+      "attempts": 1,
+      "started_at": "2024-01-10T09:15:00",
+      "task_title": "Generate report"
+    }
+  ]
+}
+```
+
+### Execution Lifecycle
+
+#### Start Execution
+
+Start a queued or paused execution:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/start/42
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "agent_id": 1,
+  "task_id": 5,
+  "status": "running",
+  "started_at": "2024-01-10T10:00:00",
+  "attempts": 1
+}
+```
+
+Automatic updates:
+- Agent status → BUSY
+- Task status → IN_PROGRESS
+- Execution attempts incremented
+
+#### Complete Execution
+
+Mark execution as successfully completed:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/complete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_id": 42,
+    "output_data": {
+      "records_processed": 1000,
+      "errors": 0,
+      "result": "success"
+    },
+    "metrics": {
+      "processing_time_ms": 5432,
+      "memory_used_mb": 128
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "status": "completed",
+  "completed_at": "2024-01-10T10:05:32",
+  "metrics": {
+    "processing_time_ms": 5432,
+    "memory_used_mb": 128,
+    "duration_seconds": 332
+  },
+  "output_data": {
+    "records_processed": 1000,
+    "errors": 0,
+    "result": "success"
+  }
+}
+```
+
+Automatic updates:
+- Agent status → IDLE
+- Agent successful_tasks incremented
+- Agent average_response_time updated
+- Task status → COMPLETED
+
+#### Fail Execution
+
+Mark execution as failed with automatic retry:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/fail \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_id": 42,
+    "error": "Database connection timeout",
+    "error_details": {
+      "error_code": "DB_TIMEOUT",
+      "timeout_seconds": 30,
+      "retry_recommended": true
+    },
+    "retry": true
+  }'
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "status": "failed",
+  "error_message": "Database connection timeout",
+  "error_details": {
+    "error_code": "DB_TIMEOUT",
+    "timeout_seconds": 30,
+    "retry_recommended": true
+  },
+  "retry_created": true,
+  "retry_execution": {
+    "id": 50,
+    "status": "queued",
+    "scheduled_at": "2024-01-10T10:10:00"
+  }
+}
+```
+
+Retry logic:
+- Maximum 3 attempts per task
+- Retry execution created with context from failed attempt
+- Previous error included in retry context
+- Task status updated to PENDING for retry
+
+#### Pause Execution
+
+Pause a running execution:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/pause/42?reason=User%20requested%20pause
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "status": "paused",
+  "reason": "User requested pause"
+}
+```
+
+#### Resume Execution
+
+Resume a paused execution:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/resume/42
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "status": "running"
+}
+```
+
+#### Cancel Execution
+
+Cancel a queued, running, or paused execution:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/cancel \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_id": 42,
+    "reason": "Task no longer needed"
+  }'
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "status": "cancelled",
+  "reason": "Task no longer needed"
+}
+```
+
+### Execution Monitoring
+
+#### Get Execution Details
+
+Get detailed information about an execution:
+
+```bash
+curl http://localhost:8001/api/executions/42
+```
+
+Response:
+```json
+{
+  "id": 42,
+  "agent_id": 1,
+  "task_id": 5,
+  "status": "completed",
+  "priority": 10,
+  "attempts": 1,
+  "input_data": {
+    "retry_limit": 3,
+    "timeout_seconds": 300
+  },
+  "output_data": {
+    "records_processed": 1000,
+    "result": "success"
+  },
+  "metrics": {
+    "duration_seconds": 332,
+    "processing_time_ms": 5432
+  },
+  "error_message": null,
+  "error_details": null,
+  "created_at": "2024-01-10T09:00:00",
+  "started_at": "2024-01-10T10:00:00",
+  "completed_at": "2024-01-10T10:05:32",
+  "scheduled_at": "2024-01-15T10:00:00"
+}
+```
+
+#### Get Execution Metrics
+
+Get aggregated metrics across executions:
+
+```bash
+# All executions in last 24 hours
+curl http://localhost:8001/api/executions/metrics
+
+# Agent-specific metrics
+curl http://localhost:8001/api/executions/metrics?agent_id=1&time_range_hours=168
+
+# Task-specific metrics
+curl http://localhost:8001/api/executions/metrics?task_id=5&time_range_hours=72
+```
+
+Response:
+```json
+{
+  "total_executions": 150,
+  "by_status": {
+    "completed": 120,
+    "failed": 15,
+    "running": 10,
+    "queued": 5
+  },
+  "success_rate": 0.8,
+  "failure_rate": 0.1,
+  "average_duration_seconds": 245.5,
+  "min_duration_seconds": 10.2,
+  "max_duration_seconds": 1200.0,
+  "time_range_hours": 24,
+  "agent_id": 1,
+  "task_id": null
+}
+```
+
+### Error Recovery
+
+#### Find Stuck Executions
+
+Identify executions running longer than expected:
+
+```bash
+# Find executions running > 1 hour
+curl http://localhost:8001/api/executions/stuck?timeout_hours=1
+
+# Find executions running > 6 hours
+curl http://localhost:8001/api/executions/stuck?timeout_hours=6
+```
+
+Response:
+```json
+{
+  "count": 2,
+  "executions": [
+    {
+      "id": 45,
+      "agent_id": 2,
+      "task_id": 8,
+      "started_at": "2024-01-10T08:00:00",
+      "attempts": 1
+    },
+    {
+      "id": 48,
+      "agent_id": 3,
+      "task_id": 10,
+      "started_at": "2024-01-10T07:30:00",
+      "attempts": 2
+    }
+  ]
+}
+```
+
+#### Recover Stuck Executions
+
+Automatically recover stuck executions:
+
+```bash
+curl -X POST http://localhost:8001/api/executions/recover-stuck?timeout_hours=1
+```
+
+Response:
+```json
+{
+  "recovered_count": 2,
+  "retry_executions": [
+    {
+      "id": 51,
+      "agent_id": 2,
+      "task_id": 8,
+      "status": "queued"
+    },
+    {
+      "id": 52,
+      "agent_id": 3,
+      "task_id": 10,
+      "status": "queued"
+    }
+  ]
+}
+```
+
+Recovery process:
+1. Mark stuck execution as FAILED with timeout error
+2. Create retry execution if attempts < 3
+3. Free up agent to process new tasks
+4. Log warning for monitoring
+
+### Cleanup and Maintenance
+
+#### Clean Up Old Executions
+
+Remove completed/failed executions older than specified days:
+
+```bash
+# Delete executions older than 30 days
+curl -X POST http://localhost:8001/api/executions/cleanup?days_old=30
+
+# Delete executions older than 90 days
+curl -X POST http://localhost:8001/api/executions/cleanup?days_old=90
+```
+
+Response:
+```json
+{
+  "deleted": 450
+}
+```
+
+Cleanup behavior:
+- Only deletes COMPLETED, FAILED, CANCELLED executions
+- Preserves QUEUED, RUNNING, PAUSED executions
+- Helps maintain database performance
+
+### Execution States
+
+The execution lifecycle supports these states:
+
+1. **QUEUED**: Task in queue, waiting to start
+2. **ASSIGNED**: Task assigned to agent (via orchestration)
+3. **RUNNING**: Task currently executing
+4. **PAUSED**: Task temporarily suspended
+5. **COMPLETED**: Task finished successfully
+6. **FAILED**: Task failed (may retry)
+7. **CANCELLED**: Task cancelled by user
+
+### Best Practices
+
+**Queue Management**:
+- Use priority for time-sensitive tasks
+- Schedule non-urgent tasks during off-peak hours
+- Monitor queue depth to prevent bottlenecks
+
+**Error Handling**:
+- Set appropriate retry limits in context
+- Include detailed error information for debugging
+- Use error codes for categorization
+
+**Monitoring**:
+- Check execution metrics regularly
+- Set up alerts for high failure rates
+- Monitor stuck executions proactively
+
+**Cleanup**:
+- Run cleanup regularly (daily/weekly)
+- Adjust retention period based on storage capacity
+- Archive important execution data before cleanup
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -5262,9 +5759,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (40% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (45% complete)
 
-Current Progress: Commit 28/100 - Agent Orchestration System Complete
+Current Progress: Commit 29/100 - Execution Management System Complete
 
 ## Implementation Roadmap
 
