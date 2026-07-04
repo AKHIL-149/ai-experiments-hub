@@ -12,7 +12,7 @@ from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration
 
 
 @asynccontextmanager
@@ -66,6 +66,7 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(messages.router, prefix="/api/messages", tags=["Agent Messages"])
 app.include_router(memory.router, prefix="/api/memory", tags=["Shared Memory"])
+app.include_router(orchestration.router, prefix="/api/orchestration", tags=["Orchestration"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])

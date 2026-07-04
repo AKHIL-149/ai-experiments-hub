@@ -4796,6 +4796,463 @@ ENABLE_COST_TRACKING=true
 COST_ALERT_THRESHOLD=100.0
 ```
 
+## Agent Orchestration
+
+The orchestration service coordinates multiple agents to work together on complex tasks using different execution patterns.
+
+### Orchestration Patterns
+
+The system supports five orchestration patterns:
+
+1. **Sequential**: Agents execute one after another in sequence
+2. **Parallel**: Agents execute simultaneously in parallel
+3. **Hierarchical**: Supervisor agent delegates tasks to worker agents
+4. **Pipeline**: Output of one agent feeds into the next agent
+5. **Broadcast**: Same task distributed to all agents
+
+### Agent Discovery
+
+Find available agents based on role, capabilities, and status:
+
+```bash
+# Discover all available agents
+curl -X POST http://localhost:8001/api/orchestration/discover \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "idle",
+    "limit": 10
+  }'
+
+# Discover agents by role
+curl -X POST http://localhost:8001/api/orchestration/discover \
+  -H "Content-Type: application/json" \
+  -d '{
+    "role": "worker",
+    "status": "idle",
+    "limit": 5
+  }'
+
+# Discover agents by capabilities
+curl -X POST http://localhost:8001/api/orchestration/discover \
+  -H "Content-Type: application/json" \
+  -d '{
+    "capabilities": ["code_analysis", "testing"],
+    "status": "idle"
+  }'
+```
+
+Response:
+```json
+{
+  "agents": [
+    {
+      "id": 1,
+      "name": "worker-agent-1",
+      "role": "worker",
+      "status": "idle",
+      "capabilities": ["code_analysis", "testing"],
+      "successful_tasks": 42,
+      "average_response_time": 1.5
+    }
+  ],
+  "count": 1
+}
+```
+
+### Task Assignment
+
+Assign a task to a specific agent:
+
+```bash
+curl -X POST http://localhost:8001/api/orchestration/assign \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 1,
+    "agent_id": 2,
+    "priority": "high",
+    "context": {
+      "deadline": "2024-01-15",
+      "requires_review": true
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "execution": {
+    "id": 10,
+    "agent_id": 2,
+    "task_id": 1,
+    "status": "assigned",
+    "started_at": "2024-01-10T10:00:00"
+  },
+  "message": {
+    "id": 25,
+    "message_type": "task_assignment",
+    "priority": "high",
+    "content": "Task assigned: Implement feature X"
+  }
+}
+```
+
+### Sequential Orchestration
+
+Execute tasks one after another:
+
+```bash
+curl -X POST http://localhost:8001/api/orchestration/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [1, 2, 3],
+    "pattern": "sequential",
+    "workflow_id": "workflow-123",
+    "auto_assign": true
+  }'
+```
+
+Response:
+```json
+{
+  "pattern": "sequential",
+  "task_count": 3,
+  "execution_count": 3,
+  "executions": [
+    {
+      "id": 10,
+      "agent_id": 1,
+      "task_id": 1,
+      "status": "assigned"
+    },
+    {
+      "id": 11,
+      "agent_id": 2,
+      "task_id": 2,
+      "status": "assigned"
+    },
+    {
+      "id": 12,
+      "agent_id": 3,
+      "task_id": 3,
+      "status": "assigned"
+    }
+  ]
+}
+```
+
+Features:
+- Tasks execute in order with each task receiving the previous task's result
+- Context includes `previous_execution_id` and `previous_result`
+- Perfect for workflows where each step depends on the previous one
+
+### Parallel Orchestration
+
+Execute tasks simultaneously:
+
+```bash
+curl -X POST http://localhost:8001/api/orchestration/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [4, 5, 6],
+    "pattern": "parallel",
+    "workflow_id": "workflow-124",
+    "auto_assign": true
+  }'
+```
+
+Response:
+```json
+{
+  "pattern": "parallel",
+  "task_count": 3,
+  "execution_count": 3,
+  "executions": [
+    {
+      "id": 13,
+      "agent_id": 1,
+      "task_id": 4,
+      "status": "assigned"
+    },
+    {
+      "id": 14,
+      "agent_id": 2,
+      "task_id": 5,
+      "status": "assigned"
+    },
+    {
+      "id": 15,
+      "agent_id": 3,
+      "task_id": 6,
+      "status": "assigned"
+    }
+  ]
+}
+```
+
+Features:
+- All tasks start simultaneously
+- Each agent works independently
+- Context includes `task_ids` of all parallel tasks
+- Ideal for independent tasks that can run concurrently
+
+### Hierarchical Orchestration
+
+Supervisor delegates to workers:
+
+```bash
+curl -X POST http://localhost:8001/api/orchestration/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [7, 8, 9],
+    "pattern": "hierarchical",
+    "workflow_id": "workflow-125",
+    "supervisor_agent_id": 1
+  }'
+```
+
+Response:
+```json
+{
+  "pattern": "hierarchical",
+  "supervisor": {
+    "id": 1,
+    "name": "supervisor-agent",
+    "role": "supervisor"
+  },
+  "worker_count": 3,
+  "workers": [
+    {
+      "id": 2,
+      "name": "worker-1",
+      "role": "worker"
+    },
+    {
+      "id": 3,
+      "name": "worker-2",
+      "role": "worker"
+    },
+    {
+      "id": 4,
+      "name": "worker-3",
+      "role": "worker"
+    }
+  ],
+  "execution_count": 3,
+  "executions": [
+    {
+      "id": 16,
+      "agent_id": 2,
+      "task_id": 7,
+      "status": "assigned"
+    },
+    {
+      "id": 17,
+      "agent_id": 3,
+      "task_id": 8,
+      "status": "assigned"
+    },
+    {
+      "id": 18,
+      "agent_id": 4,
+      "task_id": 9,
+      "status": "assigned"
+    }
+  ]
+}
+```
+
+Features:
+- Supervisor agent coordinates worker agents
+- Workers send notifications to supervisor
+- Context includes `supervisor_agent_id`
+- Perfect for complex workflows requiring coordination
+
+### Result Aggregation
+
+Aggregate results from multiple executions:
+
+```bash
+# Collect all results
+curl -X POST http://localhost:8001/api/orchestration/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_ids": [10, 11, 12],
+    "strategy": "collect"
+  }'
+
+# Merge results into single dictionary
+curl -X POST http://localhost:8001/api/orchestration/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_ids": [13, 14, 15],
+    "strategy": "merge"
+  }'
+
+# Majority voting (for classification)
+curl -X POST http://localhost:8001/api/orchestration/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_ids": [16, 17, 18],
+    "strategy": "vote"
+  }'
+
+# Average numeric results
+curl -X POST http://localhost:8001/api/orchestration/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "execution_ids": [19, 20, 21],
+    "strategy": "average"
+  }'
+```
+
+Aggregation strategies:
+
+**Collect**: Returns all results in a list
+```json
+{
+  "strategy": "collect",
+  "count": 3,
+  "results": [
+    {"result": "success", "data": "..."},
+    {"result": "success", "data": "..."},
+    {"result": "success", "data": "..."}
+  ]
+}
+```
+
+**Merge**: Merges all dictionaries into one
+```json
+{
+  "strategy": "merge",
+  "count": 3,
+  "result": {
+    "key1": "value1",
+    "key2": "value2",
+    "key3": "value3"
+  }
+}
+```
+
+**Vote**: Majority voting
+```json
+{
+  "strategy": "vote",
+  "count": 5,
+  "winner": "category_A",
+  "votes": {
+    "category_A": 3,
+    "category_B": 2
+  }
+}
+```
+
+**Average**: Average of numeric values
+```json
+{
+  "strategy": "average",
+  "count": 3,
+  "average": 42.5,
+  "min": 40.0,
+  "max": 45.0
+}
+```
+
+### Orchestration Status
+
+Check orchestration status for a workflow:
+
+```bash
+curl http://localhost:8001/api/orchestration/status/workflow-123
+```
+
+Response:
+```json
+{
+  "workflow_id": "workflow-123",
+  "orchestrations": [
+    {
+      "pattern": "sequential",
+      "task_count": 3,
+      "execution_count": 3,
+      "execution_statuses": {
+        "assigned": 1,
+        "running": 1,
+        "completed": 1
+      },
+      "started_at": "2024-01-10T10:00:00",
+      "metadata": {
+        "pattern": "sequential",
+        "task_ids": [1, 2, 3],
+        "execution_ids": [10, 11, 12]
+      }
+    }
+  ]
+}
+```
+
+### List Orchestration Patterns
+
+Get all available orchestration patterns:
+
+```bash
+curl http://localhost:8001/api/orchestration/patterns
+```
+
+Response:
+```json
+{
+  "patterns": [
+    {
+      "name": "sequential",
+      "description": "Agents execute one after another in sequence"
+    },
+    {
+      "name": "parallel",
+      "description": "Agents execute simultaneously in parallel"
+    },
+    {
+      "name": "hierarchical",
+      "description": "Supervisor agent delegates tasks to worker agents"
+    },
+    {
+      "name": "pipeline",
+      "description": "Output of one agent feeds into the next agent"
+    },
+    {
+      "name": "broadcast",
+      "description": "Same task distributed to all agents"
+    }
+  ]
+}
+```
+
+### Orchestration Use Cases
+
+**Sequential Pattern**:
+- Data processing pipeline
+- Multi-step workflow where each step depends on previous
+- Code generation → Testing → Deployment
+
+**Parallel Pattern**:
+- Independent task execution
+- Batch processing
+- Multiple data sources analysis
+
+**Hierarchical Pattern**:
+- Complex project management
+- Supervisor coordinates multiple teams
+- Quality control with review hierarchy
+
+**Pipeline Pattern**:
+- ETL workflows
+- Data transformation chains
+- Multi-stage processing
+
+**Broadcast Pattern**:
+- Same task to multiple agents for consensus
+- Distributed testing
+- Redundancy for critical tasks
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -4805,9 +5262,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (35% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (40% complete)
 
-Current Progress: Commit 27/100 - Shared Memory System Complete
+Current Progress: Commit 28/100 - Agent Orchestration System Complete
 
 ## Implementation Roadmap
 
