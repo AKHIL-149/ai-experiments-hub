@@ -6215,6 +6215,447 @@ Perfect for:
 - Share trends in weekly reports
 - Deep-dive errors in retrospectives
 
+## Agent Lifecycle Management
+
+The lifecycle management system handles agent registration, health monitoring, state transitions, and recovery.
+
+### Agent Registration
+
+Register a new agent in the system:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "worker-agent-5",
+    "role": "worker",
+    "capabilities": ["code_analysis", "testing", "documentation"],
+    "config": {
+      "max_concurrent_tasks": 3,
+      "timeout_seconds": 300
+    },
+    "metadata": {
+      "version": "1.0.0",
+      "environment": "production"
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "id": 5,
+  "name": "worker-agent-5",
+  "role": "worker",
+  "status": "idle",
+  "capabilities": ["code_analysis", "testing", "documentation"],
+  "created_at": "2024-01-10T16:00:00"
+}
+```
+
+Registration automatically:
+- Assigns unique agent ID
+- Sets initial status to IDLE
+- Logs registration event
+- Makes agent available for tasks
+
+### Agent Deregistration
+
+Remove an agent from the system:
+
+```bash
+# Deregister with reason
+curl -X DELETE http://localhost:8001/api/lifecycle/deregister/5?reason=Agent%20upgrade
+
+# Simple deregistration
+curl -X DELETE http://localhost:8001/api/lifecycle/deregister/5
+```
+
+Response:
+```json
+{
+  "deregistered": true
+}
+```
+
+Deregistration automatically:
+- Cancels running executions
+- Logs deregistration event
+- Removes agent from database
+- Frees allocated resources
+
+### Agent State Management
+
+#### Start Agent
+
+Activate a stopped or newly registered agent:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/start/5
+```
+
+Response:
+```json
+{
+  "id": 5,
+  "name": "worker-agent-5",
+  "status": "idle",
+  "last_active": "2024-01-10T16:05:00"
+}
+```
+
+#### Stop Agent
+
+Gracefully stop an agent:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/stop/5?reason=Maintenance
+```
+
+Response:
+```json
+{
+  "id": 5,
+  "name": "worker-agent-5",
+  "status": "offline"
+}
+```
+
+Stop automatically:
+- Cancels current task execution
+- Sets status to OFFLINE
+- Logs stop event with reason
+
+#### Pause Agent
+
+Temporarily pause an agent:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/pause/5?reason=Resource%20constraints
+```
+
+Response:
+```json
+{
+  "id": 5,
+  "name": "worker-agent-5",
+  "status": "offline"
+}
+```
+
+Pause behavior:
+- Pauses current execution (can be resumed)
+- Sets agent to OFFLINE
+- Preserves execution state
+
+#### Resume Agent
+
+Resume a paused agent:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/resume/5
+```
+
+Response:
+```json
+{
+  "id": 5,
+  "name": "worker-agent-5",
+  "status": "idle",
+  "last_active": "2024-01-10T16:10:00"
+}
+```
+
+### Health Monitoring
+
+#### Heartbeat
+
+Agents send periodic heartbeats to indicate they're alive:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/heartbeat/5 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "idle",
+    "metrics": {
+      "memory_usage_mb": 256,
+      "cpu_usage_percent": 15,
+      "active_threads": 3
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "id": 5,
+  "name": "worker-agent-5",
+  "status": "idle",
+  "last_active": "2024-01-10T16:15:00"
+}
+```
+
+Heartbeat tracking:
+- Updates `last_active` timestamp
+- Optionally updates agent status
+- Stores metrics in agent metadata
+- Used for health checks
+
+#### Health Check (Single Agent)
+
+Check health of a specific agent:
+
+```bash
+curl http://localhost:8001/api/lifecycle/health/5
+```
+
+Response:
+```json
+{
+  "agent_id": 5,
+  "agent_name": "worker-agent-5",
+  "is_healthy": true,
+  "status": "idle",
+  "last_active": "2024-01-10T16:15:00",
+  "last_active_seconds_ago": 30,
+  "current_task_id": null,
+  "issues": [],
+  "checked_at": "2024-01-10T16:15:30"
+}
+```
+
+Health criteria:
+- **Activity**: Last active within 5 minutes
+- **Status**: Not OFFLINE
+- **Execution**: Not stuck on a task
+
+Unhealthy example:
+```json
+{
+  "agent_id": 3,
+  "agent_name": "worker-agent-3",
+  "is_healthy": false,
+  "status": "busy",
+  "last_active": "2024-01-10T15:00:00",
+  "last_active_seconds_ago": 4530,
+  "current_task_id": 42,
+  "issues": [
+    "No activity for 4530 seconds",
+    "Stuck on task 42"
+  ],
+  "checked_at": "2024-01-10T16:15:30"
+}
+```
+
+#### Health Check (All Agents)
+
+Check health of entire agent fleet:
+
+```bash
+curl http://localhost:8001/api/lifecycle/health
+```
+
+Response:
+```json
+{
+  "total_agents": 5,
+  "healthy": 4,
+  "unhealthy": 1,
+  "health_rate": 0.8,
+  "agents": [
+    {
+      "agent_id": 1,
+      "agent_name": "worker-agent-1",
+      "is_healthy": true,
+      "status": "idle",
+      "last_active": "2024-01-10T16:14:00",
+      "issues": []
+    },
+    {
+      "agent_id": 3,
+      "agent_name": "worker-agent-3",
+      "is_healthy": false,
+      "status": "busy",
+      "issues": ["No activity for 4530 seconds", "Stuck on task 42"]
+    }
+  ],
+  "checked_at": "2024-01-10T16:15:30"
+}
+```
+
+Use for:
+- System health dashboards
+- Monitoring alerts
+- Automated health checks
+- Fleet status overview
+
+### Inactive Agent Detection
+
+Find agents that haven't been active recently:
+
+```bash
+# Find agents inactive > 5 minutes (default)
+curl http://localhost:8001/api/lifecycle/inactive
+
+# Custom threshold (30 minutes)
+curl http://localhost:8001/api/lifecycle/inactive?inactive_threshold_minutes=30
+```
+
+Response:
+```json
+{
+  "inactive_threshold_minutes": 5,
+  "count": 2,
+  "agents": [
+    {
+      "id": 3,
+      "name": "worker-agent-3",
+      "status": "busy",
+      "last_active": "2024-01-10T15:00:00"
+    },
+    {
+      "id": 4,
+      "name": "worker-agent-4",
+      "status": "offline",
+      "last_active": "2024-01-10T14:30:00"
+    }
+  ]
+}
+```
+
+Use cases:
+- Identify stale agents
+- Detect crashed agents
+- Trigger recovery procedures
+- Clean up zombie processes
+
+### Agent Recovery
+
+Automatically recover an unhealthy agent:
+
+```bash
+curl -X POST http://localhost:8001/api/lifecycle/recover/3
+```
+
+Response:
+```json
+{
+  "id": 3,
+  "name": "worker-agent-3",
+  "status": "idle",
+  "last_active": "2024-01-10T16:20:00",
+  "recovered": true
+}
+```
+
+Recovery process:
+1. Cancel stuck executions
+2. Create retry executions (if attempts < 3)
+3. Reset agent to IDLE status
+4. Clear current task
+5. Update last_active timestamp
+6. Log recovery event
+
+### Lifecycle Events
+
+View lifecycle event history for an agent:
+
+```bash
+# Last 50 events (default)
+curl http://localhost:8001/api/lifecycle/events/5
+
+# Custom limit
+curl http://localhost:8001/api/lifecycle/events/5?limit=100
+```
+
+Response:
+```json
+{
+  "agent_id": 5,
+  "count": 8,
+  "events": [
+    {
+      "event_type": "registered",
+      "timestamp": "2024-01-10T16:00:00",
+      "details": {
+        "name": "worker-agent-5",
+        "role": "worker"
+      }
+    },
+    {
+      "event_type": "started",
+      "timestamp": "2024-01-10T16:05:00",
+      "details": {}
+    },
+    {
+      "event_type": "health_check_passed",
+      "timestamp": "2024-01-10T16:15:30",
+      "details": {
+        "is_healthy": true,
+        "issues": []
+      }
+    },
+    {
+      "event_type": "paused",
+      "timestamp": "2024-01-10T16:18:00",
+      "details": {
+        "reason": "Resource constraints"
+      }
+    },
+    {
+      "event_type": "resumed",
+      "timestamp": "2024-01-10T16:20:00",
+      "details": {}
+    }
+  ]
+}
+```
+
+Event types:
+- `registered` - Agent added to system
+- `started` - Agent activated
+- `stopped` - Agent stopped
+- `paused` - Agent temporarily paused
+- `resumed` - Agent resumed from pause
+- `health_check_passed` - Health check succeeded
+- `health_check_failed` - Health check failed
+- `heartbeat_missed` - Heartbeat not received
+- `crashed` - Agent crashed unexpectedly
+- `recovered` - Agent recovered from failure
+- `deregistered` - Agent removed from system
+
+### Lifecycle Best Practices
+
+**Registration**:
+- Use descriptive agent names
+- Set appropriate capabilities
+- Include version in metadata
+- Configure reasonable timeouts
+
+**Health Monitoring**:
+- Send heartbeats every 30-60 seconds
+- Include resource metrics in heartbeats
+- Run health checks every 5 minutes
+- Set up alerts for health_rate < 80%
+
+**State Management**:
+- Always provide stop/pause reasons
+- Use pause for temporary issues
+- Use stop for maintenance
+- Deregister only when permanently removing
+
+**Recovery**:
+- Check inactive agents regularly
+- Recover unhealthy agents automatically
+- Review recovery events for patterns
+- Update agents to prevent failures
+
+**Event Tracking**:
+- Review lifecycle events for debugging
+- Monitor event patterns for issues
+- Archive events for compliance
+- Use events for capacity planning
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -6224,9 +6665,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (50% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (55% complete)
 
-Current Progress: Commit 30/100 - Agent Analytics System Complete
+Current Progress: Commit 31/100 - Agent Lifecycle Management Complete
 
 ## Implementation Roadmap
 
