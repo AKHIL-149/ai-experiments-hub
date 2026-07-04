@@ -5750,6 +5750,471 @@ The execution lifecycle supports these states:
 - Adjust retention period based on storage capacity
 - Archive important execution data before cleanup
 
+## Agent Analytics
+
+The analytics system provides comprehensive performance tracking, metrics aggregation, and insights into agent effectiveness.
+
+### Agent Performance Metrics
+
+Get detailed performance metrics for a specific agent:
+
+```bash
+# Last 24 hours
+curl http://localhost:8001/api/analytics/performance/1
+
+# Last 7 days
+curl http://localhost:8001/api/analytics/performance/1?time_range_hours=168
+```
+
+Response:
+```json
+{
+  "agent_id": 1,
+  "agent_name": "worker-agent-1",
+  "agent_role": "worker",
+  "agent_status": "idle",
+  "time_range_hours": 24,
+
+  "total_executions": 150,
+  "executions_by_status": {
+    "completed": 120,
+    "failed": 15,
+    "running": 10,
+    "queued": 5
+  },
+
+  "success_rate": 0.8,
+  "failure_rate": 0.1,
+  "completed_count": 120,
+  "failed_count": 15,
+
+  "duration_metrics": {
+    "average_duration_seconds": 245.5,
+    "min_duration_seconds": 10.2,
+    "max_duration_seconds": 1200.0,
+    "median_duration_seconds": 180.0
+  },
+
+  "total_retries": 8,
+  "average_attempts": 1.05,
+
+  "lifetime_successful_tasks": 1250,
+  "lifetime_failed_tasks": 150,
+  "lifetime_total_tasks": 1400,
+  "lifetime_success_rate": 0.893,
+
+  "average_response_time": 240.3,
+  "current_task_id": null,
+  "last_active": "2024-01-10T15:30:00",
+  "created_at": "2024-01-01T00:00:00"
+}
+```
+
+Metrics include:
+- **Execution counts**: Total, by status
+- **Success rates**: Current period and lifetime
+- **Duration statistics**: Average, min, max, median
+- **Retry analysis**: Total retries, average attempts
+- **Agent info**: Response time, activity timestamps
+
+### Agent Ranking
+
+Rank agents by various performance metrics:
+
+```bash
+# Rank by success rate
+curl http://localhost:8001/api/analytics/ranking?metric=success_rate&limit=10
+
+# Rank by speed (fastest agents)
+curl http://localhost:8001/api/analytics/ranking?metric=speed&limit=5
+
+# Rank by total tasks
+curl http://localhost:8001/api/analytics/ranking?metric=total_tasks
+
+# Rank by reliability (success rate * low retry rate)
+curl http://localhost:8001/api/analytics/ranking?metric=reliability
+
+# Filter by role
+curl http://localhost:8001/api/analytics/ranking?metric=success_rate&role=worker
+```
+
+Response:
+```json
+{
+  "metric": "success_rate",
+  "role": null,
+  "time_range_hours": 24,
+  "count": 5,
+  "ranking": [
+    {
+      "rank": 1,
+      "agent_id": 3,
+      "agent_name": "worker-agent-3",
+      "success_rate": 0.95,
+      "total_executions": 100,
+      "duration_metrics": {
+        "average_duration_seconds": 200.0
+      }
+    },
+    {
+      "rank": 2,
+      "agent_id": 1,
+      "agent_name": "worker-agent-1",
+      "success_rate": 0.90,
+      "total_executions": 150
+    }
+  ]
+}
+```
+
+Available metrics:
+- **success_rate**: Highest completion rate
+- **speed**: Fastest average execution time
+- **total_tasks**: Most active agents
+- **lifetime_success_rate**: All-time success rate
+- **reliability**: Combined success rate and retry rate
+
+### Agent Comparison
+
+Compare performance of multiple agents side-by-side:
+
+```bash
+curl -X POST http://localhost:8001/api/analytics/compare \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_ids": [1, 2, 3],
+    "time_range_hours": 24
+  }'
+```
+
+Response:
+```json
+{
+  "time_range_hours": 24,
+  "agent_count": 3,
+  "comparisons": [
+    {
+      "agent_id": 1,
+      "agent_name": "worker-agent-1",
+      "success_rate": 0.8,
+      "total_executions": 150,
+      "duration_metrics": {
+        "average_duration_seconds": 245.5
+      }
+    },
+    {
+      "agent_id": 2,
+      "agent_name": "worker-agent-2",
+      "success_rate": 0.85,
+      "total_executions": 120
+    },
+    {
+      "agent_id": 3,
+      "agent_name": "worker-agent-3",
+      "success_rate": 0.95,
+      "total_executions": 100
+    }
+  ],
+  "best_success_rate": {
+    "agent_id": 3,
+    "agent_name": "worker-agent-3",
+    "success_rate": 0.95
+  },
+  "best_speed": {
+    "agent_id": 2,
+    "agent_name": "worker-agent-2",
+    "average_duration_seconds": 200.0
+  },
+  "most_active": {
+    "agent_id": 1,
+    "agent_name": "worker-agent-1",
+    "total_executions": 150
+  }
+}
+```
+
+Comparison highlights:
+- Side-by-side performance metrics
+- Best performer in each category
+- Easy identification of strengths/weaknesses
+
+### Execution Trends
+
+Track execution trends over time:
+
+```bash
+# Daily trends for last 7 days
+curl http://localhost:8001/api/analytics/trends?time_range_hours=168&interval_hours=24
+
+# Hourly trends for last 24 hours
+curl http://localhost:8001/api/analytics/trends?time_range_hours=24&interval_hours=1
+
+# Agent-specific trends
+curl http://localhost:8001/api/analytics/trends?agent_id=1&time_range_hours=168
+
+# Role-based trends
+curl http://localhost:8001/api/analytics/trends?role=worker&time_range_hours=168
+```
+
+Response:
+```json
+{
+  "time_range_hours": 168,
+  "interval_hours": 24,
+  "bucket_count": 7,
+  "agent_id": null,
+  "role": null,
+  "trends": [
+    {
+      "period_start": "2024-01-04T00:00:00",
+      "period_end": "2024-01-05T00:00:00",
+      "total_executions": 150,
+      "completed": 120,
+      "failed": 15,
+      "success_rate": 0.8
+    },
+    {
+      "period_start": "2024-01-05T00:00:00",
+      "period_end": "2024-01-06T00:00:00",
+      "total_executions": 180,
+      "completed": 150,
+      "failed": 12,
+      "success_rate": 0.833
+    }
+  ]
+}
+```
+
+Use cases:
+- Identify performance trends
+- Spot degradation early
+- Validate optimization impact
+- Capacity planning
+
+### Task Distribution
+
+Analyze task distribution across various dimensions:
+
+```bash
+# Overall distribution
+curl http://localhost:8001/api/analytics/distribution
+
+# Agent-specific distribution
+curl http://localhost:8001/api/analytics/distribution?agent_id=1
+
+# Custom time range
+curl http://localhost:8001/api/analytics/distribution?time_range_hours=168
+```
+
+Response:
+```json
+{
+  "time_range_hours": 24,
+  "total_executions": 150,
+  "by_status": {
+    "completed": 120,
+    "failed": 15,
+    "running": 10,
+    "queued": 5
+  },
+  "by_priority": {
+    "0": 50,
+    "5": 60,
+    "10": 40
+  },
+  "by_agent": {
+    "worker-agent-1": 80,
+    "worker-agent-2": 40,
+    "worker-agent-3": 30
+  },
+  "by_attempts": {
+    "1_attempts": 135,
+    "2_attempts": 10,
+    "3_attempts": 5
+  }
+}
+```
+
+Distributions:
+- **by_status**: Execution state breakdown
+- **by_priority**: Priority level distribution
+- **by_agent**: Workload per agent
+- **by_attempts**: Retry pattern analysis
+
+### Error Analysis
+
+Analyze errors and failure patterns:
+
+```bash
+# System-wide error analysis
+curl http://localhost:8001/api/analytics/errors?time_range_hours=168
+
+# Agent-specific errors
+curl http://localhost:8001/api/analytics/errors?agent_id=1&time_range_hours=168
+```
+
+Response:
+```json
+{
+  "time_range_hours": 168,
+  "total_failures": 45,
+  "unique_error_types": 8,
+  "retry_rate": 0.33,
+  "agent_id": null,
+  "top_errors": [
+    {
+      "error_message": "Database connection timeout",
+      "count": 15,
+      "execution_ids": [42, 48, 55, 62, 70],
+      "agent_ids": [1, 2, 3]
+    },
+    {
+      "error_message": "API rate limit exceeded",
+      "count": 12,
+      "execution_ids": [43, 50, 58],
+      "agent_ids": [1, 4]
+    },
+    {
+      "error_message": "Memory allocation failed",
+      "count": 8,
+      "execution_ids": [44, 52],
+      "agent_ids": [2]
+    }
+  ]
+}
+```
+
+Error insights:
+- Most common error types
+- Affected agents and executions
+- Retry effectiveness
+- Pattern identification
+
+### Agent Utilization
+
+Track how efficiently agents are being used:
+
+```bash
+# Last 24 hours
+curl http://localhost:8001/api/analytics/utilization
+
+# Last 7 days
+curl http://localhost:8001/api/analytics/utilization?time_range_hours=168
+```
+
+Response:
+```json
+{
+  "time_range_hours": 24,
+  "total_agents": 5,
+  "average_utilization_rate": 0.65,
+  "agents": [
+    {
+      "agent_id": 1,
+      "agent_name": "worker-agent-1",
+      "agent_role": "worker",
+      "agent_status": "idle",
+      "busy_time_hours": 18.5,
+      "utilization_rate": 0.77,
+      "executions_count": 150
+    },
+    {
+      "agent_id": 2,
+      "agent_name": "worker-agent-2",
+      "agent_role": "worker",
+      "agent_status": "busy",
+      "busy_time_hours": 20.0,
+      "utilization_rate": 0.83,
+      "executions_count": 120
+    }
+  ]
+}
+```
+
+Utilization metrics:
+- Busy time vs. total time
+- Utilization rate per agent
+- Average system utilization
+- Capacity insights
+
+Use for:
+- Identify underutilized agents
+- Capacity planning
+- Load balancing optimization
+- Cost optimization
+
+### Performance Summary
+
+Get overall system performance at a glance:
+
+```bash
+curl http://localhost:8001/api/analytics/summary?time_range_hours=24
+```
+
+Response:
+```json
+{
+  "time_range_hours": 24,
+  "timestamp": "2024-01-10T16:00:00",
+
+  "total_agents": 5,
+  "active_agents": 5,
+  "busy_agents": 2,
+  "idle_agents": 3,
+
+  "total_executions": 450,
+  "completed_executions": 360,
+  "failed_executions": 45,
+  "running_executions": 30,
+  "queued_executions": 15,
+
+  "success_rate": 0.8,
+  "failure_rate": 0.1,
+  "average_response_time_seconds": 240.5,
+
+  "executions_per_hour": 18.75,
+  "completions_per_hour": 15.0
+}
+```
+
+Summary includes:
+- Agent availability
+- Execution throughput
+- Success/failure rates
+- System capacity
+
+Perfect for:
+- Dashboards
+- Monitoring alerts
+- Quick health checks
+- Executive reports
+
+### Analytics Best Practices
+
+**Performance Monitoring**:
+- Track success rates daily
+- Set alerts for drops below threshold
+- Monitor response time trends
+- Review error patterns weekly
+
+**Capacity Planning**:
+- Monitor utilization rates
+- Scale when average utilization > 80%
+- Identify underutilized agents
+- Balance workload distribution
+
+**Optimization**:
+- Compare agent performance regularly
+- Identify and investigate slow agents
+- Analyze error patterns for improvements
+- Use trends to validate changes
+
+**Reporting**:
+- Use summary for daily standup
+- Review rankings for team performance
+- Share trends in weekly reports
+- Deep-dive errors in retrospectives
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -5759,9 +6224,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (45% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (50% complete)
 
-Current Progress: Commit 29/100 - Execution Management System Complete
+Current Progress: Commit 30/100 - Agent Analytics System Complete
 
 ## Implementation Roadmap
 
