@@ -6656,6 +6656,433 @@ Event types:
 - Archive events for compliance
 - Use events for capacity planning
 
+## Agent Scheduler and Load Balancer
+
+The Agent Scheduler provides intelligent task scheduling and load balancing across your agent fleet using multiple strategies optimized for different use cases.
+
+### Scheduling Strategies
+
+The scheduler supports 6 different scheduling strategies:
+
+1. **ROUND_ROBIN** - Distributes tasks evenly in rotation
+2. **LEAST_LOADED** - Assigns to agent with lowest current load (default)
+3. **CAPABILITY_BASED** - Matches task requirements to agent capabilities
+4. **PERFORMANCE_BASED** - Selects based on success rate and response time
+5. **RANDOM** - Random assignment for testing
+6. **PRIORITY_QUEUE** - Respects task priority ordering
+
+### Schedule a Single Task
+
+Schedule a task using a specific strategy:
+
+```bash
+curl -X POST http://localhost:8001/api/scheduler/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 123,
+    "strategy": "least_loaded",
+    "required_capabilities": ["python", "testing"],
+    "preferred_role": "tester"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "task_id": 123,
+  "agent_id": 5,
+  "agent_name": "TestAgent-01",
+  "agent_role": "tester",
+  "agent_status": "idle",
+  "strategy": "least_loaded",
+  "message": "Task 123 scheduled to agent TestAgent-01"
+}
+```
+
+### Batch Schedule Multiple Tasks
+
+Efficiently schedule multiple tasks with load balancing:
+
+```bash
+curl -X POST http://localhost:8001/api/scheduler/batch-schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [101, 102, 103, 104, 105],
+    "strategy": "least_loaded",
+    "balance_load": true
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_tasks": 5,
+  "assigned": 5,
+  "unassigned": 0,
+  "assignment_rate": 1.0,
+  "strategy": "least_loaded",
+  "balance_load": true,
+  "assignments": {
+    "101": 1,
+    "102": 2,
+    "103": 1,
+    "104": 3,
+    "105": 2
+  },
+  "agent_task_counts": {
+    "1": 2,
+    "2": 2,
+    "3": 1
+  },
+  "message": "Scheduled 5/5 tasks successfully"
+}
+```
+
+### Get Load Distribution
+
+View current load distribution across all agents:
+
+```bash
+curl http://localhost:8001/api/scheduler/load-distribution
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "distribution": {
+    "total_agents": 5,
+    "total_load": 12,
+    "average_load": 2.4,
+    "balance_score": 0.87,
+    "agents": [
+      {
+        "agent_id": 1,
+        "agent_name": "ResearchAgent-01",
+        "role": "researcher",
+        "status": "busy",
+        "current_load": 4,
+        "queued_tasks": 2
+      },
+      {
+        "agent_id": 2,
+        "agent_name": "CoderAgent-01",
+        "role": "coder",
+        "status": "idle",
+        "current_load": 2,
+        "queued_tasks": 0
+      }
+    ]
+  },
+  "message": "Load distribution for 5 agents"
+}
+```
+
+**Understanding Balance Score**:
+- Score ranges from 0 to 1
+- 1.0 = perfectly balanced load
+- < 0.7 = consider rebalancing
+- Based on coefficient of variation
+
+### Rebalance Load
+
+Dynamically move queued tasks from overloaded to underloaded agents:
+
+```bash
+curl -X POST http://localhost:8001/api/scheduler/rebalance \
+  -H "Content-Type: application/json" \
+  -d '{
+    "threshold": 0.3
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "result": {
+    "rebalanced": true,
+    "tasks_moved": 3,
+    "old_balance_score": 0.65,
+    "new_balance_score": 0.89,
+    "improvement": 0.24
+  },
+  "message": "Rebalanced 3 tasks"
+}
+```
+
+**Threshold Parameter**:
+- Determines when rebalancing triggers
+- 0.3 = 30% deviation from average load
+- Lower threshold = more aggressive rebalancing
+- Higher threshold = less frequent rebalancing
+
+### List Available Strategies
+
+Get detailed information about all scheduling strategies:
+
+```bash
+curl http://localhost:8001/api/scheduler/strategies
+```
+
+**Response** (excerpt):
+```json
+{
+  "success": true,
+  "total_strategies": 6,
+  "default_strategy": "least_loaded",
+  "strategies": [
+    {
+      "name": "round_robin",
+      "description": "Distributes tasks evenly in rotation across all available agents",
+      "use_case": "Simple fair distribution when all agents are equivalent",
+      "pros": ["Fair distribution", "Simple", "Predictable"],
+      "cons": ["Ignores agent load", "Ignores agent capabilities"]
+    },
+    {
+      "name": "least_loaded",
+      "description": "Assigns tasks to the agent with the lowest current load",
+      "use_case": "Load balancing when agents have similar capabilities",
+      "pros": ["Balances load", "Maximizes throughput", "Reduces wait times"],
+      "cons": ["May overload slow agents", "Doesn't consider capabilities"]
+    }
+  ]
+}
+```
+
+### Get Agent Load
+
+Check current load for a specific agent:
+
+```bash
+curl http://localhost:8001/api/scheduler/agent-load/1
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "agent_name": "ResearchAgent-01",
+  "agent_role": "researcher",
+  "agent_status": "busy",
+  "current_load": 4,
+  "queued_tasks": 2,
+  "running_tasks": 2,
+  "message": "Load information for agent ResearchAgent-01"
+}
+```
+
+### Get Scheduling Statistics
+
+Analyze scheduling patterns and trends:
+
+```bash
+curl "http://localhost:8001/api/scheduler/scheduling-stats?time_range_hours=24"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "time_range_hours": 24,
+  "total_executions": 156,
+  "status_distribution": {
+    "completed": 120,
+    "running": 15,
+    "queued": 12,
+    "failed": 9
+  },
+  "agent_execution_counts": {
+    "1": 35,
+    "2": 42,
+    "3": 38,
+    "4": 25,
+    "5": 16
+  },
+  "total_agents": 5,
+  "active_agents": 5,
+  "agent_utilization_rate": 1.0,
+  "current_load_balance_score": 0.85,
+  "average_executions_per_agent": 31.2,
+  "message": "Scheduling statistics for last 24 hours"
+}
+```
+
+### Strategy Comparison
+
+Here's how to choose the right strategy:
+
+**Use ROUND_ROBIN when**:
+- All agents have identical capabilities
+- Simple fair distribution is needed
+- Predictability is important
+- Example: Distributing similar research tasks
+
+**Use LEAST_LOADED when**:
+- Maximizing throughput is critical
+- Agents have similar capabilities
+- Want to minimize wait times
+- Example: Processing large batch of similar tasks
+
+**Use CAPABILITY_BASED when**:
+- Tasks require specific skills
+- Agents have diverse capabilities
+- Task-agent alignment is critical
+- Example: Routing code tasks to coder agents
+
+**Use PERFORMANCE_BASED when**:
+- Quality and speed are priorities
+- Historical data is available
+- Want to optimize success rate
+- Example: Critical production workloads
+
+**Use PRIORITY_QUEUE when**:
+- Task priority must be respected
+- Some tasks are more urgent
+- Want strict priority ordering
+- Example: User-facing vs. background tasks
+
+**Use RANDOM when**:
+- Testing different scenarios
+- Avoiding patterns
+- No optimization needed
+- Example: Load testing, experimentation
+
+### Integration Example
+
+Complete workflow using scheduler:
+
+```python
+import requests
+
+# 1. Schedule high-priority task with capability requirements
+response = requests.post(
+    "http://localhost:8001/api/scheduler/schedule",
+    json={
+        "task_id": 101,
+        "strategy": "capability_based",
+        "required_capabilities": ["python", "testing", "pytest"],
+        "preferred_role": "tester"
+    }
+)
+assigned_agent = response.json()["agent_id"]
+
+# 2. Batch schedule related tasks
+response = requests.post(
+    "http://localhost:8001/api/scheduler/batch-schedule",
+    json={
+        "task_ids": [102, 103, 104, 105],
+        "strategy": "least_loaded",
+        "balance_load": True
+    }
+)
+assignments = response.json()["assignments"]
+
+# 3. Monitor load distribution
+response = requests.get("http://localhost:8001/api/scheduler/load-distribution")
+balance_score = response.json()["distribution"]["balance_score"]
+
+# 4. Rebalance if needed
+if balance_score < 0.7:
+    response = requests.post(
+        "http://localhost:8001/api/scheduler/rebalance",
+        json={"threshold": 0.3}
+    )
+    print(f"Moved {response.json()['result']['tasks_moved']} tasks")
+
+# 5. Check scheduling stats
+response = requests.get(
+    "http://localhost:8001/api/scheduler/scheduling-stats",
+    params={"time_range_hours": 24}
+)
+stats = response.json()
+print(f"Utilization: {stats['agent_utilization_rate']:.1%}")
+```
+
+### Load Balancing Best Practices
+
+**Proactive Load Management**:
+- Monitor balance score regularly
+- Set up alerts when balance_score < 0.7
+- Schedule rebalancing during low-activity periods
+- Use batch scheduling for efficiency
+
+**Strategy Selection**:
+- Start with LEAST_LOADED as default
+- Use CAPABILITY_BASED when skills matter
+- Switch to PERFORMANCE_BASED for production
+- Test with RANDOM to validate robustness
+
+**Performance Optimization**:
+- Batch schedule when possible (more efficient)
+- Enable balance_load for batch operations
+- Monitor agent utilization rates
+- Adjust thresholds based on workload patterns
+
+**Capacity Planning**:
+- Track agent_utilization_rate over time
+- Add agents when utilization > 80%
+- Remove agents when utilization < 30%
+- Balance agent capabilities across roles
+
+**Monitoring**:
+- Check load distribution hourly
+- Review scheduling stats daily
+- Analyze agent execution counts
+- Identify bottlenecks early
+
+### Common Use Cases
+
+**1. Processing File Upload Batches**:
+```bash
+# Upload 100 files for analysis
+# Batch schedule with load balancing
+curl -X POST http://localhost:8001/api/scheduler/batch-schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [1001, 1002, ..., 1100],
+    "strategy": "least_loaded",
+    "balance_load": true
+  }'
+```
+
+**2. Urgent Task Prioritization**:
+```bash
+# Schedule critical task to best-performing agent
+curl -X POST http://localhost:8001/api/scheduler/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 5001,
+    "strategy": "performance_based"
+  }'
+```
+
+**3. Specialized Task Routing**:
+```bash
+# Route ML task to agents with GPU capabilities
+curl -X POST http://localhost:8001/api/scheduler/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 6001,
+    "strategy": "capability_based",
+    "required_capabilities": ["gpu", "tensorflow", "python"]
+  }'
+```
+
+**4. Load Balancing During Peak Hours**:
+```bash
+# Check if rebalancing is needed
+curl http://localhost:8001/api/scheduler/load-distribution
+
+# Rebalance if score < 0.7
+curl -X POST http://localhost:8001/api/scheduler/rebalance \
+  -H "Content-Type: application/json" \
+  -d '{"threshold": 0.25}'
+```
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -6665,9 +7092,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (55% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (60% complete)
 
-Current Progress: Commit 31/100 - Agent Lifecycle Management Complete
+Current Progress: Commit 32/100 - Agent Scheduler and Load Balancer Complete
 
 ## Implementation Roadmap
 
