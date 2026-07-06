@@ -8836,6 +8836,720 @@ while True:
 - Review long chains (warnings)
 - Remove dependencies when no longer needed
 
+## Agent Resource Management
+
+The Agent Resource Management System handles resource allocation, monitoring, and limits for agents. It tracks CPU, memory, GPU, disk, and network resources across the agent cluster, enabling efficient resource utilization and preventing overallocation.
+
+### Resource Types
+
+The system tracks 5 resource types:
+
+- **CPU** - CPU cores (decimal values, e.g., 2.5 cores)
+- **MEMORY** - RAM in GB
+- **GPU** - GPU units (integer values)
+- **DISK** - Disk space in GB
+- **NETWORK** - Network bandwidth in Mbps
+
+### Set Resource Limits
+
+Configure maximum resources for an agent:
+
+```bash
+curl -X POST http://localhost:8001/api/resources/limits/set \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "cpu": 4.0,
+    "memory": 16.0,
+    "gpu": 1,
+    "disk": 500.0,
+    "network": 1000.0
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "limits": {
+    "cpu": 4.0,
+    "memory": 16.0,
+    "gpu": 1,
+    "disk": 500.0,
+    "network": 1000.0
+  },
+  "message": "Resource limits updated for agent 1"
+}
+```
+
+**Default Limits** (if not set):
+- CPU: 2.0 cores
+- Memory: 4.0 GB
+- GPU: 0 units
+- Disk: 100.0 GB
+- Network: 100.0 Mbps
+
+### Get Resource Limits
+
+Retrieve configured limits for an agent:
+
+```bash
+curl http://localhost:8001/api/resources/limits/1
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "limits": {
+    "cpu": 4.0,
+    "memory": 16.0,
+    "gpu": 1,
+    "disk": 500.0,
+    "network": 1000.0
+  },
+  "message": "Resource limits for agent 1"
+}
+```
+
+### Update Resource Usage
+
+Report current resource consumption (typically called by monitoring systems):
+
+```bash
+curl -X POST http://localhost:8001/api/resources/usage/set \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "cpu": 2.5,
+    "memory": 8.0,
+    "gpu": 0,
+    "disk": 50.0,
+    "network": 200.0
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "usage": {
+    "cpu": 2.5,
+    "memory": 8.0,
+    "gpu": 0,
+    "disk": 50.0,
+    "network": 200.0,
+    "last_updated": "2024-01-15T10:30:00Z"
+  },
+  "message": "Resource usage updated for agent 1"
+}
+```
+
+### Get Resource Usage
+
+Get current usage with utilization percentages:
+
+```bash
+curl http://localhost:8001/api/resources/usage/1
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "usage_info": {
+    "agent_id": 1,
+    "usage": {
+      "cpu": 2.5,
+      "memory": 8.0,
+      "gpu": 0,
+      "disk": 50.0,
+      "network": 200.0,
+      "last_updated": "2024-01-15T10:30:00Z"
+    },
+    "limits": {
+      "cpu": 4.0,
+      "memory": 16.0,
+      "gpu": 1,
+      "disk": 500.0,
+      "network": 1000.0
+    },
+    "utilization_percentage": {
+      "cpu": 62.5,
+      "memory": 50.0,
+      "gpu": 0.0,
+      "disk": 10.0,
+      "network": 20.0
+    },
+    "is_overloaded": false
+  },
+  "message": "Resource usage for agent 1"
+}
+```
+
+**is_overloaded**: True if any resource exceeds 90% utilization.
+
+### Check Resource Availability
+
+Verify if an agent has sufficient resources:
+
+```bash
+curl -X POST http://localhost:8001/api/resources/check-availability \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "required_cpu": 1.0,
+    "required_memory": 4.0,
+    "required_gpu": 0,
+    "required_disk": 10.0,
+    "required_network": 100.0
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "availability": {
+    "agent_id": 1,
+    "available": {
+      "cpu": 1.5,
+      "memory": 8.0,
+      "gpu": 1,
+      "disk": 450.0,
+      "network": 800.0
+    },
+    "required": {
+      "cpu": 1.0,
+      "memory": 4.0,
+      "gpu": 0,
+      "disk": 10.0,
+      "network": 100.0
+    },
+    "sufficient": true,
+    "shortfall": null
+  },
+  "message": "Agent has sufficient resources"
+}
+```
+
+**If insufficient**:
+```json
+{
+  "success": true,
+  "availability": {
+    "agent_id": 1,
+    "available": {
+      "cpu": 0.5,
+      "memory": 2.0,
+      "gpu": 0,
+      "disk": 10.0,
+      "network": 50.0
+    },
+    "required": {
+      "cpu": 2.0,
+      "memory": 8.0,
+      "gpu": 1,
+      "disk": 100.0,
+      "network": 500.0
+    },
+    "sufficient": false,
+    "shortfall": {
+      "cpu": 1.5,
+      "memory": 6.0,
+      "gpu": 1,
+      "disk": 90.0,
+      "network": 450.0
+    }
+  },
+  "message": "Insufficient resources"
+}
+```
+
+### Find Agents with Resources
+
+Search for agents that can accommodate specific resource requirements:
+
+```bash
+curl -X POST http://localhost:8001/api/resources/find-agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "required_cpu": 2.0,
+    "required_memory": 8.0,
+    "required_gpu": 1,
+    "required_disk": 50.0,
+    "required_network": 200.0,
+    "status": "active"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_agents": 3,
+  "agents": [
+    {
+      "agent_id": 2,
+      "agent_name": "Agent-Worker-02",
+      "agent_role": "coder",
+      "agent_status": "active",
+      "available_resources": {
+        "cpu": 6.0,
+        "memory": 24.0,
+        "gpu": 2,
+        "disk": 900.0,
+        "network": 1500.0
+      },
+      "utilization": {
+        "cpu": 25.0,
+        "memory": 33.3,
+        "gpu": 0.0,
+        "disk": 10.0,
+        "network": 13.3
+      }
+    },
+    {
+      "agent_id": 3,
+      "agent_name": "Agent-Worker-03",
+      "agent_role": "researcher",
+      "agent_status": "active",
+      "available_resources": {
+        "cpu": 4.0,
+        "memory": 12.0,
+        "gpu": 1,
+        "disk": 400.0,
+        "network": 800.0
+      },
+      "utilization": {
+        "cpu": 50.0,
+        "memory": 50.0,
+        "gpu": 50.0,
+        "disk": 20.0,
+        "network": 37.5
+      }
+    },
+    {
+      "agent_id": 1,
+      "agent_name": "Agent-Worker-01",
+      "agent_role": "coder",
+      "agent_status": "active",
+      "available_resources": {
+        "cpu": 1.5,
+        "memory": 8.0,
+        "gpu": 1,
+        "disk": 450.0,
+        "network": 800.0
+      },
+      "utilization": {
+        "cpu": 62.5,
+        "memory": 50.0,
+        "gpu": 0.0,
+        "disk": 10.0,
+        "network": 20.0
+      }
+    }
+  ],
+  "message": "Found 3 suitable agents"
+}
+```
+
+Agents are **sorted by lowest average utilization** (prefer less loaded agents).
+
+### Reserve Resources
+
+Reserve resources for a task execution:
+
+```bash
+curl -X POST http://localhost:8001/api/resources/reserve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "execution_id": 42,
+    "cpu": 2.0,
+    "memory": 8.0,
+    "gpu": 0,
+    "disk": 20.0,
+    "network": 500.0
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "reservation": {
+    "execution_id": 42,
+    "cpu": 2.0,
+    "memory": 8.0,
+    "gpu": 0,
+    "disk": 20.0,
+    "network": 500.0,
+    "reserved_at": "2024-01-15T10:35:00Z"
+  },
+  "message": "Resources reserved for execution 42"
+}
+```
+
+**Failure (insufficient resources)**:
+```json
+{
+  "success": false,
+  "detail": "Insufficient resources. Shortfall: {'cpu': 1.0, 'memory': 4.0}"
+}
+```
+
+The reservation:
+- Adds resource amounts to current usage
+- Prevents overallocation
+- Tracked in agent metadata
+
+### Release Resources
+
+Release reserved resources after task completion:
+
+```bash
+curl -X POST http://localhost:8001/api/resources/release \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "execution_id": 42
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Resources released for execution 42"
+}
+```
+
+**If not found**:
+```json
+{
+  "success": false,
+  "message": "No reservation found for execution 42 on agent 1"
+}
+```
+
+### Get Cluster Resources
+
+View cluster-wide resource statistics:
+
+```bash
+curl http://localhost:8001/api/resources/cluster
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "cluster": {
+    "total_agents": 5,
+    "total_limits": {
+      "cpu": 20.0,
+      "memory": 80.0,
+      "gpu": 5,
+      "disk": 2000.0,
+      "network": 5000.0
+    },
+    "total_usage": {
+      "cpu": 12.5,
+      "memory": 40.0,
+      "gpu": 2,
+      "disk": 500.0,
+      "network": 1500.0
+    },
+    "total_available": {
+      "cpu": 7.5,
+      "memory": 40.0,
+      "gpu": 3,
+      "disk": 1500.0,
+      "network": 3500.0
+    },
+    "cluster_utilization_percentage": {
+      "cpu": 62.5,
+      "memory": 50.0,
+      "gpu": 40.0,
+      "disk": 25.0,
+      "network": 30.0
+    },
+    "average_utilization": 41.5
+  },
+  "message": "Cluster resources for 5 agents"
+}
+```
+
+### Get Resource Alerts
+
+Find overloaded agents (>90% utilization by default):
+
+```bash
+curl "http://localhost:8001/api/resources/alerts?threshold=90.0"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "threshold": 90.0,
+  "total_alerts": 2,
+  "alerts": [
+    {
+      "agent_id": 3,
+      "agent_name": "Agent-Worker-03",
+      "agent_status": "active",
+      "overloaded_resources": {
+        "cpu": 95.0,
+        "memory": 92.5
+      },
+      "usage": {
+        "cpu": 3.8,
+        "memory": 14.8,
+        "gpu": 0,
+        "disk": 50.0,
+        "network": 200.0
+      },
+      "limits": {
+        "cpu": 4.0,
+        "memory": 16.0,
+        "gpu": 1,
+        "disk": 500.0,
+        "network": 1000.0
+      }
+    },
+    {
+      "agent_id": 5,
+      "agent_name": "Agent-Worker-05",
+      "agent_status": "active",
+      "overloaded_resources": {
+        "network": 98.0
+      },
+      "usage": {
+        "cpu": 2.0,
+        "memory": 8.0,
+        "gpu": 0,
+        "disk": 100.0,
+        "network": 980.0
+      },
+      "limits": {
+        "cpu": 4.0,
+        "memory": 16.0,
+        "gpu": 0,
+        "disk": 500.0,
+        "network": 1000.0
+      }
+    }
+  ],
+  "message": "Found 2 agents above 90.0% utilization"
+}
+```
+
+### Use Cases
+
+#### 1. Task Scheduling with Resource Requirements
+
+```python
+import requests
+
+# 1. Define task resource requirements
+required_resources = {
+    "required_cpu": 2.0,
+    "required_memory": 8.0,
+    "required_gpu": 1,
+    "required_disk": 50.0,
+    "required_network": 200.0,
+    "status": "active"
+}
+
+# 2. Find suitable agents
+response = requests.post(
+    "http://localhost:8001/api/resources/find-agents",
+    json=required_resources
+)
+
+agents = response.json()["agents"]
+
+if agents:
+    # Pick agent with lowest utilization (first in list)
+    best_agent = agents[0]
+    agent_id = best_agent["agent_id"]
+
+    # 3. Reserve resources before execution
+    reservation = requests.post(
+        "http://localhost:8001/api/resources/reserve",
+        json={
+            "agent_id": agent_id,
+            "execution_id": 42,
+            "cpu": 2.0,
+            "memory": 8.0,
+            "gpu": 1,
+            "disk": 50.0,
+            "network": 200.0
+        }
+    )
+
+    print(f"Resources reserved on agent {agent_id}")
+
+    # 4. Execute task...
+    # ... task execution code ...
+
+    # 5. Release resources after completion
+    requests.post(
+        "http://localhost:8001/api/resources/release",
+        json={
+            "agent_id": agent_id,
+            "execution_id": 42
+        }
+    )
+
+    print("Resources released")
+else:
+    print("No agents with sufficient resources available")
+```
+
+#### 2. Resource Monitoring Dashboard
+
+```python
+import requests
+import time
+
+def monitor_cluster():
+    while True:
+        # Get cluster-wide stats
+        cluster = requests.get(
+            "http://localhost:8001/api/resources/cluster"
+        ).json()["cluster"]
+
+        print(f"\n=== Cluster Resources ===")
+        print(f"Total Agents: {cluster['total_agents']}")
+        print(f"Average Utilization: {cluster['average_utilization']:.1f}%")
+
+        print(f"\nCPU: {cluster['total_usage']['cpu']}/{cluster['total_limits']['cpu']} cores "
+              f"({cluster['cluster_utilization_percentage']['cpu']:.1f}%)")
+
+        print(f"Memory: {cluster['total_usage']['memory']}/{cluster['total_limits']['memory']} GB "
+              f"({cluster['cluster_utilization_percentage']['memory']:.1f}%)")
+
+        # Check for overloaded agents
+        alerts = requests.get(
+            "http://localhost:8001/api/resources/alerts?threshold=90.0"
+        ).json()["alerts"]
+
+        if alerts:
+            print(f"\n⚠️  {len(alerts)} agents overloaded:")
+            for alert in alerts:
+                print(f"  Agent {alert['agent_id']} - {alert['overloaded_resources']}")
+
+        time.sleep(30)  # Check every 30 seconds
+
+monitor_cluster()
+```
+
+#### 3. Auto-scaling Based on Utilization
+
+```python
+import requests
+
+def check_and_scale():
+    # Get cluster stats
+    cluster = requests.get(
+        "http://localhost:8001/api/resources/cluster"
+    ).json()["cluster"]
+
+    avg_util = cluster["average_utilization"]
+
+    if avg_util > 80:
+        print(f"🔴 High utilization ({avg_util:.1f}%) - scaling up")
+        # Add new agent or increase limits
+
+    elif avg_util < 20:
+        print(f"🟢 Low utilization ({avg_util:.1f}%) - can scale down")
+        # Remove idle agents
+
+    else:
+        print(f"✅ Optimal utilization ({avg_util:.1f}%)")
+```
+
+#### 4. Resource Limit Configuration
+
+```python
+import requests
+
+# Configure limits for different agent types
+
+# High-performance agent
+requests.post(
+    "http://localhost:8001/api/resources/limits/set",
+    json={
+        "agent_id": 1,
+        "cpu": 8.0,
+        "memory": 32.0,
+        "gpu": 2,
+        "disk": 1000.0,
+        "network": 2000.0
+    }
+)
+
+# Standard agent
+requests.post(
+    "http://localhost:8001/api/resources/limits/set",
+    json={
+        "agent_id": 2,
+        "cpu": 4.0,
+        "memory": 16.0,
+        "gpu": 1,
+        "disk": 500.0,
+        "network": 1000.0
+    }
+)
+
+# Lightweight agent
+requests.post(
+    "http://localhost:8001/api/resources/limits/set",
+    json={
+        "agent_id": 3,
+        "cpu": 2.0,
+        "memory": 8.0,
+        "gpu": 0,
+        "disk": 100.0,
+        "network": 500.0
+    }
+)
+
+print("Resource limits configured for all agents")
+```
+
+### Best Practices
+
+**Resource Allocation**:
+- Always check availability before reserving
+- Use find-agents to pick optimal agent (lowest utilization)
+- Reserve resources at task start, release on completion
+- Set appropriate limits based on agent hardware
+
+**Monitoring**:
+- Poll cluster stats regularly
+- Set up alerts for >90% utilization
+- Track average utilization for capacity planning
+- Monitor individual agents for bottlenecks
+
+**Scaling**:
+- Scale up when average utilization >80%
+- Scale down when average utilization <20%
+- Add agents incrementally based on workload
+- Remove agents gracefully (wait for tasks to complete)
+
+**Troubleshooting**:
+- Check resource alerts for overloaded agents
+- Verify reservations are released after task completion
+- Review cluster stats for capacity issues
+- Check agent limits if tasks fail to schedule
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -8845,9 +9559,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (75% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (80% complete)
 
-Current Progress: Commit 35/100 - Task Dependency Management Complete
+Current Progress: Commit 36/100 - Agent Resource Management Complete
 
 ## Implementation Roadmap
 
