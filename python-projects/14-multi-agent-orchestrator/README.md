@@ -7083,6 +7083,594 @@ curl -X POST http://localhost:8001/api/scheduler/rebalance \
   -d '{"threshold": 0.25}'
 ```
 
+## Agent Capability Management
+
+The Agent Capability Management System provides dynamic capability registration, intelligent matching, and discovery for optimal task-to-agent routing.
+
+### Capability Proficiency Levels
+
+The system supports 4 proficiency levels with weighted scoring:
+
+1. **BASIC** (weight: 1.0) - Fundamental understanding and basic usage
+2. **INTERMEDIATE** (weight: 2.0) - Comfortable with common use cases (default)
+3. **ADVANCED** (weight: 3.0) - Deep knowledge for complex scenarios
+4. **EXPERT** (weight: 4.0) - Mastery with ability to innovate
+
+### Capability Categories
+
+Capabilities are organized into 15 categories:
+
+- **programming** - Languages and paradigms
+- **testing** - Testing frameworks and methodologies
+- **documentation** - Documentation tools and writing
+- **analysis** - Data analysis and research
+- **design** - UI/UX and system design
+- **deployment** - Deployment and release management
+- **monitoring** - Monitoring and observability
+- **security** - Security and vulnerability assessment
+- **database** - Database systems and query languages
+- **api** - API design and integration
+- **ui_ux** - User interface and experience
+- **machine_learning** - ML frameworks and models
+- **data_processing** - Data processing and ETL
+- **cloud** - Cloud platforms and services
+- **devops** - DevOps tools and practices
+
+### Register a Capability
+
+Add a capability to an agent:
+
+```bash
+curl -X POST http://localhost:8001/api/capabilities/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "capability": "python",
+    "level": "expert",
+    "category": "programming",
+    "metadata": {
+      "years_experience": 5,
+      "frameworks": ["fastapi", "django", "flask"]
+    }
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "capability": {
+    "name": "python",
+    "level": "expert",
+    "category": "programming",
+    "registered_at": "2024-01-15T10:30:00",
+    "updated_at": "2024-01-15T10:30:00",
+    "metadata": {
+      "years_experience": 5,
+      "frameworks": ["fastapi", "django", "flask"]
+    }
+  },
+  "message": "Capability 'python' registered for agent 1"
+}
+```
+
+### Batch Register Capabilities
+
+Register multiple capabilities efficiently:
+
+```bash
+curl -X POST http://localhost:8001/api/capabilities/batch-register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 2,
+    "capabilities": [
+      {"name": "pytest", "level": "expert", "category": "testing"},
+      {"name": "selenium", "level": "advanced", "category": "testing"},
+      {"name": "python", "level": "intermediate", "category": "programming"},
+      {"name": "test_automation", "level": "expert", "category": "testing"}
+    ]
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "registered_count": 4,
+  "capabilities": [
+    {
+      "name": "pytest",
+      "level": "expert",
+      "category": "testing",
+      "registered_at": "2024-01-15T10:35:00",
+      "updated_at": "2024-01-15T10:35:00",
+      "metadata": {}
+    }
+  ],
+  "message": "Registered 4 capabilities for agent 2"
+}
+```
+
+### Match Capabilities
+
+Find agents matching required capabilities with ranked scoring:
+
+```bash
+curl -X POST http://localhost:8001/api/capabilities/match \
+  -H "Content-Type: application/json" \
+  -d '{
+    "required_capabilities": ["python", "pytest", "debugging"],
+    "min_level": "intermediate",
+    "role": "tester",
+    "status": "idle"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "required_capabilities": ["python", "pytest", "debugging"],
+  "min_level": "intermediate",
+  "total_matches": 3,
+  "matches": [
+    {
+      "agent_id": 2,
+      "agent_name": "TestAgent-01",
+      "agent_role": "tester",
+      "agent_status": "idle",
+      "match_score": 9.0,
+      "matched_capabilities": [
+        {"name": "python", "level": "intermediate", "category": "programming"},
+        {"name": "pytest", "level": "expert", "category": "testing"},
+        {"name": "debugging", "level": "advanced", "category": "programming"}
+      ],
+      "total_capabilities": 8,
+      "match_percentage": 1.0
+    },
+    {
+      "agent_id": 5,
+      "agent_name": "TestAgent-02",
+      "agent_role": "tester",
+      "agent_status": "idle",
+      "match_score": 5.0,
+      "matched_capabilities": [
+        {"name": "python", "level": "basic", "category": "programming"},
+        {"name": "pytest", "level": "advanced", "category": "testing"}
+      ],
+      "total_capabilities": 6,
+      "match_percentage": 0.67
+    }
+  ],
+  "message": "Found 3 agents matching capabilities"
+}
+```
+
+**Match Score Calculation**:
+- Each capability match contributes: `capability_weight / min_level_weight`
+- Expert capability (4.0) vs. intermediate requirement (2.0) = score of 2.0
+- Perfect match at required level = score of 1.0
+- Below minimum level = not counted
+
+### Find Best Agent
+
+Get single best agent for capabilities:
+
+```bash
+curl -X POST http://localhost:8001/api/capabilities/find-best-agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "required_capabilities": ["code_review", "python", "security"],
+    "min_level": "advanced",
+    "role": "reviewer",
+    "prefer_available": true
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent": {
+    "agent_id": 3,
+    "agent_name": "ReviewAgent-01",
+    "agent_role": "reviewer",
+    "agent_status": "idle",
+    "match_score": 11.0,
+    "matched_capabilities": [
+      {"name": "code_review", "level": "expert", "category": "programming"},
+      {"name": "python", "level": "expert", "category": "programming"},
+      {"name": "security", "level": "advanced", "category": "security"}
+    ],
+    "total_capabilities": 10,
+    "match_percentage": 1.0
+  },
+  "message": "Found best agent: ReviewAgent-01"
+}
+```
+
+### Get Agent Capabilities
+
+View all capabilities for a specific agent:
+
+```bash
+curl http://localhost:8001/api/capabilities/agent/1
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "total_capabilities": 6,
+  "capabilities": [
+    {
+      "name": "python",
+      "level": "expert",
+      "category": "programming",
+      "registered_at": "2024-01-15T10:30:00",
+      "updated_at": "2024-01-15T10:30:00",
+      "metadata": {"years_experience": 5}
+    },
+    {
+      "name": "fastapi",
+      "level": "advanced",
+      "category": "programming",
+      "registered_at": "2024-01-15T10:31:00",
+      "updated_at": "2024-01-15T10:31:00",
+      "metadata": {}
+    }
+  ],
+  "message": "Retrieved 6 capabilities for agent 1"
+}
+```
+
+### Get All Capabilities
+
+List all unique capabilities across the agent fleet:
+
+```bash
+curl "http://localhost:8001/api/capabilities/all?category=testing&min_agents=2"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_capabilities": 5,
+  "category_filter": "testing",
+  "min_agents": 2,
+  "capabilities": [
+    {
+      "name": "pytest",
+      "category": "testing",
+      "agent_count": 4,
+      "levels": {
+        "basic": 0,
+        "intermediate": 1,
+        "advanced": 1,
+        "expert": 2
+      },
+      "agents": [
+        {"agent_id": 2, "agent_name": "TestAgent-01", "level": "expert"},
+        {"agent_id": 5, "agent_name": "TestAgent-02", "level": "expert"},
+        {"agent_id": 7, "agent_name": "CoderAgent-03", "level": "advanced"},
+        {"agent_id": 9, "agent_name": "TestAgent-03", "level": "intermediate"}
+      ]
+    }
+  ],
+  "message": "Retrieved 5 capabilities"
+}
+```
+
+### Capability Coverage Analysis
+
+Analyze fleet coverage for required capabilities:
+
+```bash
+curl -X POST http://localhost:8001/api/capabilities/coverage \
+  -H "Content-Type: application/json" \
+  -d '["python", "docker", "kubernetes", "terraform", "ansible"]'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "analysis": {
+    "coverage": {
+      "python": {
+        "total_agents": 8,
+        "by_level": {
+          "basic": 2,
+          "intermediate": 3,
+          "advanced": 2,
+          "expert": 1
+        },
+        "agents": [
+          {"agent_id": 1, "agent_name": "CoderAgent-01", "level": "expert"}
+        ]
+      },
+      "docker": {
+        "total_agents": 5,
+        "by_level": {"basic": 1, "intermediate": 3, "advanced": 1, "expert": 0},
+        "agents": []
+      },
+      "terraform": {
+        "total_agents": 0,
+        "by_level": {"basic": 0, "intermediate": 0, "advanced": 0, "expert": 0},
+        "agents": []
+      }
+    },
+    "summary": {
+      "total_capabilities": 5,
+      "covered_capabilities": 4,
+      "uncovered_capabilities": 1,
+      "coverage_percentage": 0.8
+    }
+  },
+  "message": "Coverage analysis for 5 capabilities"
+}
+```
+
+### Suggest Capabilities
+
+Get AI-powered capability suggestions for an agent:
+
+```bash
+curl "http://localhost:8001/api/capabilities/suggest/2?based_on_role=true"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "agent_id": 2,
+  "total_suggestions": 6,
+  "suggestions": [
+    {
+      "name": "test_automation",
+      "level": "advanced",
+      "category": "testing",
+      "reason": "Recommended for tester role"
+    },
+    {
+      "name": "bug_tracking",
+      "level": "intermediate",
+      "category": "testing",
+      "reason": "Recommended for tester role"
+    },
+    {
+      "name": "selenium",
+      "level": "advanced",
+      "category": "testing",
+      "reason": "Used by 3 similar tester agents"
+    }
+  ],
+  "message": "Generated 6 capability suggestions for agent 2"
+}
+```
+
+**Suggestion Logic**:
+1. **Role-based**: Capabilities typical for agent's role (researcher, coder, tester, etc.)
+2. **Peer-based**: Capabilities commonly possessed by similar agents (same role)
+3. **Gap analysis**: Only suggests capabilities the agent doesn't already have
+
+### Validate Capability
+
+Validate capability definition before registration:
+
+```bash
+curl -X POST http://localhost:8001/api/capabilities/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "capability": "python",
+    "level": "expert",
+    "category": "programming"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  },
+  "message": "Valid capability"
+}
+```
+
+### Remove Capability
+
+Remove a capability from an agent:
+
+```bash
+curl -X DELETE http://localhost:8001/api/capabilities/remove \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "capability": "old_framework"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Capability 'old_framework' removed from agent 1"
+}
+```
+
+### List Levels and Categories
+
+Get reference data for levels and categories:
+
+```bash
+# List all proficiency levels
+curl http://localhost:8001/api/capabilities/levels
+
+# List all categories
+curl http://localhost:8001/api/capabilities/categories
+```
+
+### Integration Example
+
+Complete workflow for capability management:
+
+```python
+import requests
+
+# 1. Register capabilities for a new agent
+response = requests.post(
+    "http://localhost:8001/api/capabilities/batch-register",
+    json={
+        "agent_id": 10,
+        "capabilities": [
+            {"name": "python", "level": "expert", "category": "programming"},
+            {"name": "machine_learning", "level": "advanced", "category": "machine_learning"},
+            {"name": "tensorflow", "level": "advanced", "category": "machine_learning"},
+            {"name": "data_analysis", "level": "expert", "category": "analysis"}
+        ]
+    }
+)
+print(f"Registered {response.json()['registered_count']} capabilities")
+
+# 2. Get suggestions for improving agent capabilities
+response = requests.get(
+    "http://localhost:8001/api/capabilities/suggest/10",
+    params={"based_on_role": True}
+)
+suggestions = response.json()["suggestions"]
+print(f"Suggested capabilities: {[s['name'] for s in suggestions]}")
+
+# 3. Find best agent for a machine learning task
+response = requests.post(
+    "http://localhost:8001/api/capabilities/find-best-agent",
+    json={
+        "required_capabilities": ["python", "tensorflow", "data_analysis"],
+        "min_level": "advanced",
+        "prefer_available": True
+    }
+)
+best_agent = response.json()["agent"]
+print(f"Best agent: {best_agent['agent_name']} (score: {best_agent['match_score']})")
+
+# 4. Analyze capability coverage
+response = requests.post(
+    "http://localhost:8001/api/capabilities/coverage",
+    json=["python", "java", "go", "rust", "typescript"]
+)
+coverage = response.json()["analysis"]["summary"]
+print(f"Coverage: {coverage['coverage_percentage']:.1%}")
+
+# 5. Match all agents for specific capabilities
+response = requests.post(
+    "http://localhost:8001/api/capabilities/match",
+    json={
+        "required_capabilities": ["python", "testing"],
+        "min_level": "intermediate"
+    }
+)
+matches = response.json()["matches"]
+print(f"Found {len(matches)} matching agents")
+for match in matches[:3]:
+    print(f"  - {match['agent_name']}: {match['match_score']}")
+```
+
+### Use Cases
+
+**1. Intelligent Task Routing**:
+```python
+# Route task to best-qualified agent
+task_requirements = ["kubernetes", "docker", "helm"]
+best_agent = requests.post(
+    "http://localhost:8001/api/capabilities/find-best-agent",
+    json={
+        "required_capabilities": task_requirements,
+        "min_level": "intermediate",
+        "prefer_available": True
+    }
+).json()["agent"]
+```
+
+**2. Skill Gap Analysis**:
+```python
+# Identify missing capabilities across fleet
+critical_skills = ["security", "monitoring", "incident_response"]
+coverage = requests.post(
+    "http://localhost:8001/api/capabilities/coverage",
+    json=critical_skills
+).json()["analysis"]["summary"]
+
+if coverage["coverage_percentage"] < 0.8:
+    print("Warning: Insufficient coverage for critical skills!")
+```
+
+**3. Agent Onboarding**:
+```python
+# Set up new agent with role-appropriate capabilities
+suggestions = requests.get(
+    f"http://localhost:8001/api/capabilities/suggest/{new_agent_id}",
+    params={"based_on_role": True}
+).json()["suggestions"]
+
+# Register suggested capabilities
+requests.post(
+    "http://localhost:8001/api/capabilities/batch-register",
+    json={
+        "agent_id": new_agent_id,
+        "capabilities": suggestions
+    }
+)
+```
+
+**4. Team Composition**:
+```python
+# Find agents with complementary skills for a project
+project_needs = {
+    "backend": ["python", "fastapi", "postgresql"],
+    "frontend": ["react", "typescript", "css"],
+    "devops": ["docker", "kubernetes", "ci_cd"]
+}
+
+team = {}
+for role, skills in project_needs.items():
+    agent = requests.post(
+        "http://localhost:8001/api/capabilities/find-best-agent",
+        json={"required_capabilities": skills, "min_level": "intermediate"}
+    ).json()["agent"]
+    team[role] = agent["agent_name"]
+```
+
+### Best Practices
+
+**Capability Registration**:
+- Use consistent naming conventions (lowercase, underscores)
+- Assign appropriate proficiency levels honestly
+- Include relevant metadata (version, experience, certifications)
+- Update capabilities when agent skills improve
+
+**Matching Strategy**:
+- Set realistic minimum levels (intermediate for most tasks)
+- Use `prefer_available=true` to avoid overloading agents
+- Consider match_percentage along with match_score
+- Filter by role when skill overlap exists
+
+**Coverage Monitoring**:
+- Regularly analyze coverage for critical capabilities
+- Track coverage_percentage trend over time
+- Address gaps with training or new agent recruitment
+- Balance specialization vs. redundancy
+
+**Performance Optimization**:
+- Use batch registration for new agents
+- Cache capability lookups for frequently accessed data
+- Filter by category to reduce search space
+- Set min_agents threshold to focus on common capabilities
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -7092,9 +7680,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (60% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (65% complete)
 
-Current Progress: Commit 32/100 - Agent Scheduler and Load Balancer Complete
+Current Progress: Commit 33/100 - Agent Capability Management Complete
 
 ## Implementation Roadmap
 
