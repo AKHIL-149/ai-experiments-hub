@@ -7671,6 +7671,568 @@ for role, skills in project_needs.items():
 - Filter by category to reduce search space
 - Set min_agents threshold to focus on common capabilities
 
+## Agent Priority Management
+
+The Agent Priority Management System handles task prioritization, queue ordering, SLA tracking, and automatic priority escalation to ensure critical tasks are completed on time.
+
+### Priority Levels
+
+The system supports 4 priority levels with numeric weights:
+
+1. **CRITICAL** (weight: 4) - Urgent, system-critical tasks requiring immediate attention
+2. **HIGH** (weight: 3) - Important tasks that should be completed soon
+3. **NORMAL** (weight: 2) - Standard tasks with normal urgency (default)
+4. **LOW** (weight: 1) - Low-urgency tasks that can wait if needed
+
+### Escalation Policies
+
+Automatic escalation policies increase priority for aging tasks:
+
+- **AGGRESSIVE** - Escalate after 30 minutes (production incidents, real-time systems)
+- **MODERATE** - Escalate low/normal after 2h, high after 1h (standard operations)
+- **CONSERVATIVE** - Escalate low/normal after 6h, high after 3h (research, batch processing)
+- **NONE** - No automatic escalation (manual priority management)
+
+### Set Task Priority
+
+Change task priority level:
+
+```bash
+curl -X POST http://localhost:8001/api/priorities/set-priority \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 123,
+    "priority": "high",
+    "reason": "Customer escalation - production issue"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "result": {
+    "task_id": 123,
+    "old_priority": "normal",
+    "new_priority": "high",
+    "reason": "Customer escalation - production issue",
+    "changed_at": "2024-01-15T14:30:00"
+  },
+  "message": "Priority set to high for task 123"
+}
+```
+
+### Get Static Priority Queue
+
+Get tasks ordered by priority level only:
+
+```bash
+curl "http://localhost:8001/api/priorities/queue?agent_id=1&status_filter=queued&limit=50"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_tasks": 15,
+  "agent_id_filter": 1,
+  "status_filter": "queued",
+  "queue": [
+    {
+      "execution_id": 501,
+      "task_id": 201,
+      "task_title": "Fix critical database connection issue",
+      "priority": "critical",
+      "priority_weight": 4,
+      "status": "queued",
+      "agent_id": 1,
+      "created_at": "2024-01-15T14:00:00",
+      "age_minutes": 30
+    },
+    {
+      "execution_id": 502,
+      "task_id": 202,
+      "task_title": "Deploy security patch",
+      "priority": "high",
+      "priority_weight": 3,
+      "status": "queued",
+      "agent_id": 1,
+      "created_at": "2024-01-15T13:45:00",
+      "age_minutes": 45
+    }
+  ],
+  "message": "Retrieved 15 tasks from priority queue"
+}
+```
+
+### Get Dynamic Priority Queue
+
+Get tasks with dynamic priority considering age and SLA:
+
+```bash
+curl "http://localhost:8001/api/priorities/queue/dynamic?agent_id=1&include_sla=true"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_tasks": 15,
+  "agent_id_filter": 1,
+  "include_sla": true,
+  "queue": [
+    {
+      "execution_id": 503,
+      "task_id": 203,
+      "task_title": "Process payment batch",
+      "base_priority": "high",
+      "dynamic_score": 450,
+      "age_minutes": 85,
+      "status": "queued",
+      "agent_id": 1,
+      "sla_status": {
+        "sla_minutes": 120,
+        "age_minutes": 85,
+        "remaining_minutes": 35,
+        "breached": false,
+        "at_risk": false,
+        "percentage_used": 70.83
+      }
+    }
+  ],
+  "message": "Retrieved 15 tasks from dynamic priority queue"
+}
+```
+
+**Dynamic Score Calculation**:
+- Base weight from priority level (1-4)
+- Age factor: +0.1 per 30 minutes
+- SLA factor: +2.0 if breached, +1.0 if <25% time left, +0.5 if <50% time left
+- Final score = (base_weight + age_factor + sla_factor) × 100
+
+### Escalate Priorities
+
+Automatically escalate aging tasks:
+
+```bash
+curl -X POST http://localhost:8001/api/priorities/escalate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "policy": "moderate",
+    "dry_run": false
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "result": {
+    "policy": "moderate",
+    "dry_run": false,
+    "escalated_count": 5,
+    "escalations": [
+      {
+        "task_id": 150,
+        "task_title": "Review code changes",
+        "from_priority": "low",
+        "to_priority": "normal",
+        "age_minutes": 135
+      },
+      {
+        "task_id": 152,
+        "task_title": "Update documentation",
+        "from_priority": "normal",
+        "to_priority": "high",
+        "age_minutes": 145
+      }
+    ],
+    "timestamp": "2024-01-15T14:30:00"
+  },
+  "message": "Escalated 5 tasks"
+}
+```
+
+**Escalation Thresholds**:
+
+| Policy | Low→Normal | Normal→High | High→Critical |
+|--------|------------|-------------|---------------|
+| Aggressive | 30 min | 30 min | 30 min |
+| Moderate | 2 hours | 2 hours | 1 hour |
+| Conservative | 6 hours | 6 hours | 3 hours |
+
+### Set Task SLA
+
+Define deadline for task completion:
+
+```bash
+curl -X POST http://localhost:8001/api/priorities/sla/set \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 123,
+    "sla_minutes": 240,
+    "auto_escalate": true
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "sla": {
+    "task_id": 123,
+    "sla_minutes": 240,
+    "deadline": "2024-01-15T18:30:00",
+    "auto_escalate": true
+  },
+  "message": "SLA set for task 123: 240 minutes"
+}
+```
+
+### Check SLA Violations
+
+Monitor SLA breaches and at-risk tasks:
+
+```bash
+curl http://localhost:8001/api/priorities/sla/violations
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "violations": {
+    "violations": [
+      {
+        "task_id": 180,
+        "task_title": "Critical bug fix",
+        "priority": "high",
+        "sla_minutes": 120,
+        "age_minutes": 145,
+        "remaining_minutes": -25,
+        "breached_by_minutes": 25
+      }
+    ],
+    "violations_count": 1,
+    "at_risk": [
+      {
+        "task_id": 181,
+        "task_title": "Deploy hotfix",
+        "priority": "critical",
+        "sla_minutes": 60,
+        "age_minutes": 50,
+        "remaining_minutes": 10,
+        "percentage_remaining": 16.67
+      }
+    ],
+    "at_risk_count": 1,
+    "total_checked": 25,
+    "timestamp": "2024-01-15T14:30:00"
+  },
+  "message": "Found 1 violations, 1 at risk"
+}
+```
+
+**SLA Status Definitions**:
+- **Breached**: Age exceeds SLA deadline (remaining ≤ 0)
+- **At Risk**: Less than 25% of SLA time remaining
+- **Normal**: More than 25% of SLA time remaining
+
+### Reorder Agent Queue
+
+Reorder queue using static or dynamic priority:
+
+```bash
+curl -X POST http://localhost:8001/api/priorities/reorder-queue \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "use_dynamic_priority": true
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "result": {
+    "agent_id": 1,
+    "agent_name": "CoderAgent-01",
+    "queue_length": 12,
+    "use_dynamic_priority": true,
+    "queue": [
+      {
+        "execution_id": 501,
+        "task_id": 201,
+        "base_priority": "critical",
+        "dynamic_score": 520,
+        "age_minutes": 45
+      }
+    ],
+    "reordered_at": "2024-01-15T14:30:00"
+  },
+  "message": "Reordered queue for agent 1"
+}
+```
+
+### Get Priority Statistics
+
+Analyze priority distribution and performance:
+
+```bash
+curl "http://localhost:8001/api/priorities/statistics?time_range_hours=24"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "statistics": {
+    "time_range_hours": 24,
+    "priority_distribution": {
+      "critical": 5,
+      "high": 23,
+      "normal": 145,
+      "low": 67
+    },
+    "completion_times": {
+      "critical": {
+        "average_seconds": 1200,
+        "sample_size": 4
+      },
+      "high": {
+        "average_seconds": 2400,
+        "sample_size": 18
+      },
+      "normal": {
+        "average_seconds": 5400,
+        "sample_size": 120
+      },
+      "low": {
+        "average_seconds": 8600,
+        "sample_size": 50
+      }
+    },
+    "currently_queued": {
+      "critical": 1,
+      "high": 5,
+      "normal": 25,
+      "low": 17
+    },
+    "sla_metrics": {
+      "breaches": 2,
+      "at_risk": 3,
+      "total_with_sla": 50
+    },
+    "total_tasks": 240,
+    "timestamp": "2024-01-15T14:30:00"
+  },
+  "message": "Priority statistics for last 24 hours"
+}
+```
+
+### Get Priority History
+
+View audit trail of priority changes:
+
+```bash
+curl http://localhost:8001/api/priorities/task/123/priority-history
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "task_id": 123,
+  "current_priority": "critical",
+  "history_count": 3,
+  "history": [
+    {
+      "from": null,
+      "to": "normal",
+      "changed_at": "2024-01-15T10:00:00",
+      "reason": null
+    },
+    {
+      "from": "normal",
+      "to": "high",
+      "changed_at": "2024-01-15T12:00:00",
+      "reason": "Auto-escalated by moderate policy after 120 minutes"
+    },
+    {
+      "from": "high",
+      "to": "critical",
+      "changed_at": "2024-01-15T14:00:00",
+      "reason": "Customer escalation - production issue"
+    }
+  ],
+  "message": "Priority history for task 123"
+}
+```
+
+### List Levels and Policies
+
+Get reference data:
+
+```bash
+# List priority levels
+curl http://localhost:8001/api/priorities/levels
+
+# List escalation policies
+curl http://localhost:8001/api/priorities/policies
+```
+
+### Integration Example
+
+Complete workflow for priority management:
+
+```python
+import requests
+
+# 1. Set priority and SLA for critical task
+response = requests.post(
+    "http://localhost:8001/api/priorities/set-priority",
+    json={
+        "task_id": 501,
+        "priority": "critical",
+        "reason": "Production database outage"
+    }
+)
+print(f"Priority set: {response.json()['result']['new_priority']}")
+
+# Set 2-hour SLA
+response = requests.post(
+    "http://localhost:8001/api/priorities/sla/set",
+    json={
+        "task_id": 501,
+        "sla_minutes": 120,
+        "auto_escalate": True
+    }
+)
+print(f"SLA deadline: {response.json()['sla']['deadline']}")
+
+# 2. Get dynamic priority queue for agent
+response = requests.get(
+    "http://localhost:8001/api/priorities/queue/dynamic",
+    params={"agent_id": 1, "include_sla": True}
+)
+queue = response.json()["queue"]
+print(f"Top task: {queue[0]['task_title']} (score: {queue[0]['dynamic_score']})")
+
+# 3. Check for SLA violations
+response = requests.get("http://localhost:8001/api/priorities/sla/violations")
+violations = response.json()["violations"]
+if violations["violations_count"] > 0:
+    print(f"WARNING: {violations['violations_count']} SLA breaches!")
+    for v in violations["violations"]:
+        print(f"  - Task {v['task_id']}: breached by {v['breached_by_minutes']} min")
+
+# 4. Run automatic escalation (moderate policy)
+response = requests.post(
+    "http://localhost:8001/api/priorities/escalate",
+    json={
+        "policy": "moderate",
+        "dry_run": False
+    }
+)
+result = response.json()["result"]
+print(f"Escalated {result['escalated_count']} tasks")
+
+# 5. Get priority statistics
+response = requests.get(
+    "http://localhost:8001/api/priorities/statistics",
+    params={"time_range_hours": 24}
+)
+stats = response.json()["statistics"]
+print(f"Total tasks: {stats['total_tasks']}")
+print(f"SLA breaches: {stats['sla_metrics']['breaches']}")
+print(f"Avg completion time (critical): {stats['completion_times']['critical']['average_seconds']}s")
+```
+
+### Use Cases
+
+**1. Production Incident Response**:
+```python
+# Escalate to critical and set tight SLA
+requests.post(
+    "http://localhost:8001/api/priorities/set-priority",
+    json={"task_id": incident_task_id, "priority": "critical", "reason": "P1 incident"}
+)
+requests.post(
+    "http://localhost:8001/api/priorities/sla/set",
+    json={"task_id": incident_task_id, "sla_minutes": 30, "auto_escalate": True}
+)
+```
+
+**2. SLA Monitoring Dashboard**:
+```python
+# Check violations every 5 minutes
+violations = requests.get(
+    "http://localhost:8001/api/priorities/sla/violations"
+).json()["violations"]
+
+# Alert if breaches detected
+if violations["violations_count"] > 0:
+    send_alert(f"{violations['violations_count']} SLA breaches detected!")
+```
+
+**3. Automatic Priority Management**:
+```python
+# Run escalation every hour with moderate policy
+import schedule
+
+def escalate_priorities():
+    response = requests.post(
+        "http://localhost:8001/api/priorities/escalate",
+        json={"policy": "moderate", "dry_run": False}
+    )
+    print(f"Escalated {response.json()['result']['escalated_count']} tasks")
+
+schedule.every().hour.do(escalate_priorities)
+```
+
+**4. Queue Optimization**:
+```python
+# Reorder all agent queues using dynamic priority
+for agent_id in active_agent_ids:
+    requests.post(
+        "http://localhost:8001/api/priorities/reorder-queue",
+        json={"agent_id": agent_id, "use_dynamic_priority": True}
+    )
+```
+
+### Best Practices
+
+**Priority Assignment**:
+- Reserve CRITICAL for genuine emergencies (production outages, data loss)
+- Use HIGH for important but non-emergency work
+- Default to NORMAL for standard tasks
+- Use LOW for nice-to-have improvements
+
+**SLA Management**:
+- Set realistic SLAs based on task complexity
+- Enable auto_escalate for time-sensitive tasks
+- Monitor SLA at-risk tasks proactively
+- Review breach patterns to adjust SLAs
+
+**Escalation Strategy**:
+- Start with MODERATE policy and adjust based on workload
+- Use AGGRESSIVE for production/real-time systems
+- Use CONSERVATIVE for research/batch workloads
+- Review escalation logs to tune thresholds
+
+**Queue Management**:
+- Use dynamic priority for better task ordering
+- Reorder queues when SLA breaches occur
+- Balance agent workloads with scheduler
+- Monitor queue depth by priority level
+
+**Monitoring**:
+- Track completion times by priority
+- Set alerts for SLA violations
+- Review priority distribution trends
+- Analyze escalation frequency
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -7680,9 +8242,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (65% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (70% complete)
 
-Current Progress: Commit 33/100 - Agent Capability Management Complete
+Current Progress: Commit 34/100 - Agent Priority Management Complete
 
 ## Implementation Roadmap
 
