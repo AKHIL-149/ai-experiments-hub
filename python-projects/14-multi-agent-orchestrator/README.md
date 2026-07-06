@@ -8233,6 +8233,609 @@ for agent_id in active_agent_ids:
 - Review priority distribution trends
 - Analyze escalation frequency
 
+## Task Dependency Management
+
+The Task Dependency Management System handles task dependencies, validates dependency graphs for cycles, provides topological execution ordering, and enables parallel execution of independent tasks.
+
+### Dependency Types
+
+The system supports 3 dependency relationship types:
+
+- **BLOCKS** - Task A blocks task B (A must complete before B starts)
+- **REQUIRES** - Task B requires task A (same as blocks, reverse direction)
+- **RELATED** - Tasks are related but not blocking
+
+### Add Task Dependency
+
+Create a dependency relationship between tasks:
+
+```bash
+curl -X POST http://localhost:8001/api/dependencies/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 102,
+    "depends_on_task_id": 101,
+    "dependency_type": "blocks"
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "dependency": {
+    "task_id": 102,
+    "depends_on_task_id": 101,
+    "dependency_type": "blocks",
+    "task_title": "Deploy to production",
+    "depends_on_task_title": "Run integration tests"
+  },
+  "message": "Dependency added: task 102 depends on 101"
+}
+```
+
+**Cycle Detection**: The system automatically prevents circular dependencies.
+
+### Add Dependency Chain
+
+Create a sequential chain of dependencies:
+
+```bash
+curl -X POST http://localhost:8001/api/dependencies/add-chain \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [101, 102, 103, 104]
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_dependencies": 3,
+  "dependencies": [
+    {
+      "task_id": 102,
+      "depends_on_task_id": 101,
+      "dependency_type": "blocks",
+      "task_title": "Build",
+      "depends_on_task_title": "Test"
+    },
+    {
+      "task_id": 103,
+      "depends_on_task_id": 102,
+      "dependency_type": "blocks",
+      "task_title": "Deploy staging",
+      "depends_on_task_title": "Build"
+    },
+    {
+      "task_id": 104,
+      "depends_on_task_id": 103,
+      "dependency_type": "blocks",
+      "task_title": "Deploy production",
+      "depends_on_task_title": "Deploy staging"
+    }
+  ],
+  "message": "Created dependency chain of 4 tasks"
+}
+```
+
+Creates: 101 → 102 → 103 → 104
+
+### Get Task Dependencies
+
+View all dependencies for a task:
+
+```bash
+curl http://localhost:8001/api/dependencies/task/102
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "dependencies": {
+    "task_id": 102,
+    "task_title": "Deploy to production",
+    "task_status": "pending",
+    "depends_on": [
+      {
+        "task_id": 101,
+        "task_title": "Run integration tests",
+        "task_status": "completed",
+        "dependency_type": "blocks",
+        "is_completed": true
+      }
+    ],
+    "dependent_tasks": [
+      {
+        "task_id": 103,
+        "task_title": "Smoke tests",
+        "task_status": "pending"
+      }
+    ],
+    "total_dependencies": 1,
+    "total_dependents": 1
+  },
+  "message": "Retrieved dependencies for task 102"
+}
+```
+
+Shows:
+- **depends_on**: Tasks that must complete first (prerequisites)
+- **dependent_tasks**: Tasks waiting for this task (dependents)
+
+### Check Task Readiness
+
+Determine if a task is ready to execute:
+
+```bash
+curl http://localhost:8001/api/dependencies/task/102/ready
+```
+
+**Response** (not ready):
+```json
+{
+  "success": true,
+  "readiness": {
+    "task_id": 102,
+    "task_title": "Deploy to production",
+    "is_ready": false,
+    "blocking_tasks": [
+      {
+        "task_id": 101,
+        "task_title": "Run integration tests",
+        "task_status": "in_progress"
+      }
+    ],
+    "total_dependencies": 1,
+    "completed_dependencies": 0,
+    "completion_percentage": 0,
+    "message": "Blocked by 1 tasks"
+  },
+  "message": "Blocked by 1 tasks"
+}
+```
+
+**Response** (ready):
+```json
+{
+  "success": true,
+  "readiness": {
+    "task_id": 102,
+    "task_title": "Deploy to production",
+    "is_ready": true,
+    "blocking_tasks": [],
+    "total_dependencies": 1,
+    "completed_dependencies": 1,
+    "completion_percentage": 100,
+    "message": "Ready to execute"
+  },
+  "message": "Ready to execute"
+}
+```
+
+### Get Execution Order
+
+Get topological execution order with parallel execution levels:
+
+```bash
+curl "http://localhost:8001/api/dependencies/execution-order?task_ids=101,102,103,104,105"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "execution_order": [
+    [101, 105],
+    [102],
+    [103, 104]
+  ],
+  "total_levels": 3,
+  "total_tasks": 5,
+  "max_parallelism": 2,
+  "message": "Execution order with 3 levels"
+}
+```
+
+**Execution Order Interpretation**:
+- **Level 0** `[101, 105]`: Tasks with no dependencies - can run in parallel
+- **Level 1** `[102]`: Tasks depending on Level 0 - runs after Level 0 completes
+- **Level 2** `[103, 104]`: Tasks depending on Level 1 - can run in parallel after Level 1
+
+**Max Parallelism**: Maximum number of tasks that can run simultaneously (2 in this case).
+
+### Validate Dependency Graph
+
+Check for cycles and orphaned dependencies:
+
+```bash
+curl -X POST http://localhost:8001/api/dependencies/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_ids": [101, 102, 103, 104]
+  }'
+```
+
+**Response** (valid):
+```json
+{
+  "success": true,
+  "validation": {
+    "valid": true,
+    "total_tasks": 4,
+    "total_errors": 0,
+    "total_warnings": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "message": "Valid dependency graph"
+}
+```
+
+**Response** (with cycle):
+```json
+{
+  "success": true,
+  "validation": {
+    "valid": false,
+    "total_tasks": 4,
+    "total_errors": 1,
+    "total_warnings": 0,
+    "errors": [
+      {
+        "type": "cycle_detected",
+        "message": "Dependency cycle detected. Only 3/4 tasks can be ordered",
+        "unordered_tasks": 1
+      }
+    ],
+    "warnings": []
+  },
+  "message": "Validation errors found"
+}
+```
+
+**Validation Checks**:
+- **Cycles**: Circular dependencies that prevent execution
+- **Orphaned Dependencies**: References to non-existent tasks
+- **Long Chains**: Warning for chains longer than 10 tasks
+
+### Get Dependency Graph
+
+Get graph data for visualization:
+
+```bash
+curl "http://localhost:8001/api/dependencies/graph?task_ids=101,102,103"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": 101,
+        "label": "Run tests",
+        "status": "completed",
+        "priority": "high"
+      },
+      {
+        "id": 102,
+        "label": "Build application",
+        "status": "in_progress",
+        "priority": "high"
+      },
+      {
+        "id": 103,
+        "label": "Deploy",
+        "status": "pending",
+        "priority": "normal"
+      }
+    ],
+    "edges": [
+      {
+        "from": 101,
+        "to": 102,
+        "type": "blocks"
+      },
+      {
+        "from": 102,
+        "to": 103,
+        "type": "blocks"
+      }
+    ],
+    "total_nodes": 3,
+    "total_edges": 2
+  },
+  "message": "Dependency graph with 3 nodes and 2 edges"
+}
+```
+
+**Graph Format**: Compatible with visualization libraries (vis.js, d3.js, cytoscape).
+
+### Get Ready Tasks
+
+Find all tasks ready to execute:
+
+```bash
+curl http://localhost:8001/api/dependencies/ready-tasks
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "total_ready": 3,
+  "ready_tasks": [
+    {
+      "task_id": 105,
+      "task_title": "Update documentation",
+      "task_status": "pending",
+      "priority": "low"
+    },
+    {
+      "task_id": 106,
+      "task_title": "Send notifications",
+      "task_status": "queued",
+      "priority": "normal"
+    },
+    {
+      "task_id": 107,
+      "task_title": "Archive logs",
+      "task_status": "pending",
+      "priority": "low"
+    }
+  ],
+  "message": "Found 3 ready tasks"
+}
+```
+
+**Use Case**: Schedulers use this to find next tasks to assign to agents.
+
+### Remove Dependency
+
+Remove a dependency relationship:
+
+```bash
+curl -X DELETE http://localhost:8001/api/dependencies/remove \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 102,
+    "depends_on_task_id": 101
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Dependency removed: task 102 -> 101"
+}
+```
+
+### Integration Example
+
+Complete workflow for dependency management:
+
+```python
+import requests
+
+# 1. Create a deployment pipeline with dependencies
+pipeline_tasks = [101, 102, 103, 104]  # test → build → stage → prod
+
+# Add dependency chain
+response = requests.post(
+    "http://localhost:8001/api/dependencies/add-chain",
+    json={"task_ids": pipeline_tasks}
+)
+print(f"Created chain: {response.json()['total_dependencies']} dependencies")
+
+# 2. Add parallel tasks (can run alongside main pipeline)
+# Documentation task (no dependencies - can run anytime)
+# Notification task (depends on production deployment)
+response = requests.post(
+    "http://localhost:8001/api/dependencies/add",
+    json={
+        "task_id": 105,  # Notifications
+        "depends_on_task_id": 104,  # Production deployment
+        "dependency_type": "blocks"
+    }
+)
+
+# 3. Validate the dependency graph
+response = requests.post(
+    "http://localhost:8001/api/dependencies/validate",
+    json={"task_ids": [101, 102, 103, 104, 105]}
+)
+validation = response.json()["validation"]
+if not validation["valid"]:
+    print(f"ERROR: {validation['errors']}")
+    exit(1)
+
+# 4. Get execution order with parallelism
+response = requests.get(
+    "http://localhost:8001/api/dependencies/execution-order",
+    params={"task_ids": ",".join(map(str, [101, 102, 103, 104, 105]))}
+)
+execution_order = response.json()["execution_order"]
+print(f"Execution levels: {len(execution_order)}")
+print(f"Max parallelism: {response.json()['max_parallelism']}")
+
+# 5. Execute tasks level by level
+for level_num, level_tasks in enumerate(execution_order):
+    print(f"\nLevel {level_num}: {len(level_tasks)} tasks (parallel)")
+
+    # Start all tasks in this level (they can run in parallel)
+    for task_id in level_tasks:
+        # Check readiness
+        readiness = requests.get(
+            f"http://localhost:8001/api/dependencies/task/{task_id}/ready"
+        ).json()["readiness"]
+
+        if readiness["is_ready"]:
+            print(f"  Starting task {task_id}")
+            # Start task execution here
+        else:
+            print(f"  Task {task_id} blocked by {len(readiness['blocking_tasks'])} tasks")
+
+    # Wait for all tasks in this level to complete before moving to next level
+
+# 6. Get ready tasks for dynamic scheduling
+response = requests.get("http://localhost:8001/api/dependencies/ready-tasks")
+ready = response.json()["ready_tasks"]
+print(f"\n{len(ready)} tasks ready for immediate execution")
+```
+
+### Use Cases
+
+**1. CI/CD Pipeline**:
+```python
+# Create deployment pipeline: test → build → deploy-staging → deploy-prod
+pipeline = {
+    "test": 201,
+    "build": 202,
+    "deploy_staging": 203,
+    "deploy_prod": 204
+}
+
+# Chain dependencies
+requests.post(
+    "http://localhost:8001/api/dependencies/add-chain",
+    json={"task_ids": list(pipeline.values())}
+)
+
+# Add parallel smoke tests after staging
+requests.post(
+    "http://localhost:8001/api/dependencies/add",
+    json={
+        "task_id": 205,  # Smoke tests
+        "depends_on_task_id": pipeline["deploy_staging"],
+        "dependency_type": "blocks"
+    }
+)
+```
+
+**2. Data Processing DAG**:
+```python
+# Extract → [Transform A, Transform B] → Load
+extract_task = 301
+transform_a = 302
+transform_b = 303
+load_task = 304
+
+# Both transforms depend on extract
+for transform in [transform_a, transform_b]:
+    requests.post(
+        "http://localhost:8001/api/dependencies/add",
+        json={"task_id": transform, "depends_on_task_id": extract_task}
+    )
+
+# Load depends on both transforms
+for transform in [transform_a, transform_b]:
+    requests.post(
+        "http://localhost:8001/api/dependencies/add",
+        json={"task_id": load_task, "depends_on_task_id": transform}
+    )
+
+# Get execution order - transforms will be in same level (parallel)
+order = requests.get(
+    "http://localhost:8001/api/dependencies/execution-order"
+).json()["execution_order"]
+# [[301], [302, 303], [304]]
+```
+
+**3. Microservice Deployment**:
+```python
+# Deploy services with dependencies: database → api → web → cache
+services = {
+    "database": 401,
+    "api": 402,
+    "web": 403,
+    "cache": 404
+}
+
+# Database has no dependencies
+# API depends on database
+requests.post(
+    "http://localhost:8001/api/dependencies/add",
+    json={"task_id": services["api"], "depends_on_task_id": services["database"]}
+)
+
+# Web depends on API
+requests.post(
+    "http://localhost:8001/api/dependencies/add",
+    json={"task_id": services["web"], "depends_on_task_id": services["api"]}
+)
+
+# Cache depends on database (can run parallel with API)
+requests.post(
+    "http://localhost:8001/api/dependencies/add",
+    json={"task_id": services["cache"], "depends_on_task_id": services["database"]}
+)
+```
+
+**4. Dynamic Task Scheduling**:
+```python
+import time
+
+while True:
+    # Get tasks ready for execution
+    response = requests.get("http://localhost:8001/api/dependencies/ready-tasks")
+    ready_tasks = response.json()["ready_tasks"]
+
+    if not ready_tasks:
+        print("No ready tasks, waiting...")
+        time.sleep(5)
+        continue
+
+    # Assign ready tasks to available agents
+    for task in ready_tasks:
+        print(f"Scheduling task {task['task_id']}: {task['task_title']}")
+        # Schedule to agent here
+
+    time.sleep(10)
+```
+
+### Best Practices
+
+**Dependency Design**:
+- Keep dependency chains short (< 10 tasks)
+- Use parallel execution when tasks are independent
+- Group related tasks into sub-workflows
+- Avoid unnecessary dependencies that limit parallelism
+
+**Cycle Prevention**:
+- Validate graph before execution
+- Use add-chain for sequential workflows
+- Test complex dependency graphs with validate endpoint
+- Review execution order to verify parallelism
+
+**Execution Strategy**:
+- Execute tasks level-by-level from execution order
+- Run all tasks in same level in parallel
+- Wait for level completion before starting next level
+- Use ready-tasks endpoint for dynamic scheduling
+
+**Graph Visualization**:
+- Use graph endpoint data with visualization libraries
+- Highlight blocking tasks in red
+- Show execution levels with different colors
+- Display task status on nodes
+
+**Performance**:
+- Maximize parallelism by minimizing dependencies
+- Balance between parallelism and resource usage
+- Monitor max_parallelism metric
+- Use ready-tasks for efficient scheduling
+
+**Maintenance**:
+- Validate graph after adding dependencies
+- Check for orphaned dependencies regularly
+- Review long chains (warnings)
+- Remove dependencies when no longer needed
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -8242,9 +8845,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (70% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (75% complete)
 
-Current Progress: Commit 34/100 - Agent Priority Management Complete
+Current Progress: Commit 35/100 - Task Dependency Management Complete
 
 ## Implementation Roadmap
 
