@@ -9630,6 +9630,70 @@ curl -X POST http://localhost:8001/api/collaboration/form-team \
 
 Automatically selects agents with required roles and checks coverage.
 
+## Agent Load Balancing
+
+The Agent Load Balancing System intelligently distributes tasks across agents using various strategies to optimize resource utilization and performance.
+
+### Load Balancing Strategies
+
+- **round_robin** - Distribute evenly in sequence
+- **least_loaded** - Pick agent with lowest current load (default)
+- **weighted** - Weighted random based on capacity
+- **random** - Random selection
+- **capability_based** - Best capability match
+- **performance_based** - Based on historical performance
+
+### Select Agent for Task
+
+```bash
+curl -X POST http://localhost:8001/api/load-balancer/select-agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 101,
+    "strategy": "least_loaded",
+    "required_role": "coder"
+  }'
+```
+
+Intelligently selects the best agent using the specified strategy.
+
+### Get Load Distribution
+
+```bash
+curl http://localhost:8001/api/load-balancer/distribution
+```
+
+Returns how tasks are distributed across agents with balance score (0-100).
+
+### Rebalance Tasks
+
+```bash
+curl -X POST http://localhost:8001/api/load-balancer/rebalance \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy": "least_loaded",
+    "dry_run": true
+  }'
+```
+
+Moves queued tasks from overloaded to underloaded agents. Use `dry_run: true` to preview.
+
+### Get Agent Capacity
+
+```bash
+curl http://localhost:8001/api/load-balancer/capacity/1
+```
+
+Returns agent's current capacity, utilization, and whether it can accept more tasks.
+
+### Check Health
+
+```bash
+curl http://localhost:8001/api/load-balancer/health
+```
+
+Returns overall cluster health status (healthy/degraded/unhealthy).
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -9639,9 +9703,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (85% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (90% complete)
 
-Current Progress: Commit 37/100 - Agent Collaboration System Complete
+Current Progress: Commit 38/100 - Agent Load Balancing System Complete
 
 ## Implementation Roadmap
 
