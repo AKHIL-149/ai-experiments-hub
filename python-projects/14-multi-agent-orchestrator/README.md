@@ -9550,6 +9550,86 @@ print("Resource limits configured for all agents")
 - Review cluster stats for capacity issues
 - Check agent limits if tasks fail to schedule
 
+## Agent Collaboration
+
+The Agent Collaboration System enables multiple agents to work together on complex tasks through structured collaboration patterns, role assignments, and handoff mechanisms.
+
+### Collaboration Patterns
+
+- **PARALLEL** - Agents work simultaneously on different parts
+- **SEQUENTIAL** - Agents work in sequence, passing work along
+- **HIERARCHICAL** - Leader agent coordinates worker agents
+- **PEER_TO_PEER** - Agents collaborate as equals without hierarchy
+
+### Create Collaboration
+
+```bash
+curl -X POST http://localhost:8001/api/collaboration/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Code Review Collaboration",
+    "task_id": 101,
+    "agent_ids": [1, 2, 3],
+    "pattern": "sequential"
+  }'
+```
+
+Creates a multi-agent collaboration session with specified pattern and agents.
+
+### Assign Roles
+
+```bash
+curl -X POST http://localhost:8001/api/collaboration/assign-role \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 101,
+    "collaboration_id": 1,
+    "agent_id": 1,
+    "role": "leader"
+  }'
+```
+
+**Roles**: leader, contributor, reviewer, coordinator
+
+### Create Handoff
+
+```bash
+curl -X POST http://localhost:8001/api/collaboration/handoff/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 101,
+    "collaboration_id": 1,
+    "from_agent_id": 1,
+    "to_agent_id": 2,
+    "handoff_type": "work",
+    "context": {"work_item": "Implement auth module"}
+  }'
+```
+
+**Handoff Types**: work, review, approval
+
+### Get Collaboration Metrics
+
+```bash
+curl http://localhost:8001/api/collaboration/metrics/101/1
+```
+
+Returns metrics including handoff success rate, active agents, and duration.
+
+### Form Team Automatically
+
+```bash
+curl -X POST http://localhost:8001/api/collaboration/form-team \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 102,
+    "required_roles": ["researcher", "coder", "reviewer"],
+    "max_agents": 5
+  }'
+```
+
+Automatically selects agents with required roles and checks coverage.
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -9559,9 +9639,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (80% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (85% complete)
 
-Current Progress: Commit 36/100 - Agent Resource Management Complete
+Current Progress: Commit 37/100 - Agent Collaboration System Complete
 
 ## Implementation Roadmap
 
