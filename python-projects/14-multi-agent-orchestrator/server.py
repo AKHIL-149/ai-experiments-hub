@@ -12,7 +12,7 @@ from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor
 
 
 @asynccontextmanager
@@ -77,6 +77,7 @@ app.include_router(dependencies.router, prefix="/api/dependencies", tags=["Depen
 app.include_router(resources.router, prefix="/api/resources", tags=["Resources"])
 app.include_router(collaboration.router, prefix="/api/collaboration", tags=["Collaboration"])
 app.include_router(load_balancer.router, prefix="/api/load-balancer", tags=["Load Balancer"])
+app.include_router(health_monitor.router, prefix="/api/health-monitor", tags=["Health Monitor"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])

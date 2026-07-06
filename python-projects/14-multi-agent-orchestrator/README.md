@@ -9694,6 +9694,100 @@ curl http://localhost:8001/api/load-balancer/health
 
 Returns overall cluster health status (healthy/degraded/unhealthy).
 
+## Agent Health Monitoring
+
+The Agent Health Monitoring System tracks agent health, detects anomalies, analyzes failures, and provides uptime statistics.
+
+### Health Statuses
+
+- **HEALTHY** - Agent is operating normally with no issues
+- **DEGRADED** - Agent has warnings but is still functional
+- **UNHEALTHY** - Agent has critical issues affecting functionality
+- **UNKNOWN** - Agent health cannot be determined
+
+### Check Agent Health
+
+```bash
+curl http://localhost:8001/api/health-monitor/check/1
+```
+
+Performs comprehensive health check with 5 checks:
+- Agent status (active/inactive)
+- Heartbeat (last activity < 5 minutes)
+- Resource utilization (< 90%)
+- Error rate (< 10%)
+- Execution performance (avg duration)
+
+Returns overall health status with detailed check results.
+
+### Record Heartbeat
+
+```bash
+curl -X POST http://localhost:8001/api/health-monitor/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1
+  }'
+```
+
+Records heartbeat to indicate agent is alive and responsive. Agents should call this periodically.
+
+### Get Uptime Statistics
+
+```bash
+curl http://localhost:8001/api/health-monitor/uptime/1?days=7
+```
+
+Returns uptime percentage, total executions (successful/failed), active hours, and failure breakdown.
+
+### Get Cluster Health
+
+```bash
+curl http://localhost:8001/api/health-monitor/cluster
+```
+
+Returns aggregate health across all agents:
+- Cluster health status
+- Healthy/degraded/unhealthy agent counts
+- Healthy percentage
+- Individual agent health summary
+
+### Detect Anomalies
+
+```bash
+curl http://localhost:8001/api/health-monitor/anomalies/1?threshold_std_dev=2.0
+```
+
+Detects executions with abnormal duration using z-score analysis. Higher threshold = fewer anomalies detected.
+
+### Get Failure Analysis
+
+```bash
+curl http://localhost:8001/api/health-monitor/failures/1?days=7
+```
+
+Returns failure analysis with:
+- Total failures
+- Failure categories (timeout/resource/error/unknown)
+- Failure timeline with details
+
+### Set Health Threshold
+
+```bash
+curl -X POST http://localhost:8001/api/health-monitor/threshold \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "check_type": "error_rate",
+    "threshold_value": 15.0
+  }'
+```
+
+Customizes health check thresholds:
+- **error_rate** - Error rate percentage threshold
+- **response_time** - Maximum acceptable response time
+- **resource_usage** - Resource utilization threshold
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -9703,9 +9797,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (90% complete)
+🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (95% complete)
 
-Current Progress: Commit 38/100 - Agent Load Balancing System Complete
+Current Progress: Commit 39/100 - Agent Health Monitoring System Complete
 
 ## Implementation Roadmap
 
