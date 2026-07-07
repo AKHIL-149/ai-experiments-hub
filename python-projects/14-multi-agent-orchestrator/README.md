@@ -10345,6 +10345,214 @@ curl -X POST http://localhost:8001/api/communication/mark-read \
 
 Marks a message as read and records read timestamp.
 
+## Task Decomposition System
+
+The Task Decomposition System breaks down complex tasks into manageable subtasks with automatic dependency management and intelligent agent assignment.
+
+### Decomposition Strategies
+
+The system supports 5 decomposition strategies:
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| **sequential** | Subtasks execute one after another | Ordered workflows |
+| **parallel** | Subtasks execute simultaneously | Independent operations |
+| **hierarchical** | Root task followed by dependent subtasks | Complex dependencies |
+| **pipeline** | Data flows through processing stages | ETL workflows |
+| **map_reduce** | Parallel processing + aggregation | Data processing |
+
+### Complexity Levels
+
+Tasks are classified into 4 complexity levels:
+
+| Level | Typical Subtasks | Duration | Description |
+|-------|------------------|----------|-------------|
+| **simple** | 1 | < 30 min | Straightforward task |
+| **moderate** | 2-3 | 30 min - 2 hrs | Requires some planning |
+| **complex** | 4-6 | 2-8 hrs | Requires decomposition |
+| **very_complex** | 7+ | > 8 hrs | Careful planning needed |
+
+### Key Features
+
+**Auto-Generation**
+- Automatically generates subtasks based on task type and description
+- Pattern-based subtask creation for common workflows
+- Intelligent dependency inference
+
+**Agent Recommendation**
+- Matches subtasks to agents based on capabilities
+- Considers agent availability and expertise
+- Ranked recommendations by match score
+
+**Dependency Management**
+- Automatic dependency generation based on strategy
+- Cycle detection and validation
+- Dependency graph visualization
+
+**Result Merging**
+- Aggregates results from completed subtasks
+- Updates parent task status automatically
+- Preserves subtask execution history
+
+### Example Usage
+
+**1. Decompose a task with auto-generation:**
+
+```bash
+curl -X POST http://localhost:8001/api/task-decomposition/decompose \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 123,
+    "strategy": "sequential",
+    "auto_generate": true
+  }'
+```
+
+**2. Decompose with custom subtasks:**
+
+```bash
+curl -X POST http://localhost:8001/api/task-decomposition/decompose \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 123,
+    "strategy": "parallel",
+    "subtask_definitions": [
+      {
+        "title": "Data Collection",
+        "description": "Collect data from APIs",
+        "type": "data_processor",
+        "complexity": "moderate",
+        "estimated_duration_minutes": 45,
+        "required_capabilities": ["api_integration", "data_validation"]
+      },
+      {
+        "title": "Data Processing",
+        "description": "Clean and transform data",
+        "type": "data_processor",
+        "complexity": "complex",
+        "estimated_duration_minutes": 90,
+        "required_capabilities": ["data_transformation"],
+        "depends_on": [0]
+      }
+    ]
+  }'
+```
+
+**3. Estimate task complexity:**
+
+```bash
+curl http://localhost:8001/api/task-decomposition/123/complexity
+```
+
+Response:
+```json
+{
+  "success": true,
+  "complexity": "complex",
+  "recommended_subtask_count": 5,
+  "recommended_strategy": "hierarchical",
+  "estimated_duration_minutes": 240
+}
+```
+
+**4. Get subtasks with progress:**
+
+```bash
+curl http://localhost:8001/api/task-decomposition/123/subtasks?include_status=true
+```
+
+Response includes execution status and progress statistics:
+```json
+{
+  "success": true,
+  "parent_task_id": 123,
+  "strategy": "sequential",
+  "total_subtasks": 5,
+  "subtasks": [...],
+  "progress": {
+    "completed": 3,
+    "in_progress": 1,
+    "pending": 1,
+    "completion_percentage": 60
+  }
+}
+```
+
+**5. Get agent recommendations for subtask:**
+
+```bash
+curl http://localhost:8001/api/task-decomposition/456/recommend-agents
+```
+
+Response ranks agents by capability match:
+```json
+{
+  "success": true,
+  "subtask_id": 456,
+  "required_capabilities": ["api_integration", "data_validation"],
+  "recommendations": [
+    {
+      "agent_id": 10,
+      "agent_name": "DataProcessor-1",
+      "match_score": 0.95,
+      "matching_capabilities": ["api_integration", "data_validation"],
+      "availability": "available"
+    }
+  ]
+}
+```
+
+**6. Merge subtask results:**
+
+```bash
+curl -X POST http://localhost:8001/api/task-decomposition/123/merge
+```
+
+Aggregates results from all completed subtasks:
+```json
+{
+  "success": true,
+  "parent_task_id": 123,
+  "all_subtasks_completed": true,
+  "merged_results": {
+    "data_collected": 1500,
+    "records_processed": 1450,
+    "errors": 2
+  },
+  "message": "Subtask results merged"
+}
+```
+
+**7. List all strategies:**
+
+```bash
+curl http://localhost:8001/api/task-decomposition/strategies
+```
+
+**8. List complexity levels:**
+
+```bash
+curl http://localhost:8001/api/task-decomposition/complexity-levels
+```
+
+### Decomposition Workflow
+
+1. **Estimate Complexity** - Analyze task to determine complexity level
+2. **Choose Strategy** - Select appropriate decomposition strategy
+3. **Decompose Task** - Break down into subtasks (auto or manual)
+4. **Recommend Agents** - Match subtasks to capable agents
+5. **Execute Subtasks** - Agents execute subtasks based on dependencies
+6. **Merge Results** - Aggregate results when all subtasks complete
+
+### Integration with Other Systems
+
+**Works with:**
+- **Agent Orchestration** - Assigns subtasks to agents automatically
+- **Scheduler** - Schedules subtasks based on dependencies
+- **Shared Memory** - Shares data between subtasks
+- **Communication Protocol** - Coordinates agent collaboration
+- **Analytics** - Tracks decomposition and execution metrics
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -10355,9 +10563,9 @@ Interactive API documentation is available at:
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (15% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (20% complete)
 
-Current Progress: Commit 43/100 - Agent Communication Protocols Complete
+Current Progress: Commit 44/100 - Task Decomposition System Complete
 
 ## Implementation Roadmap
 
