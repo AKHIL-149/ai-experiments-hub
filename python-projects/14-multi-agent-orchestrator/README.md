@@ -9889,6 +9889,148 @@ curl http://localhost:8001/api/events/severities
 
 Returns all event severity levels with descriptions.
 
+## DAG Workflow Engine
+
+The DAG Workflow Engine manages and executes complex multi-step workflows with dependency management and parallel execution.
+
+### Workflow Statuses
+
+- **PENDING** - Workflow created but not started
+- **RUNNING** - Workflow is currently executing
+- **PAUSED** - Workflow execution is paused
+- **COMPLETED** - Workflow completed successfully
+- **FAILED** - Workflow failed
+- **CANCELLED** - Workflow was cancelled
+
+### Step Statuses
+
+- **PENDING** - Step waiting for dependencies
+- **READY** - Step ready to execute
+- **RUNNING** - Step is currently executing
+- **COMPLETED** - Step completed successfully
+- **FAILED** - Step failed
+- **SKIPPED** - Step was skipped
+
+### Create Workflow
+
+```bash
+curl -X POST http://localhost:8001/api/workflow-engine \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Code Review Pipeline",
+    "description": "Automated code review workflow",
+    "steps": [
+      {
+        "step_id": "analyze",
+        "name": "Analyze Code",
+        "agent_type": "analyzer",
+        "task_description": "Analyze code for issues",
+        "depends_on": [],
+        "timeout_minutes": 30,
+        "retry_count": 3
+      },
+      {
+        "step_id": "review",
+        "name": "Review Analysis",
+        "agent_type": "reviewer",
+        "task_description": "Review analysis results",
+        "depends_on": ["analyze"],
+        "timeout_minutes": 20,
+        "retry_count": 2
+      },
+      {
+        "step_id": "report",
+        "name": "Generate Report",
+        "agent_type": "reporter",
+        "task_description": "Generate final report",
+        "depends_on": ["review"],
+        "timeout_minutes": 10,
+        "retry_count": 1
+      }
+    ]
+  }'
+```
+
+Creates a DAG workflow with steps and dependencies. Steps execute in dependency order with parallel execution where possible.
+
+### Start Workflow
+
+```bash
+curl -X POST http://localhost:8001/api/workflow-engine/1/start
+```
+
+Starts workflow execution. Steps with no dependencies execute immediately in parallel.
+
+### Get Workflow Status
+
+```bash
+curl http://localhost:8001/api/workflow-engine/1/status
+```
+
+Returns detailed workflow status including:
+- Overall workflow status
+- Progress (completed/total steps, percentage)
+- Timeline (created, started, completed times, duration)
+- Individual step statuses with results/errors
+
+### Pause Workflow
+
+```bash
+curl -X POST http://localhost:8001/api/workflow-engine/1/pause
+```
+
+Pauses workflow execution. Currently running steps will complete, but new steps won't start.
+
+### Resume Workflow
+
+```bash
+curl -X POST http://localhost:8001/api/workflow-engine/1/resume
+```
+
+Resumes paused workflow execution.
+
+### Cancel Workflow
+
+```bash
+curl -X POST http://localhost:8001/api/workflow-engine/1/cancel \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "User requested cancellation"
+  }'
+```
+
+Cancels workflow permanently. Cannot be resumed.
+
+### Update Step Status
+
+```bash
+curl -X POST http://localhost:8001/api/workflow-engine/1/steps/update \
+  -H "Content-Type: application/json" \
+  -d '{
+    "step_id": "analyze",
+    "status": "completed",
+    "result": {"issues_found": 5}
+  }'
+```
+
+Updates step status. Called when steps complete or fail. Triggers execution of dependent steps.
+
+### List Workflows
+
+```bash
+curl "http://localhost:8001/api/workflow-engine?status=running&limit=50"
+```
+
+Lists workflows with optional status filtering and pagination.
+
+### Delete Workflow
+
+```bash
+curl -X DELETE http://localhost:8001/api/workflow-engine/1
+```
+
+Deletes a workflow. Can only delete workflows that are not running.
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -9899,8 +10041,9 @@ Interactive API documentation is available at:
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (5% complete)
 
-Current Progress: Commit 40/100 - Agent Event System Complete
+Current Progress: Commit 41/100 - DAG Workflow Engine Complete
 
 ## Implementation Roadmap
 
