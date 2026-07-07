@@ -10196,6 +10196,155 @@ curl -X POST http://localhost:8001/api/shared-memory/get-or-set \
 
 Returns existing value or sets and returns default. Useful for lazy initialization.
 
+## Agent Communication Protocols
+
+The Agent Communication Protocol system enables structured messaging and coordination between agents using multiple communication patterns.
+
+### Communication Protocols
+
+- **DIRECT** - One-to-one direct messaging
+- **BROADCAST** - Message to all active agents
+- **MULTICAST** - Message to specific group of agents
+- **PUBSUB** - Publish-subscribe topic-based messaging
+- **REQUEST_REPLY** - Request-reply pattern with tracking
+
+### Message Types
+
+- **REQUEST** - Request for action or information
+- **RESPONSE** - Reply to a request
+- **BROADCAST** - General announcement
+- **NOTIFICATION** - Event notification
+- **COMMAND** - Command to execute
+- **QUERY** - Query for information
+- **ACKNOWLEDGMENT** - Acknowledgment of receipt
+
+### Send Message
+
+```bash
+curl -X POST http://localhost:8001/api/communication/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": 1,
+    "to_agent_id": 2,
+    "message_type": "request",
+    "protocol": "direct",
+    "content": "Please analyze task #101",
+    "priority": "high",
+    "requires_ack": true
+  }'
+```
+
+Sends a message using specified protocol. Supports direct, broadcast, multicast, and pub/sub patterns.
+
+### Get Messages
+
+```bash
+curl "http://localhost:8001/api/communication/1/messages?unread_only=true&limit=50"
+```
+
+Retrieves messages for an agent with filtering by type, status, sender, and read status.
+
+### Send Request
+
+```bash
+curl -X POST http://localhost:8001/api/communication/request \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": 1,
+    "to_agent_id": 2,
+    "request_content": "What is the status of workflow #5?",
+    "timeout_seconds": 300
+  }'
+```
+
+Sends a request and tracks it for reply. Request expires after timeout if no reply received.
+
+### Send Reply
+
+```bash
+curl -X POST http://localhost:8001/api/communication/reply \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_message_id": 123,
+    "from_agent_id": 2,
+    "reply_content": "Workflow #5 is 75% complete"
+  }'
+```
+
+Sends a reply to a request. Links reply to original request message.
+
+### Subscribe to Topic
+
+```bash
+curl -X POST http://localhost:8001/api/communication/subscribe \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "topic": "task_updates"
+  }'
+```
+
+Subscribes an agent to a topic. Agent will receive all messages published to this topic.
+
+### Publish to Topic
+
+```bash
+curl -X POST http://localhost:8001/api/communication/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": 1,
+    "protocol": "pubsub",
+    "topic": "task_updates",
+    "message_type": "notification",
+    "content": "New task assigned: #102"
+  }'
+```
+
+Publishes a message to a topic. All subscribers receive the message.
+
+### Get Conversation
+
+```bash
+curl http://localhost:8001/api/communication/conversation/1/2?limit=50
+```
+
+Retrieves conversation history between two agents in chronological order.
+
+### Communication Statistics
+
+```bash
+curl "http://localhost:8001/api/communication/stats?agent_id=1&hours=24"
+```
+
+Returns statistics on message volume, types, protocols, priorities, and statuses.
+
+### Send Acknowledgment
+
+```bash
+curl -X POST http://localhost:8001/api/communication/acknowledge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "original_message_id": 123,
+    "agent_id": 2,
+    "ack_content": "Message received and processing"
+  }'
+```
+
+Sends acknowledgment for a message back to original sender.
+
+### Mark Message Read
+
+```bash
+curl -X POST http://localhost:8001/api/communication/mark-read \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message_id": 123,
+    "agent_id": 2
+  }'
+```
+
+Marks a message as read and records read timestamp.
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -10206,9 +10355,9 @@ Interactive API documentation is available at:
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (10% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (15% complete)
 
-Current Progress: Commit 42/100 - Shared Memory System Complete
+Current Progress: Commit 43/100 - Agent Communication Protocols Complete
 
 ## Implementation Roadmap
 
