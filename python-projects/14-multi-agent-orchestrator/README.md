@@ -10031,6 +10031,171 @@ curl -X DELETE http://localhost:8001/api/workflow-engine/1
 
 Deletes a workflow. Can only delete workflows that are not running.
 
+## Shared Memory System
+
+The Shared Memory System enables agents to share data and coordinate through scoped memory with atomic operations.
+
+### Memory Scopes
+
+- **GLOBAL** - Accessible by all agents globally
+- **WORKFLOW** - Scoped to a specific workflow
+- **AGENT** - Scoped to a specific agent
+- **TASK** - Scoped to a specific task
+- **SESSION** - Scoped to a session
+
+### Memory Types
+
+- **PERMANENT** - Never expires, persists indefinitely
+- **TEMPORARY** - Expires based on TTL setting
+- **SESSION** - Expires when session ends
+
+### Set Memory
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/set \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "workflow",
+    "scope_id": "123",
+    "key": "current_step",
+    "value": "analysis",
+    "memory_type": "temporary",
+    "ttl_seconds": 3600
+  }'
+```
+
+Stores a value in shared memory with optional expiration.
+
+### Get Memory
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/get \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "workflow",
+    "scope_id": "123",
+    "key": "current_step",
+    "default": "unknown"
+  }'
+```
+
+Retrieves a value from shared memory. Returns default if not found or expired.
+
+### List Memory
+
+```bash
+curl "http://localhost:8001/api/shared-memory/list?scope=workflow&scope_id=123&pattern=step*"
+```
+
+Lists memory entries with filtering by scope, scope_id, memory_type, and key pattern (supports wildcards).
+
+### Delete Memory
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/delete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "workflow",
+    "scope_id": "123",
+    "key": "current_step"
+  }'
+```
+
+Deletes a specific memory key.
+
+### Clear Scope
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/clear-scope \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "workflow",
+    "scope_id": "123"
+  }'
+```
+
+Clears all memory entries in a scope. Use with caution.
+
+### Memory Statistics
+
+```bash
+curl http://localhost:8001/api/shared-memory/stats
+```
+
+Returns statistics including total entries, breakdowns by scope/type/scope_id, and expired entries cleaned.
+
+### Create Snapshot
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/snapshot/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "workflow",
+    "scope_id": "123",
+    "snapshot_name": "before_critical_operation"
+  }'
+```
+
+Creates a snapshot of memory state for backup/restore scenarios.
+
+### Restore Snapshot
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/snapshot/restore \
+  -H "Content-Type: application/json" \
+  -d '{
+    "snapshot_key": "snapshot:workflow:123:before_critical_operation",
+    "overwrite": false
+  }'
+```
+
+Restores memory from a snapshot. Set overwrite=true to replace existing entries.
+
+### Atomic Increment
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/atomic/increment \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "global",
+    "key": "task_counter",
+    "delta": 1
+  }'
+```
+
+Thread-safe atomic increment for counters and sequence generation.
+
+### Compare-and-Swap
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/atomic/cas \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "workflow",
+    "scope_id": "123",
+    "key": "lock_status",
+    "expected_value": "unlocked",
+    "new_value": "locked"
+  }'
+```
+
+Atomically updates value only if current value matches expected. Useful for lock-free synchronization.
+
+### Get-or-Set
+
+```bash
+curl -X POST http://localhost:8001/api/shared-memory/get-or-set \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "agent",
+    "scope_id": "1",
+    "key": "initialized",
+    "default_value": true
+  }'
+```
+
+Returns existing value or sets and returns default. Useful for lazy initialization.
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -10041,9 +10206,9 @@ Interactive API documentation is available at:
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (5% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (10% complete)
 
-Current Progress: Commit 41/100 - DAG Workflow Engine Complete
+Current Progress: Commit 42/100 - Shared Memory System Complete
 
 ## Implementation Roadmap
 
