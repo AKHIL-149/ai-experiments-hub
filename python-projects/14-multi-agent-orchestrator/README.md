@@ -9788,6 +9788,107 @@ Customizes health check thresholds:
 - **response_time** - Maximum acceptable response time
 - **resource_usage** - Resource utilization threshold
 
+## Agent Event System
+
+The Agent Event System tracks and manages agent-related events for monitoring, auditing, and real-time updates.
+
+### Event Categories
+
+- **Lifecycle** - agent.created, agent.activated, agent.deactivated
+- **Task** - task.assigned, task.started, task.completed, task.failed
+- **Execution** - execution.started, execution.completed, execution.failed
+- **Health** - health.degraded, health.unhealthy, health.recovered
+- **Resource** - resource.allocated, resource.released, resource.exhausted
+- **Collaboration** - collaboration.started, handoff.initiated
+- **Load Balancing** - task.rebalanced, agent.overloaded
+- **Error** - error.occurred, anomaly.detected, sla.breach
+
+### Event Severities
+
+- **DEBUG** - Detailed debugging information
+- **INFO** - General informational events (default)
+- **WARNING** - Warning events needing attention
+- **ERROR** - Error events indicating failures
+- **CRITICAL** - Critical events requiring immediate action
+
+### Emit Event
+
+```bash
+curl -X POST http://localhost:8001/api/events/emit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_type": "task.completed",
+    "agent_id": 1,
+    "task_id": 101,
+    "severity": "info",
+    "message": "Task completed successfully",
+    "metadata": {"duration_seconds": 42}
+  }'
+```
+
+Manually emit events for testing or custom integrations. Events are stored and listeners are notified.
+
+### Get Agent Events
+
+```bash
+curl "http://localhost:8001/api/events/agent/1?event_types=task.completed,task.failed&severities=info,error&limit=50"
+```
+
+Returns events for a specific agent with optional filtering by event types, severities, and time range.
+
+### Get Recent Events
+
+```bash
+curl "http://localhost:8001/api/events/recent?minutes=60&severities=error,critical"
+```
+
+Returns recent events across all agents. Useful for monitoring recent activity.
+
+### Get Event Timeline
+
+```bash
+curl "http://localhost:8001/api/events/timeline?agent_id=1&hours=24&granularity_minutes=60"
+```
+
+Returns events aggregated into time buckets with statistics. Useful for visualizing trends and patterns.
+
+### Get Critical Events
+
+```bash
+curl "http://localhost:8001/api/events/critical?hours=24"
+```
+
+Returns all ERROR and CRITICAL events for quick problem identification and alerting.
+
+### Clear Agent Events
+
+```bash
+curl -X POST http://localhost:8001/api/events/clear \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "older_than_hours": 72
+  }'
+```
+
+Clears events for an agent. Optionally clear only events older than specified hours.
+
+### List Event Types
+
+```bash
+curl http://localhost:8001/api/events/types
+```
+
+Returns all available event types organized by category.
+
+### List Event Severities
+
+```bash
+curl http://localhost:8001/api/events/severities
+```
+
+Returns all event severity levels with descriptions.
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -9797,9 +9898,9 @@ Interactive API documentation is available at:
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
-🚧 **Block Phase 2 In Progress** - Basic Agent Implementation (95% complete)
+✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 
-Current Progress: Commit 39/100 - Agent Health Monitoring System Complete
+Current Progress: Commit 40/100 - Agent Event System Complete
 
 ## Implementation Roadmap
 
