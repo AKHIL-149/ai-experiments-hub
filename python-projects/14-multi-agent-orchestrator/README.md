@@ -12893,13 +12893,298 @@ if results["results"]:
     )
 ```
 
+## Agent Performance Tracking System
+
+The Agent Performance Tracking System provides comprehensive metrics, analytics, and trend analysis for monitoring agent performance over time.
+
+### Key Features
+
+- **Task Metrics**: Track completion rate, time, quality, errors, and retries
+- **Efficiency Metrics**: Monitor throughput, utilization, response time, and idle time
+- **Quality Metrics**: Measure accuracy, consistency, error rate, and defect rate
+- **Resource Metrics**: Track CPU, memory, API calls, LLM tokens, and cost
+- **Performance Levels**: Classify agents as excellent, good, average, below average, or poor
+- **Trend Analysis**: Detect improving, stable, or declining performance trends
+- **Agent Comparison**: Rank and compare multiple agents by any metric
+- **Automated Alerts**: Receive alerts for low success rate, high errors, or low quality
+- **Benchmarking**: Set target values and thresholds for performance standards
+
+### Performance Levels
+
+- **EXCELLENT** - Top 10% performers (score 0.9-1.0)
+- **GOOD** - Top 25% performers (score 0.75-0.89)
+- **AVERAGE** - Middle 50% (score 0.5-0.74)
+- **BELOW_AVERAGE** - Bottom 25% (score 0.25-0.49)
+- **POOR** - Bottom 10% (score 0-0.24)
+
+### Metric Types
+
+- **TASK_COMPLETION** - Task success rate and completion metrics
+- **EFFICIENCY** - Throughput and resource utilization
+- **QUALITY** - Accuracy, consistency, and error rates
+- **RESOURCE_USAGE** - CPU, memory, API calls, tokens, cost
+- **RESPONSE_TIME** - Average response times
+- **THROUGHPUT** - Tasks completed per hour
+- **ERROR_RATE** - Error frequency and patterns
+
+### REST API Endpoints
+
+**Record Task Completion:**
+```bash
+POST /api/performance/agents/1/task-completion
+{
+  "task_id": 100,
+  "success": true,
+  "completion_time_seconds": 45.5,
+  "quality_score": 0.95,
+  "error_count": 0,
+  "retry_count": 0,
+  "resource_usage": {
+    "cpu": 35.5,
+    "memory_mb": 512.0
+  }
+}
+```
+
+**Record Efficiency Metrics:**
+```bash
+POST /api/performance/agents/1/efficiency
+{
+  "throughput": 12.5,
+  "utilization": 85.0,
+  "average_response_time": 2.3,
+  "idle_time_seconds": 120
+}
+```
+
+**Record Quality Metrics:**
+```bash
+POST /api/performance/agents/1/quality
+{
+  "accuracy": 0.92,
+  "consistency": 0.88,
+  "error_rate": 0.05,
+  "defect_rate": 0.02
+}
+```
+
+**Record Resource Usage:**
+```bash
+POST /api/performance/agents/1/resource-usage
+{
+  "cpu_usage": 45.5,
+  "memory_usage_mb": 768.0,
+  "api_calls": 150,
+  "tokens_used": 25000,
+  "cost": 0.35
+}
+```
+
+**Get Performance Summary:**
+```bash
+GET /api/performance/agents/1/summary?timeframe_hours=24
+```
+
+**Get Performance Trend:**
+```bash
+GET /api/performance/agents/1/trend?metric_type=task_completion&timeframe_hours=168
+```
+
+**Compare Agents:**
+```bash
+POST /api/performance/compare
+{
+  "agent_ids": [1, 2, 3, 4, 5],
+  "metric_type": "efficiency",
+  "timeframe_hours": 24
+}
+```
+
+**Get Performance Alerts:**
+```bash
+GET /api/performance/agents/1/alerts
+```
+
+**Set Benchmark:**
+```bash
+POST /api/performance/benchmarks
+{
+  "metric_type": "task_completion",
+  "target_value": 0.95,
+  "threshold_warning": 0.85,
+  "threshold_critical": 0.70,
+  "description": "Task success rate benchmark"
+}
+```
+
+**Get System Statistics:**
+```bash
+GET /api/performance/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Track Task Performance**
+```python
+from src.services.agent_performance import AgentPerformance
+
+# Record task completion
+AgentPerformance.record_task_completion(
+    session=session,
+    agent_id=1,
+    task_id=100,
+    success=True,
+    completion_time_seconds=45.5,
+    quality_score=0.95,
+    error_count=0,
+    retry_count=0,
+    resource_usage={"cpu": 35.5, "memory_mb": 512.0}
+)
+
+# Get summary
+summary = AgentPerformance.get_performance_summary(
+    session=session,
+    agent_id=1,
+    timeframe_hours=24
+)
+
+print(f"Success Rate: {summary['task_metrics']['success_rate']*100:.1f}%")
+print(f"Average Time: {summary['task_metrics']['average_completion_time']:.1f}s")
+print(f"Performance Level: {summary['performance_level']}")
+```
+
+**Scenario 2: Monitor Trends**
+```python
+# Get performance trend
+trend = AgentPerformance.get_performance_trend(
+    session=session,
+    agent_id=1,
+    metric_type="task_completion",
+    timeframe_hours=168  # 1 week
+)
+
+if trend["trend"] == "declining":
+    print(f"⚠️ Performance declining by {abs(trend['change_percent']):.1f}%")
+    # Take corrective action
+elif trend["trend"] == "improving":
+    print(f"✅ Performance improving by {trend['change_percent']:.1f}%")
+```
+
+**Scenario 3: Compare Agent Performance**
+```python
+# Compare multiple agents
+comparison = AgentPerformance.compare_agents(
+    session=session,
+    agent_ids=[1, 2, 3, 4, 5],
+    metric_type="efficiency",
+    timeframe_hours=24
+)
+
+print("Agent Rankings:")
+for ranking in comparison["rankings"]:
+    print(f"  Rank {ranking['rank']}: Agent {ranking['agent_id']} - {ranking['value']:.2f}")
+
+best = comparison["best_performer"]
+print(f"\nBest Performer: Agent {best['agent_id']} ({best['performance_level']})")
+```
+
+**Scenario 4: Set Performance Benchmarks**
+```python
+# Set benchmark for success rate
+AgentPerformance.set_benchmark(
+    session=session,
+    metric_type="task_completion",
+    target_value=0.95,  # Target 95% success rate
+    threshold_warning=0.85,  # Warn below 85%
+    threshold_critical=0.70,  # Critical below 70%
+    description="Task success rate benchmark"
+)
+
+# Check alerts
+alerts = AgentPerformance.get_performance_alerts(session=session, agent_id=1)
+for alert in alerts["alerts"]:
+    print(f"[{alert['severity'].upper()}] {alert['message']}")
+```
+
+**Scenario 5: Resource Optimization**
+```python
+# Track resource usage
+AgentPerformance.record_resource_usage(
+    session=session,
+    agent_id=1,
+    cpu_usage=45.5,
+    memory_usage_mb=768.0,
+    api_calls=150,
+    tokens_used=25000,
+    cost=0.35
+)
+
+# Analyze costs
+summary = AgentPerformance.get_performance_summary(session=session, agent_id=1)
+print(f"Total Cost: ${summary['resource_metrics']['total_cost']:.2f}")
+print(f"Tokens Used: {summary['resource_metrics']['total_tokens']:,}")
+print(f"Cost per Task: ${summary['resource_metrics']['total_cost'] / summary['task_metrics']['total_tasks']:.4f}")
+```
+
+### Integration Example
+
+```python
+from src.services.agent_performance import AgentPerformance, MetricType
+
+# After task execution
+start_time = time.time()
+result = agent.execute_task(task)
+completion_time = time.time() - start_time
+
+# Record comprehensive metrics
+AgentPerformance.record_task_completion(
+    session=session,
+    agent_id=agent.id,
+    task_id=task.id,
+    success=result.success,
+    completion_time_seconds=completion_time,
+    quality_score=result.quality_score,
+    error_count=result.error_count,
+    retry_count=result.retry_count,
+    resource_usage={
+        "cpu": result.cpu_usage,
+        "memory_mb": result.memory_mb,
+        "api_calls": result.api_calls,
+        "tokens": result.tokens_used,
+        "cost": result.cost
+    }
+)
+
+# Check for performance issues
+alerts = AgentPerformance.get_performance_alerts(session=session, agent_id=agent.id)
+if alerts["total_alerts"] > 0:
+    for alert in alerts["alerts"][:3]:  # Show latest 3
+        if alert["severity"] == "critical":
+            # Take immediate action
+            notify_admin(alert)
+        else:
+            log_warning(alert)
+
+# Periodic trend analysis
+trend = AgentPerformance.get_performance_trend(
+    session=session,
+    agent_id=agent.id,
+    metric_type=MetricType.TASK_COMPLETION,
+    timeframe_hours=168
+)
+
+if trend["trend"] == "declining":
+    # Trigger investigation
+    schedule_performance_review(agent.id)
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (60% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (65% complete)
 
-Current Progress: Commit 52/100 - Agent Knowledge Sharing System Complete
+Current Progress: Commit 53/100 - Agent Performance Tracking System Complete
 
 ## Implementation Roadmap
 

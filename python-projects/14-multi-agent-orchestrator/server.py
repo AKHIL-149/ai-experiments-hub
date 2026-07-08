@@ -12,7 +12,7 @@ from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance
 
 
 @asynccontextmanager
@@ -91,6 +91,7 @@ app.include_router(agent_reputation.router, prefix="/api/reputation", tags=["Age
 app.include_router(agent_incentive.router, prefix="/api/incentives", tags=["Agent Incentives"])
 app.include_router(agent_learning.router, prefix="/api/learning", tags=["Agent Learning"])
 app.include_router(agent_knowledge.router, prefix="/api/knowledge", tags=["Agent Knowledge"])
+app.include_router(agent_performance.router, prefix="/api/performance", tags=["Agent Performance"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])
