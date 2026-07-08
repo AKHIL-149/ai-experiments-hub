@@ -11843,13 +11843,213 @@ suggestion = AgentNegotiation.suggest_compromise(
 )
 ```
 
+## Agent Reputation System
+
+The Agent Reputation System tracks agent reliability, performance, and trustworthiness through reputation scores, endorsements, feedback, and trust relationships to inform collaboration decisions.
+
+### Features
+
+- **6 Reputation Categories**: Task completion, collaboration, communication, reliability, expertise, responsiveness
+- **5 Trust Levels**: Untrusted (0-25), Low (26-50), Medium (51-75), High (76-90), Verified (91-100)
+- **Endorsement System**: Agents endorse peers in specific categories
+- **Feedback Mechanism**: Positive, neutral, and negative feedback
+- **Trust Relationships**: Directional trust scores between agents
+- **Reputation Decay**: Time-based decay toward neutral to prevent stale data
+
+### API Endpoints
+
+#### Initialize Reputation
+
+```bash
+curl -X POST http://localhost:8001/api/reputation/reputations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "initial_score": 50.0
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "reputation": {
+    "agent_id": 1,
+    "agent_name": "Agent-1",
+    "overall_score": 50.0,
+    "category_scores": {
+      "task_completion": 50.0,
+      "collaboration": 50.0,
+      "communication": 50.0,
+      "reliability": 50.0,
+      "expertise": 50.0,
+      "responsiveness": 50.0
+    },
+    "trust_level": "medium",
+    "total_endorsements": 0,
+    "total_feedback": 0
+  }
+}
+```
+
+#### Update Reputation Score
+
+```bash
+curl -X POST http://localhost:8001/api/reputation/reputations/1/update \
+  -H "Content-Type: application/json" \
+  -d '{
+    "category": "task_completion",
+    "score_delta": 5.0,
+    "reason": "Completed complex task ahead of schedule"
+  }'
+```
+
+#### Record Task Completion
+
+```bash
+# Successful task
+curl -X POST http://localhost:8001/api/reputation/reputations/1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "success": true,
+    "rating": 4.5
+  }'
+
+# Failed task
+curl -X POST http://localhost:8001/api/reputation/reputations/1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "success": false
+  }'
+```
+
+#### Add Endorsement
+
+```bash
+curl -X POST http://localhost:8001/api/reputation/reputations/1/endorsements \
+  -H "Content-Type: application/json" \
+  -d '{
+    "endorser_agent_id": 2,
+    "category": "expertise",
+    "comment": "Excellent knowledge in machine learning"
+  }'
+```
+
+#### Add Feedback
+
+```bash
+# Positive feedback
+curl -X POST http://localhost:8001/api/reputation/reputations/1/feedback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": 2,
+    "feedback_type": "positive",
+    "category": "collaboration",
+    "comment": "Great team player, very helpful"
+  }'
+```
+
+#### Establish Trust Relationship
+
+```bash
+curl -X POST http://localhost:8001/api/reputation/reputations/1/trust \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trusted_agent_id": 2,
+    "trust_score": 85.0,
+    "reason": "Successful collaboration on 5+ projects"
+  }'
+```
+
+#### Get Reputation
+
+```bash
+curl -X GET http://localhost:8001/api/reputation/reputations/1
+```
+
+#### Get Trust Relationships
+
+```bash
+curl -X GET http://localhost:8001/api/reputation/reputations/1/trust-relationships
+```
+
+#### Get Top Agents
+
+```bash
+# Overall top agents
+curl -X GET "http://localhost:8001/api/reputation/reputations/top?limit=10"
+
+# Top agents in specific category
+curl -X GET "http://localhost:8001/api/reputation/reputations/top?limit=5&category=expertise"
+```
+
+#### Get Reputation Statistics
+
+```bash
+curl -X GET http://localhost:8001/api/reputation/reputations/statistics
+```
+
+### Reputation Categories
+
+- **task_completion**: Ability to complete assigned tasks successfully
+- **collaboration**: Quality of collaboration with other agents
+- **communication**: Effectiveness of communication
+- **reliability**: Consistency and dependability
+- **expertise**: Domain knowledge and skill level
+- **responsiveness**: Speed and timeliness of responses
+
+### Trust Levels
+
+- **untrusted** (0-25): Untrusted agent, avoid collaboration
+- **low** (26-50): Low trust, caution required
+- **medium** (51-75): Medium trust, normal collaboration
+- **high** (76-90): High trust, preferred collaborator
+- **verified** (91-100): Verified trusted agent, ideal partner
+
+### Use Cases
+
+1. **Coalition Formation**: Select high-reputation agents for critical coalitions
+2. **Conflict Resolution**: Use reputation to weight agent priorities in conflicts
+3. **Task Assignment**: Assign tasks to agents with proven expertise
+4. **Negotiation**: Trust scores influence negotiation strategies
+5. **Performance Monitoring**: Track agent performance over time
+6. **Quality Assurance**: Identify and address underperforming agents
+
+### Integration
+
+```python
+from src.services.agent_reputation import AgentReputation, ReputationCategory
+
+# Initialize reputation
+reputation = AgentReputation.initialize_reputation(
+    session=session,
+    agent_id=1,
+    initial_score=50.0
+)
+
+# Record task completion
+reputation = AgentReputation.record_task_completion(
+    session=session,
+    agent_id=1,
+    success=True,
+    rating=4.5
+)
+
+# Get top agents for task
+top_agents = AgentReputation.get_top_agents(
+    session=session,
+    category=ReputationCategory.TASK_COMPLETION,
+    limit=5
+)
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (40% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (45% complete)
 
-Current Progress: Commit 48/100 - Agent Negotiation System Complete
+Current Progress: Commit 49/100 - Agent Reputation System Complete
 
 ## Implementation Roadmap
 
