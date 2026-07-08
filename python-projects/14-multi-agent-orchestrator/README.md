@@ -12043,13 +12043,312 @@ top_agents = AgentReputation.get_top_agents(
 )
 ```
 
+## Agent Incentive System
+
+The Agent Incentive System manages rewards, contributions, and economic incentives to encourage high-quality performance, collaboration, and system participation.
+
+### Features
+
+- **Reward Calculation**: Automatic calculation of task rewards with quality and speed bonuses
+- **Contribution Tracking**: Records all agent contributions for transparency
+- **Balance Management**: Agent balances with transfer capabilities
+- **Reward Pools**: Bulk distribution of rewards based on criteria
+- **Leaderboards**: Rankings by balance, contributions, or rewards
+- **Transaction History**: Complete audit trail of all economic activity
+
+### API Endpoints
+
+#### Initialize Agent
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/agents/initialize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "initial_balance": 100.0
+  }'
+```
+
+#### Record Contribution
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/agents/1/contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contribution_type": "task_completion",
+    "value": 10.0,
+    "description": "Completed data processing task",
+    "metadata": {"task_id": 123}
+  }'
+```
+
+#### Calculate Task Reward
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/agents/1/calculate-task-reward \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 123,
+    "completion_time_hours": 6.0,
+    "quality_score": 0.95,
+    "difficulty_multiplier": 1.5
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "calculation": {
+    "agent_id": 1,
+    "task_id": 123,
+    "base_reward": 15.0,
+    "quality_bonus": 3.375,
+    "speed_bonus": 1.875,
+    "total_reward": 20.25,
+    "breakdown": {
+      "difficulty_multiplier": 1.5,
+      "quality_score": 0.95,
+      "completion_time_hours": 6.0,
+      "expected_time_hours": 12.0
+    }
+  }
+}
+```
+
+#### Award Reward
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/agents/1/rewards \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reward_type": "performance_bonus",
+    "amount": 20.25,
+    "reason": "Excellent task performance",
+    "auto_approve": true
+  }'
+```
+
+#### Transfer Balance
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/agents/1/transfer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_agent_id": 2,
+    "amount": 10.0,
+    "reason": "Payment for assistance"
+  }'
+```
+
+#### Create Reward Pool
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/pools \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pool_name": "Q1 Performance Pool",
+    "total_amount": 1000.0,
+    "distribution_criteria": {
+      "metric": "task_completion",
+      "period": "Q1_2024"
+    },
+    "deadline_hours": 168
+  }'
+```
+
+#### Distribute from Pool
+
+```bash
+curl -X POST http://localhost:8001/api/incentives/pools/pool_1/distribute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_rewards": {
+      "1": 250.0,
+      "2": 200.0,
+      "3": 150.0,
+      "4": 100.0
+    }
+  }'
+```
+
+#### Get Agent Balance
+
+```bash
+curl -X GET http://localhost:8001/api/incentives/agents/1/balance
+```
+
+Response:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "current_balance": 320.25,
+  "total_rewards_received": 350.0,
+  "pending_rewards": 50.0,
+  "total_contributions": 15,
+  "total_contribution_value": 180.0
+}
+```
+
+#### Get Agent History
+
+```bash
+curl -X GET "http://localhost:8001/api/incentives/agents/1/history?limit=20"
+```
+
+#### Get Leaderboard
+
+```bash
+# By balance
+curl -X GET "http://localhost:8001/api/incentives/leaderboard?metric=balance&limit=10"
+
+# By contributions
+curl -X GET "http://localhost:8001/api/incentives/leaderboard?metric=contributions&limit=10"
+
+# By rewards
+curl -X GET "http://localhost:8001/api/incentives/leaderboard?metric=rewards&limit=10"
+```
+
+Response:
+```json
+{
+  "success": true,
+  "metric": "balance",
+  "total_agents": 20,
+  "leaderboard": [
+    {
+      "agent_id": 5,
+      "agent_name": "Agent-5",
+      "balance": 850.0,
+      "total_contributions": 45,
+      "total_rewards": 920.0
+    },
+    {
+      "agent_id": 2,
+      "agent_name": "Agent-2",
+      "balance": 720.0,
+      "total_contributions": 38,
+      "total_rewards": 780.0
+    }
+  ]
+}
+```
+
+#### Get System Statistics
+
+```bash
+curl -X GET http://localhost:8001/api/incentives/statistics
+```
+
+Response:
+```json
+{
+  "success": true,
+  "statistics": {
+    "total_agents": 20,
+    "total_system_balance": 8500.0,
+    "total_contributions": 450,
+    "total_rewards_distributed": 9200.0,
+    "total_rewards_pending": 300.0,
+    "total_transactions": 185,
+    "rewards_by_type": {
+      "base_reward": 4500.0,
+      "performance_bonus": 2800.0,
+      "quality_bonus": 1200.0,
+      "collaboration_bonus": 700.0
+    },
+    "active_reward_pools": 2,
+    "total_pool_value": 1500.0
+  }
+}
+```
+
+### Reward Calculation
+
+**Base Reward**: `10.0 × difficulty_multiplier`
+
+**Quality Bonus**: If quality_score > 0.8:
+- `base_reward × (quality_score - 0.8) × 1.5`
+
+**Speed Bonus**: If completed faster than expected:
+- `base_reward × time_saved_ratio × 0.5`
+
+**Example**: Difficulty 1.5, quality 0.95, 6 hours (expected 12)
+- Base: 15.0
+- Quality: 15.0 × (0.95 - 0.8) × 1.5 = 3.375
+- Speed: 15.0 × 0.5 × 0.5 = 3.75
+- **Total**: 22.125
+
+### Contribution Types
+
+- **task_completion**: Completed a task
+- **collaboration**: Collaborated with other agents
+- **endorsement_received**: Received endorsement from peer
+- **help_provided**: Helped another agent
+- **innovation**: Introduced innovation or improvement
+- **quality_work**: High-quality work delivered
+
+### Reward Types
+
+- **base_reward**: Standard task completion reward
+- **performance_bonus**: Bonus for exceptional performance
+- **quality_bonus**: Bonus for high-quality work
+- **collaboration_bonus**: Bonus for collaborative work
+- **streak_bonus**: Bonus for consistent performance
+- **milestone_reward**: Reward for reaching milestone
+
+### Use Cases
+
+1. **Task Completion**: Automatically reward agents for successful task completion
+2. **Quality Incentives**: Bonus rewards for high-quality work
+3. **Collaboration Rewards**: Incentivize teamwork and knowledge sharing
+4. **Competition Pools**: Distribute rewards based on performance rankings
+5. **Peer Payments**: Agents can pay each other for services
+6. **Performance Tracking**: Monitor economic activity and agent earnings
+
+### Integration
+
+```python
+from src.services.agent_incentive import AgentIncentive, RewardType
+
+# Initialize agent
+AgentIncentive.initialize_agent(session=session, agent_id=1)
+
+# Calculate task reward
+calculation = AgentIncentive.calculate_task_reward(
+    session=session,
+    agent_id=1,
+    task_id=123,
+    completion_time_hours=6.0,
+    quality_score=0.95,
+    difficulty_multiplier=1.5
+)
+
+# Award the calculated reward
+reward = AgentIncentive.award_reward(
+    session=session,
+    agent_id=1,
+    reward_type=RewardType.PERFORMANCE_BONUS,
+    amount=calculation["total_reward"],
+    reason="Task completion with bonuses"
+)
+
+# Get leaderboard
+leaderboard = AgentIncentive.get_leaderboard(
+    session=session,
+    metric="balance",
+    limit=10
+)
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (45% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (50% complete)
 
-Current Progress: Commit 49/100 - Agent Reputation System Complete
+Current Progress: Commit 50/100 - Agent Incentive System Complete (Block Phase 3 Milestone!)
 
 ## Implementation Roadmap
 
