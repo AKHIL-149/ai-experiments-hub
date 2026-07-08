@@ -12630,13 +12630,276 @@ recommendations = AgentLearning.get_recommendations(
 )
 ```
 
+## Agent Knowledge Sharing System
+
+The Agent Knowledge Sharing System enables collaborative learning through a shared knowledge base. Agents can share, discover, validate, and build upon each other's knowledge.
+
+### Key Features
+
+- **Knowledge Types**: Facts, procedures, best practices, solutions, patterns, warnings, and tips
+- **7 Categories**: Technical, process, domain, collaboration, strategy, tooling, and general knowledge
+- **Smart Querying**: Text search with relevance scoring based on confidence and ratings
+- **Validation System**: Peer validation with validated/disputed statuses (3+ validations = validated, 2+ disputes = disputed)
+- **Usage Tracking**: Monitor knowledge effectiveness through usage outcomes
+- **Access Levels**: Public, coalition, trusted, or private knowledge sharing
+- **Trending Knowledge**: Discover popular knowledge based on recent activity
+- **Subscriptions**: Subscribe to categories or tags for automatic updates
+
+### Knowledge Types
+
+1. **FACT** - Factual information
+2. **PROCEDURE** - Step-by-step procedures
+3. **BEST_PRACTICE** - Proven best practices
+4. **SOLUTION** - Problem solutions
+5. **PATTERN** - Recurring patterns
+6. **WARNING** - Warnings and pitfalls to avoid
+7. **TIP** - Helpful tips and tricks
+
+### Categories
+
+- **TECHNICAL** - Technical knowledge
+- **PROCESS** - Process and workflow knowledge
+- **DOMAIN** - Domain-specific knowledge
+- **COLLABORATION** - Collaboration knowledge
+- **STRATEGY** - Strategic knowledge
+- **TOOLING** - Tool usage knowledge
+- **GENERAL** - General knowledge
+
+### Validation Statuses
+
+- **UNVALIDATED** - Not yet validated (0 validations)
+- **PENDING** - Validation in progress (1-2 validations)
+- **VALIDATED** - Validated by peers (3+ validations)
+- **DISPUTED** - Disputed by peers (2+ disputes)
+- **DEPRECATED** - Marked as outdated
+
+### REST API Endpoints
+
+**Share Knowledge:**
+```bash
+POST /api/knowledge/share?agent_id=1
+{
+  "knowledge_type": "best_practice",
+  "category": "technical",
+  "title": "Python Error Handling Best Practices",
+  "content": {
+    "description": "Always use specific exception types",
+    "example": "try:\n    process()\nexcept ValueError as e:\n    handle(e)",
+    "benefits": ["Better debugging", "Clear intent"]
+  },
+  "tags": ["python", "error-handling"],
+  "confidence": 0.9
+}
+```
+
+**Query Knowledge Base:**
+```bash
+POST /api/knowledge/query?agent_id=1
+{
+  "query_text": "error handling python",
+  "categories": ["technical"],
+  "tags": ["python"],
+  "min_confidence": 0.7,
+  "validated_only": false,
+  "limit": 10
+}
+```
+
+**Rate Knowledge:**
+```bash
+POST /api/knowledge/items/knowledge_1/rate?agent_id=2
+{
+  "rating": 5,
+  "comment": "Very helpful, solved my problem!",
+  "helpful": true
+}
+```
+
+**Validate Knowledge:**
+```bash
+POST /api/knowledge/items/knowledge_1/validate?validator_agent_id=3
+{
+  "is_valid": true,
+  "validation_notes": "Verified this approach works in production",
+  "evidence": {
+    "tested_in": "production",
+    "success_rate": 0.98
+  }
+}
+```
+
+**Record Usage:**
+```bash
+POST /api/knowledge/items/knowledge_1/usage?agent_id=2
+{
+  "usage_context": {
+    "task_type": "debugging",
+    "problem": "unhandled exceptions"
+  },
+  "was_useful": true,
+  "outcome": "Successfully fixed the bug"
+}
+```
+
+**Update Knowledge:**
+```bash
+PUT /api/knowledge/items/knowledge_1?agent_id=1
+{
+  "updates": {
+    "content": {
+      "description": "Updated best practice...",
+      "example": "..."
+    },
+    "confidence": 0.95
+  },
+  "update_reason": "Added more comprehensive examples"
+}
+```
+
+**Subscribe to Updates:**
+```bash
+POST /api/knowledge/subscribe?agent_id=1
+{
+  "category": "technical",
+  "tags": ["python", "best-practices"]
+}
+```
+
+**Get Trending Knowledge:**
+```bash
+GET /api/knowledge/trending?timeframe_hours=24&limit=10
+```
+
+**Get Agent's Knowledge Activity:**
+```bash
+GET /api/knowledge/agents/1?include_shared=true&include_accessed=true
+```
+
+**Get System Statistics:**
+```bash
+GET /api/knowledge/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Share Best Practice**
+```python
+from src.services.agent_knowledge import AgentKnowledge, KnowledgeType, KnowledgeCategory
+
+# Agent discovers effective approach
+knowledge = AgentKnowledge.share_knowledge(
+    session=session,
+    agent_id=1,
+    knowledge_type=KnowledgeType.BEST_PRACTICE,
+    category=KnowledgeCategory.TECHNICAL,
+    title="Efficient Data Processing Pattern",
+    content={
+        "pattern": "Use generator expressions for large datasets",
+        "code": "data = (process(item) for item in large_list)",
+        "benefits": ["Lower memory usage", "Faster iteration"]
+    },
+    tags=["python", "performance"],
+    confidence=0.85
+)
+```
+
+**Scenario 2: Query and Apply Knowledge**
+```python
+# Agent searches for solution
+results = AgentKnowledge.query_knowledge(
+    session=session,
+    agent_id=2,
+    query_text="data processing performance",
+    categories=[KnowledgeCategory.TECHNICAL],
+    min_confidence=0.7,
+    validated_only=True
+)
+
+# Apply knowledge
+best_result = results["results"][0]
+AgentKnowledge.record_usage(
+    session=session,
+    item_id=best_result["id"],
+    agent_id=2,
+    usage_context={"task": "process_large_dataset"},
+    was_useful=True,
+    outcome="Reduced memory by 60%"
+)
+```
+
+**Scenario 3: Validate Knowledge**
+```python
+# Multiple agents validate
+AgentKnowledge.validate_knowledge(
+    session=session,
+    item_id="knowledge_1",
+    validator_agent_id=3,
+    is_valid=True,
+    validation_notes="Tested with 1M records, works perfectly"
+)
+
+# After 3 validations, status becomes VALIDATED
+item = AgentKnowledge.get_knowledge_item(session, "knowledge_1")
+assert item["validation_status"] == "validated"
+```
+
+**Scenario 4: Track Effectiveness**
+```python
+# Get knowledge item with metrics
+item = AgentKnowledge.get_knowledge_item(session, "knowledge_1")
+
+print(f"Average Rating: {item['average_rating']}/5")
+print(f"Usage Count: {item['usage_count']}")
+print(f"Effectiveness: {item['effectiveness']*100}%")
+print(f"Validation Status: {item['validation_status']}")
+```
+
+### Integration Example
+
+```python
+from src.services.agent_knowledge import AgentKnowledge, KnowledgeType
+
+# Share knowledge after successful task
+knowledge = AgentKnowledge.share_knowledge(
+    session=session,
+    agent_id=1,
+    knowledge_type=KnowledgeType.SOLUTION,
+    category="technical",
+    title="API Rate Limiting Solution",
+    content={
+        "problem": "API rate limit errors",
+        "solution": "Implement exponential backoff",
+        "code": "retry with delay = 2^attempt"
+    },
+    tags=["api", "rate-limiting"]
+)
+
+# Query before starting similar task
+results = AgentKnowledge.query_knowledge(
+    session=session,
+    agent_id=2,
+    query_text="API rate limiting",
+    min_confidence=0.7
+)
+
+# Rate helpful knowledge
+if results["results"]:
+    AgentKnowledge.rate_knowledge(
+        session=session,
+        item_id=results["results"][0]["id"],
+        agent_id=2,
+        rating=5,
+        helpful=True
+    )
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (55% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (60% complete)
 
-Current Progress: Commit 51/100 - Agent Learning System Complete
+Current Progress: Commit 52/100 - Agent Knowledge Sharing System Complete
 
 ## Implementation Roadmap
 
