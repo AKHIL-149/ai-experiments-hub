@@ -11549,13 +11549,307 @@ Interactive API documentation is available at:
 - **Swagger UI**: http://localhost:8001/docs
 - **ReDoc**: http://localhost:8001/redoc
 
+## Agent Negotiation System
+
+The Agent Negotiation System enables agents to negotiate agreements through structured offer-counteroffer exchanges using various negotiation strategies and protocols.
+
+### Features
+
+- **6 Negotiation Types**: Resource allocation, task assignment, collaboration terms, priority adjustment, deadline extension, cost sharing
+- **5 Negotiation Strategies**: Competitive, cooperative, compromise, accommodating, avoiding
+- **Multi-Round Protocol**: Structured offer-counteroffer mechanism with round tracking
+- **Compromise Suggestions**: AI-powered middle-ground proposals
+- **Deadline Management**: Configurable deadlines with extension capability
+- **Withdrawal Mechanism**: Either party can withdraw with reason tracking
+
+### API Endpoints
+
+#### Initiate Negotiation
+
+```bash
+curl -X POST http://localhost:8001/api/negotiations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "initiator_agent_id": 1,
+    "respondent_agent_id": 2,
+    "negotiation_type": "resource_allocation",
+    "subject": "GPU allocation for training",
+    "initial_proposal": {
+      "gpu_count": 4,
+      "duration_hours": 8,
+      "priority": "high"
+    },
+    "strategy": "cooperative",
+    "deadline_hours": 24
+  }'
+```
+
+#### Respond to Offer (Accept)
+
+```bash
+curl -X POST http://localhost:8001/api/negotiations/1/offers/1/respond \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 2,
+    "response": "accept",
+    "reasoning": "Resource requirements align with our availability"
+  }'
+```
+
+#### Respond to Offer (Counter-Offer)
+
+```bash
+curl -X POST http://localhost:8001/api/negotiations/1/offers/1/respond \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 2,
+    "response": "counter",
+    "counter_proposal": {
+      "gpu_count": 3,
+      "duration_hours": 8,
+      "priority": "medium"
+    },
+    "reasoning": "Can provide 3 GPUs for the same duration"
+  }'
+```
+
+#### Respond to Offer (Reject)
+
+```bash
+curl -X POST http://localhost:8001/api/negotiations/1/offers/1/respond \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 2,
+    "response": "reject",
+    "reasoning": "Insufficient resources available"
+  }'
+```
+
+#### Suggest Compromise
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/1/compromise
+```
+
+Response:
+```json
+{
+  "success": true,
+  "negotiation_id": 1,
+  "compromise_proposal": {
+    "gpu_count": 3.5,
+    "duration_hours": 8,
+    "priority": "medium"
+  },
+  "based_on": {
+    "initiator_latest": {"gpu_count": 4, "duration_hours": 8, "priority": "high"},
+    "respondent_latest": {"gpu_count": 3, "duration_hours": 8, "priority": "medium"}
+  }
+}
+```
+
+#### Withdraw from Negotiation
+
+```bash
+curl -X POST http://localhost:8001/api/negotiations/1/withdraw \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "reason": "Requirements changed, no longer need this resource"
+  }'
+```
+
+#### Extend Deadline
+
+```bash
+curl -X POST http://localhost:8001/api/negotiations/1/extend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "additional_hours": 12
+  }'
+```
+
+#### Get Negotiation Details
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/1
+```
+
+Response:
+```json
+{
+  "success": true,
+  "negotiation": {
+    "negotiation_id": 1,
+    "initiator_agent_id": 1,
+    "initiator_name": "Agent-1",
+    "respondent_agent_id": 2,
+    "respondent_name": "Agent-2",
+    "negotiation_type": "resource_allocation",
+    "subject": "GPU allocation for training",
+    "strategy": "cooperative",
+    "status": "agreement_reached",
+    "round_count": 3,
+    "final_agreement": {"gpu_count": 3, "duration_hours": 8, "priority": "medium"},
+    "offers": [...],
+    "total_offers": 3
+  }
+}
+```
+
+#### List Negotiations
+
+```bash
+# All negotiations
+curl -X GET http://localhost:8001/api/negotiations
+
+# Filter by status
+curl -X GET "http://localhost:8001/api/negotiations?status=in_progress"
+
+# Filter by agent
+curl -X GET "http://localhost:8001/api/negotiations?agent_id=1"
+
+# Filter by type
+curl -X GET "http://localhost:8001/api/negotiations?negotiation_type=resource_allocation"
+```
+
+#### Get Agent's Negotiations
+
+```bash
+curl -X GET http://localhost:8001/api/agents/1/negotiations
+```
+
+#### Get Negotiation Statistics
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/statistics
+```
+
+Response:
+```json
+{
+  "success": true,
+  "statistics": {
+    "total_negotiations": 25,
+    "by_status": {
+      "agreement_reached": 15,
+      "in_progress": 5,
+      "rejected": 3,
+      "withdrawn": 2
+    },
+    "by_type": {
+      "resource_allocation": 10,
+      "task_assignment": 8,
+      "collaboration_terms": 4,
+      "priority_adjustment": 3
+    },
+    "success_rate_percent": 60.0,
+    "avg_rounds_to_agreement": 2.5,
+    "total_offers": 75,
+    "active_negotiations": 5
+  }
+}
+```
+
+#### Get Specific Offer Details
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/1/offers/2
+```
+
+#### List Negotiation Types
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/types
+```
+
+#### List Negotiation Strategies
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/strategies
+```
+
+#### List Negotiation Statuses
+
+```bash
+curl -X GET http://localhost:8001/api/negotiations/statuses
+```
+
+### Negotiation Types
+
+- **resource_allocation**: Negotiate distribution of resources (GPUs, memory, compute)
+- **task_assignment**: Negotiate task responsibility and ownership
+- **collaboration_terms**: Negotiate collaboration conditions and agreements
+- **priority_adjustment**: Negotiate changes to task or agent priorities
+- **deadline_extension**: Negotiate extensions to task deadlines
+- **cost_sharing**: Negotiate distribution of costs and expenses
+
+### Negotiation Strategies
+
+- **competitive**: Win-lose approach, maximize own benefit
+- **cooperative**: Win-win approach, maximize joint benefit
+- **compromise**: Meet in the middle, balanced approach
+- **accommodating**: Yield to other party's interests
+- **avoiding**: Withdraw from negotiation
+
+### Negotiation Statuses
+
+- **open**: Negotiation initiated, awaiting first response
+- **in_progress**: Active negotiation with ongoing offers
+- **agreement_reached**: Successful agreement reached
+- **rejected**: Negotiation rejected by respondent
+- **expired**: Negotiation deadline passed without agreement
+- **withdrawn**: One party withdrew from negotiation
+
+### Use Cases
+
+1. **Resource Contention**: Agents negotiate GPU allocation when multiple need compute
+2. **Task Distribution**: Agents negotiate task assignments based on expertise
+3. **Priority Conflicts**: Agents negotiate priority changes when schedules conflict
+4. **Collaboration Terms**: Agents negotiate partnership conditions for complex tasks
+5. **Deadline Adjustments**: Agents negotiate deadline extensions when needed
+6. **Cost Optimization**: Agents negotiate cost sharing for shared infrastructure
+
+### Integration
+
+```python
+from src.services.agent_negotiation import AgentNegotiation, NegotiationType, NegotiationStrategy
+
+# Initiate negotiation
+negotiation = AgentNegotiation.initiate_negotiation(
+    session=session,
+    initiator_agent_id=1,
+    respondent_agent_id=2,
+    negotiation_type=NegotiationType.RESOURCE_ALLOCATION,
+    subject="GPU allocation",
+    initial_proposal={"gpu_count": 4},
+    strategy=NegotiationStrategy.COOPERATIVE
+)
+
+# Respond with counter-offer
+negotiation = AgentNegotiation.respond_to_offer(
+    session=session,
+    negotiation_id=negotiation["negotiation_id"],
+    offer_id=1,
+    agent_id=2,
+    response="counter",
+    counter_proposal={"gpu_count": 3}
+)
+
+# Get compromise suggestion
+suggestion = AgentNegotiation.suggest_compromise(
+    session=session,
+    negotiation_id=negotiation["negotiation_id"]
+)
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (35% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (40% complete)
 
-Current Progress: Commit 47/100 - Agent Coalition Formation System Complete
+Current Progress: Commit 48/100 - Agent Negotiation System Complete
 
 ## Implementation Roadmap
 
