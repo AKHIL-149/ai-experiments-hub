@@ -10853,6 +10853,353 @@ curl http://localhost:8001/api/conflict-resolution/strategies
 - **Shared Memory** - Resolves state inconsistencies
 - **Analytics** - Tracks conflict patterns
 
+## Agent Consensus System
+
+The Agent Consensus System enables multiple agents to reach agreement on decisions through democratic voting, weighted voting, quorum-based decisions, and various consensus mechanisms.
+
+### Consensus Mechanisms
+
+The system supports 7 consensus types:
+
+| Type | Threshold | Description | Best For |
+|------|-----------|-------------|----------|
+| **simple_majority** | >50% | More than half must agree | General decisions |
+| **supermajority** | >66% | Two-thirds must agree | Important decisions |
+| **unanimous** | 100% | All agents must agree | Critical decisions |
+| **weighted_voting** | Varies | Votes weighted by agent priority | Hierarchical teams |
+| **quorum_based** | Configurable | Minimum participation required | Large groups |
+| **ranked_choice** | Majority | Agents rank options, instant runoff | Multiple options |
+| **veto_based** | No vetoes | Any agent can veto | High-stakes decisions |
+
+### Proposal Lifecycle
+
+Proposals progress through these statuses:
+
+| Status | Description |
+|--------|-------------|
+| **voting** | Active voting period |
+| **passed** | Consensus reached, proposal approved |
+| **rejected** | Consensus failed or quorum not met |
+| **vetoed** | Agent exercised veto power |
+| **expired** | Voting deadline passed |
+
+### Key Features
+
+**Democratic Voting**
+- Multi-option proposals
+- Ranked choice voting
+- Abstention support
+- Vote reasoning and transparency
+
+**Flexible Mechanisms**
+- 7 consensus types
+- Configurable quorum thresholds
+- Vote weighting by agent priority
+- Veto power for critical decisions
+
+**Deadline Management**
+- Configurable voting deadlines
+- Deadline extension capability
+- Automatic expiration handling
+
+**Comprehensive Tracking**
+- Vote history per agent
+- Participation rate tracking
+- Pass rate statistics
+- Consensus type effectiveness
+
+### Example Usage
+
+**1. Create a simple majority proposal:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Select Database Technology",
+    "description": "Choose database for new microservice",
+    "options": ["PostgreSQL", "MongoDB", "MySQL"],
+    "consensus_type": "simple_majority",
+    "eligible_agents": [10, 15, 22, 28, 31],
+    "proposer_agent_id": 10,
+    "voting_deadline_minutes": 120
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "proposal": {
+    "proposal_id": 1,
+    "title": "Select Database Technology",
+    "options": ["PostgreSQL", "MongoDB", "MySQL"],
+    "consensus_type": "simple_majority",
+    "eligible_agents": [10, 15, 22, 28, 31],
+    "status": "voting",
+    "voting_deadline": "2024-01-15T12:30:00Z",
+    "vote_counts": {
+      "PostgreSQL": 0,
+      "MongoDB": 0,
+      "MySQL": 0
+    }
+  },
+  "message": "Proposal created with 5 eligible voters"
+}
+```
+
+**2. Cast a vote:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals/1/vote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 15,
+    "vote": "yes",
+    "option": "PostgreSQL",
+    "reasoning": "Best ACID compliance and JSON support"
+  }'
+```
+
+**3. Create weighted voting proposal:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Approve Architecture Change",
+    "description": "Move to microservices architecture",
+    "options": ["Approve", "Reject", "Needs More Study"],
+    "consensus_type": "weighted_voting",
+    "eligible_agents": [10, 15, 22],
+    "voting_deadline_minutes": 60
+  }'
+```
+
+**4. Cast weighted vote:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals/2/vote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 10,
+    "vote": "yes",
+    "option": "Approve",
+    "weight": 2.5,
+    "reasoning": "Senior architect approval"
+  }'
+```
+
+**5. Create ranked choice proposal:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Select Deployment Strategy",
+    "description": "Choose deployment approach",
+    "options": ["Blue-Green", "Canary", "Rolling Update", "Recreate"],
+    "consensus_type": "ranked_choice",
+    "eligible_agents": [10, 15, 22, 28],
+    "voting_deadline_minutes": 90
+  }'
+```
+
+**6. Cast ranked choice vote:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals/3/vote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 15,
+    "vote": "yes",
+    "ranked_options": ["Canary", "Blue-Green", "Rolling Update", "Recreate"],
+    "reasoning": "Canary provides best risk mitigation"
+  }'
+```
+
+**7. Finalize proposal:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals/1/finalize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "quorum_threshold": 0.6
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "proposal": {
+    "proposal_id": 1,
+    "status": "passed",
+    "winning_option": "PostgreSQL",
+    "participation_count": 4,
+    "vote_breakdown": {
+      "PostgreSQL": 3,
+      "MongoDB": 1,
+      "MySQL": 0
+    },
+    "finalized_at": "2024-01-15T11:45:00Z"
+  },
+  "message": "Proposal passed: PostgreSQL"
+}
+```
+
+**8. Get proposal details:**
+
+```bash
+curl http://localhost:8001/api/consensus/proposals/1
+```
+
+Response includes all votes:
+```json
+{
+  "success": true,
+  "proposal": {
+    "proposal_id": 1,
+    "title": "Select Database Technology",
+    "status": "passed",
+    "total_votes": 4,
+    "votes": [
+      {
+        "agent_id": 15,
+        "agent_name": "DatabaseExpert-1",
+        "vote": "yes",
+        "option": "PostgreSQL",
+        "reasoning": "Best ACID compliance and JSON support",
+        "voted_at": "2024-01-15T10:35:00Z"
+      }
+    ]
+  }
+}
+```
+
+**9. Get agent voting history:**
+
+```bash
+curl http://localhost:8001/api/consensus/agents/15/votes
+```
+
+**10. Get consensus statistics:**
+
+```bash
+curl http://localhost:8001/api/consensus/statistics
+```
+
+Response:
+```json
+{
+  "success": true,
+  "statistics": {
+    "total_proposals": 25,
+    "by_status": {
+      "passed": 18,
+      "rejected": 5,
+      "voting": 2
+    },
+    "by_consensus_type": {
+      "simple_majority": 15,
+      "supermajority": 6,
+      "weighted_voting": 4
+    },
+    "pass_rate_percent": 72.0,
+    "avg_participation_rate": 0.85,
+    "total_votes_cast": 142,
+    "active_proposals": 2
+  }
+}
+```
+
+**11. Extend voting deadline:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals/2/extend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "additional_minutes": 30
+  }'
+```
+
+**12. Cancel a proposal:**
+
+```bash
+curl -X POST http://localhost:8001/api/consensus/proposals/3/cancel \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Requirements changed, new proposal needed"
+  }'
+```
+
+**13. List all consensus types:**
+
+```bash
+curl http://localhost:8001/api/consensus/consensus-types
+```
+
+**14. List all vote types:**
+
+```bash
+curl http://localhost:8001/api/consensus/vote-types
+```
+
+### Consensus Workflow
+
+1. **Create Proposal** - Define options, consensus type, eligible voters
+2. **Cast Votes** - Eligible agents vote with optional reasoning
+3. **Monitor Progress** - Track participation and vote counts
+4. **Finalize** - Apply consensus mechanism and determine outcome
+5. **Act on Result** - Implement winning option or handle rejection
+
+### Choosing the Right Consensus Type
+
+**Simple Majority** - Best for:
+- Routine decisions
+- Quick consensus needed
+- Clear binary choices
+- 3-10 agents
+
+**Supermajority** - Best for:
+- Important but not critical decisions
+- Policy changes
+- Medium-risk decisions
+- Need strong support
+
+**Unanimous** - Best for:
+- Critical decisions
+- Small groups (2-5 agents)
+- High-risk changes
+- Team commitment essential
+
+**Weighted Voting** - Best for:
+- Hierarchical teams
+- Expert opinions matter more
+- Varying stake in outcome
+- Experience-based decisions
+
+**Ranked Choice** - Best for:
+- Multiple good options
+- Avoid vote splitting
+- Fair representation
+- 3+ options
+
+**Veto-Based** - Best for:
+- Safety-critical decisions
+- Compliance requirements
+- Any agent can block
+- Risk mitigation paramount
+
+### Integration with Other Systems
+
+**Works with:**
+- **Conflict Resolution** - Escalate conflicts to voting
+- **Agent Collaboration** - Team decision making
+- **Task Decomposition** - Decide decomposition strategy
+- **Workflow Engine** - Approve workflow changes
+- **Analytics** - Track decision patterns
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -10863,9 +11210,9 @@ Interactive API documentation is available at:
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (25% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (30% complete)
 
-Current Progress: Commit 45/100 - Agent Conflict Resolution System Complete
+Current Progress: Commit 46/100 - Agent Consensus System Complete
 
 ## Implementation Roadmap
 
