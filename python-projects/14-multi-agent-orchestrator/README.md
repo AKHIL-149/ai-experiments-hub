@@ -13529,13 +13529,401 @@ AgentRole.record_role_performance(
 )
 ```
 
+## Agent Workflow Templates System
+
+The Agent Workflow Templates System provides reusable workflow patterns for common multi-agent scenarios. Create, instantiate, compose, and version workflow templates.
+
+### Key Features
+
+- **8 Template Categories**: Sequential, parallel, hierarchical, iterative, conditional, map-reduce, pipeline, broadcast
+- **Template Library**: Reusable patterns for common multi-agent workflows
+- **Parameter Binding**: Parameterized templates for flexible instantiation
+- **Role Assignments**: Map workflow roles to specific agents
+- **Template Composition**: Combine templates sequentially or in parallel
+- **Version Management**: Track template versions and deprecate old ones
+- **Validation**: Automatic validation of template structure and dependencies
+- **Usage Tracking**: Monitor template usage and popularity
+- **Instant Workflow Creation**: Instantiate complex workflows from templates in seconds
+
+### Template Categories
+
+- **SEQUENTIAL** - Steps execute one after another
+- **PARALLEL** - Steps execute simultaneously
+- **HIERARCHICAL** - Hierarchical task decomposition
+- **ITERATIVE** - Loop-based execution patterns
+- **CONDITIONAL** - Branching based on conditions
+- **MAP_REDUCE** - Distribute work, then aggregate results
+- **PIPELINE** - Data processing pipeline
+- **BROADCAST** - Send to multiple agents simultaneously
+
+### Template Statuses
+
+- **DRAFT** - Under development
+- **ACTIVE** - Available for use
+- **DEPRECATED** - Superseded by newer version
+- **ARCHIVED** - No longer available
+
+### REST API Endpoints
+
+**Create Template:**
+```bash
+POST /api/workflow-templates/templates
+{
+  "template_name": "Code Review Workflow",
+  "category": "sequential",
+  "description": "Standard code review process",
+  "steps": [
+    {
+      "id": "analyze",
+      "type": "task",
+      "description": "Analyze code quality",
+      "assigned_agent": "@{reviewer}"
+    },
+    {
+      "id": "suggest",
+      "type": "task",
+      "description": "Suggest improvements",
+      "assigned_agent": "@{reviewer}"
+    },
+    {
+      "id": "validate",
+      "type": "task",
+      "description": "Validate changes",
+      "assigned_agent": "@{validator}"
+    }
+  ],
+  "required_roles": ["reviewer", "validator"],
+  "parameters": [
+    {
+      "name": "language",
+      "type": "string",
+      "required": true,
+      "description": "Programming language"
+    },
+    {
+      "name": "severity_threshold",
+      "type": "number",
+      "default": 0.7,
+      "description": "Minimum severity for issues"
+    }
+  ],
+  "version": "1.0.0"
+}
+```
+
+**Instantiate Template:**
+```bash
+POST /api/workflow-templates/templates/template_1/instantiate
+{
+  "instance_name": "Review PR #123",
+  "parameter_bindings": {
+    "language": "python",
+    "severity_threshold": 0.8
+  },
+  "agent_assignments": {
+    "reviewer": 5,
+    "validator": 8
+  }
+}
+```
+
+**Compose Templates:**
+```bash
+POST /api/workflow-templates/templates/compose
+{
+  "composition_name": "Full CI/CD Pipeline",
+  "templates": [
+    {"template_id": "template_1"},
+    {"template_id": "template_2"},
+    {"template_id": "template_3"}
+  ],
+  "composition_strategy": "sequential"
+}
+```
+
+**Update Template:**
+```bash
+PUT /api/workflow-templates/templates/template_1
+{
+  "updates": {
+    "description": "Updated code review process with security scan",
+    "steps": [...]
+  },
+  "create_new_version": true
+}
+```
+
+**Validate Template:**
+```bash
+POST /api/workflow-templates/templates/template_1/validate
+```
+
+**Get Template:**
+```bash
+GET /api/workflow-templates/templates/template_1
+```
+
+**List Templates:**
+```bash
+GET /api/workflow-templates/templates?category=sequential&status=active&search=review
+```
+
+**Get Template Versions:**
+```bash
+GET /api/workflow-templates/templates/name/Code%20Review%20Workflow/versions
+```
+
+**Get Popular Templates:**
+```bash
+GET /api/workflow-templates/templates/popular?limit=10
+```
+
+**Get Statistics:**
+```bash
+GET /api/workflow-templates/templates/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Create and Use Template**
+```python
+from src.services.workflow_template import WorkflowTemplate, TemplateCategory
+
+# Create a code review template
+template = WorkflowTemplate.create_template(
+    session=session,
+    template_name="Code Review Workflow",
+    category=TemplateCategory.SEQUENTIAL,
+    description="Standard code review process",
+    steps=[
+        {
+            "id": "analyze",
+            "type": "task",
+            "description": "Analyze code quality",
+            "assigned_agent": "@{reviewer}"
+        },
+        {
+            "id": "suggest",
+            "type": "task",
+            "description": "Suggest improvements",
+            "assigned_agent": "@{reviewer}"
+        }
+    ],
+    required_roles=["reviewer"],
+    parameters=[
+        {
+            "name": "language",
+            "type": "string",
+            "required": True
+        }
+    ]
+)
+
+# Instantiate for specific PR
+instance = WorkflowTemplate.instantiate_template(
+    session=session,
+    template_id=template["id"],
+    instance_name="Review PR #123",
+    parameter_bindings={"language": "python"},
+    agent_assignments={"reviewer": 5}
+)
+
+print(f"Created workflow: {instance['instance_name']}")
+```
+
+**Scenario 2: Compose Templates**
+```python
+# Create simple templates
+analyze_template = WorkflowTemplate.create_template(
+    session=session,
+    template_name="Static Analysis",
+    category=TemplateCategory.SEQUENTIAL,
+    description="Run static analysis",
+    steps=[{"id": "analyze", "type": "task"}],
+    required_roles=["analyzer"]
+)
+
+test_template = WorkflowTemplate.create_template(
+    session=session,
+    template_name="Run Tests",
+    category=TemplateCategory.PARALLEL,
+    description="Execute test suite",
+    steps=[{"id": "test", "type": "task"}],
+    required_roles=["tester"]
+)
+
+# Compose into CI pipeline
+ci_pipeline = WorkflowTemplate.compose_templates(
+    session=session,
+    composition_name="CI Pipeline",
+    templates=[
+        {"template_id": analyze_template["id"]},
+        {"template_id": test_template["id"]}
+    ],
+    composition_strategy="sequential"
+)
+
+print(f"Created pipeline: {ci_pipeline['template_name']}")
+```
+
+**Scenario 3: Version Management**
+```python
+# Update template with new version
+updated = WorkflowTemplate.update_template(
+    session=session,
+    template_id="template_1",
+    updates={
+        "description": "Enhanced with security scanning",
+        "steps": [...]  # Updated steps
+    },
+    create_new_version=True  # Creates v1.1.0, deprecates v1.0.0
+)
+
+# Get all versions
+versions = WorkflowTemplate.get_template_versions(
+    session=session,
+    template_name="Code Review Workflow"
+)
+
+print(f"Latest version: {versions['latest_version']['version']}")
+print(f"Total versions: {versions['total_versions']}")
+```
+
+**Scenario 4: Validate Before Use**
+```python
+# Validate template structure
+validation = WorkflowTemplate.validate_template(
+    session=session,
+    template_id="template_1"
+)
+
+if validation["is_valid"]:
+    print("✅ Template is valid")
+else:
+    print("❌ Validation errors:")
+    for error in validation["errors"]:
+        print(f"  - {error}")
+
+if validation["warnings"]:
+    print("⚠️  Warnings:")
+    for warning in validation["warnings"]:
+        print(f"  - {warning}")
+```
+
+**Scenario 5: Template Library Usage**
+```python
+# Find popular templates
+popular = WorkflowTemplate.get_popular_templates(
+    session=session,
+    limit=5
+)
+
+print("Most Popular Templates:")
+for template in popular["popular_templates"]:
+    print(f"  {template['template_name']}: {template['usage_count']} uses")
+
+# Search for specific type
+results = WorkflowTemplate.list_templates(
+    session=session,
+    category=TemplateCategory.PARALLEL,
+    status="active",
+    search="test"
+)
+
+print(f"\nFound {results['total']} parallel testing templates")
+```
+
+### Integration Example
+
+```python
+from src.services.workflow_template import WorkflowTemplate, TemplateCategory
+
+# Define template library
+templates = {
+    "data_pipeline": WorkflowTemplate.create_template(
+        session=session,
+        template_name="Data Pipeline",
+        category=TemplateCategory.PIPELINE,
+        description="ETL data pipeline",
+        steps=[
+            {"id": "extract", "type": "task", "assigned_agent": "@{extractor}"},
+            {"id": "transform", "type": "task", "assigned_agent": "@{transformer}"},
+            {"id": "load", "type": "task", "assigned_agent": "@{loader}"}
+        ],
+        required_roles=["extractor", "transformer", "loader"],
+        parameters=[
+            {"name": "source", "type": "string", "required": True},
+            {"name": "destination", "type": "string", "required": True}
+        ]
+    ),
+
+    "parallel_processing": WorkflowTemplate.create_template(
+        session=session,
+        template_name="Parallel Processing",
+        category=TemplateCategory.MAP_REDUCE,
+        description="Process items in parallel",
+        steps=[
+            {"id": "map", "type": "parallel", "assigned_agent": "@{worker}"},
+            {"id": "reduce", "type": "task", "assigned_agent": "@{aggregator}"}
+        ],
+        required_roles=["worker", "aggregator"],
+        parameters=[
+            {"name": "batch_size", "type": "number", "default": 10}
+        ]
+    )
+}
+
+# User requests workflow
+def create_workflow_from_template(template_name, params, agents):
+    # Find template
+    templates_list = WorkflowTemplate.list_templates(
+        session=session,
+        search=template_name,
+        status="active"
+    )
+
+    if not templates_list["templates"]:
+        raise ValueError(f"Template '{template_name}' not found")
+
+    template = templates_list["templates"][0]
+
+    # Validate before use
+    validation = WorkflowTemplate.validate_template(
+        session=session,
+        template_id=template["id"]
+    )
+
+    if not validation["is_valid"]:
+        raise ValueError(f"Template validation failed: {validation['errors']}")
+
+    # Instantiate
+    instance = WorkflowTemplate.instantiate_template(
+        session=session,
+        template_id=template["id"],
+        instance_name=f"{template_name}_instance_{datetime.utcnow().timestamp()}",
+        parameter_bindings=params,
+        agent_assignments=agents
+    )
+
+    return instance
+
+# Usage
+workflow = create_workflow_from_template(
+    template_name="Data Pipeline",
+    params={"source": "s3://data", "destination": "postgres://db"},
+    agents={"extractor": 1, "transformer": 2, "loader": 3}
+)
+
+print(f"Created workflow with {len(workflow['steps'])} steps")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (70% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (75% complete)
 
-Current Progress: Commit 54/100 - Agent Role Management System Complete
+Current Progress: Commit 55/100 - Agent Workflow Templates System Complete
 
 ## Implementation Roadmap
 
