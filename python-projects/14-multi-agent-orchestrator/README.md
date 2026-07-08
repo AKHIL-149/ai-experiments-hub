@@ -13917,13 +13917,318 @@ workflow = create_workflow_from_template(
 print(f"Created workflow with {len(workflow['steps'])} steps")
 ```
 
+## Agent Discovery System
+
+The Agent Discovery System enables agents to register, find each other based on capabilities, and form dynamic service networks. Provides capability-based matchmaking and service directory functionality.
+
+### Key Features
+
+- **Agent Registration**: Register agents with capabilities, categories, and metadata
+- **Capability-Based Discovery**: Find agents by required capabilities
+- **Service Directory**: Register and discover services provided by agents
+- **Status Management**: Track agent availability (available, busy, unavailable, maintenance)
+- **Heartbeat Monitoring**: Automatic health checks via heartbeat protocol
+- **8 Capability Categories**: Computation, storage, communication, analysis, generation, transformation, validation, orchestration
+- **Dynamic Capabilities**: Add/remove capabilities at runtime
+- **Relevance Ranking**: Match results ranked by relevance score
+- **Multi-Index Search**: Search by capabilities, categories, tags simultaneously
+
+### Discovery Statuses
+
+- **AVAILABLE** - Agent is ready for tasks
+- **BUSY** - Agent is currently processing tasks
+- **UNAVAILABLE** - Agent is offline or unreachable
+- **MAINTENANCE** - Agent is under maintenance
+
+### Capability Categories
+
+- **COMPUTATION** - Computational capabilities (processing, calculation)
+- **STORAGE** - Data storage and retrieval
+- **COMMUNICATION** - Inter-agent communication
+- **ANALYSIS** - Data analysis and insights
+- **GENERATION** - Content and code generation
+- **TRANSFORMATION** - Data transformation and conversion
+- **VALIDATION** - Validation and verification
+- **ORCHESTRATION** - Coordination and orchestration
+
+### REST API Endpoints
+
+**Register Agent:**
+```bash
+POST /api/discovery/register?agent_id=5
+{
+  "agent_name": "Data Processor Agent",
+  "capabilities": ["data_processing", "etl", "transformation"],
+  "categories": ["transformation", "storage"],
+  "tags": ["fast", "reliable", "python"],
+  "endpoint": "http://agent5.example.com:8080",
+  "metadata": {
+    "version": "2.0",
+    "max_concurrent_tasks": 10
+  }
+}
+```
+
+**Discover Agents:**
+```bash
+POST /api/discovery/discover
+{
+  "required_capabilities": ["data_processing", "machine_learning"],
+  "categories": ["analysis"],
+  "tags": ["python"],
+  "status": "available",
+  "match_all_capabilities": false,
+  "limit": 10
+}
+```
+
+**Update Status:**
+```bash
+PUT /api/discovery/agents/5/status
+{
+  "status": "busy",
+  "reason": "Processing large dataset"
+}
+```
+
+**Send Heartbeat:**
+```bash
+POST /api/discovery/agents/5/heartbeat
+{
+  "metrics": {
+    "load": 0.75,
+    "memory_usage": 0.60,
+    "active_tasks": 3
+  }
+}
+```
+
+**Register Service:**
+```bash
+POST /api/discovery/agents/5/services
+{
+  "service_name": "data_transformation",
+  "service_description": "ETL data transformation service",
+  "service_metadata": {
+    "max_throughput": 1000,
+    "supported_formats": ["csv", "json", "parquet"]
+  }
+}
+```
+
+**Discover Service:**
+```bash
+GET /api/discovery/services/data_transformation?only_available=true
+```
+
+**Add Capability:**
+```bash
+POST /api/discovery/agents/5/capabilities
+{
+  "capability": "real_time_processing",
+  "category": "computation"
+}
+```
+
+**Remove Capability:**
+```bash
+DELETE /api/discovery/agents/5/capabilities
+{
+  "capability": "batch_processing"
+}
+```
+
+**Unregister Agent:**
+```bash
+DELETE /api/discovery/agents/5/unregister
+```
+
+**Get Agent Info:**
+```bash
+GET /api/discovery/agents/5
+```
+
+**List All Agents:**
+```bash
+GET /api/discovery/agents?status=available&category=analysis
+```
+
+**Get Capabilities Catalog:**
+```bash
+GET /api/discovery/capabilities
+```
+
+**Get Service Directory:**
+```bash
+GET /api/discovery/services
+```
+
+**Check Agent Health:**
+```bash
+GET /api/discovery/health-check?timeout_seconds=300
+```
+
+**Get Statistics:**
+```bash
+GET /api/discovery/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Agent Registration and Discovery**
+```python
+from src.services.agent_discovery import AgentDiscovery, CapabilityCategory
+
+# Agent registers itself
+registration = AgentDiscovery.register_agent(
+    session=session,
+    agent_id=5,
+    agent_name="ML Model Trainer",
+    capabilities=["machine_learning", "model_training", "hyperparameter_tuning"],
+    categories=[CapabilityCategory.COMPUTATION, CapabilityCategory.ANALYSIS],
+    tags=["tensorflow", "pytorch", "gpu"],
+    endpoint="http://ml-agent:8080"
+)
+
+print(f"Registered: {registration['agent_name']}")
+
+# Another agent searches for ML capabilities
+matches = AgentDiscovery.discover_agents(
+    session=session,
+    required_capabilities=["machine_learning"],
+    status="available",
+    limit=5
+)
+
+print(f"Found {matches['total_matches']} matching agents")
+for match in matches['matches']:
+    print(f"  - {match['agent_name']}: {match['relevance_score']:.2f}")
+```
+
+**Scenario 2: Service Registration and Discovery**
+```python
+# Agent registers a service
+service = AgentDiscovery.register_service(
+    session=session,
+    agent_id=5,
+    service_name="model_inference",
+    service_description="Real-time ML model inference",
+    service_metadata={
+        "models": ["resnet50", "bert-base"],
+        "latency_ms": 50,
+        "throughput": 100
+    }
+)
+
+# Client discovers service providers
+providers = AgentDiscovery.discover_service(
+    session=session,
+    service_name="model_inference",
+    only_available=True
+)
+
+print(f"Service has {providers['total_providers']} providers")
+for provider in providers['providers']:
+    agent = AgentDiscovery.get_agent_info(session, provider['agent_id'])
+    print(f"  - {agent['agent_name']} at {agent['endpoint']}")
+```
+
+**Scenario 3: Dynamic Capability Management**
+```python
+# Agent adds new capability after upgrade
+AgentDiscovery.add_capability(
+    session=session,
+    agent_id=5,
+    capability="distributed_training",
+    category=CapabilityCategory.COMPUTATION
+)
+
+# Agent removes deprecated capability
+AgentDiscovery.remove_capability(
+    session=session,
+    agent_id=5,
+    capability="legacy_preprocessing"
+)
+
+# Verify updated capabilities
+agent_info = AgentDiscovery.get_agent_info(session=session, agent_id=5)
+print(f"Current capabilities: {agent_info['capabilities']}")
+```
+
+**Scenario 4: Health Monitoring with Heartbeats**
+```python
+import time
+
+# Agent sends periodic heartbeats
+while True:
+    heartbeat = AgentDiscovery.heartbeat(
+        session=session,
+        agent_id=5,
+        metrics={
+            "load": 0.65,
+            "memory_usage": 0.72,
+            "active_tasks": 4,
+            "completed_tasks": 127
+        }
+    )
+
+    print(f"Heartbeat acknowledged, status: {heartbeat['current_status']}")
+    time.sleep(60)  # Send every 60 seconds
+
+# System checks health
+health = AgentDiscovery.check_agent_health(
+    session=session,
+    timeout_seconds=300
+)
+
+print(f"Healthy: {health['healthy_count']}, Unhealthy: {health['unhealthy_count']}")
+```
+
+**Scenario 5: Building Agent Networks**
+```python
+# System maintains service catalog
+catalog = AgentDiscovery.get_capabilities_catalog(session=session)
+
+print(f"Total capabilities: {catalog['total_capabilities']}")
+for capability, info in catalog['capabilities'].items():
+    print(f"{capability}: {info['available_agents']} agents available")
+
+# Discover complementary agents for workflow
+data_agents = AgentDiscovery.discover_agents(
+    session=session,
+    required_capabilities=["data_processing"],
+    status="available"
+)
+
+ml_agents = AgentDiscovery.discover_agents(
+    session=session,
+    required_capabilities=["machine_learning"],
+    status="available"
+)
+
+viz_agents = AgentDiscovery.discover_agents(
+    session=session,
+    required_capabilities=["visualization"],
+    status="available"
+)
+
+# Build pipeline from discovered agents
+pipeline = {
+    "data_processor": data_agents['matches'][0]['agent_id'],
+    "ml_trainer": ml_agents['matches'][0]['agent_id'],
+    "visualizer": viz_agents['matches'][0]['agent_id']
+}
+
+print(f"Assembled pipeline: {pipeline}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (75% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (80% complete)
 
-Current Progress: Commit 55/100 - Agent Workflow Templates System Complete
+Current Progress: Commit 56/100 - Agent Discovery System Complete
 
 ## Implementation Roadmap
 
