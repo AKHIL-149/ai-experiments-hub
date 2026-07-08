@@ -13178,13 +13178,364 @@ if trend["trend"] == "declining":
     schedule_performance_review(agent.id)
 ```
 
+## Agent Role Management System
+
+The Agent Role Management System provides dynamic role assignment, hierarchies, permissions, and performance tracking. Enables role-based task routing and agent career progression.
+
+### Key Features
+
+- **10 Role Types**: Leader, coordinator, specialist, executor, analyst, reviewer, researcher, developer, tester, support
+- **5 Hierarchy Levels**: Executive (L5), senior (L4), intermediate (L3), junior (L2), entry (L1)
+- **Dynamic Assignment**: Assign multiple roles to agents with start/end dates
+- **Role Promotion**: Automatically promote agents to higher levels based on performance
+- **Performance Tracking**: Track role-specific performance and task completion
+- **Permissions System**: Define role-based permissions and access control
+- **Role Suggestions**: AI-powered role suggestions based on task requirements
+- **Capability Matching**: Match roles to tasks based on required capabilities
+- **Hierarchy Visualization**: View role structure organized by type and level
+
+### Role Types
+
+1. **LEADER** - Team leader and decision maker
+2. **COORDINATOR** - Coordinates tasks and agents
+3. **SPECIALIST** - Domain specialist with deep expertise
+4. **EXECUTOR** - Task executor and implementer
+5. **ANALYST** - Data and information analyst
+6. **REVIEWER** - Quality reviewer and validator
+7. **RESEARCHER** - Information researcher
+8. **DEVELOPER** - Development specialist
+9. **TESTER** - Quality assurance tester
+10. **SUPPORT** - Support and assistance provider
+
+### Role Levels
+
+- **EXECUTIVE** (Level 5) - Executive level with highest authority
+- **SENIOR** (Level 4) - Senior level with experienced leadership
+- **INTERMEDIATE** (Level 3) - Intermediate level with solid skills
+- **JUNIOR** (Level 2) - Junior level developing expertise
+- **ENTRY** (Level 1) - Entry level for beginners
+
+### Assignment Statuses
+
+- **ACTIVE** - Currently active assignment
+- **SUSPENDED** - Temporarily suspended
+- **COMPLETED** - Successfully completed
+- **REVOKED** - Revoked/terminated
+
+### REST API Endpoints
+
+**Define Role:**
+```bash
+POST /api/roles
+{
+  "role_type": "specialist",
+  "role_name": "Senior Python Specialist",
+  "role_level": "senior",
+  "description": "Expert in Python development and architecture",
+  "responsibilities": [
+    "Design Python applications",
+    "Code review",
+    "Mentor junior developers"
+  ],
+  "required_capabilities": ["python", "architecture", "testing"],
+  "optional_capabilities": ["docker", "kubernetes"],
+  "min_experience_hours": 1000,
+  "permissions": ["code_review", "deployment"]
+}
+```
+
+**Assign Role to Agent:**
+```bash
+POST /api/roles/agents/1/assign
+{
+  "role_id": "role_1",
+  "assigned_by": 5,
+  "assignment_reason": "Strong Python skills and performance",
+  "start_date": "2024-01-01T00:00:00Z"
+}
+```
+
+**Revoke Role:**
+```bash
+POST /api/roles/assignments/assignment_1/revoke
+{
+  "revoked_by": 5,
+  "revocation_reason": "Agent reassigned to different team"
+}
+```
+
+**Update Assignment:**
+```bash
+PUT /api/roles/assignments/assignment_1
+{
+  "status": "suspended",
+  "end_date": "2024-12-31T23:59:59Z"
+}
+```
+
+**Record Role Performance:**
+```bash
+POST /api/roles/assignments/assignment_1/performance
+{
+  "task_id": 100,
+  "performance_score": 0.92,
+  "quality_score": 0.95,
+  "completion_time": 3600,
+  "notes": "Excellent code quality and documentation"
+}
+```
+
+**Promote Agent:**
+```bash
+POST /api/roles/agents/1/promote
+{
+  "current_assignment_id": "assignment_1",
+  "new_role_level": "senior",
+  "promoted_by": 5,
+  "promotion_reason": "Consistently high performance and mentorship"
+}
+```
+
+**Get Agent Roles:**
+```bash
+GET /api/roles/agents/1/roles?active_only=true
+```
+
+**Get Agents by Role:**
+```bash
+GET /api/roles/role_1/agents?active_only=true
+```
+
+**Suggest Role for Task:**
+```bash
+POST /api/roles/suggest
+{
+  "task_requirements": {
+    "capabilities": ["python", "testing", "api-design"],
+    "complexity": "high"
+  },
+  "required_level": "intermediate"
+}
+```
+
+**Get Role Hierarchy:**
+```bash
+GET /api/roles/hierarchy
+```
+
+**Get Statistics:**
+```bash
+GET /api/roles/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Define and Assign Roles**
+```python
+from src.services.agent_role import AgentRole, RoleType, RoleLevel
+
+# Define a new role
+role = AgentRole.define_role(
+    session=session,
+    role_type=RoleType.SPECIALIST,
+    role_name="Senior Python Specialist",
+    role_level=RoleLevel.SENIOR,
+    description="Expert Python developer",
+    responsibilities=["Design", "Code Review", "Mentoring"],
+    required_capabilities=["python", "architecture", "testing"],
+    min_experience_hours=1000
+)
+
+# Assign to agent
+assignment = AgentRole.assign_role(
+    session=session,
+    agent_id=1,
+    role_id=role["id"],
+    assigned_by=5,
+    assignment_reason="Strong technical skills"
+)
+
+print(f"Assigned {role['role_name']} to agent 1")
+```
+
+**Scenario 2: Track Performance and Promote**
+```python
+# Record performance
+AgentRole.record_role_performance(
+    session=session,
+    assignment_id="assignment_1",
+    task_id=100,
+    performance_score=0.92,
+    quality_score=0.95,
+    completion_time=3600
+)
+
+# Get performance stats
+roles = AgentRole.get_agent_roles(session=session, agent_id=1)
+assignment = roles["assignments"][0]
+
+if assignment["performance_score"] > 0.9 and assignment["tasks_completed"] > 50:
+    # Promote agent
+    promotion = AgentRole.promote_agent(
+        session=session,
+        agent_id=1,
+        current_assignment_id=assignment["id"],
+        new_role_level=RoleLevel.SENIOR,
+        promoted_by=5,
+        promotion_reason="Consistently excellent performance"
+    )
+    print(f"Promoted to {promotion['new_level']}!")
+```
+
+**Scenario 3: Role-Based Task Routing**
+```python
+# Get role suggestion for task
+task_requirements = {
+    "capabilities": ["python", "testing", "api-design"],
+    "complexity": "high"
+}
+
+suggestions = AgentRole.suggest_role_for_task(
+    session=session,
+    task_requirements=task_requirements,
+    required_level=RoleLevel.INTERMEDIATE
+)
+
+# Get agents with suggested role
+best_role = suggestions["suggestions"][0]
+agents = AgentRole.get_agents_by_role(
+    session=session,
+    role_id=best_role["role_id"],
+    active_only=True
+)
+
+# Assign task to best performer
+if agents["agents"]:
+    best_agent = max(
+        agents["agents"],
+        key=lambda a: a["assignment"]["performance_score"]
+    )
+    print(f"Assign task to agent {best_agent['agent_id']}")
+```
+
+**Scenario 4: Role Hierarchy Management**
+```python
+# View role hierarchy
+hierarchy = AgentRole.get_role_hierarchy(session=session)
+
+for role_type, levels in hierarchy["hierarchy"].items():
+    print(f"\n{role_type.upper()}:")
+    for level in hierarchy["levels"][::-1]:  # Top to bottom
+        if level in levels:
+            roles = levels[level]
+            print(f"  {level}: {len(roles)} roles")
+
+# Get statistics
+stats = AgentRole.get_role_statistics(session=session)
+print(f"\nTotal roles defined: {stats['total_role_definitions']}")
+print(f"Active assignments: {stats['active_assignments']}")
+print(f"Agents with roles: {stats['agents_with_roles']}")
+```
+
+**Scenario 5: Role Lifecycle Management**
+```python
+# Assign role with end date
+assignment = AgentRole.assign_role(
+    session=session,
+    agent_id=1,
+    role_id="role_1",
+    start_date="2024-01-01T00:00:00Z",
+    end_date="2024-12-31T23:59:59Z",
+    assignment_reason="6-month project assignment"
+)
+
+# Update status
+AgentRole.update_role_assignment(
+    session=session,
+    assignment_id=assignment["id"],
+    status="suspended",
+    metadata={"suspension_reason": "On leave"}
+)
+
+# Later, revoke if needed
+AgentRole.revoke_role(
+    session=session,
+    assignment_id=assignment["id"],
+    revoked_by=5,
+    revocation_reason="Project cancelled"
+)
+```
+
+### Integration Example
+
+```python
+from src.services.agent_role import AgentRole, RoleType, RoleLevel
+
+# Define roles for new team
+specialist_role = AgentRole.define_role(
+    session=session,
+    role_type=RoleType.SPECIALIST,
+    role_name="API Specialist",
+    role_level=RoleLevel.INTERMEDIATE,
+    description="API design and development",
+    responsibilities=["API design", "Implementation", "Documentation"],
+    required_capabilities=["api-design", "python", "swagger"],
+    permissions=["api_deploy", "code_review"]
+)
+
+# Assign agents to roles
+for agent_id in [1, 2, 3]:
+    AgentRole.assign_role(
+        session=session,
+        agent_id=agent_id,
+        role_id=specialist_role["id"],
+        assigned_by=team_lead_id
+    )
+
+# When task arrives, route by role
+task_requirements = {
+    "capabilities": ["api-design", "python"],
+    "complexity": "medium"
+}
+
+suggestions = AgentRole.suggest_role_for_task(
+    session=session,
+    task_requirements=task_requirements
+)
+
+# Get available agents with matching role
+best_role = suggestions["suggestions"][0]
+agents = AgentRole.get_agents_by_role(
+    session=session,
+    role_id=best_role["role_id"]
+)
+
+# Select agent with best performance
+selected_agent = max(
+    agents["agents"],
+    key=lambda a: a["assignment"]["performance_score"]
+)
+
+# Assign task and track performance
+result = execute_task(task_id, selected_agent["agent_id"])
+
+AgentRole.record_role_performance(
+    session=session,
+    assignment_id=selected_agent["assignment"]["id"],
+    task_id=task_id,
+    performance_score=result.performance_score,
+    quality_score=result.quality_score,
+    completion_time=result.duration
+)
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (65% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (70% complete)
 
-Current Progress: Commit 53/100 - Agent Performance Tracking System Complete
+Current Progress: Commit 54/100 - Agent Role Management System Complete
 
 ## Implementation Roadmap
 
