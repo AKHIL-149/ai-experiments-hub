@@ -14811,13 +14811,385 @@ print(f"Total bid value: ${stats['total_bid_value']:.2f}")
 print(f"Average winning price: ${stats['average_winning_price']:.2f}")
 ```
 
+## Agent Trust System
+
+The Agent Trust System enables agents to build and maintain trust relationships, manage reputation, and verify credentials through a decentralized trust network with recommendations and verification.
+
+### Key Features
+
+- **Trust Relationships**: Establish bidirectional trust between agents with scores (0-1)
+- **6 Trust Levels**: UNKNOWN, UNTRUSTED, LOW, MEDIUM, HIGH, VERIFIED
+- **Interaction Tracking**: Automatic trust adjustment based on interaction outcomes
+- **Recommendation System**: Agents vouch for others with weighted recommendations
+- **Credential Verification**: Formal verification process with global trust boost
+- **Trust Decay**: Trust scores decay over time without interaction
+- **Global Trust Score**: Aggregate trust score from all relationships and verifications
+- **Trust Networks**: Build networks of trusted agents for collaboration
+- **Statistics Tracking**: Success rates, trust distributions, recommendation metrics
+
+### Trust Levels
+
+- **UNKNOWN** - No trust relationship established (score: 0.0)
+- **UNTRUSTED** - Negative trust relationship (score: 0.0-0.3)
+- **LOW** - Limited trust (score: 0.3-0.5)
+- **MEDIUM** - Moderate trust (score: 0.5-0.7)
+- **HIGH** - High trust (score: 0.7-0.9)
+- **VERIFIED** - Verified and highly trusted (score: 0.9-1.0)
+
+### Recommendation Types
+
+- **POSITIVE** - Positive recommendation for an agent
+- **NEUTRAL** - Neutral observation about an agent
+- **NEGATIVE** - Warning about an agent
+
+### Verification Statuses
+
+- **UNVERIFIED** - Not yet verified
+- **PENDING** - Verification requested, awaiting review
+- **VERIFIED** - Successfully verified and approved
+- **REJECTED** - Verification rejected
+
+### REST API Endpoints
+
+**Establish Trust Relationship:**
+```bash
+POST /api/trust/relationships?agent_a_id=5
+{
+  "agent_b_id": 8,
+  "initial_score": 0.5,
+  "trust_level": "medium",
+  "metadata": {
+    "reason": "Successful collaboration on previous task",
+    "context": "Data processing project"
+  }
+}
+```
+
+**Update Trust Score:**
+```bash
+PUT /api/trust/relationships/5/score
+{
+  "agent_b_id": 8,
+  "adjustment": 0.1,
+  "reason": "Excellent performance on latest task"
+}
+```
+
+**Record Interaction:**
+```bash
+POST /api/trust/relationships/5/interactions
+{
+  "agent_b_id": 8,
+  "success": true,
+  "interaction_type": "task_collaboration",
+  "metadata": {
+    "task_id": "task_123",
+    "quality_score": 0.95
+  }
+}
+```
+
+**Add Recommendation:**
+```bash
+POST /api/trust/recommendations?recommender_agent_id=5
+{
+  "recommended_agent_id": 12,
+  "target_agent_id": 8,
+  "recommendation_type": "positive",
+  "score": 0.85,
+  "comment": "Highly skilled in ML tasks, reliable and fast",
+  "evidence": {
+    "shared_tasks": 5,
+    "average_quality": 0.92
+  }
+}
+```
+
+**Request Verification:**
+```bash
+POST /api/trust/verifications?agent_id=8
+{
+  "verification_type": "skill_certification",
+  "evidence": {
+    "certifications": ["AWS ML Specialist", "Azure AI Engineer"],
+    "portfolio_url": "https://agent8.example.com/portfolio",
+    "completed_tasks": 150
+  },
+  "verifier_agent_id": 1
+}
+```
+
+**Verify Agent:**
+```bash
+POST /api/trust/verifications/verification_1/verify?verifier_agent_id=1
+{
+  "approved": true,
+  "verifier_notes": "Credentials verified, portfolio demonstrates expertise"
+}
+```
+
+**Get Trust Score:**
+```bash
+GET /api/trust/relationships/5/8/score
+```
+
+**Get Trust Relationship:**
+```bash
+GET /api/trust/relationships/5/8
+```
+
+**Get Trusted Agents:**
+```bash
+GET /api/trust/agents/5/trusted?min_trust_level=high&limit=10
+```
+
+**Get Recommendations:**
+```bash
+GET /api/trust/recommendations/8/12
+```
+
+**Get Global Trust Score:**
+```bash
+GET /api/trust/agents/8/global-trust
+```
+
+**Get Statistics:**
+```bash
+GET /api/trust/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Building Trust Through Collaboration**
+```python
+from src.services.agent_trust import AgentTrust, TrustLevel
+
+# Agent 5 and Agent 8 collaborate on a task
+# Establish initial trust
+relationship = AgentTrust.establish_trust(
+    session=session,
+    agent_a_id=5,
+    agent_b_id=8,
+    initial_score=0.5,  # Start with medium trust
+    trust_level=TrustLevel.MEDIUM
+)
+
+print(f"Trust established: {relationship['trust_score']}")
+
+# Record successful interaction
+updated = AgentTrust.record_interaction(
+    session=session,
+    agent_a_id=5,
+    agent_b_id=8,
+    success=True,
+    interaction_type="task_collaboration"
+)
+
+print(f"After success: {updated['trust_score']:.2f}")
+
+# After multiple successful interactions, trust increases
+for i in range(5):
+    AgentTrust.record_interaction(
+        session=session,
+        agent_a_id=5,
+        agent_b_id=8,
+        success=True
+    )
+
+# Check new trust level
+relationship = AgentTrust.get_trust_relationship(
+    session=session,
+    agent_a_id=5,
+    agent_b_id=8
+)
+
+print(f"Trust level now: {relationship['trust_level']}")
+print(f"Success rate: {relationship['success_rate']:.1%}")
+```
+
+**Scenario 2: Trust Network and Recommendations**
+```python
+# Agent 5 trusts Agent 8 highly
+# Agent 5 recommends Agent 12 to Agent 8
+recommendation = AgentTrust.add_recommendation(
+    session=session,
+    recommender_agent_id=5,
+    recommended_agent_id=12,
+    target_agent_id=8,
+    recommendation_type="positive",
+    score=0.85,
+    comment="Excellent at data analysis, worked together on 3 projects",
+    evidence={
+        "shared_tasks": 3,
+        "average_completion_time": "2.5 hours",
+        "quality_scores": [0.9, 0.88, 0.92]
+    }
+)
+
+# Agent 8 reviews recommendations for Agent 12
+recs = AgentTrust.get_recommendations(
+    session=session,
+    target_agent_id=8,
+    recommended_agent_id=12
+)
+
+print(f"Recommendations: {recs['total_recommendations']}")
+print(f"Weighted score: {recs['weighted_average_score']:.2f}")
+
+# Agent 8 decides to establish trust based on recommendation
+if recs['weighted_average_score'] >= 0.7:
+    AgentTrust.establish_trust(
+        session=session,
+        agent_a_id=8,
+        agent_b_id=12,
+        initial_score=recs['weighted_average_score']
+    )
+```
+
+**Scenario 3: Credential Verification**
+```python
+from src.services.agent_trust import VerificationStatus
+
+# Agent 12 requests verification of skills
+verification = AgentTrust.request_verification(
+    session=session,
+    agent_id=12,
+    verification_type="skill_certification",
+    evidence={
+        "certifications": ["Machine Learning Specialist"],
+        "completed_tasks": 150,
+        "average_quality_score": 0.92,
+        "portfolio_url": "https://agent12.example.com"
+    },
+    verifier_agent_id=1  # Request Agent 1 as verifier
+)
+
+print(f"Verification requested: {verification['id']}")
+print(f"Status: {verification['status']}")
+
+# Verifier Agent 1 reviews evidence and approves
+approved = AgentTrust.verify_agent(
+    session=session,
+    verification_id=verification['id'],
+    verifier_agent_id=1,
+    approved=True,
+    verifier_notes="All certifications valid, portfolio demonstrates expertise"
+)
+
+print(f"Verification status: {approved['status']}")
+
+# Check Agent 12's global trust score (should increase)
+global_trust = AgentTrust.get_global_trust_score(
+    session=session,
+    agent_id=12
+)
+
+print(f"Global trust score: {global_trust['global_trust_score']:.2f}")
+print(f"Verified: {global_trust['is_verified']}")
+print(f"Verifications: {global_trust['verification_count']}")
+```
+
+**Scenario 4: Finding Trusted Collaborators**
+```python
+# Agent 5 needs to find highly trusted agents for sensitive task
+trusted = AgentTrust.get_trusted_agents(
+    session=session,
+    agent_id=5,
+    min_trust_level=TrustLevel.HIGH,
+    limit=10
+)
+
+print(f"Found {trusted['total']} trusted agents")
+
+for agent in trusted['trusted_agents']:
+    print(f"\nAgent {agent['agent_id']}:")
+    print(f"  Trust score: {agent['trust_score']:.2f}")
+    print(f"  Trust level: {agent['trust_level']}")
+    print(f"  Interactions: {agent['interaction_count']}")
+    print(f"  Success rate: {agent['success_rate']:.1%}")
+
+    # Check if agent is verified
+    global_trust = AgentTrust.get_global_trust_score(
+        session=session,
+        agent_id=agent['agent_id']
+    )
+
+    if global_trust['is_verified']:
+        print(f"  ✓ Verified agent")
+```
+
+**Scenario 5: Trust Decay and Maintenance**
+```python
+# Trust decays over time without interaction
+# Get relationship after long period of inactivity
+relationship = AgentTrust.get_trust_relationship(
+    session=session,
+    agent_a_id=5,
+    agent_b_id=8
+)
+
+print(f"Current trust score: {relationship['trust_score']:.2f}")
+print(f"Last interaction: {relationship['last_interaction_at']}")
+print(f"Days since interaction: {relationship['days_since_interaction']}")
+
+# Update trust score to account for decay
+updated = AgentTrust.update_trust_score(
+    session=session,
+    agent_a_id=5,
+    agent_b_id=8,
+    adjustment=-0.1,
+    reason="Trust decay due to inactivity"
+)
+
+print(f"Adjusted trust score: {updated['trust_score']:.2f}")
+
+# Re-establish trust through new interaction
+AgentTrust.record_interaction(
+    session=session,
+    agent_a_id=5,
+    agent_b_id=8,
+    success=True,
+    interaction_type="task_collaboration"
+)
+
+print("Trust re-established through successful interaction")
+```
+
+**Scenario 6: Trust System Analytics**
+```python
+# Get comprehensive trust system statistics
+stats = AgentTrust.get_trust_statistics(session=session)
+
+print("Trust System Statistics:")
+print(f"Total relationships: {stats['total_relationships']}")
+print(f"Average trust score: {stats['average_trust_score']:.2f}")
+print(f"\nTrust Score Distribution:")
+for level, count in stats['trust_score_distribution'].items():
+    print(f"  {level}: {count} relationships")
+
+print(f"\nRecommendations:")
+print(f"  Total: {stats['total_recommendations']}")
+print(f"  Positive: {stats['recommendation_type_distribution']['positive']}")
+print(f"  Negative: {stats['recommendation_type_distribution']['negative']}")
+
+print(f"\nVerifications:")
+print(f"  Total: {stats['total_verifications']}")
+print(f"  Verified: {stats['verification_status_distribution']['verified']}")
+print(f"  Pending: {stats['verification_status_distribution']['pending']}")
+print(f"  Rejected: {stats['verification_status_distribution']['rejected']}")
+
+print(f"\nInteraction Statistics:")
+print(f"  Total interactions: {stats['total_interactions']}")
+print(f"  Success rate: {stats['overall_success_rate']:.1%}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (90% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (95% complete)
 
-Current Progress: Commit 58/100 - Agent Auction System Complete
+Current Progress: Commit 59/100 - Agent Trust System Complete
 
 ## Implementation Roadmap
 
