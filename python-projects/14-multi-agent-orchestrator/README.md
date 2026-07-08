@@ -11200,6 +11200,349 @@ curl http://localhost:8001/api/consensus/vote-types
 - **Workflow Engine** - Approve workflow changes
 - **Analytics** - Track decision patterns
 
+## Agent Coalition Formation System
+
+The Coalition Formation System enables agents to form temporary teams (coalitions) to collaborate on complex tasks, pool resources, and achieve shared goals.
+
+### Coalition Lifecycle
+
+Coalitions progress through these statuses:
+
+| Status | Description |
+|--------|-------------|
+| **forming** | Coalition being assembled, recruiting members |
+| **active** | Coalition actively working on tasks |
+| **completed** | Coalition successfully achieved goal |
+| **dissolved** | Coalition disbanded before completion |
+
+### Member Roles
+
+Coalition members can have different roles:
+
+| Role | Responsibilities |
+|------|------------------|
+| **leader** | Makes final decisions, coordinates team |
+| **coordinator** | Manages communication and activities |
+| **specialist** | Domain expert with specific skills |
+| **contributor** | General contributor to coalition work |
+| **advisor** | Provides guidance without direct work |
+
+### Formation Strategies
+
+The system supports 5 coalition formation strategies:
+
+| Strategy | Description | Best For |
+|----------|-------------|----------|
+| **capability_based** | Match agents by required capabilities | Skill-specific tasks |
+| **reputation_based** | Select based on agent performance history | Quality-critical work |
+| **workload_based** | Choose agents with available capacity | Load balancing |
+| **proximity_based** | Group similar/compatible agents | Team cohesion |
+| **hybrid** | Combination of multiple factors (70% capability, 30% workload) | Balanced teams |
+
+### Key Features
+
+**Dynamic Team Formation**
+- Auto-suggest optimal coalitions for tasks
+- Flexible member addition/removal
+- Leader succession on departure
+- Maximum size enforcement
+
+**Resource Pooling**
+- Shared resource contributions
+- Individual contribution tracking
+- Resource type flexibility
+- Transparency and accountability
+
+**Contribution Tracking**
+- Individual contribution scores
+- Achievement recording
+- Performance metrics
+- Fair credit attribution
+
+**Goal Alignment**
+- Clear coalition objectives
+- Required capability definition
+- Task assignment
+- Outcome tracking
+
+### Example Usage
+
+**1. Create a coalition:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Backend Migration Team",
+    "goal": "Migrate legacy backend to microservices",
+    "required_capabilities": ["system_architecture", "database_migration", "api_design"],
+    "leader_agent_id": 10,
+    "initial_members": [10, 15, 22],
+    "max_members": 8,
+    "duration_hours": 168
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "coalition": {
+    "coalition_id": 1,
+    "name": "Backend Migration Team",
+    "goal": "Migrate legacy backend to microservices",
+    "status": "active",
+    "members": [
+      {
+        "agent_id": 10,
+        "agent_name": "ArchitectAgent-1",
+        "role": "leader",
+        "contribution_score": 0.0,
+        "active": true
+      }
+    ],
+    "max_members": 8,
+    "expires_at": "2024-01-22T10:30:00Z"
+  },
+  "message": "Coalition created with 3 members"
+}
+```
+
+**2. Get AI-suggested coalition for a task:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/suggest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 456,
+    "strategy": "hybrid",
+    "max_members": 5
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "task_id": 456,
+  "task_title": "Implement OAuth2 Authentication",
+  "strategy": "hybrid",
+  "suggested_members": [
+    {
+      "agent_id": 12,
+      "agent_name": "SecurityExpert-1",
+      "match_score": 0.92,
+      "capability_score": 0.95,
+      "availability_score": 0.85
+    },
+    {
+      "agent_id": 28,
+      "agent_name": "BackendDev-3",
+      "match_score": 0.78,
+      "capability_score": 0.70,
+      "availability_score": 0.95
+    }
+  ],
+  "coalition_size": 2
+}
+```
+
+**3. Add member to coalition:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions/1/members \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 28,
+    "role": "specialist"
+  }'
+```
+
+**4. Assign task to coalition:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions/1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": 789
+  }'
+```
+
+**5. Pool resources to coalition:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions/1/resources \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 10,
+    "resource_type": "compute_credits",
+    "amount": 1000.0
+  }'
+```
+
+**6. Update contribution score:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions/1/contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 15,
+    "score_delta": 5.0
+  }'
+```
+
+**7. Record achievement:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions/1/achievements \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Database Migration Complete",
+    "description": "Successfully migrated 50 database tables to PostgreSQL",
+    "value": 10.0
+  }'
+```
+
+**8. Get coalition details:**
+
+```bash
+curl http://localhost:8001/api/coalitions/coalitions/1
+```
+
+Response:
+```json
+{
+  "success": true,
+  "coalition": {
+    "coalition_id": 1,
+    "name": "Backend Migration Team",
+    "status": "active",
+    "members": [
+      {
+        "agent_id": 10,
+        "role": "leader",
+        "contribution_score": 12.5
+      }
+    ],
+    "tasks": [789, 790],
+    "pooled_resources": {
+      "compute_credits": {
+        "total": 2500.0,
+        "contributions": [...]
+      }
+    },
+    "achievements": [
+      {
+        "title": "Database Migration Complete",
+        "value": 10.0,
+        "achieved_at": "2024-01-16T14:20:00Z"
+      }
+    ]
+  }
+}
+```
+
+**9. Remove member from coalition:**
+
+```bash
+curl -X DELETE http://localhost:8001/api/coalitions/coalitions/1/members \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 22,
+    "reason": "Reassigned to higher priority project"
+  }'
+```
+
+**10. Complete coalition:**
+
+```bash
+curl -X POST http://localhost:8001/api/coalitions/coalitions/1/complete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "outcome": "Successfully migrated all backend services to microservices architecture"
+  }'
+```
+
+**11. Get coalition statistics:**
+
+```bash
+curl http://localhost:8001/api/coalitions/statistics
+```
+
+Response:
+```json
+{
+  "success": true,
+  "statistics": {
+    "total_coalitions": 15,
+    "by_status": {
+      "active": 4,
+      "completed": 9,
+      "dissolved": 2
+    },
+    "avg_coalition_size": 4.2,
+    "total_unique_members": 63,
+    "total_tasks_assigned": 42,
+    "total_achievements": 28,
+    "active_coalitions": 4
+  }
+}
+```
+
+**12. List all coalitions:**
+
+```bash
+curl http://localhost:8001/api/coalitions/coalitions?status=active
+```
+
+**13. List all member roles:**
+
+```bash
+curl http://localhost:8001/api/coalitions/roles
+```
+
+**14. List formation strategies:**
+
+```bash
+curl http://localhost:8001/api/coalitions/strategies
+```
+
+### Coalition Workflow
+
+1. **Identify Need** - Task requires multiple agents
+2. **Suggest Coalition** - AI suggests optimal team composition
+3. **Create Coalition** - Form team with initial members
+4. **Recruit Members** - Add specialists as needed
+5. **Assign Tasks** - Distribute work among members
+6. **Pool Resources** - Share computational/financial resources
+7. **Track Progress** - Monitor contributions and achievements
+8. **Complete Goal** - Mark coalition as successful
+9. **Dissolve** - End coalition after goal achievement
+
+### When to Use Coalitions
+
+**Use coalitions for:**
+- Large complex tasks requiring diverse skills
+- Projects needing resource pooling
+- Long-running multi-phase work
+- Cross-functional team collaboration
+- Tasks with shared accountability
+
+**Don't use coalitions for:**
+- Simple single-agent tasks
+- Short-duration operations
+- Tasks with single capability requirement
+- Individual agent responsibilities
+
+### Integration with Other Systems
+
+**Works with:**
+- **Task Decomposition** - Assign subtasks to coalition
+- **Consensus** - Make coalition decisions democratically
+- **Conflict Resolution** - Resolve member disagreements
+- **Shared Memory** - Share data among members
+- **Analytics** - Track coalition performance
+
 ### API Documentation
 
 Interactive API documentation is available at:
@@ -11210,9 +11553,9 @@ Interactive API documentation is available at:
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (30% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (35% complete)
 
-Current Progress: Commit 46/100 - Agent Consensus System Complete
+Current Progress: Commit 47/100 - Agent Coalition Formation System Complete
 
 ## Implementation Roadmap
 
