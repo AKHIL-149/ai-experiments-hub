@@ -14531,13 +14531,293 @@ print(f"Average performance: {stats['average_performance_score']:.2%}")
 print(f"Total violations: {stats['total_violations']}")
 ```
 
+## Agent Auction System
+
+The Agent Auction System enables efficient task and resource allocation through competitive bidding using various auction mechanisms (first-price, second-price, English, Dutch, Vickrey).
+
+### Key Features
+
+- **6 Auction Types**: First-price, second-price, English, Dutch, Vickrey, combinatorial
+- **Automated Bidding**: Support for proxy bidding with maximum bid limits
+- **Real-Time Auctions**: Live auctions with time-based expiration
+- **Winner Determination**: Automatic winner selection based on auction rules
+- **Reserve Prices**: Minimum acceptable prices for auctioneers
+- **Bid Management**: Place, withdraw, and track bids
+- **Fair Pricing**: Second-price and Vickrey auctions ensure truthful bidding
+- **Auction History**: Complete record of all auctions and outcomes
+- **Statistics Tracking**: Win rates, bid values, and auction analytics
+
+### Auction Types
+
+- **FIRST_PRICE** - Highest bidder wins and pays their bid amount
+- **SECOND_PRICE** - Highest bidder wins but pays second-highest bid
+- **ENGLISH** - Ascending price auction, bidders raise bids incrementally
+- **DUTCH** - Descending price auction, first bidder wins at current price
+- **VICKREY** - Sealed-bid second-price auction for truthful bidding
+- **COMBINATORIAL** - Auction for bundles of items
+
+### Auction Statuses
+
+- **OPEN** - Auction created, accepting bids
+- **ACTIVE** - Auction active with bids placed
+- **CLOSED** - Auction ended, determining winner
+- **AWARDED** - Auction completed, winner determined
+- **CANCELLED** - Auction cancelled by auctioneer
+
+### Bid Statuses
+
+- **PENDING** - Bid active, may win auction
+- **ACCEPTED** - Winning bid, accepted
+- **REJECTED** - Bid rejected or lost
+- **OUTBID** - Outbid by higher bid
+- **WITHDRAWN** - Bid withdrawn by bidder
+
+### REST API Endpoints
+
+**Create Auction:**
+```bash
+POST /api/auctions/auctions?auctioneer_agent_id=5
+{
+  "auction_type": "second_price",
+  "item_type": "task",
+  "item_description": "High-priority data processing task",
+  "reserve_price": 100.0,
+  "starting_price": 50.0,
+  "duration_minutes": 30,
+  "item_metadata": {
+    "task_complexity": "high",
+    "deadline": "2024-01-15T12:00:00Z",
+    "required_capabilities": ["data_processing", "machine_learning"]
+  },
+  "auction_rules": {
+    "min_bid_increment": 5.0,
+    "max_participants": 10
+  }
+}
+```
+
+**Place Bid:**
+```bash
+POST /api/auctions/auctions/auction_1/bids?bidder_agent_id=8
+{
+  "bid_amount": 120.0,
+  "max_bid": 150.0,
+  "bid_metadata": {
+    "estimated_completion_time": "2h",
+    "confidence": 0.95
+  }
+}
+```
+
+**Get Auction:**
+```bash
+GET /api/auctions/auctions/auction_1
+```
+
+**Close Auction:**
+```bash
+POST /api/auctions/auctions/auction_1/close
+{
+  "force_close": false
+}
+```
+
+**Cancel Auction:**
+```bash
+POST /api/auctions/auctions/auction_1/cancel
+{
+  "reason": "Task no longer needed"
+}
+```
+
+**Withdraw Bid:**
+```bash
+DELETE /api/auctions/auctions/auction_1/bids?bidder_agent_id=8
+```
+
+**List Auctions:**
+```bash
+GET /api/auctions/auctions?status=active&item_type=task
+```
+
+**Get Agent Bids:**
+```bash
+GET /api/auctions/agents/8/bids?status=accepted
+```
+
+**Get Statistics:**
+```bash
+GET /api/auctions/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Task Allocation via Auction**
+```python
+from src.services.agent_auction import AgentAuction, AuctionType
+
+# Auctioneer creates auction for high-priority task
+auction = AgentAuction.create_auction(
+    session=session,
+    auction_type=AuctionType.SECOND_PRICE,
+    auctioneer_agent_id=1,
+    item_type="task",
+    item_description="Process 1M records with ML model",
+    reserve_price=100.0,
+    starting_price=50.0,
+    duration_minutes=30,
+    item_metadata={
+        "complexity": "high",
+        "deadline": "2024-01-15T12:00:00Z"
+    }
+)
+
+print(f"Auction created: {auction['id']}")
+
+# Multiple agents place bids
+agents_bids = [
+    (5, 110.0),  # Agent 5 bids $110
+    (8, 125.0),  # Agent 8 bids $125
+    (12, 115.0), # Agent 12 bids $115
+    (8, 140.0),  # Agent 8 raises to $140
+]
+
+for agent_id, amount in agents_bids:
+    bid = AgentAuction.place_bid(
+        session=session,
+        auction_id=auction['id'],
+        bidder_agent_id=agent_id,
+        bid_amount=amount
+    )
+    print(f"Agent {agent_id} bid ${amount}")
+
+# Wait for auction to end or close manually
+result = AgentAuction.close_auction(
+    session=session,
+    auction_id=auction['id']
+)
+
+print(f"Winner: Agent {result['winner_agent_id']}")
+print(f"Winning price: ${result['winning_price']}")  # Pays second-highest bid!
+```
+
+**Scenario 2: Proxy Bidding**
+```python
+# Agent uses proxy bidding to automatically outbid others
+bid = AgentAuction.place_bid(
+    session=session,
+    auction_id=auction['id'],
+    bidder_agent_id=8,
+    bid_amount=100.0,  # Initial bid
+    max_bid=200.0      # Maximum willing to pay
+)
+
+# System automatically raises bid if outbid, up to max_bid
+# Agent doesn't need to monitor auction constantly
+```
+
+**Scenario 3: Dutch Auction for Resources**
+```python
+# Create Dutch auction where price decreases over time
+auction = AgentAuction.create_auction(
+    session=session,
+    auction_type=AuctionType.DUTCH,
+    auctioneer_agent_id=5,
+    item_type="resource",
+    item_description="GPU cluster for 24 hours",
+    starting_price=500.0,
+    reserve_price=200.0,
+    duration_minutes=10  # Price drops from $500 to $200 over 10 min
+)
+
+# Agents wait for acceptable price, first to bid wins
+auction_details = AgentAuction.get_auction(
+    session=session,
+    auction_id=auction['id']
+)
+
+print(f"Current price: ${auction_details['current_price']}")
+
+# Agent decides current price is good and bids
+if auction_details['current_price'] <= 350:
+    bid = AgentAuction.place_bid(
+        session=session,
+        auction_id=auction['id'],
+        bidder_agent_id=8,
+        bid_amount=auction_details['current_price']
+    )
+    print(f"Won at ${bid['bid_amount']}")
+```
+
+**Scenario 4: Bid Management**
+```python
+# Agent places bid
+bid = AgentAuction.place_bid(
+    session=session,
+    auction_id=auction['id'],
+    bidder_agent_id=8,
+    bid_amount=150.0
+)
+
+# Agent checks their bidding history
+agent_bids = AgentAuction.get_agent_bids(
+    session=session,
+    agent_id=8
+)
+
+print(f"Total bids: {agent_bids['total_bids']}")
+print(f"Win rate: {agent_bids['win_rate']:.1%}")
+print(f"Total spent: ${agent_bids['total_bid_amount']}")
+
+# Agent withdraws bid before auction closes
+withdrawal = AgentAuction.withdraw_bid(
+    session=session,
+    auction_id=auction['id'],
+    bidder_agent_id=8
+)
+
+print(f"Bid withdrawn, refund: ${withdrawal['refund_amount']}")
+```
+
+**Scenario 5: Auction Analytics**
+```python
+# List all active auctions
+auctions = AgentAuction.list_auctions(
+    session=session,
+    status="active",
+    item_type="task"
+)
+
+print(f"Active task auctions: {auctions['total']}")
+
+for auction in auctions['auctions']:
+    details = AgentAuction.get_auction(
+        session=session,
+        auction_id=auction['id']
+    )
+
+    print(f"\nAuction: {auction['item_description']}")
+    print(f"Current price: ${auction['current_price']}")
+    print(f"Bids: {auction['bid_count']}")
+    print(f"Time remaining: {details['time_remaining']['minutes']} minutes")
+
+# Get system statistics
+stats = AgentAuction.get_auction_statistics(session=session)
+
+print(f"\nAuction System Statistics:")
+print(f"Total auctions: {stats['total_auctions']}")
+print(f"Total bids: {stats['total_bids']}")
+print(f"Total bid value: ${stats['total_bid_value']:.2f}")
+print(f"Average winning price: ${stats['average_winning_price']:.2f}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (85% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (90% complete)
 
-Current Progress: Commit 57/100 - Agent Contract Management System Complete
+Current Progress: Commit 58/100 - Agent Auction System Complete
 
 ## Implementation Roadmap
 
