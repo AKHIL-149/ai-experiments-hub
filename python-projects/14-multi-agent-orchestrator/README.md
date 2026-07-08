@@ -12342,13 +12342,301 @@ leaderboard = AgentIncentive.get_leaderboard(
 )
 ```
 
+## Agent Learning System
+
+The Agent Learning System enables agents to learn from past experiences, recognize patterns, adapt strategies, and continuously improve performance over time.
+
+### Features
+
+- **Experience Tracking**: Records all agent experiences for learning
+- **Pattern Recognition**: Automatic pattern detection in experiences
+- **Skill Development**: Tracks and improves proficiency in multiple skills
+- **Strategy Learning**: Learns and refines strategies based on effectiveness
+- **Learning Curves**: Monitors progress and improvement over time
+- **Recommendations**: Provides data-driven recommendations based on past experiences
+
+### API Endpoints
+
+#### Initialize Learning
+
+```bash
+curl -X POST http://localhost:8001/api/learning/agents/initialize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": 1,
+    "initial_skills": {
+      "python_programming": 60.0,
+      "data_analysis": 45.0,
+      "machine_learning": 30.0
+    }
+  }'
+```
+
+#### Record Experience
+
+```bash
+curl -X POST http://localhost:8001/api/learning/agents/1/experiences \
+  -H "Content-Type: application/json" \
+  -d '{
+    "experience_type": "task_success",
+    "outcome": "success",
+    "context": {
+      "task_type": "data_processing",
+      "complexity": "medium",
+      "duration_hours": 4
+    },
+    "learning_value": 0.8
+  }'
+```
+
+#### Update Skill Proficiency
+
+```bash
+curl -X POST http://localhost:8001/api/learning/agents/1/skills \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skill_name": "python_programming",
+    "proficiency_delta": 5.0,
+    "reason": "Successfully completed complex Python task"
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "skill": {
+    "agent_id": 1,
+    "skill_name": "python_programming",
+    "proficiency": 65.0,
+    "skill_level": "advanced",
+    "change": 5.0,
+    "reason": "Successfully completed complex Python task"
+  }
+}
+```
+
+#### Learn Strategy
+
+```bash
+curl -X POST http://localhost:8001/api/learning/agents/1/strategies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy_name": "incremental_testing",
+    "strategy_details": {
+      "approach": "Test each component before integration",
+      "applicable_to": ["development", "debugging"]
+    },
+    "effectiveness": 0.85,
+    "learning_strategy": "reinforcement"
+  }'
+```
+
+#### Apply Strategy
+
+```bash
+curl -X POST http://localhost:8001/api/learning/agents/1/strategies/apply \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy_name": "incremental_testing",
+    "success": true
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "strategy": {
+    "strategy_name": "incremental_testing",
+    "times_used": 5,
+    "success_count": 4,
+    "failure_count": 1,
+    "effectiveness": 0.80
+  }
+}
+```
+
+#### Get Recommendations
+
+```bash
+curl -X POST http://localhost:8001/api/learning/agents/1/recommendations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_context": {
+      "task_type": "data_processing",
+      "complexity": "high"
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "task_context": {"task_type": "data_processing", "complexity": "high"},
+  "recommended_strategies": [
+    {
+      "strategy_name": "incremental_testing",
+      "effectiveness": 0.85,
+      "times_used": 5
+    }
+  ],
+  "skills_to_improve": [
+    {"skill": "machine_learning", "proficiency": 30.0}
+  ],
+  "similar_past_experiences": [
+    {
+      "experience_type": "task_success",
+      "outcome": "success",
+      "similarity": 0.8
+    }
+  ],
+  "success_probability": 0.75
+}
+```
+
+#### Get Learning Progress
+
+```bash
+curl -X GET http://localhost:8001/api/learning/agents/1/progress
+```
+
+Response:
+```json
+{
+  "success": true,
+  "agent_id": 1,
+  "total_experiences": 45,
+  "success_rate": 73.3,
+  "recent_success_rate": 80.0,
+  "total_skills": 3,
+  "average_skill_proficiency": 45.0,
+  "strategies_learned": 4,
+  "patterns_recognized": 3,
+  "learning_curve": [
+    {
+      "experience_count": 10,
+      "success_rate": 60.0,
+      "average_skill": 40.0,
+      "timestamp": "2024-01-15T10:00:00"
+    },
+    {
+      "experience_count": 20,
+      "success_rate": 70.0,
+      "average_skill": 42.5,
+      "timestamp": "2024-01-16T10:00:00"
+    }
+  ]
+}
+```
+
+#### Get Statistics
+
+```bash
+curl -X GET http://localhost:8001/api/learning/statistics
+```
+
+Response:
+```json
+{
+  "success": true,
+  "statistics": {
+    "total_agents": 15,
+    "total_experiences": 680,
+    "total_skills_tracked": 45,
+    "total_strategies_learned": 60,
+    "average_success_rate": 68.5,
+    "experience_types": {
+      "task_success": 350,
+      "task_failure": 150,
+      "collaboration_success": 120,
+      "negotiation_success": 60
+    }
+  }
+}
+```
+
+### Experience Types
+
+- **task_success**: Successfully completed task
+- **task_failure**: Failed to complete task
+- **collaboration_success**: Successful collaboration
+- **collaboration_failure**: Failed collaboration
+- **conflict_resolution**: Resolved conflict
+- **negotiation_success**: Successful negotiation
+- **negotiation_failure**: Failed negotiation
+
+### Learning Strategies
+
+- **reinforcement**: Learn from rewards and outcomes
+- **supervised**: Learn from labeled examples
+- **imitation**: Learn by observing others
+- **adaptive**: Adapt strategies based on context
+
+### Skill Levels
+
+- **novice** (0-20): Just starting out
+- **beginner** (21-40): Basic understanding
+- **intermediate** (41-60): Solid competence
+- **advanced** (61-80): High proficiency
+- **expert** (81-100): Mastery level
+
+### Use Cases
+
+1. **Continuous Improvement**: Agents learn from every task to improve future performance
+2. **Strategy Optimization**: Identify and refine effective strategies
+3. **Skill Development**: Track proficiency growth across multiple competencies
+4. **Success Prediction**: Estimate task success based on similar past experiences
+5. **Adaptive Behavior**: Adjust approaches based on learned patterns
+6. **Knowledge Transfer**: Learn from observing successful agents
+
+### Integration
+
+```python
+from src.services.agent_learning import AgentLearning, ExperienceType
+
+# Initialize learning
+AgentLearning.initialize_learning(
+    session=session,
+    agent_id=1,
+    initial_skills={"python": 50.0}
+)
+
+# Record experience
+experience = AgentLearning.record_experience(
+    session=session,
+    agent_id=1,
+    experience_type=ExperienceType.TASK_SUCCESS,
+    outcome="success",
+    context={"task_type": "coding"},
+    learning_value=0.9
+)
+
+# Update skill
+skill = AgentLearning.update_skill_proficiency(
+    session=session,
+    agent_id=1,
+    skill_name="python",
+    proficiency_delta=5.0
+)
+
+# Get recommendations
+recommendations = AgentLearning.get_recommendations(
+    session=session,
+    agent_id=1,
+    task_context={"task_type": "coding", "complexity": "high"}
+)
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (50% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (55% complete)
 
-Current Progress: Commit 50/100 - Agent Incentive System Complete (Block Phase 3 Milestone!)
+Current Progress: Commit 51/100 - Agent Learning System Complete
 
 ## Implementation Roadmap
 
