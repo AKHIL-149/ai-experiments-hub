@@ -14222,13 +14222,322 @@ pipeline = {
 print(f"Assembled pipeline: {pipeline}")
 ```
 
+## Agent Contract Management System
+
+The Agent Contract Management System manages formal agreements and SLAs between agents, providing contract lifecycle management, performance monitoring, violation detection, and enforcement.
+
+### Key Features
+
+- **6 Contract Types**: SLA, collaboration, resource sharing, data exchange, task delegation, coalition agreements
+- **Contract Lifecycle**: Draft → Proposed → Active → Fulfilled/Breached/Terminated
+- **SLA Terms**: Define response time, quality, throughput, availability guarantees
+- **Performance Monitoring**: Automatic tracking of contract metrics
+- **Violation Detection**: Real-time SLA violation detection and recording
+- **Compliance Checking**: Validate current performance against SLA requirements
+- **Penalty Management**: Automatic penalty application for violations
+- **Contract Renewal**: Renewable contracts with updated terms
+- **Performance Scoring**: Calculate overall contract performance scores
+
+### Contract Types
+
+- **SERVICE_LEVEL_AGREEMENT** (sla) - Service level agreements with SLA terms
+- **COLLABORATION_AGREEMENT** (collaboration) - Collaboration agreements between agents
+- **RESOURCE_SHARING** (resource_sharing) - Resource sharing agreements
+- **DATA_EXCHANGE** (data_exchange) - Data exchange agreements
+- **TASK_DELEGATION** (task_delegation) - Task delegation agreements
+- **COALITION_AGREEMENT** (coalition) - Coalition membership agreements
+
+### Contract Statuses
+
+- **DRAFT** - Draft contract, not proposed yet
+- **PROPOSED** - Proposed, awaiting activation
+- **ACTIVE** - Active and being monitored
+- **FULFILLED** - Successfully completed
+- **BREACHED** - SLA violations exceeded threshold (3+ violations)
+- **TERMINATED** - Terminated before completion
+- **EXPIRED** - Expired without renewal
+
+### Violation Types
+
+- **RESPONSE_TIME** - Response time exceeds SLA
+- **THROUGHPUT** - Throughput below SLA
+- **QUALITY** - Quality score below SLA
+- **AVAILABILITY** - Availability below SLA
+- **RESOURCE_LIMIT** - Resource limits exceeded
+- **DEADLINE** - Deadline missed
+
+### REST API Endpoints
+
+**Create Contract:**
+```bash
+POST /api/contracts/contracts
+{
+  "contract_type": "sla",
+  "provider_agent_id": 5,
+  "consumer_agent_id": 8,
+  "title": "ML Model Inference SLA",
+  "description": "SLA for real-time ML model inference service",
+  "sla_terms": {
+    "max_response_time": 0.5,
+    "min_quality": 0.95,
+    "min_availability": 99.9,
+    "max_throughput": 1000
+  },
+  "obligations": {
+    "provider": [
+      "Maintain 99.9% uptime",
+      "Respond within 500ms",
+      "Deliver quality score >= 0.95"
+    ],
+    "consumer": [
+      "Pay usage fees on time",
+      "Respect rate limits"
+    ]
+  },
+  "duration_hours": 720,
+  "renewable": true,
+  "penalty_terms": {
+    "early_termination_fee": 1000,
+    "violation_penalty": 50
+  }
+}
+```
+
+**Activate Contract:**
+```bash
+POST /api/contracts/contracts/contract_1/activate
+{
+  "activating_agent_id": 8
+}
+```
+
+**Record Performance:**
+```bash
+POST /api/contracts/contracts/contract_1/performance
+{
+  "response_time": 0.35,
+  "quality_score": 0.97,
+  "throughput": 850,
+  "success": true,
+  "metadata": {
+    "model": "resnet50",
+    "batch_size": 1
+  }
+}
+```
+
+**Check Compliance:**
+```bash
+GET /api/contracts/contracts/contract_1/compliance
+```
+
+**Terminate Contract:**
+```bash
+POST /api/contracts/contracts/contract_1/terminate
+{
+  "terminating_agent_id": 5,
+  "reason": "Service migration to new provider",
+  "immediate": false
+}
+```
+
+**Renew Contract:**
+```bash
+POST /api/contracts/contracts/contract_1/renew
+{
+  "duration_hours": 720,
+  "updated_terms": {
+    "max_response_time": 0.4,
+    "min_quality": 0.97
+  }
+}
+```
+
+**Get Contract:**
+```bash
+GET /api/contracts/contracts/contract_1
+```
+
+**List Agent Contracts:**
+```bash
+GET /api/contracts/agents/5/contracts?status=active&contract_type=sla
+```
+
+**Get Violations:**
+```bash
+GET /api/contracts/contracts/contract_1/violations?severity=high
+```
+
+**Get Statistics:**
+```bash
+GET /api/contracts/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Creating and Monitoring SLA**
+```python
+from src.services.agent_contract import AgentContract, ContractType
+
+# Provider and consumer create SLA
+contract = AgentContract.create_contract(
+    session=session,
+    contract_type=ContractType.SERVICE_LEVEL_AGREEMENT,
+    provider_agent_id=5,
+    consumer_agent_id=8,
+    title="ML Model Inference SLA",
+    description="SLA for real-time ML model inference service",
+    sla_terms={
+        "max_response_time": 0.5,  # 500ms max
+        "min_quality": 0.95,        # 95% quality minimum
+        "min_availability": 99.9     # 99.9% uptime
+    },
+    duration_hours=720,  # 30 days
+    renewable=True
+)
+
+print(f"Contract created: {contract['id']}")
+
+# Consumer activates contract
+activated = AgentContract.activate_contract(
+    session=session,
+    contract_id=contract['id'],
+    activating_agent_id=8
+)
+
+print(f"Contract activated at {activated['activated_at']}")
+
+# Provider records each request
+for i in range(100):
+    AgentContract.record_performance(
+        session=session,
+        contract_id=contract['id'],
+        response_time=0.45,
+        quality_score=0.96,
+        success=True
+    )
+
+# Check compliance
+compliance = AgentContract.check_compliance(
+    session=session,
+    contract_id=contract['id']
+)
+
+print(f"Contract compliant: {compliance['is_compliant']}")
+print(f"Compliance score: {compliance['compliance_score']:.2%}")
+```
+
+**Scenario 2: Handling SLA Violations**
+```python
+# Provider has performance degradation
+for i in range(10):
+    AgentContract.record_performance(
+        session=session,
+        contract_id=contract['id'],
+        response_time=0.8,  # Exceeds 500ms SLA
+        quality_score=0.92,  # Below 95% SLA
+        success=True
+    )
+
+# Check for violations
+violations = AgentContract.get_contract_violations(
+    session=session,
+    contract_id=contract['id']
+)
+
+print(f"Total violations: {violations['total_violations']}")
+for violation in violations['violations']:
+    print(f"  {violation['violation_type']}: expected {violation['expected']}, got {violation['actual']}")
+
+# Get updated contract status
+contract_info = AgentContract.get_contract(
+    session=session,
+    contract_id=contract['id']
+)
+
+if contract_info['status'] == 'breached':
+    print("Contract breached due to multiple violations!")
+    print(f"Performance score: {contract_info['performance_score']:.2f}")
+```
+
+**Scenario 3: Contract Renewal**
+```python
+# Near end of contract period, renew with improved terms
+renewed = AgentContract.renew_contract(
+    session=session,
+    contract_id=contract['id'],
+    duration_hours=1440,  # 60 days
+    updated_terms={
+        "max_response_time": 0.4,  # Improved to 400ms
+        "min_quality": 0.97,        # Improved to 97%
+        "min_availability": 99.95    # Improved to 99.95%
+    }
+)
+
+print(f"Contract renewed: {renewed['id']}")
+print(f"Previous contract marked as: {contract['status']}")
+```
+
+**Scenario 4: Early Termination**
+```python
+# Consumer terminates contract early
+result = AgentContract.terminate_contract(
+    session=session,
+    contract_id=contract['id'],
+    terminating_agent_id=8,
+    reason="Migrating to in-house solution",
+    immediate=False  # Apply penalties
+)
+
+print(f"Contract terminated at {result['terminated_at']}")
+print(f"Penalties applied: {result['penalties_applied']}")
+```
+
+**Scenario 5: Multi-Agent Contract Management**
+```python
+# Agent views all their contracts
+contracts = AgentContract.list_agent_contracts(
+    session=session,
+    agent_id=5,
+    status="active"
+)
+
+print(f"Agent has {contracts['total_contracts']} active contracts")
+print(f"As provider: {len(contracts['as_provider'])} contracts")
+print(f"As consumer: {len(contracts['as_consumer'])} contracts")
+
+# For each provider contract, check compliance
+for contract in contracts['as_provider']:
+    compliance = AgentContract.check_compliance(
+        session=session,
+        contract_id=contract['id']
+    )
+
+    if not compliance['is_compliant']:
+        print(f"⚠️  Contract {contract['title']} has {len(compliance['violations'])} violations")
+
+        # Take corrective action
+        for violation in compliance['violations']:
+            if violation['term'] == 'max_response_time':
+                print(f"   Optimizing for faster response time...")
+            elif violation['term'] == 'min_quality':
+                print(f"   Improving quality controls...")
+
+# Get system-wide statistics
+stats = AgentContract.get_contract_statistics(session=session)
+print(f"\nSystem statistics:")
+print(f"Total contracts: {stats['total_contracts']}")
+print(f"Average performance: {stats['average_performance_score']:.2%}")
+print(f"Total violations: {stats['total_violations']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
-🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (80% complete)
+🚧 **Block Phase 3 In Progress** - Multi-Agent Coordination (85% complete)
 
-Current Progress: Commit 56/100 - Agent Discovery System Complete
+Current Progress: Commit 57/100 - Agent Contract Management System Complete
 
 ## Implementation Roadmap
 
