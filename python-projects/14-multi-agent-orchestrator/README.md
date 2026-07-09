@@ -15450,13 +15450,288 @@ for strategy, count in stats['strategy_distribution'].items():
     print(f"  {strategy}: {count}")
 ```
 
+## Human Approval Gate
+
+The Human Approval Gate system enables human-in-the-loop workflows by pausing agent execution at critical points and waiting for human review and approval before proceeding.
+
+### Key Features
+
+- **9 Approval Types**: Execute task, deploy code, spend budget, data access, external API, delete data, modify config, escalate issue, general
+- **Auto-Approval Conditions**: Automatically approve low-risk requests based on configurable rules
+- **Priority Levels**: CRITICAL, HIGH, MEDIUM, LOW for urgent vs. routine approvals
+- **Multi-Approver Support**: Require multiple approvers for high-risk operations
+- **Timeout Management**: Automatic expiration of pending requests after timeout
+- **Approval History**: Complete audit trail of all approvals and rejections
+- **User Statistics**: Track approval rates and response times per user
+- **Workflow Integration**: Seamless integration with agent workflows
+
+### Approval Types
+
+- **EXECUTE_TASK** - Execute a task or operation
+- **DEPLOY_CODE** - Deploy code to production
+- **SPEND_BUDGET** - Spend budget or incur costs
+- **DATA_ACCESS** - Access sensitive data
+- **EXTERNAL_API** - Call external API
+- **DELETE_DATA** - Delete data or resources
+- **MODIFY_CONFIG** - Modify system configuration
+- **ESCALATE_ISSUE** - Escalate an issue
+- **GENERAL** - General approval request
+
+### Approval Statuses
+
+- **PENDING** - Waiting for approval
+- **APPROVED** - Approved and completed
+- **REJECTED** - Rejected by approver
+- **EXPIRED** - Expired before approval
+- **CANCELLED** - Cancelled by workflow
+
+### Priority Levels
+
+- **CRITICAL** - Requires immediate attention
+- **HIGH** - High priority
+- **MEDIUM** - Medium priority (default)
+- **LOW** - Low priority
+
+### REST API Endpoints
+
+**Create Approval Request:**
+```bash
+POST /api/approvals/requests
+{
+  "workflow_id": "wf_123",
+  "agent_id": 5,
+  "approval_type": "deploy_code",
+  "title": "Deploy v2.0 to Production",
+  "description": "Deploy new feature release with database migrations",
+  "context": {
+    "environment": "production",
+    "version": "2.0.0",
+    "risk_level": "high",
+    "affected_users": 10000
+  },
+  "priority": "high",
+  "required_approvers": ["user_1", "user_2"],
+  "timeout_minutes": 120
+}
+```
+
+**Approve Request:**
+```bash
+POST /api/approvals/requests/approval_1/approve
+{
+  "approver_user_id": "user_1",
+  "approver_name": "John Doe",
+  "comments": "Reviewed deployment plan, looks good to proceed"
+}
+```
+
+**Reject Request:**
+```bash
+POST /api/approvals/requests/approval_1/reject
+{
+  "rejector_user_id": "user_1",
+  "rejector_name": "John Doe",
+  "reason": "Database migrations need additional testing"
+}
+```
+
+**Get Pending Approvals:**
+```bash
+GET /api/approvals/pending?approver_user_id=user_1
+```
+
+**Get User History:**
+```bash
+GET /api/approvals/users/user_1/history?limit=20
+```
+
+**Get Statistics:**
+```bash
+GET /api/approvals/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Production Deployment Approval**
+```python
+from src.services.human_approval import HumanApproval, ApprovalType, ApprovalPriority
+
+# Agent requests approval before deploying to production
+approval = HumanApproval.create_approval_request(
+    session=session,
+    workflow_id="deploy_wf_123",
+    agent_id=5,
+    approval_type=ApprovalType.DEPLOY_CODE,
+    title="Deploy v2.0 to Production",
+    description="Deploy new feature with breaking changes",
+    context={
+        "environment": "production",
+        "version": "2.0.0",
+        "breaking_changes": True,
+        "rollback_plan": "automated",
+        "affected_services": ["api", "web", "worker"]
+    },
+    priority=ApprovalPriority.HIGH,
+    required_approvers=["tech_lead", "ops_manager"],
+    timeout_minutes=120
+)
+
+print(f"Approval requested: {approval['id']}")
+print(f"Status: {approval['status']}")
+
+# Workflow pauses here until approval
+
+# Tech lead approves
+HumanApproval.approve_request(
+    session=session,
+    request_id=approval['id'],
+    approver_user_id="tech_lead",
+    approver_name="Alice Smith",
+    comments="Code reviewed, tests passing, approved for deployment"
+)
+
+# Still waiting for ops manager...
+
+# Ops manager approves
+result = HumanApproval.approve_request(
+    session=session,
+    request_id=approval['id'],
+    approver_user_id="ops_manager",
+    approver_name="Bob Jones",
+    comments="Infrastructure ready, monitoring in place"
+)
+
+# Now status is APPROVED, workflow continues
+print(f"Deployment approved at {result['approved_at']}")
+```
+
+**Scenario 2: Budget Spending with Auto-Approval**
+```python
+# Agent requests approval to spend budget
+approval = HumanApproval.create_approval_request(
+    session=session,
+    workflow_id="expense_wf_456",
+    agent_id=8,
+    approval_type=ApprovalType.SPEND_BUDGET,
+    title="Purchase Cloud Resources",
+    description="Provision additional compute for peak traffic",
+    context={
+        "budget": 150.00,
+        "resource_type": "compute",
+        "duration": "1 day",
+        "risk_level": "low"
+    },
+    priority=ApprovalPriority.MEDIUM,
+    timeout_minutes=60,
+    auto_approve_conditions={
+        "max_budget": 200.00,  # Auto-approve if under $200
+        "max_risk_level": "medium"
+    }
+)
+
+# Auto-approved! No human interaction needed
+print(f"Status: {approval['status']}")  # APPROVED
+print(f"Auto-approved: {approval.get('auto_approved')}")  # True
+```
+
+**Scenario 3: Data Deletion with Rejection**
+```python
+# Agent requests approval to delete user data
+approval = HumanApproval.create_approval_request(
+    session=session,
+    workflow_id="cleanup_wf_789",
+    agent_id=12,
+    approval_type=ApprovalType.DELETE_DATA,
+    title="Delete Inactive User Accounts",
+    description="Remove 500 accounts inactive for 2+ years",
+    context={
+        "account_count": 500,
+        "inactive_days": 730,
+        "data_size_gb": 25,
+        "includes_pii": True
+    },
+    priority=ApprovalPriority.CRITICAL,
+    required_approvers=["data_officer"],
+    timeout_minutes=180
+)
+
+# Data officer reviews and rejects
+rejection = HumanApproval.reject_request(
+    session=session,
+    request_id=approval['id'],
+    rejector_user_id="data_officer",
+    rejector_name="Carol White",
+    reason="Need legal review before deleting PII. Schedule for next week."
+)
+
+print(f"Status: {rejection['status']}")  # REJECTED
+print(f"Reason: {rejection['rejection_reason']}")
+
+# Workflow handles rejection appropriately
+```
+
+**Scenario 4: Pending Approvals Dashboard**
+```python
+# Get all pending approvals for a user
+pending = HumanApproval.get_pending_approvals(
+    session=session,
+    approver_user_id="tech_lead"
+)
+
+print(f"Pending approvals: {pending['total']}")
+print(f"Critical: {pending['by_priority']['critical']}")
+print(f"High: {pending['by_priority']['high']}")
+
+for request in pending['pending_requests']:
+    print(f"\n{request['priority'].upper()}: {request['title']}")
+    print(f"  Type: {request['approval_type']}")
+    print(f"  From: Agent {request['agent_id']}")
+    print(f"  Created: {request['created_at']}")
+    print(f"  Expires: {request['expires_at']}")
+    print(f"  Description: {request['description']}")
+```
+
+**Scenario 5: Approval Analytics**
+```python
+# Get user's approval history
+history = HumanApproval.get_user_approval_history(
+    session=session,
+    user_id="tech_lead",
+    limit=50
+)
+
+print(f"User: {history['user_id']}")
+print(f"Total actions: {history['total_actions']}")
+print(f"Approved: {history['approved_count']}")
+print(f"Rejected: {history['rejected_count']}")
+print(f"Approval rate: {history['approval_rate']:.1%}")
+
+# Get system-wide statistics
+stats = HumanApproval.get_approval_statistics(session=session)
+
+print(f"\nApproval System Statistics:")
+print(f"Total requests: {stats['total_requests']}")
+print(f"Approval rate: {stats['approval_rate']:.1%}")
+print(f"Rejection rate: {stats['rejection_rate']:.1%}")
+print(f"Average response time: {stats['average_response_time_seconds']/60:.1f} minutes")
+
+print(f"\nBy Type:")
+for approval_type, count in stats['type_distribution'].items():
+    print(f"  {approval_type}: {count}")
+
+print(f"\nBy Status:")
+for status, count in stats['status_distribution'].items():
+    print(f"  {status}: {count}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (5% complete)
 
-Current Progress: Commit 60/100 - Agent Coordination Engine Complete
+Current Progress: Commit 61/100 - Human Approval Gate Complete
 
 ## Implementation Roadmap
 
