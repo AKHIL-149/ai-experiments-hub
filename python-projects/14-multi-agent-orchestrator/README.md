@@ -16436,14 +16436,428 @@ print(f"  Good: <= {thresholds['execution_time']['good']}s")
 print(f"  Fair: <= {thresholds['execution_time']['fair']}s")
 ```
 
+## Alert Management
+
+The Alert Management system provides comprehensive alerting, notification, and escalation capabilities for monitoring and responding to issues across the multi-agent orchestration platform.
+
+### Key Features
+
+- **8 Alert Types**: Performance, cost, system, workflow, agent, security, resource, custom
+- **4 Severity Levels**: Info, warning, error, critical with automatic routing
+- **6 Notification Channels**: Email, Slack, webhook, SMS, PagerDuty, in-app
+- **Alert Rules**: Automated alert creation based on conditions and thresholds
+- **Alert Lifecycle**: Active → Acknowledged → Resolved workflow
+- **Silencing**: Temporarily suppress alerts matching specified criteria
+- **Escalation Policies**: Multi-step escalation for unacknowledged alerts
+- **Alert History**: Complete audit trail of all alert actions
+- **Deduplication**: Automatic grouping and deduplication of similar alerts
+- **Rich Context**: Include agent, workflow, and system context with alerts
+
+### Alert Types
+
+- **PERFORMANCE** - Performance-related alerts (slow execution, high error rates)
+- **COST** - Cost and budget alerts (budget exceeded, spending thresholds)
+- **SYSTEM** - System health alerts (service down, resource exhaustion)
+- **WORKFLOW** - Workflow execution alerts (failures, timeouts)
+- **AGENT** - Agent status alerts (agent down, unresponsive)
+- **SECURITY** - Security and access alerts (unauthorized access, suspicious activity)
+- **RESOURCE** - Resource utilization alerts (CPU, memory, disk)
+- **CUSTOM** - Custom application-specific alerts
+
+### Severity Levels
+
+- **INFO** - Informational, no action required
+- **WARNING** - May require attention, monitor closely
+- **ERROR** - Requires action, service degradation
+- **CRITICAL** - Requires immediate action, service outage
+
+### Notification Channels
+
+- **EMAIL** - Email notifications to configured addresses
+- **SLACK** - Slack channel or direct messages
+- **WEBHOOK** - HTTP POST to custom endpoints
+- **SMS** - SMS text message notifications
+- **PAGERDUTY** - PagerDuty incident creation
+- **IN_APP** - In-application notification center
+
+### REST API Endpoints
+
+**Create Alert:**
+```bash
+POST /api/alerts/alerts
+{
+  "alert_type": "performance",
+  "severity": "critical",
+  "title": "Agent 5 High Error Rate",
+  "description": "Error rate exceeded 15% threshold",
+  "source": "performance_monitor",
+  "agent_id": 5,
+  "details": {
+    "error_rate": 0.18,
+    "threshold": 0.10
+  }
+}
+```
+
+**Acknowledge Alert:**
+```bash
+POST /api/alerts/alerts/alert_123/acknowledge
+{
+  "acknowledged_by": "ops-team",
+  "notes": "Investigating root cause"
+}
+```
+
+**Resolve Alert:**
+```bash
+POST /api/alerts/alerts/alert_123/resolve
+{
+  "resolved_by": "ops-team",
+  "resolution_notes": "Fixed by restarting agent service"
+}
+```
+
+**List Alerts:**
+```bash
+GET /api/alerts/alerts?status=active&severity=critical
+```
+
+**Create Alert Rule:**
+```bash
+POST /api/alerts/rules
+{
+  "name": "High Error Rate Alert",
+  "alert_type": "performance",
+  "condition": {
+    "metric": "error_rate",
+    "operator": "greater_than",
+    "threshold": 0.10
+  },
+  "severity": "error",
+  "notification_channels": ["channel_slack", "channel_email"]
+}
+```
+
+**Create Notification Channel:**
+```bash
+POST /api/alerts/channels
+{
+  "name": "Ops Team Slack",
+  "channel_type": "slack",
+  "config": {
+    "webhook_url": "https://hooks.slack.com/services/...",
+    "channel": "#ops-alerts"
+  }
+}
+```
+
+**Create Silence:**
+```bash
+POST /api/alerts/silences
+{
+  "alert_type": "performance",
+  "agent_id": 5,
+  "duration_minutes": 120,
+  "reason": "Scheduled maintenance",
+  "created_by": "ops-team"
+}
+```
+
+### Use Cases
+
+**Scenario 1: Creating and Managing Alerts**
+```python
+from src.services.alert_management import AlertManagement
+
+# Create a critical performance alert
+alert = AlertManagement.create_alert(
+    session=session,
+    alert_type="performance",
+    severity="critical",
+    title="Agent 5 High Error Rate",
+    description="Error rate has exceeded 15% threshold in the last 10 minutes",
+    source="performance_monitor",
+    agent_id=5,
+    details={
+        "error_rate": 0.18,
+        "threshold": 0.10,
+        "time_window": "10m",
+        "total_executions": 100,
+        "failed_executions": 18
+    }
+)
+
+print(f"Alert created: {alert['id']}")
+print(f"Status: {alert['status']}")
+print(f"Notifications sent: {alert['notification_sent']}")
+
+# Output:
+# Alert created: alert_abc123
+# Status: active
+# Notifications sent: True
+```
+
+**Scenario 2: Alert Lifecycle Management**
+```python
+# Acknowledge the alert
+alert = AlertManagement.acknowledge_alert(
+    session=session,
+    alert_id="alert_abc123",
+    acknowledged_by="ops-team",
+    notes="Investigating root cause. Agent logs show database connection issues."
+)
+
+print(f"Alert acknowledged at: {alert['acknowledged_at']}")
+print(f"Status: {alert['status']}")
+
+# Output:
+# Alert acknowledged at: 2024-01-15T14:30:00Z
+# Status: acknowledged
+
+# After fixing the issue...
+alert = AlertManagement.resolve_alert(
+    session=session,
+    alert_id="alert_abc123",
+    resolved_by="ops-team",
+    resolution_notes="Fixed database connection pool configuration. Error rate back to normal."
+)
+
+print(f"Alert resolved at: {alert['resolved_at']}")
+print(f"Status: {alert['status']}")
+
+# Output:
+# Alert resolved at: 2024-01-15T15:00:00Z
+# Status: resolved
+```
+
+**Scenario 3: Setting Up Alert Rules**
+```python
+# Create alert rule for budget overruns
+rule = AlertManagement.create_alert_rule(
+    session=session,
+    name="Budget 90% Threshold",
+    alert_type="cost",
+    condition={
+        "metric": "budget_percentage",
+        "operator": "greater_than_or_equal",
+        "threshold": 0.90
+    },
+    severity="warning",
+    notification_channels=["channel_email", "channel_slack"],
+    description="Alert when any budget reaches 90% utilization"
+)
+
+print(f"Rule created: {rule['id']}")
+print(f"Enabled: {rule['enabled']}")
+
+# Create alert rule for agent failures
+failure_rule = AlertManagement.create_alert_rule(
+    session=session,
+    name="Agent Consecutive Failures",
+    alert_type="agent",
+    condition={
+        "metric": "consecutive_failures",
+        "operator": "greater_than",
+        "threshold": 3
+    },
+    severity="error",
+    notification_channels=["channel_pagerduty", "channel_slack"],
+    description="Alert when agent has 3+ consecutive failures"
+)
+
+print(f"Failure rule created: {failure_rule['id']}")
+```
+
+**Scenario 4: Configuring Notification Channels**
+```python
+# Configure Slack channel
+slack_channel = AlertManagement.create_notification_channel(
+    session=session,
+    name="Ops Team Slack",
+    channel_type="slack",
+    config={
+        "webhook_url": "https://hooks.slack.com/services/T00/B00/XXX",
+        "channel": "#ops-alerts",
+        "username": "AlertBot",
+        "icon_emoji": ":warning:"
+    },
+    enabled=True
+)
+
+print(f"Slack channel: {slack_channel['id']}")
+
+# Configure email channel
+email_channel = AlertManagement.create_notification_channel(
+    session=session,
+    name="Ops Team Email",
+    channel_type="email",
+    config={
+        "recipients": ["ops@company.com", "oncall@company.com"],
+        "smtp_server": "smtp.company.com",
+        "from_address": "alerts@company.com"
+    },
+    enabled=True
+)
+
+print(f"Email channel: {email_channel['id']}")
+
+# Configure webhook for custom integration
+webhook_channel = AlertManagement.create_notification_channel(
+    session=session,
+    name="Custom Monitoring System",
+    channel_type="webhook",
+    config={
+        "url": "https://monitoring.company.com/api/alerts",
+        "method": "POST",
+        "headers": {
+            "Authorization": "Bearer token123",
+            "Content-Type": "application/json"
+        }
+    },
+    enabled=True
+)
+
+print(f"Webhook channel: {webhook_channel['id']}")
+```
+
+**Scenario 5: Alert Silencing for Maintenance**
+```python
+# Silence alerts for scheduled maintenance
+silence = AlertManagement.create_silence(
+    session=session,
+    alert_type="performance",
+    agent_id=5,
+    duration_minutes=120,  # 2 hours
+    reason="Scheduled maintenance - database migration",
+    created_by="ops-team"
+)
+
+print(f"Silence created: {silence['id']}")
+print(f"Expires at: {silence['expires_at']}")
+print(f"Active: {silence['is_active']}")
+
+# Output:
+# Silence created: silence_xyz789
+# Expires at: 2024-01-15T16:30:00Z
+# Active: True
+
+# Silence all critical alerts during deployment window
+deployment_silence = AlertManagement.create_silence(
+    session=session,
+    severity="critical",
+    duration_minutes=30,
+    reason="Production deployment in progress",
+    created_by="deploy-system"
+)
+
+print(f"Deployment silence active for {deployment_silence['duration_minutes']} minutes")
+```
+
+**Scenario 6: Escalation Policies**
+```python
+# Create escalation policy for critical alerts
+escalation = AlertManagement.create_escalation_policy(
+    session=session,
+    name="Critical Alert Escalation",
+    alert_type="system",
+    severity="critical",
+    escalation_steps=[
+        {
+            "level": 1,
+            "delay_minutes": 0,
+            "channels": ["channel_slack"],
+            "description": "Immediate notification to Slack"
+        },
+        {
+            "level": 2,
+            "delay_minutes": 15,
+            "channels": ["channel_email", "channel_pagerduty"],
+            "description": "Escalate to email and PagerDuty after 15 minutes"
+        },
+        {
+            "level": 3,
+            "delay_minutes": 30,
+            "channels": ["channel_sms"],
+            "description": "SMS to on-call engineer after 30 minutes"
+        }
+    ],
+    description="Multi-level escalation for critical system alerts",
+    enabled=True
+)
+
+print(f"Escalation policy: {escalation['id']}")
+print(f"Steps: {len(escalation['escalation_steps'])}")
+```
+
+**Scenario 7: Alert Analytics and Reporting**
+```python
+# Get alert statistics
+stats = AlertManagement.get_alert_statistics(session=session)
+
+print("Alert System Statistics:")
+print(f"Total alerts: {stats['total_alerts']}")
+print(f"Active: {stats['active_alerts']}")
+print(f"Critical: {stats['critical_alerts']}")
+print(f"Recent (24h): {stats['recent_alerts_24h']}")
+
+print(f"\nStatus Distribution:")
+for status, count in stats['status_distribution'].items():
+    print(f"  {status}: {count}")
+
+print(f"\nSeverity Distribution:")
+for severity, count in stats['severity_distribution'].items():
+    print(f"  {severity}: {count}")
+
+print(f"\nType Distribution:")
+for alert_type, count in stats['type_distribution'].items():
+    print(f"  {alert_type}: {count}")
+
+# Output:
+# Alert System Statistics:
+# Total alerts: 150
+# Active: 12
+# Critical: 3
+# Recent (24h): 45
+#
+# Status Distribution:
+#   active: 12
+#   acknowledged: 8
+#   resolved: 125
+#   silenced: 5
+#
+# Severity Distribution:
+#   info: 50
+#   warning: 60
+#   error: 35
+#   critical: 5
+#
+# Type Distribution:
+#   performance: 45
+#   cost: 20
+#   system: 30
+#   workflow: 25
+#   agent: 15
+#   security: 10
+#   resource: 5
+
+# List active alerts
+active = AlertManagement.get_active_alerts(session=session)
+
+print(f"\nActive Alerts: {len(active['alerts'])}")
+for alert in active['alerts'][:5]:
+    print(f"\n{alert['severity'].upper()}: {alert['title']}")
+    print(f"  Created: {alert['created_at']}")
+    print(f"  Agent: {alert['agent_id']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (15% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (20% complete)
 
-Current Progress: Commit 63/100 - Performance Monitoring Complete
+Current Progress: Commit 64/100 - Alert Management Complete
 
 ## Implementation Roadmap
 
