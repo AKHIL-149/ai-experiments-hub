@@ -15724,14 +15724,335 @@ for status, count in stats['status_distribution'].items():
     print(f"  {status}: {count}")
 ```
 
+## Cost Tracking and Budget Management
+
+The Cost Tracking system provides comprehensive monitoring and management of costs associated with agent operations including LLM API calls, compute resources, storage, and external services with budget limits and alerts.
+
+### Key Features
+
+- **6 Cost Categories**: LLM API, compute, storage, external API, data transfer, other
+- **Automated LLM Cost Calculation**: Automatic cost computation based on token usage and model pricing
+- **Budget Management**: Set spending limits per agent, workflow, or category
+- **Multi-Level Alerts**: INFO, WARNING, CRITICAL alerts at configurable thresholds
+- **Auto-Disable on Exceed**: Automatically disable operations when budget exceeded
+- **Cost Forecasting**: Project future costs based on historical spending patterns
+- **Flexible Periods**: Hourly, daily, weekly, monthly, yearly budgets
+- **Detailed Breakdowns**: Costs by category, agent, workflow, and time period
+- **Configurable Pricing**: Update pricing rates for models and resources
+
+### Cost Categories
+
+- **LLM_API** - LLM API token costs
+- **COMPUTE** - Compute execution costs
+- **STORAGE** - Data storage costs
+- **EXTERNAL_API** - External API call costs
+- **DATA_TRANSFER** - Data transfer costs
+- **OTHER** - Other miscellaneous costs
+
+### Budget Periods
+
+- **HOURLY** - Hourly budget limits
+- **DAILY** - Daily budget limits
+- **WEEKLY** - Weekly budget limits
+- **MONTHLY** - Monthly budget limits
+- **YEARLY** - Yearly budget limits
+
+### Alert Levels
+
+- **INFO** - Informational alert
+- **WARNING** - Warning - approaching budget limit (default: 80%)
+- **CRITICAL** - Critical - budget nearly or fully exceeded (default: 95%)
+
+### REST API Endpoints
+
+**Record LLM Cost:**
+```bash
+POST /api/costs/llm
+{
+  "model": "gpt-4",
+  "input_tokens": 1500,
+  "output_tokens": 500,
+  "agent_id": 5,
+  "workflow_id": "wf_123",
+  "task_id": "task_456"
+}
+```
+
+**Record Compute Cost:**
+```bash
+POST /api/costs/compute
+{
+  "duration_seconds": 45.5,
+  "agent_id": 5,
+  "workflow_id": "wf_123"
+}
+```
+
+**Create Budget:**
+```bash
+POST /api/costs/budgets
+{
+  "name": "Monthly LLM Budget",
+  "amount": 500.00,
+  "period": "monthly",
+  "category": "llm_api",
+  "alert_thresholds": {
+    "warning": 0.75,
+    "critical": 0.90
+  },
+  "auto_disable_on_exceed": true
+}
+```
+
+**Get Cost Summary:**
+```bash
+GET /api/costs/summary?start_date=2024-01-01&category=llm_api
+```
+
+**Get Budget Status:**
+```bash
+GET /api/costs/budgets/budget_1
+```
+
+**Get Cost Forecast:**
+```bash
+GET /api/costs/forecast?days_ahead=30&agent_id=5
+```
+
+**Get Statistics:**
+```bash
+GET /api/costs/statistics
+```
+
+### Use Cases
+
+**Scenario 1: Tracking LLM Costs**
+```python
+from src.services.cost_tracking import CostTracking
+
+# Agent makes LLM API call
+cost_entry = CostTracking.record_llm_cost(
+    session=session,
+    model="gpt-4",
+    input_tokens=1500,
+    output_tokens=500,
+    agent_id=5,
+    workflow_id="wf_123",
+    task_id="task_456"
+)
+
+print(f"Cost: ${cost_entry['amount']:.4f}")
+print(f"Details: {cost_entry['details']}")
+# Output:
+# Cost: $0.0750
+# Details: {
+#   'model': 'gpt-4',
+#   'input_tokens': 1500,
+#   'output_tokens': 500,
+#   'total_tokens': 2000,
+#   'input_cost': 0.045,
+#   'output_cost': 0.030
+# }
+```
+
+**Scenario 2: Budget Management with Alerts**
+```python
+# Create monthly budget for LLM costs
+budget = CostTracking.create_budget(
+    session=session,
+    name="Monthly LLM Budget",
+    amount=500.00,
+    period="monthly",
+    category="llm_api",
+    alert_thresholds={
+        "warning": 0.75,  # Alert at 75%
+        "critical": 0.90  # Critical alert at 90%
+    },
+    auto_disable_on_exceed=True
+)
+
+print(f"Budget created: {budget['id']}")
+
+# Record costs throughout the month...
+for i in range(100):
+    CostTracking.record_llm_cost(
+        session=session,
+        model="gpt-4",
+        input_tokens=1000,
+        output_tokens=500
+    )
+
+# Check budget status
+status = CostTracking.get_budget_status(
+    session=session,
+    budget_id=budget['id']
+)
+
+print(f"Spent: ${status['current_spend']:.2f} / ${status['amount']:.2f}")
+print(f"Usage: {status['percentage_used']:.1%}")
+print(f"Remaining: ${status['remaining']:.2f}")
+
+# Get alerts
+alerts = CostTracking.get_alerts(session=session)
+
+for alert in alerts['alerts']:
+    print(f"{alert['level'].upper()}: {alert['message']}")
+```
+
+**Scenario 3: Agent-Specific Budget**
+```python
+# Set daily budget for a specific agent
+agent_budget = CostTracking.create_budget(
+    session=session,
+    name="Agent 5 Daily Budget",
+    amount=50.00,
+    period="daily",
+    agent_id=5,  # Only track costs for Agent 5
+    alert_thresholds={
+        "warning": 0.80,
+        "critical": 0.95
+    }
+)
+
+# Record agent costs
+CostTracking.record_llm_cost(
+    session=session,
+    model="claude-3-sonnet",
+    input_tokens=2000,
+    output_tokens=1000,
+    agent_id=5
+)
+
+CostTracking.record_compute_cost(
+    session=session,
+    duration_seconds=120.5,
+    agent_id=5
+)
+
+# Check agent's budget
+status = CostTracking.get_budget_status(
+    session=session,
+    budget_id=agent_budget['id']
+)
+
+if status['is_exceeded']:
+    print(f"⚠️ Agent 5 has exceeded daily budget!")
+    # Disable agent or reduce usage...
+```
+
+**Scenario 4: Cost Analysis and Reporting**
+```python
+# Get cost summary for last 30 days
+from datetime import datetime, timedelta
+
+end_date = datetime.utcnow()
+start_date = end_date - timedelta(days=30)
+
+summary = CostTracking.get_cost_summary(
+    session=session,
+    start_date=start_date.isoformat(),
+    end_date=end_date.isoformat()
+)
+
+print(f"30-Day Cost Summary:")
+print(f"Total: ${summary['total_cost']:.2f}")
+print(f"Entries: {summary['entry_count']}")
+
+print(f"\nBy Category:")
+for category, cost in summary['category_breakdown'].items():
+    percentage = (cost / summary['total_cost']) * 100
+    print(f"  {category}: ${cost:.2f} ({percentage:.1f}%)")
+
+print(f"\nTop Spending Agents:")
+for agent_id, cost in list(summary['agent_breakdown'].items())[:5]:
+    print(f"  Agent {agent_id}: ${cost:.2f}")
+
+print(f"\nBy Workflow:")
+for workflow_id, cost in list(summary['workflow_breakdown'].items())[:5]:
+    print(f"  {workflow_id}: ${cost:.2f}")
+```
+
+**Scenario 5: Cost Forecasting**
+```python
+# Get 30-day cost forecast
+forecast = CostTracking.get_cost_forecast(
+    session=session,
+    days_ahead=30,
+    agent_id=5
+)
+
+print(f"Cost Forecast (Agent 5, next 30 days):")
+print(f"Projected total: ${forecast['forecast_total']:.2f}")
+print(f"Daily average: ${forecast['daily_average']:.2f}")
+print(f"Confidence: {forecast['confidence']}")
+print(f"Based on: {forecast['historical_period_days']} days of data")
+
+# Check against budget
+if forecast['forecast_total'] > 500:
+    print(f"⚠️ Forecast exceeds monthly budget of $500!")
+    print(f"Recommend reducing usage by {((forecast['forecast_total'] - 500) / forecast['forecast_total']):.1%}")
+```
+
+**Scenario 6: Custom Pricing Configuration**
+```python
+# Update pricing for custom models or rates
+CostTracking.update_pricing(
+    session=session,
+    pricing_updates={
+        "llm_tokens_per_1k": {
+            "custom-model": {
+                "input": 0.005,
+                "output": 0.010
+            }
+        },
+        "compute_per_second": 0.0002  # Update compute rate
+    }
+)
+
+# Record cost with custom model
+cost = CostTracking.record_llm_cost(
+    session=session,
+    model="custom-model",
+    input_tokens=1000,
+    output_tokens=500
+)
+
+print(f"Custom model cost: ${cost['amount']:.4f}")
+```
+
+**Scenario 7: System-Wide Cost Analytics**
+```python
+# Get comprehensive cost statistics
+stats = CostTracking.get_cost_statistics(session=session)
+
+print("Cost Tracking Statistics:")
+print(f"Total cost: ${stats['total_cost']:.2f}")
+print(f"Total entries: {stats['total_entries']}")
+print(f"Unique agents: {stats['unique_agents']}")
+print(f"Unique workflows: {stats['unique_workflows']}")
+
+print(f"\nCategory Distribution:")
+for category, cost in stats['category_distribution'].items():
+    print(f"  {category}: ${cost:.2f}")
+
+print(f"\nTop 5 Spending Agents:")
+for agent_id, cost in stats['top_spending_agents'][:5]:
+    print(f"  Agent {agent_id}: ${cost:.2f}")
+
+print(f"\nBudgets:")
+print(f"  Active: {stats['active_budgets']}")
+print(f"  Exceeded: {stats['exceeded_budgets']}")
+print(f"  Total alerts: {stats['total_alerts']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (5% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (10% complete)
 
-Current Progress: Commit 61/100 - Human Approval Gate Complete
+Current Progress: Commit 62/100 - Cost Tracking and Budget Management Complete
 
 ## Implementation Roadmap
 
