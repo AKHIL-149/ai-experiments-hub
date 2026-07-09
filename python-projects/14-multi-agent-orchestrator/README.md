@@ -16045,14 +16045,405 @@ print(f"  Exceeded: {stats['exceeded_budgets']}")
 print(f"  Total alerts: {stats['total_alerts']}")
 ```
 
+## Performance Monitoring
+
+The Performance Monitoring system provides comprehensive tracking and analysis of agent and workflow performance metrics including execution times, success rates, throughput, and anomaly detection for optimizing system performance.
+
+### Key Features
+
+- **7 Metric Types**: Execution time, success rate, throughput, error rate, response time, resource utilization, queue length
+- **5 Performance Statuses**: Excellent, good, fair, poor, critical based on configurable thresholds
+- **Anomaly Detection**: Automatic detection of slow executions and high failure rates
+- **Performance Thresholds**: Configurable thresholds for determining performance health
+- **Agent Performance Tracking**: Success rates, execution times (avg, p50, p95), error analysis
+- **Workflow Performance**: Workflow-level metrics and statistics
+- **System-Wide Metrics**: Aggregate performance across all agents and workflows
+- **Trend Analysis**: Time-series data for performance trends over time
+- **Multi-Agent Comparison**: Compare performance across multiple agents
+- **Resource Tracking**: CPU, memory, and resource utilization metrics
+
+### Metric Types
+
+- **EXECUTION_TIME** - Time taken to execute a task
+- **SUCCESS_RATE** - Percentage of successful executions
+- **THROUGHPUT** - Items processed per unit time
+- **ERROR_RATE** - Percentage of failed executions
+- **RESPONSE_TIME** - Time to respond to requests
+- **RESOURCE_UTILIZATION** - CPU, memory, or other resource usage
+- **QUEUE_LENGTH** - Number of pending tasks
+
+### Performance Statuses
+
+- **EXCELLENT** - Performance exceeds targets (success rate ≥ 98%, exec time ≤ excellent threshold)
+- **GOOD** - Performance meets targets (success rate ≥ 95%, exec time ≤ good threshold)
+- **FAIR** - Performance acceptable but below targets (success rate ≥ 90%, exec time ≤ fair threshold)
+- **POOR** - Performance significantly below targets (success rate ≥ 80%, exec time ≤ poor threshold)
+- **CRITICAL** - Performance critically degraded (success rate < 80% or exec time > poor threshold)
+
+### REST API Endpoints
+
+**Record Execution:**
+```bash
+POST /api/performance-monitoring/executions
+{
+  "agent_id": 5,
+  "workflow_id": "wf_123",
+  "task_id": "task_456",
+  "execution_time_seconds": 2.5,
+  "success": true,
+  "resource_usage": {
+    "cpu_percent": 45.2,
+    "memory_mb": 128.5
+  }
+}
+```
+
+**Record Response Time:**
+```bash
+POST /api/performance-monitoring/response-times
+{
+  "agent_id": 5,
+  "response_time_ms": 150.5,
+  "endpoint": "/api/tasks/execute"
+}
+```
+
+**Record Throughput:**
+```bash
+POST /api/performance-monitoring/throughput
+{
+  "agent_id": 5,
+  "items_processed": 100,
+  "time_window_seconds": 60.0
+}
+```
+
+**Get Agent Performance:**
+```bash
+GET /api/performance-monitoring/agents/5?time_window_hours=24
+```
+
+**Get Workflow Performance:**
+```bash
+GET /api/performance-monitoring/workflows/wf_123?time_window_hours=24
+```
+
+**Get System Performance:**
+```bash
+GET /api/performance-monitoring/system?time_window_hours=24
+```
+
+**Get Anomalies:**
+```bash
+GET /api/performance-monitoring/anomalies?agent_id=5&severity=high
+```
+
+**Get Performance Trend:**
+```bash
+GET /api/performance-monitoring/trends?metric_type=execution_time&agent_id=5&interval_minutes=60
+```
+
+**Compare Agents:**
+```bash
+GET /api/performance-monitoring/compare?agent_ids=1,2,3,5
+```
+
+### Use Cases
+
+**Scenario 1: Tracking Agent Execution Performance**
+```python
+from src.services.performance_monitoring import PerformanceMonitoring
+
+# Record execution after task completion
+metric = PerformanceMonitoring.record_execution(
+    session=session,
+    agent_id=5,
+    workflow_id="wf_123",
+    task_id="task_456",
+    execution_time_seconds=2.5,
+    success=True,
+    resource_usage={
+        "cpu_percent": 45.2,
+        "memory_mb": 128.5
+    }
+)
+
+print(f"Metric recorded: {metric['id']}")
+print(f"Anomalies detected: {len(metric['anomalies'])}")
+
+# Output:
+# Metric recorded: metric_789
+# Anomalies detected: 0
+```
+
+**Scenario 2: Getting Agent Performance Analysis**
+```python
+# Get comprehensive performance analysis for an agent
+performance = PerformanceMonitoring.get_agent_performance(
+    session=session,
+    agent_id=5,
+    time_window_hours=24
+)
+
+print(f"Agent Performance (Last 24 hours):")
+print(f"Status: {performance['status']}")
+print(f"Success Rate: {performance['success_rate']:.1%}")
+print(f"Error Rate: {performance['error_rate']:.1%}")
+print(f"Total Executions: {performance['total_executions']}")
+print(f"Successful: {performance['successful_executions']}")
+print(f"Failed: {performance['failed_executions']}")
+
+print(f"\nExecution Times:")
+print(f"  Average: {performance['avg_execution_time']:.2f}s")
+print(f"  P50 (Median): {performance['p50_execution_time']:.2f}s")
+print(f"  P95: {performance['p95_execution_time']:.2f}s")
+
+print(f"\nResponse Times:")
+print(f"  Average: {performance['avg_response_time']:.1f}ms")
+
+print(f"\nThroughput:")
+print(f"  Items/second: {performance['throughput']:.2f}")
+
+print(f"\nAnomalies: {performance['anomaly_count']}")
+
+# Output:
+# Agent Performance (Last 24 hours):
+# Status: good
+# Success Rate: 96.5%
+# Error Rate: 3.5%
+# Total Executions: 200
+# Successful: 193
+# Failed: 7
+#
+# Execution Times:
+#   Average: 2.35s
+#   P50 (Median): 2.10s
+#   P95: 4.50s
+#
+# Response Times:
+#   Average: 145.3ms
+#
+# Throughput:
+#   Items/second: 1.67
+#
+# Anomalies: 2
+```
+
+**Scenario 3: Detecting and Analyzing Anomalies**
+```python
+# Get detected performance anomalies
+anomalies = PerformanceMonitoring.get_anomalies(
+    session=session,
+    agent_id=5,
+    severity="high",
+    time_window_hours=24
+)
+
+print(f"Found {anomalies['total_anomalies']} anomalies")
+
+for anomaly in anomalies['anomalies']:
+    print(f"\n{anomaly['anomaly_type'].upper()} - {anomaly['severity']}")
+    print(f"  Description: {anomaly['description']}")
+    print(f"  Detected at: {anomaly['detected_at']}")
+    print(f"  Metric: {anomaly['metric_id']}")
+
+# Output:
+# Found 2 anomalies
+#
+# SLOW_EXECUTION - high
+#   Description: Execution time 8.5s exceeds threshold (5.0s)
+#   Detected at: 2024-01-15T14:23:45Z
+#   Metric: metric_123
+#
+# HIGH_FAILURE_RATE - high
+#   Description: Failure rate 15.0% exceeds threshold (10.0%)
+#   Detected at: 2024-01-15T15:10:22Z
+#   Metric: metric_456
+```
+
+**Scenario 4: Performance Trend Analysis**
+```python
+# Analyze performance trends over time
+from datetime import datetime, timedelta
+
+trend = PerformanceMonitoring.get_performance_trend(
+    session=session,
+    metric_type="execution_time",
+    agent_id=5,
+    time_window_hours=24,
+    interval_minutes=60
+)
+
+print(f"Performance Trend (Execution Time - Last 24 hours):")
+print(f"Metric: {trend['metric_type']}")
+print(f"Data points: {len(trend['data_points'])}")
+
+for dp in trend['data_points'][:5]:  # Show first 5 intervals
+    print(f"\n{dp['timestamp']}:")
+    print(f"  Average: {dp['value']:.2f}s")
+    print(f"  Count: {dp['count']}")
+    print(f"  Min: {dp['min']:.2f}s")
+    print(f"  Max: {dp['max']:.2f}s")
+
+# Output:
+# Performance Trend (Execution Time - Last 24 hours):
+# Metric: execution_time
+# Data points: 24
+#
+# 2024-01-15T14:00:00Z:
+#   Average: 2.15s
+#   Count: 8
+#   Min: 1.50s
+#   Max: 3.20s
+# ...
+```
+
+**Scenario 5: Comparing Multiple Agents**
+```python
+# Compare performance across multiple agents
+comparison = PerformanceMonitoring.compare_agent_performance(
+    session=session,
+    agent_ids=[1, 2, 3, 5],
+    time_window_hours=24
+)
+
+print("Agent Performance Comparison:")
+print(f"Agents compared: {len(comparison['agents'])}")
+
+for agent in comparison['agents']:
+    print(f"\nAgent {agent['agent_id']}:")
+    print(f"  Status: {agent['status']}")
+    print(f"  Success Rate: {agent['success_rate']:.1%}")
+    print(f"  Avg Exec Time: {agent['avg_execution_time']:.2f}s")
+    print(f"  Total Executions: {agent['total_executions']}")
+
+print(f"\nRankings:")
+print("By Success Rate:")
+for rank in comparison['rankings']['by_success_rate'][:3]:
+    print(f"  #{rank['rank']}: Agent {rank['agent_id']} - {rank['value']:.1%}")
+
+print("\nBy Execution Time:")
+for rank in comparison['rankings']['by_execution_time'][:3]:
+    print(f"  #{rank['rank']}: Agent {rank['agent_id']} - {rank['value']:.2f}s")
+
+# Output:
+# Agent Performance Comparison:
+# Agents compared: 4
+#
+# Agent 1:
+#   Status: excellent
+#   Success Rate: 98.5%
+#   Avg Exec Time: 1.85s
+#   Total Executions: 250
+# ...
+#
+# Rankings:
+# By Success Rate:
+#   #1: Agent 1 - 98.5%
+#   #2: Agent 3 - 97.2%
+#   #3: Agent 5 - 96.5%
+#
+# By Execution Time:
+#   #1: Agent 1 - 1.85s
+#   #2: Agent 2 - 2.10s
+#   #3: Agent 5 - 2.35s
+```
+
+**Scenario 6: System-Wide Performance Monitoring**
+```python
+# Get system-wide performance metrics
+system_perf = PerformanceMonitoring.get_system_performance(
+    session=session,
+    time_window_hours=24
+)
+
+print("System Performance (Last 24 hours):")
+print(f"Overall Status: {system_perf['status']}")
+print(f"Total Executions: {system_perf['total_executions']}")
+print(f"System Success Rate: {system_perf['success_rate']:.1%}")
+print(f"System Error Rate: {system_perf['error_rate']:.1%}")
+print(f"Active Agents: {system_perf['active_agents']}")
+print(f"Active Workflows: {system_perf['active_workflows']}")
+
+print(f"\nSystem Averages:")
+print(f"  Execution Time: {system_perf['avg_execution_time']:.2f}s")
+print(f"  Response Time: {system_perf['avg_response_time']:.1f}ms")
+print(f"  Throughput: {system_perf['total_throughput']:.2f} items/sec")
+
+print(f"\nAnomalies:")
+print(f"  Total: {system_perf['total_anomalies']}")
+print(f"  High Severity: {system_perf['high_severity_anomalies']}")
+
+# Output:
+# System Performance (Last 24 hours):
+# Overall Status: good
+# Total Executions: 1,250
+# System Success Rate: 96.8%
+# System Error Rate: 3.2%
+# Active Agents: 8
+# Active Workflows: 12
+#
+# System Averages:
+#   Execution Time: 2.25s
+#   Response Time: 152.3ms
+#   Throughput: 12.50 items/sec
+#
+# Anomalies:
+#   Total: 15
+#   High Severity: 3
+```
+
+**Scenario 7: Configuring Performance Thresholds**
+```python
+# Update performance thresholds for custom requirements
+PerformanceMonitoring.update_thresholds(
+    session=session,
+    thresholds={
+        "execution_time": {
+            "excellent": 1.0,  # <= 1.0s for excellent
+            "good": 2.0,       # <= 2.0s for good
+            "fair": 5.0,       # <= 5.0s for fair
+            "poor": 10.0       # <= 10.0s for poor
+        },
+        "success_rate": {
+            "excellent": 0.99,  # >= 99% for excellent
+            "good": 0.95,       # >= 95% for good
+            "fair": 0.90,       # >= 90% for fair
+            "poor": 0.80        # >= 80% for poor
+        },
+        "response_time_ms": {
+            "excellent": 100,
+            "good": 250,
+            "fair": 500,
+            "poor": 1000
+        },
+        "anomaly_detection": {
+            "slow_execution_threshold": 5.0,
+            "high_failure_rate_threshold": 0.10
+        }
+    }
+)
+
+print("Performance thresholds updated")
+
+# Get current thresholds
+thresholds = PerformanceMonitoring.get_thresholds(session=session)
+
+print("\nCurrent Thresholds:")
+print(f"Execution Time:")
+print(f"  Excellent: <= {thresholds['execution_time']['excellent']}s")
+print(f"  Good: <= {thresholds['execution_time']['good']}s")
+print(f"  Fair: <= {thresholds['execution_time']['fair']}s")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (10% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (15% complete)
 
-Current Progress: Commit 62/100 - Cost Tracking and Budget Management Complete
+Current Progress: Commit 63/100 - Performance Monitoring Complete
 
 ## Implementation Roadmap
 
