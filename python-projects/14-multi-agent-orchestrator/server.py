@@ -12,7 +12,7 @@ from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management
 
 
 @asynccontextmanager
@@ -105,6 +105,7 @@ app.include_router(performance_monitoring.router, prefix="/api/performance-monit
 app.include_router(alert_management.router, prefix="/api/alerts", tags=["Alert Management"])
 app.include_router(audit_logging.router, prefix="/api/audit", tags=["Audit Logging"])
 app.include_router(backup_recovery.router, prefix="/api/backup", tags=["Backup & Recovery"])
+app.include_router(config_management.router, prefix="/api/config", tags=["Configuration Management"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])
