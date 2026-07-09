@@ -16850,14 +16850,408 @@ for alert in active['alerts'][:5]:
     print(f"  Agent: {alert['agent_id']}")
 ```
 
+## Audit Logging
+
+The Audit Logging system provides comprehensive tracking of all system actions and changes with tamper-proof hash chaining for compliance, security monitoring, and forensic analysis.
+
+### Key Features
+
+- **10 Event Types**: Create, update, delete, access, execute, authenticate, authorize, export, import, configure
+- **10 Categories**: User, agent, workflow, task, system, security, data, config, cost, approval
+- **Tamper-Proof Hash Chain**: Cryptographic hash chaining prevents log tampering
+- **Integrity Verification**: Verify complete audit trail integrity
+- **Retention Policies**: Automated log retention based on category and severity
+- **Advanced Querying**: Filter by event type, category, actor, resource, date range
+- **Actor Activity Tracking**: Monitor user and system activity patterns
+- **Resource History**: Complete audit trail for any resource
+- **Export Capabilities**: Export logs in JSON or CSV for compliance reporting
+- **Sequential Ordering**: Guaranteed sequential ordering with sequence numbers
+
+### Event Types
+
+- **CREATE** - Resource creation events
+- **UPDATE** - Resource modification events
+- **DELETE** - Resource deletion events
+- **ACCESS** - Data access and viewing events
+- **EXECUTE** - Action and operation execution
+- **AUTHENTICATE** - Authentication attempts (success/failure)
+- **AUTHORIZE** - Authorization checks
+- **EXPORT** - Data export operations
+- **IMPORT** - Data import operations
+- **CONFIGURE** - Configuration changes
+
+### Categories
+
+- **USER** - User-initiated actions
+- **AGENT** - Agent operations
+- **WORKFLOW** - Workflow execution events
+- **TASK** - Task-related events
+- **SYSTEM** - System-level events
+- **SECURITY** - Security-related events
+- **DATA** - Data access and manipulation
+- **CONFIG** - Configuration changes
+- **COST** - Cost and budget events
+- **APPROVAL** - Approval workflow events
+
+### REST API Endpoints
+
+**Log Event:**
+```bash
+POST /api/audit/logs
+{
+  "event_type": "update",
+  "category": "config",
+  "actor": "admin@company.com",
+  "action": "Updated system configuration",
+  "resource_type": "configuration",
+  "resource_id": "llm_settings",
+  "changes": {
+    "before": {"model": "gpt-3.5-turbo"},
+    "after": {"model": "gpt-4"}
+  },
+  "severity": "warning",
+  "ip_address": "192.168.1.100"
+}
+```
+
+**Log Authentication:**
+```bash
+POST /api/audit/logs/authentication
+{
+  "actor": "user@company.com",
+  "success": false,
+  "method": "password",
+  "ip_address": "192.168.1.50",
+  "failure_reason": "Invalid password"
+}
+```
+
+**Query Logs:**
+```bash
+GET /api/audit/logs?category=security&severity=critical&start_date=2024-01-01
+```
+
+**Get Actor Activity:**
+```bash
+GET /api/audit/actors/admin@company.com/activity?time_window_hours=24
+```
+
+**Get Resource History:**
+```bash
+GET /api/audit/resources/workflow/wf_123/history
+```
+
+**Verify Integrity:**
+```bash
+GET /api/audit/verify-integrity
+```
+
+**Export Logs:**
+```bash
+POST /api/audit/export?format=json&category=security&start_date=2024-01-01
+```
+
+### Use Cases
+
+**Scenario 1: Logging System Events**
+```python
+from src.services.audit_logging import AuditLogging
+
+# Log a configuration change
+log = AuditLogging.log_event(
+    session=session,
+    event_type="configure",
+    category="config",
+    actor="admin@company.com",
+    action="Updated LLM model configuration",
+    resource_type="configuration",
+    resource_id="llm_settings",
+    changes={
+        "before": {"model": "gpt-3.5-turbo", "temperature": 0.7},
+        "after": {"model": "gpt-4", "temperature": 0.7}
+    },
+    severity="warning",
+    ip_address="192.168.1.100"
+)
+
+print(f"Audit log created: {log['id']}")
+print(f"Sequence: {log['sequence']}")
+print(f"Hash: {log['hash'][:16]}...")
+
+# Output:
+# Audit log created: audit_abc123
+# Sequence: 1001
+# Hash: 3a4f5b7c9d1e...
+```
+
+**Scenario 2: Tracking Authentication Events**
+```python
+# Log successful authentication
+success_log = AuditLogging.log_authentication(
+    session=session,
+    actor="user@company.com",
+    success=True,
+    method="oauth",
+    ip_address="192.168.1.25"
+)
+
+print(f"Login successful: {success_log['actor']}")
+
+# Log failed authentication
+failed_log = AuditLogging.log_authentication(
+    session=session,
+    actor="attacker@external.com",
+    success=False,
+    method="password",
+    ip_address="203.0.113.45",
+    failure_reason="Invalid credentials"
+)
+
+print(f"Login failed: {failed_log['actor']}")
+print(f"Severity: {failed_log['severity']}")  # WARNING for failures
+
+# Output:
+# Login successful: user@company.com
+# Login failed: attacker@external.com
+# Severity: warning
+```
+
+**Scenario 3: Tracking Data Access for Compliance**
+```python
+# Log sensitive data access
+access_log = AuditLogging.log_data_access(
+    session=session,
+    actor="analyst@company.com",
+    resource_type="customer_data",
+    resource_id="cust_12345",
+    operation="read",
+    ip_address="192.168.1.75"
+)
+
+print(f"Data access logged: {access_log['id']}")
+print(f"Actor: {access_log['actor']}")
+print(f"Resource: {access_log['resource_type']}/{access_log['resource_id']}")
+
+# Output:
+# Data access logged: audit_def456
+# Actor: analyst@company.com
+# Resource: customer_data/cust_12345
+```
+
+**Scenario 4: Querying Audit Logs**
+```python
+from datetime import datetime, timedelta
+
+# Query security events from last 7 days
+end_date = datetime.utcnow()
+start_date = end_date - timedelta(days=7)
+
+result = AuditLogging.query_logs(
+    session=session,
+    category="security",
+    severity="warning",
+    start_date=start_date.isoformat(),
+    end_date=end_date.isoformat(),
+    limit=50
+)
+
+print(f"Security Events (Last 7 Days):")
+print(f"Total logs: {result['total_logs']}")
+print(f"Returned: {result['returned_count']}")
+
+for log in result['logs'][:5]:
+    print(f"\n{log['severity'].upper()}: {log['action']}")
+    print(f"  Actor: {log['actor']}")
+    print(f"  Time: {log['timestamp']}")
+    print(f"  IP: {log.get('ip_address', 'N/A')}")
+
+# Output:
+# Security Events (Last 7 Days):
+# Total logs: 1,245
+# Returned: 18
+#
+# WARNING: Authentication failed
+#   Actor: unknown@external.com
+#   Time: 2024-01-14T10:23:45Z
+#   IP: 203.0.113.45
+# ...
+```
+
+**Scenario 5: Actor Activity Monitoring**
+```python
+# Monitor specific user's activity
+activity = AuditLogging.get_actor_activity(
+    session=session,
+    actor="admin@company.com",
+    time_window_hours=24,
+    limit=50
+)
+
+print(f"Activity for {activity['actor']} (Last 24 hours):")
+print(f"Total actions: {activity['activity_count']}")
+
+print(f"\nEvent Type Breakdown:")
+for event_type, count in activity['event_type_breakdown'].items():
+    print(f"  {event_type}: {count}")
+
+print(f"\nCategory Breakdown:")
+for category, count in activity['category_breakdown'].items():
+    print(f"  {category}: {count}")
+
+print(f"\nRecent Activity:")
+for action in activity['recent_activity'][:5]:
+    print(f"  [{action['timestamp']}] {action['action']}")
+
+# Output:
+# Activity for admin@company.com (Last 24 hours):
+# Total actions: 35
+#
+# Event Type Breakdown:
+#   update: 12
+#   configure: 8
+#   access: 10
+#   create: 5
+#
+# Category Breakdown:
+#   config: 15
+#   system: 10
+#   workflow: 7
+#   agent: 3
+#
+# Recent Activity:
+#   [2024-01-15T14:30:00Z] Updated LLM model configuration
+#   [2024-01-15T14:15:00Z] Created new workflow template
+#   [2024-01-15T13:45:00Z] Accessed agent performance metrics
+```
+
+**Scenario 6: Resource History Tracking**
+```python
+# Get complete history for a workflow
+history = AuditLogging.get_resource_history(
+    session=session,
+    resource_type="workflow",
+    resource_id="wf_123",
+    limit=50
+)
+
+print(f"History for {history['resource_type']}/{history['resource_id']}:")
+print(f"Total events: {history['history_count']}")
+
+print(f"\nTimeline:")
+for event in history['timeline'][:10]:
+    print(f"\n{event['timestamp']} - {event['event_type'].upper()}")
+    print(f"  By: {event['actor']}")
+    print(f"  Action: {event['action']}")
+
+    if event['changes']:
+        print(f"  Changes:")
+        if 'before' in event['changes']:
+            print(f"    Before: {event['changes']['before']}")
+        if 'after' in event['changes']:
+            print(f"    After: {event['changes']['after']}")
+
+# Output:
+# History for workflow/wf_123:
+# Total events: 28
+#
+# Timeline:
+#
+# 2024-01-15T14:00:00Z - UPDATE
+#   By: admin@company.com
+#   Action: Updated workflow configuration
+#   Changes:
+#     Before: {'max_agents': 3}
+#     After: {'max_agents': 5}
+#
+# 2024-01-15T10:30:00Z - EXECUTE
+#   By: system
+#   Action: Executed workflow
+# ...
+```
+
+**Scenario 7: Integrity Verification**
+```python
+# Verify audit log integrity
+integrity = AuditLogging.verify_integrity(session=session)
+
+print("Audit Log Integrity Check:")
+print(f"Total logs: {integrity['total_logs']}")
+print(f"Verified: {integrity['verified_count']}")
+print(f"Tampered: {integrity['tampered_count']}")
+print(f"Integrity valid: {integrity['integrity_valid']}")
+
+if integrity['tampered_logs']:
+    print(f"\nTampered Logs Detected:")
+    for tampered in integrity['tampered_logs']:
+        print(f"  Log {tampered['log_id']} (seq {tampered['sequence']})")
+        print(f"    Reason: {tampered['reason']}")
+else:
+    print("\n✓ All audit logs verified - no tampering detected")
+
+# Output:
+# Audit Log Integrity Check:
+# Total logs: 1,245
+# Verified: 1,245
+# Tampered: 0
+# Integrity valid: True
+#
+# ✓ All audit logs verified - no tampering detected
+```
+
+**Scenario 8: Retention Policies and Export**
+```python
+# Create retention policy for low-severity logs
+policy = AuditLogging.create_retention_policy(
+    session=session,
+    name="Info Logs 30-Day Retention",
+    severity="info",
+    retention_days=30,
+    enabled=True
+)
+
+print(f"Retention policy created: {policy['id']}")
+print(f"Retains {policy['severity']} logs for {policy['retention_days']} days")
+
+# Export security logs for compliance report
+export = AuditLogging.export_logs(
+    session=session,
+    format="json",
+    category="security",
+    start_date="2024-01-01",
+    end_date="2024-01-31"
+)
+
+print(f"\nExport completed: {export['id']}")
+print(f"Format: {export['format']}")
+print(f"Logs exported: {export['log_count']}")
+print(f"Exported at: {export['exported_at']}")
+
+# Save to file
+import json
+with open(f"audit_export_{export['id']}.json", "w") as f:
+    json.dump(export['data'], f, indent=2)
+
+print(f"Saved to: audit_export_{export['id']}.json")
+
+# Output:
+# Retention policy created: policy_xyz789
+# Retains info logs for 30 days
+#
+# Export completed: export_abc123
+# Format: json
+# Logs exported: 245
+# Exported at: 2024-01-31T23:59:59Z
+# Saved to: audit_export_abc123.json
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (20% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (25% complete)
 
-Current Progress: Commit 64/100 - Alert Management Complete
+Current Progress: Commit 65/100 - Audit Logging Complete
 
 ## Implementation Roadmap
 
