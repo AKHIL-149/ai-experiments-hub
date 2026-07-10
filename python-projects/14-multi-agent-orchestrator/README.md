@@ -17668,14 +17668,313 @@ print(f"Status distribution: {stats['status_distribution']}")
 print(f"Type distribution: {stats['type_distribution']}")
 ```
 
+## Secret Management
+
+The Secret Management system provides secure storage, rotation, and access control for secrets and credentials with support for multiple vault backends, time-limited leases, and comprehensive audit trails.
+
+**Key Features:**
+
+- **8 Secret Types**: API keys, database credentials, certificates, tokens, SSH keys, webhook secrets, encryption keys, custom
+- **5 Vault Providers**: In-memory, HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager
+- **Secret Versioning**: Automatic versioning on updates with complete history
+- **Secret Rotation**: Manual and automatic secret rotation with policies
+- **Lease Management**: Time-limited access with renewal support
+- **Access Logging**: Complete audit trail of all secret access
+- **Encryption**: Strong encryption for all secret data at rest
+- **Revocation**: Instant secret revocation across all systems
+- **Access Policies**: Fine-grained access control
+
+**Endpoints:**
+
+**Create Secret:**
+```bash
+POST /api/secrets/secrets
+{
+  "name": "production_db_password",
+  "secret_data": {
+    "username": "admin",
+    "password": "secure-password-123",
+    "host": "db.example.com"
+  },
+  "secret_type": "database_credential",
+  "description": "Production database credentials",
+  "tags": ["production", "database"],
+  "rotation_days": 90
+}
+```
+
+**Get Secret:**
+```bash
+GET /api/secrets/secrets/{secret_id}?decrypt=true&actor=user123
+```
+
+**Rotate Secret:**
+```bash
+POST /api/secrets/secrets/{secret_id}/rotate
+{
+  "new_secret_data": {
+    "username": "admin",
+    "password": "new-secure-password-456",
+    "host": "db.example.com"
+  },
+  "actor": "admin_user"
+}
+```
+
+**Create Lease:**
+```bash
+POST /api/secrets/secrets/{secret_id}/leases
+{
+  "lease_duration_seconds": 3600,
+  "accessor": "workflow_executor",
+  "metadata": {"workflow_id": "wf_123"}
+}
+```
+
+**Use Case Scenarios:**
+
+**Scenario 1: Storing and Rotating API Keys**
+```python
+from src.services.secret_management import SecretManagement, SecretType
+
+# Store API key
+secret = SecretManagement.create_secret(
+    session=session,
+    name="openai_api_key",
+    secret_data={
+        "api_key": "sk-...",
+        "organization_id": "org-...",
+        "rate_limit": 10000
+    },
+    secret_type=SecretType.API_KEY,
+    description="OpenAI API credentials",
+    tags=["llm", "production"],
+    rotation_days=30,  # Rotate every 30 days
+    metadata={"created_by": "admin"}
+)
+print(f"Secret created: {secret['id']}")
+print(f"Next rotation: {secret['next_rotation_at']}")
+
+# Retrieve secret (with access logging)
+retrieved = SecretManagement.get_secret(
+    session=session,
+    secret_id=secret['id'],
+    decrypt=True,
+    actor="llm_service"
+)
+api_key = retrieved['secret_data']['api_key']
+print(f"API Key: {api_key}")
+
+# Rotate secret manually
+new_secret = SecretManagement.rotate_secret(
+    session=session,
+    secret_id=secret['id'],
+    new_secret_data={
+        "api_key": "sk-new-...",
+        "organization_id": "org-...",
+        "rate_limit": 15000
+    },
+    actor="admin"
+)
+print(f"Rotated to version {new_secret['version']}")
+```
+
+**Scenario 2: Database Credentials with Version Management**
+```python
+# Create initial database credentials
+db_creds = SecretManagement.create_secret(
+    session=session,
+    name="postgres_prod_creds",
+    secret_data={
+        "host": "prod-db.example.com",
+        "port": 5432,
+        "database": "orchestrator",
+        "username": "app_user",
+        "password": "initial_password_123"
+    },
+    secret_type=SecretType.DATABASE_CREDENTIAL,
+    description="Production PostgreSQL credentials",
+    rotation_days=90
+)
+
+# Update password (creates new version)
+updated_creds = SecretManagement.update_secret(
+    session=session,
+    secret_id=db_creds['id'],
+    secret_data={
+        "host": "prod-db.example.com",
+        "port": 5432,
+        "database": "orchestrator",
+        "username": "app_user",
+        "password": "rotated_password_456"
+    },
+    description="Rotated password for security compliance"
+)
+print(f"Credentials updated to version {updated_creds['version']}")
+
+# Get latest version
+latest = SecretManagement.get_secret_by_name(
+    session=session,
+    name="postgres_prod_creds",
+    decrypt=True,
+    actor="db_connector"
+)
+print(f"Current password: {latest['secret_data']['password']}")
+
+# Get specific older version if needed
+old_version = SecretManagement.get_secret_by_name(
+    session=session,
+    name="postgres_prod_creds",
+    version=1,
+    decrypt=True,
+    actor="recovery_service"
+)
+print(f"Original password: {old_version['secret_data']['password']}")
+```
+
+**Scenario 3: Time-Limited Leases for Temporary Access**
+```python
+# Create secret
+webhook_secret = SecretManagement.create_secret(
+    session=session,
+    name="github_webhook_secret",
+    secret_data={"secret": "whsec_1234567890abcdef"},
+    secret_type=SecretType.WEBHOOK_SECRET,
+    description="GitHub webhook signing secret"
+)
+
+# Create 1-hour lease for a workflow
+lease = SecretManagement.create_lease(
+    session=session,
+    secret_id=webhook_secret['id'],
+    lease_duration_seconds=3600,  # 1 hour
+    accessor="github_webhook_handler",
+    metadata={"workflow_id": "wf_abc123"}
+)
+print(f"Lease created: {lease['id']}")
+print(f"Expires at: {lease['expires_at']}")
+
+# During workflow execution, renew if needed
+renewed_lease = SecretManagement.renew_lease(
+    session=session,
+    lease_id=lease['id'],
+    additional_seconds=1800  # Add 30 more minutes
+)
+print(f"Lease renewed, new expiry: {renewed_lease['expires_at']}")
+print(f"Renewed {renewed_lease['renewed_count']} times")
+
+# After workflow completes, lease automatically expires
+# No cleanup needed - time-limited access
+```
+
+**Scenario 4: Secret Rotation Policies**
+```python
+# Create rotation policy for all production API keys
+policy = SecretManagement.create_rotation_policy(
+    session=session,
+    name="Production API Key Rotation",
+    secret_name_pattern="*_api_key",  # Matches all secrets ending with _api_key
+    rotation_days=30,
+    auto_rotate=True,
+    notification_days_before=7,  # Notify 7 days before rotation
+    metadata={"owner_team": "security"}
+)
+print(f"Policy created: {policy['id']}")
+
+# Policy will automatically:
+# 1. Match secrets by pattern
+# 2. Send notifications 7 days before rotation
+# 3. Trigger rotation on schedule if auto_rotate=True
+# 4. Log all rotation activities
+```
+
+**Scenario 5: Secret Revocation and Access Auditing**
+```python
+# Revoke a compromised secret immediately
+revoked = SecretManagement.revoke_secret(
+    session=session,
+    secret_id=compromised_secret_id,
+    reason="Potential security breach detected",
+    actor="security_team"
+)
+print(f"Secret revoked: {revoked['status']}")
+
+# Any subsequent access attempts will fail
+try:
+    SecretManagement.get_secret(
+        session=session,
+        secret_id=compromised_secret_id,
+        decrypt=True
+    )
+except ValueError as e:
+    print(f"Access denied: {e}")
+
+# Review access log to identify potential breach
+access_log = SecretManagement.get_secret_access_log(
+    session=session,
+    secret_id=compromised_secret_id,
+    limit=100
+)
+print(f"Total accesses: {access_log['total_accesses']}")
+for log in access_log['access_log']:
+    print(f"{log['timestamp']} - {log['action']} by {log['actor']}")
+```
+
+**Scenario 6: Multi-Environment Secret Management**
+```python
+# Store development API key
+dev_secret = SecretManagement.create_secret(
+    session=session,
+    name="stripe_api_key_dev",
+    secret_data={
+        "publishable_key": "pk_test_...",
+        "secret_key": "sk_test_...",
+        "environment": "development"
+    },
+    secret_type=SecretType.API_KEY,
+    tags=["stripe", "development", "payment"],
+    rotation_days=None  # Dev keys don't rotate
+)
+
+# Store production API key (separate secret)
+prod_secret = SecretManagement.create_secret(
+    session=session,
+    name="stripe_api_key_prod",
+    secret_data={
+        "publishable_key": "pk_live_...",
+        "secret_key": "sk_live_...",
+        "environment": "production"
+    },
+    secret_type=SecretType.API_KEY,
+    tags=["stripe", "production", "payment"],
+    rotation_days=60  # Prod keys rotate every 60 days
+)
+
+# List all Stripe secrets
+stripe_secrets = SecretManagement.list_secrets(
+    session=session,
+    secret_type=SecretType.API_KEY,
+    tags=["stripe"],
+    limit=50
+)
+print(f"Found {stripe_secrets['returned_count']} Stripe API keys")
+
+# Get statistics on secret usage
+stats = SecretManagement.get_statistics(session=session)
+print(f"Total secrets: {stats['total_secrets']}")
+print(f"Secrets needing rotation: {stats['secrets_needing_rotation']}")
+print(f"Active leases: {stats['active_leases']}")
+print(f"Total accesses: {stats['total_accesses']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (35% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (40% complete)
 
-Current Progress: Commit 67/100 - Configuration Management Complete
+Current Progress: Commit 68/100 - Secret Management Complete
 
 ## Implementation Roadmap
 
