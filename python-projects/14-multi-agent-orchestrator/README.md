@@ -19013,14 +19013,306 @@ for version, count in stats['version_distribution'].items():
 print(f"\nHealth checks configured: {stats['health_checks_configured']}")
 ```
 
+### 73. Event Streaming and Message Bus
+
+Real-time event distribution with pub/sub messaging, consumer groups, and stream processing capabilities.
+
+**Key Features:**
+- 5 message types (event, command, query, response, notification)
+- 3 delivery guarantees (at-most-once, at-least-once, exactly-once)
+- 5 message statuses (pending, delivered, acknowledged, failed, dead-letter)
+- 3 consumer group strategies (round-robin, sticky, range)
+- Topic-based pub/sub messaging
+- Partitioned message streams
+- Consumer groups with load balancing
+- Message acknowledgment and retries
+- Dead letter queue for failed messages
+- Configurable message retention
+- Message filtering and routing
+
+**API Endpoints:**
+```
+POST   /api/events-streaming/topics                  - Create topic
+POST   /api/events-streaming/topics/{topic}/publish  - Publish message
+POST   /api/events-streaming/topics/{topic}/subscribe - Subscribe to topic
+DELETE /api/events-streaming/subscriptions/{id}      - Unsubscribe
+POST   /api/events-streaming/subscriptions/{id}/consume - Consume messages
+POST   /api/events-streaming/messages/{id}/acknowledge - Acknowledge message
+POST   /api/events-streaming/messages/{id}/dead-letter - Move to dead letter queue
+GET    /api/events-streaming/topics                  - List topics
+GET    /api/events-streaming/topics/{topic}/statistics - Get topic statistics
+GET    /api/events-streaming/statistics              - Get statistics
+GET    /api/events-streaming/message-types           - List message types
+GET    /api/events-streaming/delivery-guarantees     - List delivery guarantees
+GET    /api/events-streaming/message-statuses        - List message statuses
+GET    /api/events-streaming/consumer-group-strategies - List consumer group strategies
+```
+
+**Use Case Scenarios:**
+
+**Scenario 1: Creating a Topic**
+```python
+from src.services.event_streaming import EventStreaming
+
+# Create a topic for agent events
+topic = EventStreaming.create_topic(
+    session=session,
+    name="agent-events",
+    partitions=3,  # Parallel processing
+    retention_hours=168,  # 7 days
+    max_message_size_bytes=1048576,  # 1MB
+    description="Agent lifecycle and activity events",
+    metadata={"category": "system", "priority": "high"}
+)
+
+print(f"Topic created: {topic['name']}")
+print(f"Partitions: {topic['partitions']}")
+print(f"Retention: {topic['retention_hours']} hours")
+print(f"Max message size: {topic['max_message_size_bytes']} bytes")
+```
+
+**Scenario 2: Publishing Events**
+```python
+# Publish agent started event
+message = EventStreaming.publish_message(
+    session=session,
+    topic="agent-events",
+    message_type="event",
+    payload={
+        "event_type": "agent_started",
+        "agent_id": "agent_123",
+        "agent_type": "data_analysis",
+        "timestamp": "2024-01-15T10:30:00Z",
+        "metadata": {
+            "capabilities": ["analysis", "visualization"],
+            "version": "2.1.0"
+        }
+    },
+    key="agent_123",  # Messages with same key go to same partition
+    headers={"source": "orchestrator", "correlation_id": "req_456"},
+    ttl_seconds=3600  # Message expires after 1 hour
+)
+
+print(f"Message published: {message['id']}")
+print(f"Topic: {message['topic']}")
+print(f"Partition: {message['partition']}")
+print(f"Size: {message['size_bytes']} bytes")
+```
+
+**Scenario 3: Subscribing to Topics**
+```python
+# Subscribe to agent events
+subscription = EventStreaming.subscribe(
+    session=session,
+    topic="agent-events",
+    subscriber_id="monitoring-service",
+    consumer_group="monitoring",  # Part of consumer group
+    auto_acknowledge=False,  # Manual acknowledgment
+    filter_expression="event_type == 'agent_started'"  # Filter messages
+)
+
+print(f"Subscription created: {subscription['id']}")
+print(f"Topic: {subscription['topic']}")
+print(f"Consumer group: {subscription['consumer_group']}")
+print(f"Auto-acknowledge: {subscription['auto_acknowledge']}")
+```
+
+**Scenario 4: Consuming Messages**
+```python
+# Consume messages from subscription
+result = EventStreaming.consume_messages(
+    session=session,
+    subscription_id=subscription['id'],
+    max_messages=10,
+    timeout_seconds=30
+)
+
+print(f"Consumed {result['message_count']} messages:")
+for msg in result['messages']:
+    print(f"\n  Message ID: {msg['id']}")
+    print(f"  Type: {msg['message_type']}")
+    print(f"  Published: {msg['published_at']}")
+    print(f"  Payload: {msg['payload']}")
+
+    # Process message
+    process_agent_event(msg['payload'])
+
+    # Manually acknowledge
+    EventStreaming.acknowledge_message(
+        session=session,
+        subscription_id=subscription['id'],
+        message_id=msg['id']
+    )
+```
+
+**Scenario 5: Consumer Groups**
+```python
+# Create multiple consumers in same group
+# Messages are load-balanced across group members
+
+# Consumer 1
+sub1 = EventStreaming.subscribe(
+    session=session,
+    topic="task-commands",
+    subscriber_id="worker-1",
+    consumer_group="task-workers",
+    auto_acknowledge=True
+)
+
+# Consumer 2
+sub2 = EventStreaming.subscribe(
+    session=session,
+    topic="task-commands",
+    subscriber_id="worker-2",
+    consumer_group="task-workers",
+    auto_acknowledge=True
+)
+
+# Consumer 3
+sub3 = EventStreaming.subscribe(
+    session=session,
+    topic="task-commands",
+    subscriber_id="worker-3",
+    consumer_group="task-workers",
+    auto_acknowledge=True
+)
+
+# Each worker receives different messages (load balanced)
+for sub_id in [sub1['id'], sub2['id'], sub3['id']]:
+    result = EventStreaming.consume_messages(
+        session=session,
+        subscription_id=sub_id,
+        max_messages=5
+    )
+    print(f"Worker {sub_id} received {result['message_count']} messages")
+```
+
+**Scenario 6: Dead Letter Queue**
+```python
+# Move failed message to dead letter queue
+try:
+    process_message(message)
+except Exception as e:
+    # Processing failed after retries
+    dead_letter = EventStreaming.move_to_dead_letter(
+        session=session,
+        message_id=message['id'],
+        reason=f"Processing failed: {str(e)}"
+    )
+
+    print(f"Message moved to DLQ:")
+    print(f"  Message ID: {dead_letter['message_id']}")
+    print(f"  Reason: {dead_letter['reason']}")
+    print(f"  Moved at: {dead_letter['moved_at']}")
+
+    # Alert operations team
+    send_alert("Message in dead letter queue", dead_letter)
+```
+
+**Scenario 7: Partitioned Streams**
+```python
+# Create topic with multiple partitions for parallelism
+topic = EventStreaming.create_topic(
+    session=session,
+    name="high-throughput-events",
+    partitions=10,  # 10 parallel streams
+    retention_hours=24
+)
+
+# Publish messages with keys for consistent routing
+for i in range(100):
+    EventStreaming.publish_message(
+        session=session,
+        topic="high-throughput-events",
+        message_type="event",
+        payload={"data": f"item_{i}"},
+        key=f"user_{i % 5}"  # Same user goes to same partition
+    )
+
+# Each partition can be consumed independently
+for partition in range(10):
+    result = EventStreaming.consume_messages(
+        session=session,
+        subscription_id=subscription['id'],
+        max_messages=10
+    )
+    print(f"Partition {partition}: {result['message_count']} messages")
+```
+
+**Scenario 8: Topic Statistics**
+```python
+# Get detailed topic statistics
+stats = EventStreaming.get_topic_statistics(
+    session=session,
+    topic="agent-events"
+)
+
+print(f"Topic: {stats['topic']}")
+print(f"Total messages: {stats['message_count']:,}")
+print(f"Total bytes: {stats['total_bytes']:,}")
+print(f"Subscribers: {stats['subscriber_count']}")
+print(f"Partitions: {stats['partitions']}")
+
+print("\nPartition statistics:")
+for partition in stats['partition_statistics']:
+    print(f"  Partition {partition['partition']}:")
+    print(f"    Messages: {partition['message_count']}")
+    print(f"    Offset range: {partition['oldest_offset']}-{partition['newest_offset']}")
+```
+
+**Scenario 9: Command Messages**
+```python
+# Publish command to control agents
+command = EventStreaming.publish_message(
+    session=session,
+    topic="agent-commands",
+    message_type="command",
+    payload={
+        "command": "restart",
+        "target_agent": "agent_123",
+        "parameters": {
+            "graceful": True,
+            "timeout_seconds": 30
+        }
+    },
+    key="agent_123",
+    headers={
+        "priority": "high",
+        "issued_by": "admin_456"
+    }
+)
+
+print(f"Command issued: {command['id']}")
+print(f"Command type: {command['payload']['command']}")
+print(f"Target: {command['payload']['target_agent']}")
+```
+
+**Scenario 10: System Statistics**
+```python
+# Get overall event streaming statistics
+stats = EventStreaming.get_statistics(session=session)
+
+print(f"Total topics: {stats['total_topics']}")
+print(f"Total subscriptions: {stats['total_subscriptions']}")
+print(f"Total messages: {stats['total_messages']:,}")
+print(f"Total bytes: {stats['total_bytes']:,}")
+print(f"Active consumer groups: {stats['active_consumer_groups']}")
+print(f"Dead letter queue size: {stats['dead_letter_queue_size']}")
+print(f"Avg messages per topic: {stats['average_messages_per_topic']:.2f}")
+
+print("\nMessage status distribution:")
+for status, count in stats['message_status_distribution'].items():
+    print(f"  {status}: {count}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (60% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (65% complete)
 
-Current Progress: Commit 72/100 - Service Discovery and Registry Complete
+Current Progress: Commit 73/100 - Event Streaming and Message Bus Complete
 
 ## Implementation Roadmap
 
