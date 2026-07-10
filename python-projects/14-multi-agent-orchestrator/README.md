@@ -18707,14 +18707,320 @@ if result.get('fallback_used'):
     print(result['fallback_result']['value'])
 ```
 
+### 72. Service Discovery and Registry
+
+Dynamic service registration, discovery, and health monitoring for distributed multi-agent systems.
+
+**Key Features:**
+- 5 service statuses (healthy, unhealthy, starting, stopping, unknown)
+- 5 load balancing strategies (round-robin, random, least connections, weighted, consistent hash)
+- 7 service types (agent, API, database, cache, message queue, storage, custom)
+- 4 health check types (HTTP, TCP, script, heartbeat)
+- Automatic service registration and deregistration
+- Real-time health monitoring with heartbeats
+- Multiple load balancing algorithms
+- Service versioning and tagging
+- Metadata and service attributes
+- Connection tracking
+
+**API Endpoints:**
+```
+POST   /api/service-discovery/register           - Register service instance
+DELETE /api/service-discovery/instances/{id}     - Deregister service instance
+POST   /api/service-discovery/discover/{name}    - Discover service instances
+POST   /api/service-discovery/instance/{name}    - Get service instance (load balanced)
+POST   /api/service-discovery/heartbeat/{id}     - Send heartbeat
+PUT    /api/service-discovery/instances/{id}/health - Update instance health
+GET    /api/service-discovery/services           - List registered services
+GET    /api/service-discovery/services/{name}/health - Get service health
+GET    /api/service-discovery/statistics         - Get statistics
+GET    /api/service-discovery/service-types      - List service types
+GET    /api/service-discovery/service-statuses   - List service statuses
+GET    /api/service-discovery/load-balancing-strategies - List load balancing strategies
+GET    /api/service-discovery/health-check-types - List health check types
+```
+
+**Use Case Scenarios:**
+
+**Scenario 1: Registering an Agent Service**
+```python
+from src.services.service_discovery import ServiceDiscovery, ServiceType
+
+# Register a new agent service instance
+instance = ServiceDiscovery.register_service(
+    session=session,
+    service_name="data-analysis-agent",
+    service_type=ServiceType.AGENT,
+    host="10.0.1.50",
+    port=8080,
+    version="2.1.0",
+    metadata={
+        "capabilities": ["data_analysis", "visualization", "reporting"],
+        "max_concurrent_tasks": 10,
+        "supported_formats": ["csv", "json", "parquet"]
+    },
+    health_check_url="http://10.0.1.50:8080/health",
+    health_check_interval_seconds=30,
+    tags=["production", "high-availability", "data"],
+    weight=10  # Higher weight for more capacity
+)
+
+print(f"Service registered: {instance['id']}")
+print(f"Service: {instance['service_name']} v{instance['version']}")
+print(f"Status: {instance['status']}")
+print(f"Endpoint: {instance['host']}:{instance['port']}")
+```
+
+**Scenario 2: Discovering Service Instances**
+```python
+# Discover all healthy instances of a service
+discovery = ServiceDiscovery.discover_service(
+    session=session,
+    service_name="data-analysis-agent",
+    version="2.1.0",  # Optional: filter by version
+    tags=["production"],  # Optional: filter by tags
+    status="healthy"  # Only healthy instances
+)
+
+print(f"Service: {discovery['service_name']}")
+print(f"Found {discovery['instance_count']} instances:")
+for inst in discovery['instances']:
+    print(f"\n  Instance: {inst['id']}")
+    print(f"  Endpoint: {inst['host']}:{inst['port']}")
+    print(f"  Version: {inst['version']}")
+    print(f"  Status: {inst['status']}")
+    print(f"  Tags: {', '.join(inst['tags'])}")
+    print(f"  Last heartbeat: {inst['last_heartbeat_at']}")
+```
+
+**Scenario 3: Load-Balanced Service Selection**
+```python
+# Get service instance using round-robin load balancing
+result = ServiceDiscovery.get_service_instance(
+    session=session,
+    service_name="data-analysis-agent",
+    strategy="round_robin",
+    version="2.1.0",
+    tags=["production"]
+)
+
+instance = result['instance']
+print(f"Selected instance: {instance['id']}")
+print(f"Using strategy: {result['strategy']}")
+print(f"Endpoint: {instance['host']}:{instance['port']}")
+print(f"Weight: {instance['weight']}")
+
+# Now make request to the selected instance
+# response = requests.post(f"http://{instance['host']}:{instance['port']}/analyze", ...)
+```
+
+**Scenario 4: Sending Heartbeats**
+```python
+import time
+
+# Service instance sends regular heartbeats
+while True:
+    try:
+        heartbeat = ServiceDiscovery.heartbeat(
+            session=session,
+            instance_id=instance['id']
+        )
+
+        print(f"Heartbeat sent: {heartbeat['heartbeat_at']}")
+        print(f"Status: {heartbeat['status']}")
+
+        # Wait before next heartbeat
+        time.sleep(30)
+
+    except Exception as e:
+        print(f"Heartbeat failed: {e}")
+        break
+```
+
+**Scenario 5: Weighted Load Balancing**
+```python
+# Register multiple instances with different weights
+instance1 = ServiceDiscovery.register_service(
+    session=session,
+    service_name="compute-service",
+    service_type=ServiceType.API,
+    host="10.0.1.10",
+    port=8000,
+    weight=10,  # High-capacity instance
+    metadata={"cpu_cores": 32, "memory_gb": 128}
+)
+
+instance2 = ServiceDiscovery.register_service(
+    session=session,
+    service_name="compute-service",
+    service_type=ServiceType.API,
+    host="10.0.1.11",
+    port=8000,
+    weight=5,  # Medium-capacity instance
+    metadata={"cpu_cores": 16, "memory_gb": 64}
+)
+
+# Get instance using weighted selection
+# Higher weight instances selected more frequently
+for i in range(10):
+    result = ServiceDiscovery.get_service_instance(
+        session=session,
+        service_name="compute-service",
+        strategy="weighted"
+    )
+    print(f"Request {i+1} routed to: {result['instance']['host']}")
+```
+
+**Scenario 6: Health Status Updates**
+```python
+# Update instance health based on health check results
+def perform_health_check(instance_id):
+    instance = ServiceDiscovery._service_instances[instance_id]
+    try:
+        # Perform actual health check
+        response = requests.get(
+            f"http://{instance['host']}:{instance['port']}/health",
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            ServiceDiscovery.update_instance_health(
+                session=session,
+                instance_id=instance_id,
+                status="healthy",
+                health_data={
+                    "response_time_ms": response.elapsed.total_seconds() * 1000,
+                    "checks_passed": response.json()
+                }
+            )
+        else:
+            ServiceDiscovery.update_instance_health(
+                session=session,
+                instance_id=instance_id,
+                status="unhealthy",
+                health_data={"status_code": response.status_code}
+            )
+
+    except Exception as e:
+        ServiceDiscovery.update_instance_health(
+            session=session,
+            instance_id=instance_id,
+            status="unhealthy",
+            health_data={"error": str(e)}
+        )
+
+# Run health checks for all instances
+for instance_id in ServiceDiscovery._service_instances:
+    perform_health_check(instance_id)
+```
+
+**Scenario 7: Service Health Monitoring**
+```python
+# Get comprehensive health information for a service
+health = ServiceDiscovery.get_service_health(
+    session=session,
+    service_name="data-analysis-agent"
+)
+
+print(f"Service: {health['service_name']}")
+print(f"Type: {health['service_type']}")
+print(f"Total instances: {health['total_instances']}")
+print(f"Healthy instances: {health['healthy_instances']}")
+print(f"Unhealthy instances: {health['unhealthy_instances']}")
+print(f"Health percentage: {health['health_percentage']:.2f}%")
+print(f"Versions deployed: {', '.join(health['versions'])}")
+
+print("\nStatus distribution:")
+for status, count in health['status_distribution'].items():
+    print(f"  {status}: {count}")
+
+# Alert if health is below threshold
+if health['health_percentage'] < 50:
+    print("⚠️  WARNING: Service health below 50%!")
+```
+
+**Scenario 8: Least Connections Load Balancing**
+```python
+# Get instance with fewest active connections
+result = ServiceDiscovery.get_service_instance(
+    session=session,
+    service_name="api-gateway",
+    strategy="least_connections"
+)
+
+instance = result['instance']
+print(f"Selected least-loaded instance: {instance['id']}")
+print(f"Endpoint: {instance['host']}:{instance['port']}")
+
+# Track connection
+ServiceDiscovery._load_balancer_state['api-gateway']['connection_counts'][instance['id']] += 1
+
+# ... perform request ...
+
+# Release connection after request completes
+ServiceDiscovery._load_balancer_state['api-gateway']['connection_counts'][instance['id']] -= 1
+```
+
+**Scenario 9: Service Deregistration**
+```python
+# Gracefully deregister service instance on shutdown
+def shutdown_service(instance_id):
+    # Mark as stopping
+    ServiceDiscovery.update_instance_health(
+        session=session,
+        instance_id=instance_id,
+        status="stopping"
+    )
+
+    # Wait for active connections to drain
+    time.sleep(5)
+
+    # Deregister
+    result = ServiceDiscovery.deregister_service(
+        session=session,
+        instance_id=instance_id
+    )
+
+    print(f"Service deregistered: {result['service_name']}")
+    print(f"Deregistered at: {result['deregistered_at']}")
+
+# Call on service shutdown
+shutdown_service(instance['id'])
+```
+
+**Scenario 10: System Statistics**
+```python
+# Get service discovery statistics
+stats = ServiceDiscovery.get_statistics(session=session)
+
+print(f"Total services: {stats['total_services']}")
+print(f"Total instances: {stats['total_instances']}")
+print(f"Healthy instances: {stats['healthy_instances']}")
+print(f"Overall health: {stats['overall_health_percentage']:.2f}%")
+
+print("\nService type distribution:")
+for service_type, count in stats['service_type_distribution'].items():
+    print(f"  {service_type}: {count}")
+
+print("\nInstance status distribution:")
+for status, count in stats['instance_status_distribution'].items():
+    print(f"  {status}: {count}")
+
+print("\nVersion distribution:")
+for version, count in stats['version_distribution'].items():
+    print(f"  {version}: {count}")
+
+print(f"\nHealth checks configured: {stats['health_checks_configured']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (55% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (60% complete)
 
-Current Progress: Commit 71/100 - Circuit Breaker and Fault Tolerance Complete
+Current Progress: Commit 72/100 - Service Discovery and Registry Complete
 
 ## Implementation Roadmap
 
