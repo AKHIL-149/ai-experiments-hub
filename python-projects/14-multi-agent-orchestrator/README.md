@@ -18433,14 +18433,288 @@ for stage, count in stats['lifecycle_stage_distribution'].items():
     print(f"  {stage}: {count} items")
 ```
 
+### 71. Circuit Breaker and Fault Tolerance
+
+Resilient service communication with circuit breaker pattern, automatic retries, and fallback strategies.
+
+**Key Features:**
+- 3 circuit states (CLOSED, OPEN, HALF_OPEN)
+- 4 retry strategies (none, fixed, exponential, linear)
+- 5 fallback strategies (default value, cached value, alternative service, etc.)
+- 6 failure types (timeout, connection error, service error, etc.)
+- Automatic failure detection and recovery
+- Configurable thresholds and timeouts
+- Retry policies with exponential backoff
+- Fallback handlers for graceful degradation
+- Circuit metrics and health tracking
+
+**API Endpoints:**
+```
+POST   /api/circuit-breaker/circuit-breakers     - Create circuit breaker
+POST   /api/circuit-breaker/retry-policies       - Create retry policy
+POST   /api/circuit-breaker/fallback-handlers    - Create fallback handler
+GET    /api/circuit-breaker/circuit-breakers     - List circuit breakers
+GET    /api/circuit-breaker/circuit-breakers/{id} - Get circuit breaker
+POST   /api/circuit-breaker/circuit-breakers/{id}/reset - Reset circuit breaker
+GET    /api/circuit-breaker/statistics           - Get statistics
+GET    /api/circuit-breaker/circuit-states       - List circuit states
+GET    /api/circuit-breaker/retry-strategies     - List retry strategies
+GET    /api/circuit-breaker/fallback-strategies  - List fallback strategies
+GET    /api/circuit-breaker/failure-types        - List failure types
+```
+
+**Use Case Scenarios:**
+
+**Scenario 1: Protecting External API Calls**
+```python
+from src.services.circuit_breaker import CircuitBreaker, CircuitState
+
+# Create circuit breaker for external service
+breaker = CircuitBreaker.create_circuit_breaker(
+    session=session,
+    name="GitHub API Circuit Breaker",
+    service_name="github_api",
+    failure_threshold=5,  # Open after 5 failures
+    success_threshold=2,  # Close after 2 successes in half-open
+    timeout_seconds=5.0,
+    reset_timeout_seconds=60,  # Try half-open after 60 seconds
+    description="Protects GitHub API calls from cascading failures",
+    enabled=True
+)
+
+print(f"Circuit breaker created: {breaker['id']}")
+print(f"State: {breaker['state']}")
+print(f"Failure threshold: {breaker['failure_threshold']}")
+print(f"Timeout: {breaker['timeout_seconds']}s")
+```
+
+**Scenario 2: Exponential Backoff Retry Policy**
+```python
+# Create retry policy with exponential backoff
+retry_policy = CircuitBreaker.create_retry_policy(
+    session=session,
+    name="API Retry with Exponential Backoff",
+    strategy="exponential",
+    max_attempts=5,
+    initial_delay_ms=100,
+    max_delay_ms=10000,
+    backoff_multiplier=2.0,
+    retryable_errors=["timeout", "connection_error", "service_error"],
+    description="Retry failed API calls with exponential backoff",
+    enabled=True
+)
+
+print(f"Retry policy created: {retry_policy['id']}")
+print(f"Strategy: {retry_policy['strategy']}")
+print(f"Max attempts: {retry_policy['max_attempts']}")
+print(f"Initial delay: {retry_policy['initial_delay_ms']}ms")
+print(f"Max delay: {retry_policy['max_delay_ms']}ms")
+print(f"Backoff multiplier: {retry_policy['backoff_multiplier']}x")
+```
+
+**Scenario 3: Fallback to Cached Data**
+```python
+# Create fallback handler for cached values
+fallback = CircuitBreaker.create_fallback_handler(
+    session=session,
+    name="Cache Fallback Handler",
+    strategy="cached_value",
+    fallback_data={"default": "cached_response"},
+    cache_ttl_seconds=300,
+    description="Return cached data when primary service fails",
+    enabled=True
+)
+
+print(f"Fallback handler created: {fallback['id']}")
+print(f"Strategy: {fallback['strategy']}")
+print(f"Cache TTL: {fallback['cache_ttl_seconds']}s")
+```
+
+**Scenario 4: Execute Protected Operation**
+```python
+def call_external_api():
+    """Simulated external API call"""
+    import requests
+    response = requests.get("https://api.github.com/users/octocat")
+    return response.json()
+
+# Execute with full protection: circuit breaker + retry + fallback
+result = CircuitBreaker.execute_with_circuit_breaker(
+    session=session,
+    breaker_id=breaker['id'],
+    operation=call_external_api,
+    retry_policy_id=retry_policy['id'],
+    fallback_handler_id=fallback['id'],
+    operation_metadata={"endpoint": "/users/octocat"}
+)
+
+if result['success']:
+    print(f"Operation succeeded!")
+    print(f"Result: {result['result']}")
+    print(f"Latency: {result['latency_ms']:.2f}ms")
+else:
+    print(f"Operation failed: {result.get('error')}")
+    if result.get('circuit_open'):
+        print("Circuit breaker is OPEN - rejecting requests")
+    if result.get('fallback_used'):
+        print(f"Fallback result: {result['fallback_result']}")
+```
+
+**Scenario 5: Monitoring Circuit Health**
+```python
+# Get current circuit breaker status
+status = CircuitBreaker.get_circuit_status(
+    session=session,
+    breaker_id=breaker['id']
+)
+
+print(f"Circuit Breaker: {status['name']}")
+print(f"Service: {status['service_name']}")
+print(f"Current state: {status['current_state']}")
+print(f"Consecutive failures: {status['consecutive_failures']}/{status['failure_threshold']}")
+print(f"Consecutive successes: {status['consecutive_successes']}/{status['success_threshold']}")
+print(f"Total calls: {status['total_calls']}")
+print(f"Success rate: {status['success_rate'] * 100:.2f}%")
+print(f"Last failure: {status['last_failure_at']}")
+print(f"Last success: {status['last_success_at']}")
+
+# Manually reset if needed
+if status['current_state'] == 'open':
+    reset_result = CircuitBreaker.reset_circuit_breaker(
+        session=session,
+        breaker_id=breaker['id']
+    )
+    print(f"\nCircuit reset to: {reset_result['state']}")
+```
+
+**Scenario 6: Alternative Service Fallback**
+```python
+# Create fallback to alternative service
+alt_fallback = CircuitBreaker.create_fallback_handler(
+    session=session,
+    name="Alternative Service Fallback",
+    strategy="alternative_service",
+    alternative_service="backup_api_service",
+    description="Call backup API when primary fails",
+    enabled=True
+)
+
+# Execute with alternative service fallback
+result = CircuitBreaker.execute_with_circuit_breaker(
+    session=session,
+    breaker_id=breaker['id'],
+    operation=call_external_api,
+    fallback_handler_id=alt_fallback['id']
+)
+
+if result.get('fallback_used'):
+    print(f"Primary service failed, using: {result['fallback_result']['alternative_service']}")
+```
+
+**Scenario 7: List Circuit Breakers by State**
+```python
+# Find all open circuits
+open_circuits = CircuitBreaker.list_circuit_breakers(
+    session=session,
+    state="open",
+    enabled=True,
+    limit=50
+)
+
+print(f"Found {open_circuits['returned_count']} open circuits:")
+for cb in open_circuits['circuit_breakers']:
+    print(f"\n  {cb['name']} ({cb['service_name']})")
+    print(f"  State: {cb['current_state']}")
+    print(f"  Failures: {cb['consecutive_failures']}")
+    print(f"  Last failure: {cb['last_failure_at']}")
+```
+
+**Scenario 8: System-Wide Statistics**
+```python
+# Get circuit breaker statistics
+stats = CircuitBreaker.get_statistics(session=session)
+
+print(f"Total circuit breakers: {stats['total_circuit_breakers']}")
+print(f"Enabled: {stats['enabled_breakers']}")
+print(f"\nState distribution:")
+for state, count in stats['state_distribution'].items():
+    print(f"  {state}: {count}")
+
+print(f"\nService distribution:")
+for service, count in stats['service_distribution'].items():
+    print(f"  {service}: {count} breakers")
+
+print(f"\nTotal calls: {stats['total_calls']:,}")
+print(f"Successful: {stats['successful_calls']:,}")
+print(f"Failed: {stats['failed_calls']:,}")
+print(f"Rejected: {stats['rejected_calls']:,}")
+print(f"Overall success rate: {stats['overall_success_rate'] * 100:.2f}%")
+
+print(f"\nRetry policies: {stats['retry_policies']}")
+print(f"Total retries: {stats['total_retries']:,}")
+print(f"\nFallback handlers: {stats['fallback_handlers']}")
+print(f"Fallback invocations: {stats['total_fallback_invocations']:,}")
+```
+
+**Scenario 9: Fixed Delay Retry Strategy**
+```python
+# Create simple fixed delay retry
+fixed_retry = CircuitBreaker.create_retry_policy(
+    session=session,
+    name="Fixed Delay Retry",
+    strategy="fixed",
+    max_attempts=3,
+    initial_delay_ms=1000,  # 1 second between retries
+    description="Retry with fixed 1s delay",
+    enabled=True
+)
+
+# Use for operations that need consistent retry timing
+result = CircuitBreaker.execute_with_circuit_breaker(
+    session=session,
+    breaker_id=breaker['id'],
+    operation=call_external_api,
+    retry_policy_id=fixed_retry['id']
+)
+```
+
+**Scenario 10: Default Value Fallback**
+```python
+# Create default value fallback
+default_fallback = CircuitBreaker.create_fallback_handler(
+    session=session,
+    name="Default Response Fallback",
+    strategy="default_value",
+    fallback_data={
+        "status": "unavailable",
+        "message": "Service temporarily unavailable, using default data",
+        "data": []
+    },
+    description="Return safe default when service fails",
+    enabled=True
+)
+
+# Graceful degradation with default response
+result = CircuitBreaker.execute_with_circuit_breaker(
+    session=session,
+    breaker_id=breaker['id'],
+    operation=call_external_api,
+    fallback_handler_id=default_fallback['id']
+)
+
+if result.get('fallback_used'):
+    print("Using default fallback data")
+    print(result['fallback_result']['value'])
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (50% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (55% complete)
 
-Current Progress: Commit 70/100 - Data Retention and Archival Complete
+Current Progress: Commit 71/100 - Circuit Breaker and Fault Tolerance Complete
 
 ## Implementation Roadmap
 
