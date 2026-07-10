@@ -18220,14 +18220,227 @@ print(f"\nBlocked users: {global_stats['blocked_users']}")
 print(f"Active overrides: {global_stats['active_overrides']}")
 ```
 
+### 70. Data Retention and Archival
+
+Automated data lifecycle management with retention policies, archival, and compliance support.
+
+**Key Features:**
+- 8 retention periods (7 days to permanent)
+- 5 lifecycle stages (active → warm → cold → archived → deleted)
+- 5 retention actions (archive, delete, compress, encrypt, move to cold)
+- 6 compliance types (GDPR, HIPAA, SOC2, PCI-DSS, CCPA, custom)
+- Data compression (simulated 70% savings)
+- Scheduled retention jobs
+- Compliance requirement tracking
+- Lifecycle stage transitions
+
+**API Endpoints:**
+```
+POST   /api/retention/policies              - Create retention policy
+POST   /api/retention/lifecycle-rules       - Create lifecycle rule
+POST   /api/retention/archive               - Archive data
+GET    /api/retention/archive/{archive_id}  - Retrieve archived data
+POST   /api/retention/policies/{id}/apply   - Apply retention policy
+POST   /api/retention/lifecycle/transition  - Transition lifecycle stage
+POST   /api/retention/jobs                  - Schedule retention job
+POST   /api/retention/compliance            - Create compliance requirement
+GET    /api/retention/policies              - List retention policies
+GET    /api/retention/statistics            - Get statistics
+GET    /api/retention/retention-periods     - List retention periods
+GET    /api/retention/lifecycle-stages      - List lifecycle stages
+GET    /api/retention/actions               - List retention actions
+GET    /api/retention/compliance-types      - List compliance types
+```
+
+**Use Case Scenarios:**
+
+**Scenario 1: GDPR Compliance - User Data Retention**
+```python
+from src.services.data_retention import DataRetention, RetentionPeriod, RetentionAction, ComplianceType
+
+# Create GDPR-compliant retention policy
+policy = DataRetention.create_retention_policy(
+    session=session,
+    name="GDPR User Data Retention",
+    data_type="user_data",
+    retention_period=RetentionPeriod.YEAR_7,
+    action=RetentionAction.DELETE,
+    description="Delete user data after 7 years per GDPR requirements",
+    compliance_type=ComplianceType.GDPR,
+    enabled=True
+)
+
+print(f"Policy created: {policy['id']}")
+print(f"Retention period: {policy['retention_days']} days")
+print(f"Compliance: {policy['compliance_type']}")
+```
+
+**Scenario 2: Archiving Old Workflow Data**
+```python
+# Archive completed workflow data
+archive = DataRetention.archive_data(
+    session=session,
+    data_type="workflow_executions",
+    data_id="exec_123456",
+    data={
+        "workflow_id": "wf_analytics_pipeline",
+        "status": "completed",
+        "started_at": "2024-01-15T10:00:00Z",
+        "completed_at": "2024-01-15T10:15:00Z",
+        "results": {"processed_records": 50000}
+    },
+    retention_policy_id=policy['id'],
+    metadata={"archived_by": "user_789"}
+)
+
+print(f"Archived: {archive['id']}")
+print(f"Original size: {archive['original_size_bytes']} bytes")
+print(f"Compressed size: {archive['compressed_size_bytes']} bytes")
+print(f"Savings: {(1 - archive['compression_ratio']) * 100}%")
+print(f"Expires: {archive['expires_at']}")
+```
+
+**Scenario 3: Lifecycle Management - Hot to Cold Storage**
+```python
+# Create lifecycle rule for automatic tiering
+lifecycle_rule = DataRetention.create_lifecycle_rule(
+    session=session,
+    name="Logs Lifecycle Rule",
+    data_type="system_logs",
+    stages=[
+        {"stage": "active", "duration_days": 7, "description": "Recent logs in hot storage"},
+        {"stage": "warm", "duration_days": 30, "description": "Older logs in warm storage"},
+        {"stage": "cold", "duration_days": 90, "description": "Old logs in cold storage"},
+        {"stage": "archived", "duration_days": 365, "description": "Historical logs archived"},
+        {"stage": "deleted", "duration_days": None, "description": "Logs deleted after 1 year"}
+    ],
+    description="Automatic tiering for system logs",
+    enabled=True
+)
+
+# Transition data through lifecycle stages
+transition = DataRetention.transition_lifecycle_stage(
+    session=session,
+    data_type="system_logs",
+    data_id="log_batch_456",
+    to_stage="cold",
+    metadata={"reason": "age_threshold_reached"}
+)
+
+print(f"Transitioned to: {transition['to_stage']}")
+```
+
+**Scenario 4: Applying Retention Policy with Dry Run**
+```python
+# Test policy before applying
+dry_run_results = DataRetention.apply_retention_policy(
+    session=session,
+    policy_id=policy['id'],
+    dry_run=True
+)
+
+print(f"Dry run results:")
+print(f"  Items found: {dry_run_results['items_found']}")
+print(f"  Would archive: {dry_run_results['items_archived']}")
+print(f"  Would delete: {dry_run_results['items_deleted']}")
+
+# Apply policy if results look good
+if dry_run_results['items_found'] < 1000:
+    results = DataRetention.apply_retention_policy(
+        session=session,
+        policy_id=policy['id'],
+        dry_run=False
+    )
+    print(f"\nActual results:")
+    print(f"  Items processed: {results['items_processed']}")
+    print(f"  Items archived: {results['items_archived']}")
+    print(f"  Items deleted: {results['items_deleted']}")
+```
+
+**Scenario 5: Scheduled Retention Jobs**
+```python
+# Schedule automatic retention policy application
+job = DataRetention.schedule_retention_job(
+    session=session,
+    name="Nightly Retention Cleanup",
+    policy_ids=[policy['id'], "policy_xyz789"],
+    schedule_cron="0 2 * * *",  # Run at 2 AM daily
+    enabled=True
+)
+
+print(f"Job scheduled: {job['id']}")
+print(f"Schedule: {job['schedule_cron']}")
+print(f"Next run: {job['next_run_at']}")
+print(f"Policies: {len(job['policy_ids'])}")
+```
+
+**Scenario 6: HIPAA Compliance Requirement**
+```python
+# Create compliance requirement for healthcare data
+requirement = DataRetention.create_compliance_requirement(
+    session=session,
+    name="HIPAA Medical Records Retention",
+    compliance_type=ComplianceType.HIPAA,
+    data_types=["patient_records", "medical_imaging", "lab_results"],
+    minimum_retention_days=2555,  # 7 years
+    maximum_retention_days=None,
+    required_actions=["archive", "encrypt"],
+    description="HIPAA requires 7-year retention for medical records"
+)
+
+print(f"Compliance requirement: {requirement['id']}")
+print(f"Type: {requirement['compliance_type']}")
+print(f"Minimum retention: {requirement['minimum_retention_days']} days")
+print(f"Data types covered: {', '.join(requirement['data_types'])}")
+```
+
+**Scenario 7: Retrieving Archived Data**
+```python
+# Retrieve archived data when needed
+retrieved = DataRetention.retrieve_archived_data(
+    session=session,
+    archive_id=archive['id']
+)
+
+print(f"Retrieved archive: {retrieved['archive_id']}")
+print(f"Data type: {retrieved['data_type']}")
+print(f"Original ID: {retrieved['data_id']}")
+print(f"Archived at: {retrieved['archived_at']}")
+print(f"Retrieval count: {retrieved['retrieval_count']}")
+print(f"Data: {retrieved['data']}")
+```
+
+**Scenario 8: Statistics and Monitoring**
+```python
+# Get retention statistics
+stats = DataRetention.get_statistics(session=session)
+
+print(f"Total policies: {stats['total_policies']}")
+print(f"Enabled policies: {stats['enabled_policies']}")
+print(f"Archived items: {stats['total_archived_items']}")
+print(f"Original size: {stats['total_archived_size_bytes']:,} bytes")
+print(f"Compressed size: {stats['total_compressed_size_bytes']:,} bytes")
+print(f"Savings: {stats['compression_savings_bytes']:,} bytes")
+print(f"Scheduled jobs: {stats['scheduled_jobs']}")
+print(f"Deletion queue: {stats['items_in_deletion_queue']}")
+
+print("\nData type distribution:")
+for data_type, count in stats['data_type_distribution'].items():
+    print(f"  {data_type}: {count} items")
+
+print("\nLifecycle stage distribution:")
+for stage, count in stats['lifecycle_stage_distribution'].items():
+    print(f"  {stage}: {count} items")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (45% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (50% complete)
 
-Current Progress: Commit 69/100 - API Rate Limiting Complete
+Current Progress: Commit 70/100 - Data Retention and Archival Complete
 
 ## Implementation Roadmap
 
