@@ -19305,14 +19305,268 @@ for status, count in stats['message_status_distribution'].items():
     print(f"  {status}: {count}")
 ```
 
+### 14.4.14 Distributed Tracing and Observability (AKHIL-277)
+
+**Description**: Comprehensive distributed tracing system for tracking requests across multiple agents and services with span management, service dependency mapping, and timeline visualization.
+
+**Key Features**:
+- Distributed trace management with hierarchical spans
+- 5 span kinds (internal, server, client, producer, consumer)
+- 3 span statuses (unset, ok, error) and 3 trace states (active, completed, failed)
+- Span events for detailed operation tracking
+- Span links for cross-trace correlations
+- Service dependency mapping and visualization
+- Timeline visualization for performance analysis
+- Trace search with advanced filtering
+- Comprehensive statistics and analytics
+
+**API Endpoints**:
+- `POST /api/tracing/traces` - Start a new distributed trace
+- `POST /api/tracing/traces/{trace_id}/spans` - Start a span within a trace
+- `POST /api/tracing/spans/{span_id}/end` - End a span with status
+- `POST /api/tracing/spans/{span_id}/events` - Add event to span
+- `POST /api/tracing/spans/{span_id}/links` - Link span to another span
+- `GET /api/tracing/traces/{trace_id}` - Get trace details with spans
+- `GET /api/tracing/traces/{trace_id}/timeline` - Get trace timeline visualization
+- `GET /api/tracing/service-map` - Get service dependency map
+- `GET /api/tracing/traces` - Search traces with filters
+- `GET /api/tracing/statistics` - Get tracing statistics
+
+**Use Case Scenarios**:
+
+**Scenario 1: Start Distributed Trace for Task Workflow**
+```python
+# Start trace for multi-agent task workflow
+trace = DistributedTracing.start_trace(
+    session=session,
+    trace_name="task_workflow_execution",
+    service_name="orchestrator",
+    operation_name="execute_task",
+    attributes={
+        "task_id": "task_789",
+        "task_type": "data_analysis",
+        "priority": "high"
+    }
+)
+
+print(f"Trace started: {trace['id']}")
+print(f"Service: {trace['service_name']}")
+print(f"Operation: {trace['operation_name']}")
+print(f"State: {trace['state']}")
+```
+
+**Scenario 2: Create Hierarchical Spans for Agent Operations**
+```python
+# Start root span for orchestrator
+root_span = DistributedTracing.start_span(
+    session=session,
+    trace_id=trace['id'],
+    span_name="orchestrate_task",
+    service_name="orchestrator",
+    span_kind=SpanKind.SERVER,
+    attributes={
+        "agent_count": 3,
+        "workflow_type": "sequential"
+    }
+)
+
+# Start child span for agent 1
+agent1_span = DistributedTracing.start_span(
+    session=session,
+    trace_id=trace['id'],
+    span_name="analyze_data",
+    service_name="analyst_agent",
+    span_kind=SpanKind.INTERNAL,
+    parent_span_id=root_span['id'],
+    attributes={
+        "agent_id": "agent_001",
+        "data_size_mb": 25
+    }
+)
+
+print(f"Root span: {root_span['id']}")
+print(f"Child span: {agent1_span['id']} (parent: {agent1_span['parent_span_id']})")
+```
+
+**Scenario 3: Track Service-to-Service Communication**
+```python
+# Track API call from agent to external service
+api_span = DistributedTracing.start_span(
+    session=session,
+    trace_id=trace['id'],
+    span_name="fetch_external_data",
+    service_name="analyst_agent",
+    span_kind=SpanKind.CLIENT,
+    parent_span_id=agent1_span['id'],
+    attributes={
+        "endpoint": "https://api.example.com/data",
+        "method": "GET"
+    }
+)
+
+# End span with success
+ended_span = DistributedTracing.end_span(
+    session=session,
+    span_id=api_span['id'],
+    status=SpanStatus.OK
+)
+
+print(f"API call completed in {ended_span['duration_ms']:.2f}ms")
+print(f"Status: {ended_span['status']}")
+```
+
+**Scenario 4: Add Span Events for Detailed Tracking**
+```python
+# Add events to track operation milestones
+event1 = DistributedTracing.add_span_event(
+    session=session,
+    span_id=agent1_span['id'],
+    event_name="data_validation_started",
+    attributes={
+        "record_count": 1000,
+        "validation_rules": 5
+    }
+)
+
+event2 = DistributedTracing.add_span_event(
+    session=session,
+    span_id=agent1_span['id'],
+    event_name="data_validation_completed",
+    attributes={
+        "valid_records": 950,
+        "invalid_records": 50,
+        "validation_errors": ["missing_field", "invalid_format"]
+    }
+)
+
+print(f"Event 1: {event1['name']} at {event1['timestamp']}")
+print(f"Event 2: {event2['name']} at {event2['timestamp']}")
+```
+
+**Scenario 5: Create Span Links for Correlations**
+```python
+# Link current span to related trace (e.g., follow-up task)
+link = DistributedTracing.add_span_link(
+    session=session,
+    span_id=agent1_span['id'],
+    linked_trace_id="trace_abc123",
+    linked_span_id="span_def456",
+    relationship="follows_from",
+    attributes={
+        "reason": "dependent_task",
+        "trigger_type": "completion"
+    }
+)
+
+print(f"Link created: {link['id']}")
+print(f"Relationship: {link['relationship']}")
+print(f"Linked to: {link['linked_trace_id']}/{link['linked_span_id']}")
+```
+
+**Scenario 6: Track Error Propagation Across Services**
+```python
+# Track error in agent operation
+try:
+    # Simulated operation failure
+    raise ValueError("Invalid data format")
+except Exception as e:
+    import traceback
+
+    error_span = DistributedTracing.end_span(
+        session=session,
+        span_id=agent1_span['id'],
+        status=SpanStatus.ERROR,
+        error=str(e),
+        stack_trace=traceback.format_exc()
+    )
+
+    print(f"Error tracked in span: {error_span['id']}")
+    print(f"Error: {error_span['error']}")
+    print(f"Status: {error_span['status']}")
+```
+
+**Scenario 7: Visualize Trace Timeline**
+```python
+# Get chronological timeline of all spans
+timeline = DistributedTracing.get_trace_timeline(
+    session=session,
+    trace_id=trace['id']
+)
+
+print(f"Trace: {timeline['trace_name']}")
+print(f"Total duration: {timeline['total_duration_ms']:.2f}ms")
+print(f"\nTimeline ({timeline['span_count']} spans):")
+
+for item in timeline['timeline']:
+    print(f"  [{item['started_at']}] {item['service_name']}: {item['span_name']}")
+    print(f"    Duration: {item['duration_ms']:.2f}ms, Status: {item['status']}")
+```
+
+**Scenario 8: Analyze Service Dependencies**
+```python
+# Get service dependency map
+service_map = DistributedTracing.get_service_map(session=session)
+
+print(f"Services: {', '.join(service_map['services'])}")
+print(f"\nDependencies ({service_map['dependency_count']}):")
+
+for dep in service_map['dependencies']:
+    print(f"  {dep['source']} → {dep['target']} ({dep['call_count']} calls)")
+```
+
+**Scenario 9: Search and Filter Traces**
+```python
+# Search for traces with errors and slow performance
+result = DistributedTracing.search_traces(
+    session=session,
+    service_name="analyst_agent",
+    has_errors=True,
+    min_duration_ms=1000,
+    limit=10
+)
+
+print(f"Found {result['returned_count']} traces (out of {result['total_traces']} total)")
+
+for trace in result['traces']:
+    print(f"\nTrace: {trace['name']} ({trace['id']})")
+    print(f"  Duration: {trace['duration_ms']:.2f}ms")
+    print(f"  Services: {', '.join(trace['services_involved'])}")
+    print(f"  Spans: {trace['span_count']}, Errors: {trace['error_count']}")
+    print(f"  State: {trace['state']}")
+```
+
+**Scenario 10: Monitor Tracing Statistics**
+```python
+# Get comprehensive tracing statistics
+stats = DistributedTracing.get_statistics(session=session)
+
+print(f"Total traces: {stats['total_traces']}")
+print(f"Total spans: {stats['total_spans']}")
+print(f"Active traces: {stats['active_traces']}")
+print(f"Completed traces: {stats['completed_traces']}")
+print(f"Failed traces: {stats['failed_traces']}")
+print(f"Average trace duration: {stats['average_trace_duration_ms']:.2f}ms")
+print(f"Error rate: {stats['error_rate_percentage']:.2f}%")
+print(f"Total errors: {stats['total_errors']}")
+print(f"Services tracked: {stats['services_count']}")
+
+print("\nTrace state distribution:")
+for state, count in stats['trace_state_distribution'].items():
+    print(f"  {state}: {count}")
+
+print("\nService distribution:")
+for service, count in stats['service_distribution'].items():
+    print(f"  {service}: {count} spans")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (65% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (70% complete)
 
-Current Progress: Commit 73/100 - Event Streaming and Message Bus Complete
+Current Progress: Commit 74/100 - Distributed Tracing and Observability Complete
 
 ## Implementation Roadmap
 
