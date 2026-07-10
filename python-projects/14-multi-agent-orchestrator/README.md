@@ -17967,14 +17967,267 @@ print(f"Active leases: {stats['active_leases']}")
 print(f"Total accesses: {stats['total_accesses']}")
 ```
 
+## API Rate Limiting and Quota Management
+
+The API Rate Limiting system provides advanced per-user rate limiting, quota management with tiered plans, usage tracking, burst allowances, and temporary user blocking for API protection and fair resource distribution.
+
+**Key Features:**
+
+- **5 Quota Tiers**: Free, Basic, Premium, Enterprise, Unlimited with predefined limits
+- **Multi-Period Limits**: Per-minute, per-hour, per-day, per-month quotas
+- **Burst Allowance**: Temporary burst capacity for handling traffic spikes
+- **Usage Tracking**: Comprehensive request tracking with analytics
+- **Custom Plans**: Create custom quota plans with specific limits
+- **Quota Overrides**: Temporary or permanent quota limit overrides
+- **User Blocking**: Temporary user blocking for abuse prevention
+- **Concurrent Requests**: Limit concurrent request handling per user
+- **Automatic Reset**: Automatic usage counter resets per period
+
+**Default Quota Tiers:**
+
+```python
+FREE: 10 req/min, 100 req/hour, 1K req/day, 10K req/month, 20 burst, 2 concurrent
+BASIC: 60 req/min, 1K req/hour, 10K req/day, 100K req/month, 100 burst, 5 concurrent
+PREMIUM: 300 req/min, 5K req/hour, 50K req/day, 500K req/month, 500 burst, 20 concurrent
+ENTERPRISE: 1K req/min, 20K req/hour, 200K req/day, 2M req/month, 2K burst, 100 concurrent
+```
+
+**Endpoints:**
+
+**Assign Quota:**
+```bash
+POST /api/quotas/quotas/{user_id}
+{
+  "tier": "premium",
+  "plan_id": "plan_abc123",
+  "custom_limits": {
+    "requests_per_minute": 500
+  }
+}
+```
+
+**Check Rate Limit:**
+```bash
+GET /api/quotas/quotas/{user_id}/check?endpoint=/api/agents
+```
+
+**Record Request:**
+```bash
+POST /api/quotas/quotas/{user_id}/record
+{
+  "endpoint": "/api/workflows",
+  "response_status": 200,
+  "response_time_ms": 45.2
+}
+```
+
+**Use Case Scenarios:**
+
+**Scenario 1: Tiered User Quota Management**
+```python
+from src.services.api_rate_limiting import APIRateLimiting, QuotaTier
+
+# Assign free tier to new user
+quota = APIRateLimiting.assign_quota(
+    session=session,
+    user_id="user_123",
+    tier=QuotaTier.FREE
+)
+print(f"Free tier: {quota['limits']}")
+print(f"Limits: {quota['limits']['requests_per_minute']} req/min")
+
+# Check rate limit before allowing request
+check = APIRateLimiting.check_rate_limit(
+    session=session,
+    user_id="user_123",
+    endpoint="/api/agents"
+)
+
+if check["allowed"]:
+    # Process request
+    print("Request allowed")
+    print(f"Remaining this minute: {check['remaining']['minute']}")
+
+    # Record the request
+    APIRateLimiting.record_request(
+        session=session,
+        user_id="user_123",
+        endpoint="/api/agents",
+        response_status=200,
+        response_time_ms=32.5
+    )
+else:
+    print(f"Rate limit exceeded: {check['reason']}")
+    print(f"Retry after: {check['retry_after']} seconds")
+```
+
+**Scenario 2: Custom Quota Plans**
+```python
+# Create custom plan for enterprise customers
+custom_plan = APIRateLimiting.create_quota_plan(
+    session=session,
+    name="Custom Enterprise Plan",
+    tier=QuotaTier.ENTERPRISE,
+    limits={
+        "requests_per_minute": 2000,
+        "requests_per_hour": 50000,
+        "requests_per_day": 500000,
+        "requests_per_month": 5000000,
+        "burst_allowance": 5000,
+        "concurrent_requests": 200
+    },
+    description="Custom high-volume plan for enterprise customer ABC Corp",
+    metadata={"customer": "ABC Corp", "contract_id": "ENT-2024-001"}
+)
+
+# Assign custom plan to user
+quota = APIRateLimiting.assign_quota(
+    session=session,
+    user_id="enterprise_user_456",
+    tier=QuotaTier.ENTERPRISE,
+    plan_id=custom_plan['id']
+)
+print(f"Custom plan assigned: {custom_plan['name']}")
+```
+
+**Scenario 3: Usage Statistics and Analytics**
+```python
+# Get detailed usage statistics
+stats = APIRateLimiting.get_usage_statistics(
+    session=session,
+    user_id="user_123"
+)
+
+print(f"Tier: {stats['tier']}")
+print(f"Total requests: {stats['total_requests']}")
+print(f"Success rate: {stats['success_rate'] * 100}%")
+print(f"Avg response time: {stats['avg_response_time_ms']}ms")
+
+print("\nCurrent usage:")
+for period, count in stats['current_usage'].items():
+    limit_key = f"requests_per_{period}"
+    limit = stats['limits'].get(limit_key, 'N/A')
+    print(f"  {period}: {count}/{limit}")
+
+print("\nTop endpoints:")
+for endpoint, count in sorted(stats['endpoints'].items(), key=lambda x: x[1], reverse=True)[:5]:
+    print(f"  {endpoint}: {count} requests")
+```
+
+**Scenario 4: Burst Allowance Handling**
+```python
+# User exceeds per-minute limit but has burst allowance
+user_id = "user_789"
+
+# Simulate 15 requests in one minute (limit is 10)
+for i in range(15):
+    check = APIRateLimiting.check_rate_limit(
+        session=session,
+        user_id=user_id
+    )
+
+    if check["allowed"]:
+        if check["status"] == "approaching_limit":
+            print(f"Request {i+1}: Using burst allowance")
+        else:
+            print(f"Request {i+1}: Within limit")
+
+        APIRateLimiting.record_request(
+            session=session,
+            user_id=user_id,
+            endpoint="/api/test",
+            response_status=200
+        )
+    else:
+        print(f"Request {i+1}: Blocked - {check['reason']}")
+        print(f"Reset at: {check['reset_at']['minute']}")
+        break
+
+# Check final quota state
+quota = APIRateLimiting._user_quotas[user_id]
+print(f"\nBurst used: {quota['burst_used']}/{quota['limits']['burst_allowance']}")
+```
+
+**Scenario 5: Temporary Quota Overrides**
+```python
+# Create temporary override for special event
+override = APIRateLimiting.create_quota_override(
+    session=session,
+    user_id="user_special",
+    custom_limits={
+        "requests_per_minute": 1000,
+        "requests_per_hour": 10000
+    },
+    duration_hours=24,  # 24-hour temporary boost
+    reason="Black Friday promotion - increased traffic expected"
+)
+
+print(f"Override created until: {override['expires_at']}")
+print(f"Reason: {override['reason']}")
+
+# Override is automatically applied to user's quota
+quota = APIRateLimiting._user_quotas["user_special"]
+print(f"New limit: {quota['limits']['requests_per_minute']} req/min")
+```
+
+**Scenario 6: User Blocking for Abuse**
+```python
+# Detect abuse pattern and block user
+user_id = "abusive_user"
+
+# Block user for 2 hours
+block = APIRateLimiting.block_user(
+    session=session,
+    user_id=user_id,
+    duration_hours=2,
+    reason="Excessive failed requests detected - possible attack"
+)
+
+print(f"User blocked until: {block['blocked_until']}")
+print(f"Reason: {block['reason']}")
+
+# Subsequent requests are blocked
+check = APIRateLimiting.check_rate_limit(
+    session=session,
+    user_id=user_id
+)
+
+if not check["allowed"]:
+    print(f"Status: {check['status']}")  # "blocked"
+    print(f"Retry after: {check['retry_after']} seconds")
+    print(f"Blocked until: {check['blocked_until']}")
+```
+
+**Scenario 7: Global Statistics and Monitoring**
+```python
+# Get system-wide rate limiting statistics
+global_stats = APIRateLimiting.get_global_statistics(session=session)
+
+print(f"Total users: {global_stats['total_users']}")
+print(f"Total requests: {global_stats['total_requests']}")
+print(f"Requests last hour: {global_stats['requests_last_hour']}")
+print(f"Requests last day: {global_stats['requests_last_day']}")
+
+print("\nTier distribution:")
+for tier, count in global_stats['tier_distribution'].items():
+    print(f"  {tier}: {count} users")
+
+print("\nStatus distribution:")
+for status, count in global_stats['status_distribution'].items():
+    print(f"  {status}: {count} users")
+
+print(f"\nBlocked users: {global_stats['blocked_users']}")
+print(f"Active overrides: {global_stats['active_overrides']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (40% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (45% complete)
 
-Current Progress: Commit 68/100 - Secret Management Complete
+Current Progress: Commit 69/100 - API Rate Limiting Complete
 
 ## Implementation Roadmap
 
