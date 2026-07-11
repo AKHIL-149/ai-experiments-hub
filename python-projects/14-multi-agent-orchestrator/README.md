@@ -19862,14 +19862,296 @@ for severity, count in stats['bottleneck_severity_distribution'].items():
     print(f"  {severity}: {count}")
 ```
 
+### 14.4.16 Agent Versioning and Rollback (AKHIL-279)
+
+**Description**: Comprehensive version control system for agents with deployment strategies, rollback capabilities, and canary deployments.
+
+**Key Features**:
+- Agent version management with semantic versioning
+- Multiple deployment strategies (immediate, canary, blue-green, rolling, scheduled)
+- Automated rollback with configurable triggers
+- Version comparison and diff analysis
+- Canary deployments with gradual traffic shifting
+- Deployment validation and pre-flight checks
+- Version deprecation and lifecycle management
+- Comprehensive rollback history tracking
+
+**API Endpoints**:
+- `POST /api/versioning/versions` - Create agent version
+- `POST /api/versioning/versions/{version_id}/deploy` - Deploy version
+- `POST /api/versioning/agents/{agent_id}/rollback` - Rollback version
+- `GET /api/versioning/agents/{agent_id}/versions` - Get version history
+- `GET /api/versioning/deployments/{deployment_id}` - Get deployment status
+- `POST /api/versioning/deployments/{deployment_id}/promote` - Promote canary deployment
+- `POST /api/versioning/versions/{version_id}/compare/{other_version_id}` - Compare versions
+- `POST /api/versioning/versions/{version_id}/deprecate` - Deprecate version
+- `GET /api/versioning/rollbacks` - List rollback history
+- `GET /api/versioning/statistics` - Get versioning statistics
+
+**Use Case Scenarios**:
+
+**Scenario 1: Create New Agent Version**
+```python
+# Create new version with code hash and configuration
+version = AgentVersioning.create_version(
+    session=session,
+    agent_id="agent_001",
+    version_number="2.1.0",
+    code_hash="a3f5d9c8b2e1f4a6d7c9b8e5f2a1d3c6",
+    configuration={
+        "model": "gpt-4",
+        "temperature": 0.7,
+        "max_tokens": 2000,
+        "retry_attempts": 3,
+        "timeout_seconds": 30
+    },
+    dependencies=["langchain==0.1.0", "openai==1.5.0"],
+    description="Enhanced model with improved error handling",
+    changelog="- Upgraded to GPT-4\n- Added retry logic\n- Improved timeout handling",
+    metadata={
+        "created_by": "admin_user",
+        "environment": "production"
+    }
+)
+
+print(f"Version created: {version['id']}")
+print(f"Version number: {version['version_number']}")
+print(f"Status: {version['status']}")
+print(f"Code hash: {version['code_hash']}")
+```
+
+**Scenario 2: Deploy Version with Immediate Strategy**
+```python
+# Deploy version immediately to all traffic
+deployment = AgentVersioning.deploy_version(
+    session=session,
+    version_id=version['id'],
+    strategy=DeploymentStrategy.IMMEDIATE,
+    validation_checks=["syntax_check", "dependency_check"],
+    rollback_on_error=True
+)
+
+print(f"Deployment initiated: {deployment['id']}")
+print(f"Strategy: {deployment['strategy']}")
+print(f"Status: {deployment['status']}")
+print(f"Current traffic: {deployment['current_percentage']}%")
+```
+
+**Scenario 3: Canary Deployment with Gradual Rollout**
+```python
+# Start canary deployment with 10% traffic
+canary_deployment = AgentVersioning.deploy_version(
+    session=session,
+    version_id=version['id'],
+    strategy=DeploymentStrategy.CANARY,
+    target_percentage=100,  # Final target
+    validation_checks=["health_check", "performance_check"],
+    rollback_on_error=True
+)
+
+print(f"Canary deployment started: {canary_deployment['id']}")
+print(f"Initial traffic: {canary_deployment['current_percentage']}%")
+
+# Monitor canary metrics...
+# If successful, promote to 50%
+promoted = AgentVersioning.promote_canary(
+    session=session,
+    deployment_id=canary_deployment['id'],
+    target_percentage=50
+)
+
+print(f"Promoted to {promoted['current_percentage']}%")
+
+# Continue monitoring...
+# Finally promote to 100%
+completed = AgentVersioning.promote_canary(
+    session=session,
+    deployment_id=canary_deployment['id'],
+    target_percentage=100
+)
+
+print(f"Canary completed: {completed['status']}")
+```
+
+**Scenario 4: Scheduled Deployment**
+```python
+from datetime import datetime, timedelta
+
+# Schedule deployment for maintenance window
+schedule_time = datetime.utcnow() + timedelta(hours=2)
+
+scheduled_deployment = AgentVersioning.deploy_version(
+    session=session,
+    version_id=version['id'],
+    strategy=DeploymentStrategy.SCHEDULED,
+    schedule_at=schedule_time,
+    validation_checks=["integration_test", "smoke_test"]
+)
+
+print(f"Deployment scheduled for: {scheduled_deployment['schedule_at']}")
+print(f"Status: {scheduled_deployment['status']}")
+```
+
+**Scenario 5: Rollback to Previous Version**
+```python
+# Rollback due to errors
+rollback = AgentVersioning.rollback_version(
+    session=session,
+    agent_id="agent_001",
+    reason=RollbackReason.ERRORS,
+    description="High error rate detected after deployment"
+)
+
+print(f"Rolled back from: {rollback['from_version_number']}")
+print(f"Rolled back to: {rollback['to_version_number']}")
+print(f"Reason: {rollback['reason']}")
+print(f"Status: {rollback['status']}")
+print(f"Success: {rollback['success']}")
+```
+
+**Scenario 6: Rollback to Specific Version**
+```python
+# Rollback to specific known-good version
+target_version_id = "version_abc123"
+
+rollback = AgentVersioning.rollback_version(
+    session=session,
+    agent_id="agent_001",
+    target_version_id=target_version_id,
+    reason=RollbackReason.PERFORMANCE_DEGRADATION,
+    description="Reverting to last stable version due to latency issues"
+)
+
+print(f"Rolled back to version: {rollback['to_version_number']}")
+print(f"Completed at: {rollback['completed_at']}")
+```
+
+**Scenario 7: Compare Two Versions**
+```python
+# Compare versions to see differences
+comparison = AgentVersioning.compare_versions(
+    session=session,
+    version_id_1="version_v1",
+    version_id_2="version_v2",
+    include_diff=True
+)
+
+print(f"Comparing versions:")
+print(f"  V1: {comparison['version_1']['version_number']}")
+print(f"  V2: {comparison['version_2']['version_number']}")
+print(f"\nCode changed: {comparison['code_changed']}")
+print(f"Dependencies changed: {comparison['dependencies_changed']}")
+
+if comparison.get('configuration_diff'):
+    diff = comparison['configuration_diff']
+    print(f"\nConfiguration changes:")
+    print(f"  Added: {list(diff['added'].keys())}")
+    print(f"  Removed: {list(diff['removed'].keys())}")
+    print(f"  Changed: {list(diff['changed'].keys())}")
+
+if comparison.get('dependencies_diff'):
+    dep_diff = comparison['dependencies_diff']
+    print(f"\nDependency changes:")
+    print(f"  Added: {dep_diff['added']}")
+    print(f"  Removed: {dep_diff['removed']}")
+```
+
+**Scenario 8: View Version History**
+```python
+# Get version history for agent
+history = AgentVersioning.get_version_history(
+    session=session,
+    agent_id="agent_001",
+    status=None,  # All statuses
+    limit=20
+)
+
+print(f"Agent: {history['agent_id']}")
+print(f"Total versions: {history['total_versions']}")
+print(f"Current version: {history['current_version_id']}")
+
+print("\nVersion history:")
+for version in history['versions']:
+    status_marker = "→" if version['is_current'] else " "
+    print(f"{status_marker} {version['version_number']} ({version['status']})")
+    print(f"  Created: {version['created_at']}")
+    print(f"  Deployments: {version['deployment_count']}")
+    print(f"  Rollbacks: {version['rollback_count']}")
+    if version.get('description'):
+        print(f"  Description: {version['description']}")
+```
+
+**Scenario 9: Monitor Deployment Status**
+```python
+# Get detailed deployment status
+deployment_status = AgentVersioning.get_deployment_status(
+    session=session,
+    deployment_id=deployment['id']
+)
+
+print(f"Deployment: {deployment_status['id']}")
+print(f"Version: {deployment_status['version_number']}")
+print(f"Strategy: {deployment_status['strategy']}")
+print(f"Status: {deployment_status['status']}")
+print(f"Traffic: {deployment_status['current_percentage']}%")
+
+if deployment_status.get('canary_info'):
+    canary = deployment_status['canary_info']
+    print(f"\nCanary info:")
+    print(f"  Phase: {canary['phase']}")
+    print(f"  Requests: {canary['metrics']['requests']}")
+    print(f"  Errors: {canary['metrics']['errors']}")
+    print(f"  Avg latency: {canary['metrics']['avg_latency_ms']}ms")
+
+if deployment_status.get('errors'):
+    print(f"\nErrors: {deployment_status['error_count']}")
+    for error in deployment_status['errors'][:5]:
+        print(f"  - {error}")
+```
+
+**Scenario 10: View Rollback History and Statistics**
+```python
+# Get rollback history
+rollback_history = AgentVersioning.list_rollbacks(
+    session=session,
+    agent_id="agent_001",
+    limit=10
+)
+
+print(f"Total rollbacks: {rollback_history['total_rollbacks']}")
+print(f"Returned: {rollback_history['returned_count']}")
+
+print("\nRecent rollbacks:")
+for rb in rollback_history['rollbacks']:
+    print(f"\n  From: {rb['from_version_number']} → To: {rb['to_version_number']}")
+    print(f"  Reason: {rb['reason']}")
+    print(f"  Initiated: {rb['initiated_at']}")
+    print(f"  Success: {rb['success']}")
+
+# Get overall versioning statistics
+stats = AgentVersioning.get_statistics(session=session)
+
+print(f"\n\nVersioning Statistics:")
+print(f"Total versions: {stats['total_versions']}")
+print(f"Active versions: {stats['active_versions']}")
+print(f"Total deployments: {stats['total_deployments']}")
+print(f"Active deployments: {stats['active_deployments']}")
+print(f"Total rollbacks: {stats['total_rollbacks']}")
+print(f"Agents with versions: {stats['agents_with_versions']}")
+
+print("\nDeployment strategies:")
+for strategy, count in stats['deployment_strategy_distribution'].items():
+    print(f"  {strategy}: {count}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (75% complete)
+✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
 
-Current Progress: Commit 75/100 - Agent Profiling and Benchmarking Complete
+Current Progress: Commit 76/100 - Agent Versioning and Rollback Complete
 
 ## Implementation Roadmap
 
