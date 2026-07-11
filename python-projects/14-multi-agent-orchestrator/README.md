@@ -19559,14 +19559,317 @@ for service, count in stats['service_distribution'].items():
     print(f"  {service}: {count} spans")
 ```
 
+### 14.4.15 Agent Profiling and Benchmarking (AKHIL-278)
+
+**Description**: Comprehensive agent profiling and benchmarking system for performance analysis, bottleneck detection, and optimization recommendations.
+
+**Key Features**:
+- Performance profiling with 8 metric types (execution time, CPU, memory, I/O, network, database, cache, errors)
+- Benchmark testing with 6 benchmark types (throughput, latency, concurrency, stress, endurance, spike)
+- Automated bottleneck detection with severity classification
+- Performance baseline establishment and tracking
+- Multi-agent comparison and ranking
+- Optimization recommendations generation
+- Historical performance trend analysis
+- Real-time metric collection and sampling
+
+**API Endpoints**:
+- `POST /api/profiling/profile-sessions` - Start profiling session
+- `POST /api/profiling/profile-sessions/{profile_id}/metrics` - Record performance metric
+- `POST /api/profiling/profile-sessions/{profile_id}/end` - End profiling session
+- `GET /api/profiling/agents/{agent_id}/profile-history` - Get profiling history
+- `POST /api/profiling/benchmarks` - Create benchmark test
+- `POST /api/profiling/benchmarks/{benchmark_id}/run` - Run benchmark
+- `GET /api/profiling/benchmarks/{benchmark_id}/results` - Get benchmark results
+- `POST /api/profiling/agents/{agent_id}/baseline` - Set performance baseline
+- `POST /api/profiling/compare` - Compare agent performance
+- `GET /api/profiling/bottlenecks` - Get performance bottlenecks
+- `GET /api/profiling/agents/{agent_id}/recommendations` - Get optimization recommendations
+- `GET /api/profiling/statistics` - Get profiling statistics
+
+**Use Case Scenarios**:
+
+**Scenario 1: Start Performance Profiling Session**
+```python
+# Start profiling session for agent with multiple metrics
+profile_session = AgentProfiling.start_profile_session(
+    session=session,
+    agent_id="agent_001",
+    profile_name="production_load_analysis",
+    metric_types=[
+        ProfileMetricType.EXECUTION_TIME,
+        ProfileMetricType.MEMORY_USAGE,
+        ProfileMetricType.CPU_USAGE,
+        ProfileMetricType.DATABASE_QUERIES,
+        ProfileMetricType.ERROR_RATE
+    ],
+    duration_seconds=300,  # 5 minute profiling
+    sample_interval_ms=100,
+    metadata={
+        "environment": "production",
+        "load_level": "normal"
+    }
+)
+
+print(f"Profile session started: {profile_session['id']}")
+print(f"Metrics: {', '.join(profile_session['metric_types'])}")
+print(f"Sample interval: {profile_session['sample_interval_ms']}ms")
+```
+
+**Scenario 2: Record Performance Metrics During Operation**
+```python
+# Record metrics during agent execution
+import time
+
+# Record execution time
+start_time = time.time()
+# ... perform agent operation ...
+execution_time_ms = (time.time() - start_time) * 1000
+
+metric1 = AgentProfiling.record_metric(
+    session=session,
+    profile_id=profile_session['id'],
+    metric_type=ProfileMetricType.EXECUTION_TIME,
+    value=execution_time_ms,
+    context={
+        "operation": "data_processing",
+        "records_processed": 1000
+    }
+)
+
+# Record memory usage
+metric2 = AgentProfiling.record_metric(
+    session=session,
+    profile_id=profile_session['id'],
+    metric_type=ProfileMetricType.MEMORY_USAGE,
+    value=256.5,  # MB
+    context={"peak_usage": True}
+)
+
+print(f"Recorded execution time: {metric1['value']}ms")
+print(f"Recorded memory usage: {metric2['value']}MB")
+```
+
+**Scenario 3: End Profiling and Analyze Results**
+```python
+# End profiling session and get summary
+completed_session = AgentProfiling.end_profile_session(
+    session=session,
+    profile_id=profile_session['id'],
+    status=ProfileStatus.COMPLETED
+)
+
+print(f"Profiling completed in {completed_session['duration_ms']:.2f}ms")
+print(f"Samples collected: {completed_session['samples_collected']}")
+
+print("\nMetrics Summary:")
+for metric_type, summary in completed_session['metrics_summary'].items():
+    print(f"\n{metric_type}:")
+    print(f"  Count: {summary['count']}")
+    print(f"  Min: {summary['min']:.2f}, Max: {summary['max']:.2f}")
+    print(f"  Avg: {summary['avg']:.2f}, Median: {summary['median']:.2f}")
+    print(f"  Std Dev: {summary['stddev']:.2f}")
+```
+
+**Scenario 4: Create and Run Benchmark Test**
+```python
+# Create throughput benchmark
+benchmark = AgentProfiling.create_benchmark(
+    session=session,
+    benchmark_name="agent_throughput_test",
+    benchmark_type=BenchmarkType.THROUGHPUT,
+    target_agents=["agent_001", "agent_002", "agent_003"],
+    test_duration_seconds=60,
+    target_throughput=1000,  # 1000 requests/sec
+    max_latency_ms=100,
+    concurrent_requests=50,
+    description="Measure agent throughput under load"
+)
+
+# Run benchmark
+result = AgentProfiling.run_benchmark(
+    session=session,
+    benchmark_id=benchmark['id'],
+    iterations=3,
+    warmup_iterations=1
+)
+
+print(f"Benchmark: {result['benchmark_name']}")
+print(f"Type: {result['benchmark_type']}")
+print(f"Passed: {result['passed']}")
+
+agg = result['aggregated_results']
+print(f"\nResults:")
+print(f"  Avg throughput: {agg['avg_throughput']:.2f} req/s")
+print(f"  Avg latency: {agg['avg_latency_ms']:.2f}ms")
+print(f"  P95 latency: {agg['avg_p95_latency_ms']:.2f}ms")
+print(f"  P99 latency: {agg['avg_p99_latency_ms']:.2f}ms")
+print(f"  Error rate: {agg['avg_error_rate']*100:.2f}%")
+```
+
+**Scenario 5: Set Performance Baseline**
+```python
+# Establish baseline after optimization
+baseline = AgentProfiling.set_baseline(
+    session=session,
+    agent_id="agent_001",
+    baseline_name="post_optimization_baseline",
+    metrics={
+        "avg_execution_time_ms": 85.5,
+        "avg_memory_mb": 128.0,
+        "avg_cpu_percent": 45.0,
+        "throughput_req_per_sec": 950,
+        "error_rate": 0.002
+    },
+    description="Baseline after database query optimization"
+)
+
+print(f"Baseline set: {baseline['id']}")
+print(f"Name: {baseline['name']}")
+print(f"Metrics: {baseline['metrics']}")
+```
+
+**Scenario 6: Compare Multiple Agents**
+```python
+# Compare performance across agents
+comparison = AgentProfiling.compare_agents(
+    session=session,
+    agent_ids=["agent_001", "agent_002", "agent_003"],
+    metric_types=[
+        ProfileMetricType.EXECUTION_TIME,
+        ProfileMetricType.MEMORY_USAGE,
+        ProfileMetricType.ERROR_RATE
+    ],
+    time_range_hours=24
+)
+
+print(f"Comparing {comparison['comparison_summary']['total_agents']} agents")
+print(f"Metrics: {comparison['comparison_summary']['metrics_compared']}")
+
+print("\nRankings:")
+for metric_type, ranking_data in comparison['rankings'].items():
+    print(f"\n{metric_type}:")
+    print(f"  Best: {ranking_data['best']}")
+    print(f"  Worst: {ranking_data['worst']}")
+    print(f"  Ranking: {' > '.join(ranking_data['ranking'])}")
+
+print("\nAgent Metrics:")
+for agent_id, metrics in comparison['agent_metrics'].items():
+    print(f"\n{agent_id}:")
+    for metric_type, data in metrics.items():
+        print(f"  {metric_type}: avg={data['avg']:.2f}, min={data['min']:.2f}, max={data['max']:.2f}")
+```
+
+**Scenario 7: Detect and Analyze Bottlenecks**
+```python
+# Get bottlenecks for specific agent
+bottlenecks_data = AgentProfiling.get_bottlenecks(
+    session=session,
+    agent_id="agent_001",
+    severity=None,  # All severities
+    limit=20
+)
+
+print(f"Total bottlenecks: {bottlenecks_data['total_count']}")
+
+print("\nSeverity distribution:")
+for severity, count in bottlenecks_data['severity_distribution'].items():
+    print(f"  {severity}: {count}")
+
+print("\nCritical bottlenecks:")
+for bottleneck in bottlenecks_data['bottlenecks']:
+    if bottleneck['severity'] == BottleneckSeverity.CRITICAL:
+        print(f"\n  Component: {bottleneck['component']}")
+        print(f"  Description: {bottleneck['description']}")
+        print(f"  Metric value: {bottleneck['metric_value']:.2f}")
+        print(f"  Threshold: {bottleneck['threshold']:.2f}")
+        print(f"  Detected: {bottleneck['detected_at']}")
+```
+
+**Scenario 8: Generate Optimization Recommendations**
+```python
+# Get optimization recommendations
+recommendations = AgentProfiling.generate_optimization_recommendations(
+    session=session,
+    agent_id="agent_001"
+)
+
+print(f"Agent: {recommendations['agent_id']}")
+print(f"Total recommendations: {recommendations['total_recommendations']}")
+print(f"High priority: {recommendations['high_priority_count']}")
+
+print("\nRecommendations:")
+for rec in recommendations['recommendations']:
+    print(f"\n  Category: {rec['category']}")
+    print(f"  Priority: {rec['priority']}")
+    print(f"  Issue: {rec['issue']}")
+    print(f"  Recommendation: {rec['recommendation']}")
+    print(f"  Expected impact: {rec['expected_impact']}")
+    print(f"  Effort: {rec['effort']}")
+```
+
+**Scenario 9: View Profiling History**
+```python
+# Get profiling history for agent
+history = AgentProfiling.get_profile_history(
+    session=session,
+    agent_id="agent_001",
+    status=ProfileStatus.COMPLETED,
+    limit=10
+)
+
+print(f"Agent: {history['agent_id']}")
+print(f"Total sessions: {history['total_sessions']}")
+print(f"Returned: {history['returned_count']}")
+
+print("\nRecent profiling sessions:")
+for session_data in history['profile_sessions']:
+    print(f"\n  Session: {session_data['name']} ({session_data['id']})")
+    print(f"  Status: {session_data['status']}")
+    print(f"  Duration: {session_data.get('duration_ms', 0):.2f}ms")
+    print(f"  Samples: {session_data['samples_collected']}")
+    print(f"  Started: {session_data['started_at']}")
+
+    if session_data.get('metrics_summary'):
+        print(f"  Metrics: {', '.join(session_data['metrics_summary'].keys())}")
+```
+
+**Scenario 10: Monitor Profiling Statistics**
+```python
+# Get comprehensive profiling statistics
+stats = AgentProfiling.get_statistics(session=session)
+
+print(f"Total profile sessions: {stats['total_profile_sessions']}")
+print(f"Active sessions: {stats['active_sessions']}")
+print(f"Completed sessions: {stats['completed_sessions']}")
+print(f"Total benchmarks: {stats['total_benchmarks']}")
+print(f"Total benchmark runs: {stats['total_benchmark_runs']}")
+print(f"Total metrics collected: {stats['total_metrics_collected']}")
+print(f"Total bottlenecks: {stats['total_bottlenecks']}")
+print(f"Total baselines: {stats['total_baselines']}")
+print(f"Agents profiled: {stats['agents_profiled']}")
+
+print("\nSession status distribution:")
+for status, count in stats['session_status_distribution'].items():
+    print(f"  {status}: {count}")
+
+print("\nBenchmark type distribution:")
+for bench_type, count in stats['benchmark_type_distribution'].items():
+    print(f"  {bench_type}: {count}")
+
+print("\nBottleneck severity distribution:")
+for severity, count in stats['bottleneck_severity_distribution'].items():
+    print(f"  {severity}: {count}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
-🚧 **Block Phase 4 In Progress** - Advanced Features (70% complete)
+🚧 **Block Phase 4 In Progress** - Advanced Features (75% complete)
 
-Current Progress: Commit 74/100 - Distributed Tracing and Observability Complete
+Current Progress: Commit 75/100 - Agent Profiling and Benchmarking Complete
 
 ## Implementation Roadmap
 
