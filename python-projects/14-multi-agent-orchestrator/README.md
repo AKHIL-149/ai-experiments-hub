@@ -20144,14 +20144,291 @@ for strategy, count in stats['deployment_strategy_distribution'].items():
     print(f"  {strategy}: {count}")
 ```
 
+### 14.5.1 Testing Framework and Validation (AKHIL-280)
+
+**Description**: Comprehensive testing framework with test suite management, automated testing, validation rules, and code coverage reporting.
+
+**Key Features**:
+- Test suite management with 7 test types (unit, integration, end-to-end, performance, regression, smoke, security)
+- Automated test execution with parallel and fail-fast modes
+- Code coverage tracking and reporting
+- Validation rule system with 3 strictness levels
+- Mock data generation for testing
+- Test result aggregation and analytics
+- Test prioritization (critical, high, medium, low)
+- Setup/teardown function support
+
+**API Endpoints**:
+- `POST /api/testing/test-suites` - Create test suite
+- `POST /api/testing/test-suites/{suite_id}/tests` - Add test case
+- `POST /api/testing/test-suites/{suite_id}/run` - Run test suite
+- `POST /api/testing/test-suites/{suite_id}/runs/{run_id}/coverage` - Generate coverage report
+- `POST /api/testing/validation-rules` - Create validation rule
+- `POST /api/testing/validate` - Validate data
+- `POST /api/testing/mock-data` - Create mock data
+- `GET /api/testing/test-results` - Get test results
+- `GET /api/testing/statistics` - Get testing statistics
+
+**Use Case Scenarios**:
+
+**Scenario 1: Create Test Suite**
+```python
+# Create unit test suite
+test_suite = TestingFramework.create_test_suite(
+    session=session,
+    suite_name="Agent Core Unit Tests",
+    test_type=TestType.UNIT,
+    description="Unit tests for core agent functionality",
+    tags=["unit", "core", "agents"],
+    configuration={
+        "timeout_seconds": 60,
+        "retry_on_failure": False,
+        "parallel_execution": True
+    }
+)
+
+print(f"Test suite created: {test_suite['id']}")
+print(f"Name: {test_suite['name']}")
+print(f"Type: {test_suite['type']}")
+```
+
+**Scenario 2: Add Test Cases to Suite**
+```python
+# Add critical test case
+test_case1 = TestingFramework.add_test_case(
+    session=session,
+    suite_id=test_suite['id'],
+    test_name="test_agent_initialization",
+    test_function="tests.unit.test_agents.test_initialization",
+    priority=TestPriority.CRITICAL,
+    timeout_seconds=10,
+    setup_function="tests.unit.test_agents.setup",
+    teardown_function="tests.unit.test_agents.teardown",
+    description="Test agent initialization process",
+    expected_result={"initialized": True, "status": "ready"}
+)
+
+# Add integration test
+test_case2 = TestingFramework.add_test_case(
+    session=session,
+    suite_id=test_suite['id'],
+    test_name="test_agent_task_execution",
+    test_function="tests.unit.test_agents.test_task_execution",
+    priority=TestPriority.HIGH,
+    dependencies=["test_agent_initialization"],
+    description="Test agent task execution workflow"
+)
+
+print(f"Added {test_suite['test_count']} test cases")
+```
+
+**Scenario 3: Run Test Suite**
+```python
+# Run all tests in suite
+test_run = TestingFramework.run_test_suite(
+    session=session,
+    suite_id=test_suite['id'],
+    parallel=True,
+    fail_fast=False,
+    filters=None
+)
+
+print(f"Test run: {test_run['id']}")
+print(f"Duration: {test_run['duration_ms']:.2f}ms")
+print(f"Total tests: {test_run['total_tests']}")
+print(f"Passed: {test_run['passed']}")
+print(f"Failed: {test_run['failed']}")
+print(f"Errors: {test_run['errors']}")
+print(f"Pass rate: {test_run['pass_rate']:.2f}%")
+
+print("\nTest results:")
+for result in test_run['results']:
+    status_icon = "✓" if result['status'] == TestStatus.PASSED else "✗"
+    print(f"{status_icon} {result['test_name']}: {result['status']} ({result['duration_ms']:.2f}ms)")
+```
+
+**Scenario 4: Run Tests with Filters**
+```python
+# Run only critical tests
+critical_run = TestingFramework.run_test_suite(
+    session=session,
+    suite_id=test_suite['id'],
+    parallel=False,
+    fail_fast=True,  # Stop on first failure
+    filters={"priority": TestPriority.CRITICAL}
+)
+
+print(f"Critical tests: {critical_run['total_tests']}")
+print(f"Pass rate: {critical_run['pass_rate']:.2f}%")
+```
+
+**Scenario 5: Generate Coverage Report**
+```python
+# Generate code coverage report
+coverage = TestingFramework.generate_coverage_report(
+    session=session,
+    suite_id=test_suite['id'],
+    run_id=test_run['id']
+)
+
+print(f"Coverage Report: {coverage['id']}")
+print(f"Overall coverage: {coverage['overall_coverage']:.2f}%")
+print(f"Line coverage: {coverage['line_coverage']:.2f}%")
+print(f"Branch coverage: {coverage['branch_coverage']:.2f}%")
+print(f"Function coverage: {coverage['function_coverage']:.2f}%")
+print(f"Files covered: {coverage['files_covered']}/{coverage['total_files']}")
+print(f"Lines covered: {coverage['lines_covered']}/{coverage['total_lines']}")
+
+print("\nCoverage by module:")
+for module, cov in coverage['coverage_by_module'].items():
+    print(f"  {module}: {cov:.2f}%")
+```
+
+**Scenario 6: Create Validation Rules**
+```python
+# Create strict validation rule
+rule1 = TestingFramework.create_validation_rule(
+    session=session,
+    rule_name="Agent ID Format",
+    validation_type="format",
+    validation_function="validators.agent_id_format",
+    level=ValidationLevel.STRICT,
+    error_message="Agent ID must start with 'agent_' followed by alphanumeric characters"
+)
+
+# Create standard validation rule
+rule2 = TestingFramework.create_validation_rule(
+    session=session,
+    rule_name="Task Priority Range",
+    validation_type="range",
+    validation_function="validators.priority_range",
+    level=ValidationLevel.STANDARD,
+    error_message="Priority must be between 1 and 10"
+)
+
+print(f"Created validation rules: {rule1['id']}, {rule2['id']}")
+```
+
+**Scenario 7: Validate Data**
+```python
+# Validate agent data
+data_to_validate = {
+    "agent_id": "agent_abc123",
+    "priority": 5,
+    "configuration": {}
+}
+
+validation_result = TestingFramework.validate_data(
+    session=session,
+    data=data_to_validate,
+    rule_ids=[rule1['id'], rule2['id']]
+)
+
+print(f"Validation: {validation_result['id']}")
+print(f"Passed: {validation_result['passed']}")
+print(f"Passed rules: {validation_result['passed_rules']}/{validation_result['total_rules']}")
+
+if not validation_result['passed']:
+    print("\nValidation failures:")
+    for result in validation_result['results']:
+        if not result['passed']:
+            print(f"  - {result['rule_name']}: {result['error_message']}")
+```
+
+**Scenario 8: Create Mock Data**
+```python
+# Create mock agent data
+mock_data = TestingFramework.create_mock_data(
+    session=session,
+    mock_name="Mock Agent Data",
+    mock_type="agent",
+    data_schema={
+        "agent_id": "string",
+        "name": "string",
+        "type": "string",
+        "status": "string",
+        "capabilities": "array"
+    },
+    sample_data=[
+        {
+            "agent_id": "agent_test_001",
+            "name": "Test Agent 1",
+            "type": "analyst",
+            "status": "active",
+            "capabilities": ["data_analysis", "reporting"]
+        },
+        {
+            "agent_id": "agent_test_002",
+            "name": "Test Agent 2",
+            "type": "executor",
+            "status": "idle",
+            "capabilities": ["task_execution", "monitoring"]
+        }
+    ]
+)
+
+print(f"Mock data created: {mock_data['id']}")
+print(f"Type: {mock_data['type']}")
+print(f"Samples: {len(mock_data['sample_data'])}")
+```
+
+**Scenario 9: View Test Results History**
+```python
+# Get test results for suite
+results = TestingFramework.get_test_results(
+    session=session,
+    suite_id=test_suite['id'],
+    limit=10
+)
+
+print(f"Total runs: {results['total_runs']}")
+print(f"Returned: {results['returned_count']}")
+
+print("\nRecent test runs:")
+for run in results['test_runs']:
+    print(f"\n  Run: {run['id']}")
+    print(f"  Suite: {run['suite_name']}")
+    print(f"  Started: {run['started_at']}")
+    print(f"  Duration: {run['duration_ms']:.2f}ms")
+    print(f"  Tests: {run['total_tests']} ({run['passed']} passed, {run['failed']} failed)")
+    print(f"  Pass rate: {run['pass_rate']:.2f}%")
+```
+
+**Scenario 10: Monitor Testing Statistics**
+```python
+# Get comprehensive testing statistics
+stats = TestingFramework.get_statistics(session=session)
+
+print(f"Total test suites: {stats['total_test_suites']}")
+print(f"Total test cases: {stats['total_test_cases']}")
+print(f"Total test runs: {stats['total_test_runs']}")
+print(f"Tests executed: {stats['total_tests_executed']}")
+print(f"Tests passed: {stats['total_passed']}")
+print(f"Tests failed: {stats['total_failed']}")
+print(f"Average pass rate: {stats['average_pass_rate']:.2f}%")
+print(f"Average duration: {stats['average_duration_ms']:.2f}ms")
+print(f"Validation rules: {stats['total_validation_rules']}")
+print(f"Mock data sets: {stats['total_mock_data']}")
+print(f"Coverage reports: {stats['total_coverage_reports']}")
+
+print("\nTest type distribution:")
+for test_type, count in stats['test_type_distribution'].items():
+    print(f"  {test_type}: {count}")
+
+print("\nTest priority distribution:")
+for priority, count in stats['test_priority_distribution'].items():
+    print(f"  {priority}: {count}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (5% complete)
 
-Current Progress: Commit 76/100 - Agent Versioning and Rollback Complete
+Current Progress: Commit 77/100 - Testing Framework and Validation Complete
 
 ## Implementation Roadmap
 
