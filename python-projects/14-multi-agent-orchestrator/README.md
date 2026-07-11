@@ -20683,15 +20683,293 @@ print(f"Total Generated Docs: {overall_stats['total_generated_docs']}")
 print(f"Total SDKs: {overall_stats['total_sdks']}")
 ```
 
+### 14.5.3 Deployment and Container Orchestration (AKHIL-282)
+
+The Deployment and Container Orchestration system provides comprehensive deployment management, container orchestration, and infrastructure provisioning capabilities. This system automates the entire deployment lifecycle with multiple strategies and automatic rollback support.
+
+**Key Features:**
+- **Multiple Deployment Strategies**: Rolling, blue-green, canary, recreate, and A/B testing
+- **Container Management**: Create and manage containerized applications
+- **Auto-Scaling**: Automatic replica scaling based on demand
+- **Rollback Support**: One-click rollback to previous stable versions
+- **Infrastructure Provisioning**: Multi-cloud infrastructure as code
+- **Health Monitoring**: Continuous health checks and metrics
+
+**API Endpoints:**
+- `POST /api/deployment/deployments` - Create deployment
+- `POST /api/deployment/deployments/{deployment_id}/execute` - Execute deployment
+- `POST /api/deployment/deployments/{deployment_id}/containers` - Create container
+- `POST /api/deployment/deployments/{deployment_id}/scale` - Scale deployment
+- `POST /api/deployment/deployments/{deployment_id}/rollback` - Rollback deployment
+- `POST /api/deployment/infrastructure` - Provision infrastructure
+- `GET /api/deployment/deployments/{deployment_id}/health` - Health check
+- `GET /api/deployment/deployments/{deployment_id}/logs` - Get logs
+- `GET /api/deployment/deployments/{deployment_id}/metrics` - Get metrics
+- `GET /api/deployment/deployments/{deployment_name}/history` - Deployment history
+- `GET /api/deployment/statistics` - Overall statistics
+- `GET /api/deployment/strategies` - List strategies
+- `GET /api/deployment/environments` - List environments
+- `GET /api/deployment/providers` - List providers
+
+**Use Case Scenarios:**
+
+**Scenario 1: Create and Execute Rolling Deployment**
+```python
+import requests
+
+# Create deployment with rolling strategy
+deployment_response = requests.post(
+    "http://localhost:8001/api/deployment/deployments",
+    json={
+        "deployment_name": "orchestrator-api",
+        "environment": "production",
+        "version": "2.0.0",
+        "strategy": "rolling",
+        "image": "orchestrator-api:2.0.0",
+        "replicas": 5,
+        "configuration": {
+            "max_surge": 1,
+            "max_unavailable": 0
+        }
+    }
+)
+deployment = deployment_response.json()["deployment"]
+print(f"Deployment created: {deployment['id']}")
+
+# Execute deployment
+execute_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/execute",
+    json={"auto_rollback_on_failure": True}
+)
+result = execute_response.json()["deployment"]
+print(f"Deployment status: {result['status']}")
+print(f"Healthy replicas: {result['healthy_replicas']}/{result['replicas']}")
+```
+
+**Scenario 2: Blue-Green Deployment**
+```python
+# Create blue-green deployment
+deployment_response = requests.post(
+    "http://localhost:8001/api/deployment/deployments",
+    json={
+        "deployment_name": "orchestrator-api",
+        "environment": "production",
+        "version": "2.1.0",
+        "strategy": "blue_green",
+        "image": "orchestrator-api:2.1.0",
+        "replicas": 5
+    }
+)
+deployment = deployment_response.json()["deployment"]
+
+# Execute deployment (deploys to green environment)
+execute_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/execute",
+    json={"auto_rollback_on_failure": True}
+)
+
+# Traffic will be switched from blue to green after successful deployment
+result = execute_response.json()["deployment"]
+print(f"Blue-Green deployment completed: {result['status']}")
+```
+
+**Scenario 3: Canary Deployment with Gradual Rollout**
+```python
+# Create canary deployment (10% of traffic initially)
+deployment_response = requests.post(
+    "http://localhost:8001/api/deployment/deployments",
+    json={
+        "deployment_name": "orchestrator-api",
+        "environment": "production",
+        "version": "2.2.0",
+        "strategy": "canary",
+        "image": "orchestrator-api:2.2.0",
+        "replicas": 10,
+        "configuration": {
+            "canary_percentage": 10,
+            "promotion_intervals": [25, 50, 75, 100]
+        }
+    }
+)
+deployment = deployment_response.json()["deployment"]
+
+# Execute canary deployment
+execute_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/execute",
+    json={"auto_rollback_on_failure": True}
+)
+print("Canary deployment started with 10% traffic")
+```
+
+**Scenario 4: Auto-Scaling Replicas**
+```python
+# Scale deployment from 5 to 10 replicas
+scale_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/scale",
+    json={"target_replicas": 10}
+)
+scaling = scale_response.json()["scaling"]
+print(f"Scaled {scaling['direction']} from {scaling['from_replicas']} to {scaling['to_replicas']}")
+
+# Later, scale down to 3 replicas
+scale_down_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/scale",
+    json={"target_replicas": 3}
+)
+print("Scaled down to 3 replicas")
+```
+
+**Scenario 5: Rollback to Previous Version**
+```python
+# Rollback to previous stable version
+rollback_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/rollback",
+    json={}  # Defaults to previous version
+)
+rollback = rollback_response.json()["rollback"]
+print(f"Rolled back from {rollback['from_version']} to {rollback['to_version']}")
+print(f"Status: {rollback['status']}")
+
+# Rollback to specific version
+specific_rollback = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/rollback",
+    json={"target_version": "1.9.0"}
+)
+print("Rolled back to version 1.9.0")
+```
+
+**Scenario 6: Provision Multi-Cloud Infrastructure**
+```python
+# Provision Kubernetes cluster on AWS
+infrastructure_response = requests.post(
+    "http://localhost:8001/api/deployment/infrastructure",
+    json={
+        "environment": "production",
+        "provider": "aws",
+        "region": "us-east-1",
+        "configuration": {
+            "instances": 5,
+            "instance_type": "t3.large",
+            "load_balancers": 2,
+            "databases": 1,
+            "storage_gb": 500,
+            "subnets": 3,
+            "tags": {
+                "project": "orchestrator",
+                "team": "platform"
+            }
+        }
+    }
+)
+infrastructure = infrastructure_response.json()["infrastructure"]
+print(f"Infrastructure provisioned: {infrastructure['id']}")
+print(f"Estimated cost: ${infrastructure['estimated_cost_per_month']}/month")
+print(f"Resources: {infrastructure['resources']}")
+```
+
+**Scenario 7: Create and Manage Containers**
+```python
+# Create container with resource limits
+container_response = requests.post(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/containers",
+    json={
+        "container_name": "api-server-1",
+        "image": "orchestrator-api:2.0.0",
+        "port_mappings": [
+            {"container_port": 8000, "host_port": 8000},
+            {"container_port": 9090, "host_port": 9090}
+        ],
+        "environment_vars": {
+            "DATABASE_URL": "postgresql://...",
+            "REDIS_URL": "redis://...",
+            "LOG_LEVEL": "INFO"
+        },
+        "resource_limits": {
+            "cpu_cores": 2.0,
+            "memory_mb": 2048,
+            "disk_mb": 5120
+        }
+    }
+)
+container = container_response.json()["container"]
+print(f"Container created: {container['id']}")
+print(f"Status: {container['status']}")
+print(f"Resource usage: CPU {container['metrics']['cpu_usage_percent']:.1f}%, Memory {container['metrics']['memory_usage_mb']}MB")
+```
+
+**Scenario 8: Monitor Deployment Health**
+```python
+# Perform comprehensive health check
+health_response = requests.get(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/health"
+)
+health = health_response.json()["health_check"]
+print(f"Overall status: {health['overall_status']}")
+print(f"Passed checks: {health['passed_checks']}/{health['total_checks']}")
+
+for check in health['checks']:
+    status_icon = "✅" if check['status'] == 'passed' else "❌"
+    print(f"{status_icon} {check['name']}: {check['message']}")
+```
+
+**Scenario 9: View Deployment Logs and Metrics**
+```python
+# Get deployment logs
+logs_response = requests.get(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/logs",
+    params={"limit": 50, "level": "ERROR"}
+)
+logs = logs_response.json()
+print(f"Retrieved {logs['total_logs']} log entries")
+for log in logs['logs'][:5]:
+    print(f"[{log['timestamp']}] {log['level']}: {log['message']}")
+
+# Get deployment metrics
+metrics_response = requests.get(
+    f"http://localhost:8001/api/deployment/deployments/{deployment['id']}/metrics",
+    params={"time_range_minutes": 60}
+)
+metrics = metrics_response.json()
+print(f"\nMetrics Summary (last 60 minutes):")
+print(f"Avg CPU: {metrics['summary']['avg_cpu_percent']:.1f}%")
+print(f"Avg Memory: {metrics['summary']['avg_memory_percent']:.1f}%")
+print(f"Avg Request Rate: {metrics['summary']['avg_request_rate']:.0f} req/s")
+print(f"Avg Error Rate: {metrics['summary']['avg_error_rate']:.2f}%")
+```
+
+**Scenario 10: View Deployment History and Statistics**
+```python
+# Get deployment history
+history_response = requests.get(
+    "http://localhost:8001/api/deployment/deployments/orchestrator-api/history",
+    params={"limit": 10}
+)
+history = history_response.json()
+print(f"Total deployments: {history['total_deployments']}")
+for dep in history['deployments'][:5]:
+    print(f"- {dep['version']} ({dep['status']}) - {dep['created_at'][:10]}")
+
+# Get overall statistics
+stats_response = requests.get("http://localhost:8001/api/deployment/statistics")
+stats = stats_response.json()["statistics"]
+print(f"\nDeployment Statistics:")
+print(f"Total deployments: {stats['total_deployments']}")
+print(f"Success rate: {stats['success_rate']:.1f}%")
+print(f"Active deployments: {stats['active_deployments']}")
+print(f"Health percentage: {stats['health_percentage']:.1f}%")
+print(f"Total replicas: {stats['total_replicas']}")
+print(f"Healthy replicas: {stats['healthy_replicas']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (10% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (15% complete)
 
-Current Progress: Commit 78/100 - API Documentation Generator Complete
+Current Progress: Commit 79/100 - Deployment and Container Orchestration Complete
 
 ## Implementation Roadmap
 
