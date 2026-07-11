@@ -20420,15 +20420,278 @@ for priority, count in stats['test_priority_distribution'].items():
     print(f"  {priority}: {count}")
 ```
 
+### 14.5.2 API Documentation Generator (AKHIL-281)
+
+The API Documentation Generator provides automatic generation of comprehensive API documentation, SDKs in multiple programming languages, and developer portal management. This system streamlines the documentation process and ensures consistency across all API versions.
+
+**Key Features:**
+- **Multi-Format Documentation**: Generate OpenAPI, AsyncAPI, Markdown, HTML, and Postman collections
+- **SDK Generation**: Automatic SDK generation for 8+ programming languages
+- **Code Examples**: Manage code examples for endpoints in multiple languages
+- **Version Management**: Track API versions with comprehensive changelogs
+- **Developer Portal**: Search, browse, and explore API documentation
+- **Automated Publishing**: Publish documentation versions with one click
+
+**API Endpoints:**
+- `POST /api/documentation/projects` - Create documentation project
+- `POST /api/documentation/projects/{project_id}/generate` - Generate documentation
+- `POST /api/documentation/projects/{project_id}/sdk` - Generate SDK
+- `POST /api/documentation/projects/{project_id}/examples` - Create code example
+- `POST /api/documentation/projects/{project_id}/versions` - Create version
+- `POST /api/documentation/versions/{version_id}/publish` - Publish version
+- `GET /api/documentation/projects/{project_id}/changelog` - Generate changelog
+- `GET /api/documentation/projects/{project_id}/search` - Search documentation
+- `GET /api/documentation/projects/{project_id}/statistics` - Project statistics
+- `GET /api/documentation/statistics` - Overall statistics
+- `GET /api/documentation/doc-types` - List documentation types
+- `GET /api/documentation/sdk-languages` - List SDK languages
+- `GET /api/documentation/output-formats` - List output formats
+
+**Use Case Scenarios:**
+
+**Scenario 1: Generate OpenAPI Documentation**
+```python
+import requests
+
+# Create documentation project
+project_response = requests.post(
+    "http://localhost:8001/api/documentation/projects",
+    json={
+        "project_name": "Task Orchestrator API",
+        "api_version": "1.0.0",
+        "base_url": "https://api.example.com",
+        "description": "Multi-agent task orchestration API",
+        "contact_info": {
+            "name": "API Team",
+            "email": "api@example.com"
+        },
+        "license_info": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        }
+    }
+)
+project = project_response.json()["project"]
+
+# Generate OpenAPI documentation
+doc_response = requests.post(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/generate",
+    json={
+        "doc_type": "openapi",
+        "output_format": "json",
+        "include_examples": True,
+        "include_schemas": True,
+        "include_authentication": True
+    }
+)
+documentation = doc_response.json()["documentation"]
+print(f"Documentation generated: {documentation['download_url']}")
+```
+
+**Scenario 2: Generate Python SDK**
+```python
+# Generate Python SDK with async support
+sdk_response = requests.post(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/sdk",
+    json={
+        "language": "python",
+        "package_name": "orchestrator-client",
+        "version": "1.0.0",
+        "include_async": True,
+        "include_types": True
+    }
+)
+sdk = sdk_response.json()["sdk"]
+print(f"SDK Installation: {sdk['installation_command']}")
+print(f"Example Usage:\n{sdk['example_usage']}")
+```
+
+**Scenario 3: Add Code Examples**
+```python
+# Add Python example for creating a task
+example_response = requests.post(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/examples",
+    json={
+        "endpoint_path": "/api/tasks",
+        "method": "POST",
+        "language": "python",
+        "title": "Create a new task",
+        "description": "Example showing how to create a task with authentication",
+        "code": """
+import requests
+
+response = requests.post(
+    "https://api.example.com/api/tasks",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    json={
+        "title": "Analyze codebase",
+        "description": "Review code quality",
+        "task_type": "analysis",
+        "priority": 8
+    }
+)
+task = response.json()
+print(f"Created task: {task['id']}")
+"""
+    }
+)
+print("Code example added!")
+```
+
+**Scenario 4: Create New API Version**
+```python
+# Create version 2.0.0 with breaking changes
+version_response = requests.post(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/versions",
+    json={
+        "version_number": "2.0.0",
+        "changelog": "Major update with improved agent coordination and new workflow engine",
+        "breaking_changes": [
+            "Removed deprecated /api/tasks/legacy endpoint",
+            "Changed authentication to use Bearer tokens instead of API keys",
+            "Updated task status enum values"
+        ],
+        "deprecated_endpoints": [
+            "/api/workflows/simple"
+        ],
+        "new_endpoints": [
+            "/api/workflow-engine/execute",
+            "/api/agents/coordination",
+            "/api/shared-memory/namespaces"
+        ]
+    }
+)
+version = version_response.json()["version"]
+print(f"Version {version['version_number']} created")
+```
+
+**Scenario 5: Publish Documentation Version**
+```python
+# Publish the version to make it public
+publish_response = requests.post(
+    f"http://localhost:8001/api/documentation/versions/{version['id']}/publish"
+)
+published = publish_response.json()["version"]
+print(f"Version {published['version_number']} published at {published['published_at']}")
+```
+
+**Scenario 6: Generate Changelog**
+```python
+# Generate changelog between versions
+changelog_response = requests.get(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/changelog",
+    params={
+        "from_version": "1.0.0",
+        "to_version": "2.0.0"
+    }
+)
+changelog = changelog_response.json()["changelog"]
+print(f"Changelog covers {changelog['total_versions']} versions")
+print(f"\n{changelog['markdown_content']}")
+```
+
+**Scenario 7: Generate Multiple SDKs**
+```python
+# Generate SDKs for multiple languages
+languages = [
+    {"language": "python", "package": "orchestrator-client"},
+    {"language": "javascript", "package": "@company/orchestrator"},
+    {"language": "typescript", "package": "@company/orchestrator"},
+    {"language": "java", "package": "com.company.orchestrator"},
+    {"language": "go", "package": "github.com/company/orchestrator-go"}
+]
+
+sdks = []
+for lang_config in languages:
+    sdk_response = requests.post(
+        f"http://localhost:8001/api/documentation/projects/{project['id']}/sdk",
+        json={
+            "language": lang_config["language"],
+            "package_name": lang_config["package"],
+            "version": "1.0.0",
+            "include_async": True,
+            "include_types": True
+        }
+    )
+    sdk = sdk_response.json()["sdk"]
+    sdks.append(sdk)
+    print(f"Generated {lang_config['language']} SDK: {sdk['download_url']}")
+```
+
+**Scenario 8: Search Documentation**
+```python
+# Search for authentication-related documentation
+search_response = requests.get(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/search",
+    params={
+        "query": "authentication",
+        "search_in": ["endpoints", "models", "examples"]
+    }
+)
+results = search_response.json()
+print(f"Found {results['total_results']} results in {results['search_time_ms']:.2f}ms")
+for result in results['results'][:5]:
+    print(f"- {result['title']} ({result['type']}) - {result['relevance_score']:.2f}")
+```
+
+**Scenario 9: Get Project Statistics**
+```python
+# Get comprehensive project statistics
+stats_response = requests.get(
+    f"http://localhost:8001/api/documentation/projects/{project['id']}/statistics"
+)
+stats = stats_response.json()["statistics"]
+print(f"Project: {stats['project_name']}")
+print(f"Total Versions: {stats['total_versions']}")
+print(f"Total Endpoints: {stats['total_endpoints']}")
+print(f"Total SDKs: {stats['total_sdks']}")
+print(f"Total Examples: {stats['total_examples']}")
+print(f"Language Distribution: {stats['language_distribution']}")
+```
+
+**Scenario 10: Generate Multi-Format Documentation**
+```python
+# Generate documentation in multiple formats
+formats = [
+    {"doc_type": "openapi", "output_format": "json"},
+    {"doc_type": "openapi", "output_format": "yaml"},
+    {"doc_type": "markdown", "output_format": "markdown"},
+    {"doc_type": "html", "output_format": "html"},
+    {"doc_type": "postman", "output_format": "json"}
+]
+
+docs = []
+for fmt in formats:
+    doc_response = requests.post(
+        f"http://localhost:8001/api/documentation/projects/{project['id']}/generate",
+        json={
+            "doc_type": fmt["doc_type"],
+            "output_format": fmt["output_format"],
+            "include_examples": True,
+            "include_schemas": True,
+            "include_authentication": True
+        }
+    )
+    doc = doc_response.json()["documentation"]
+    docs.append(doc)
+    print(f"Generated {fmt['doc_type']} ({fmt['output_format']}): {doc['download_url']}")
+
+# Get overall statistics
+overall_stats = requests.get("http://localhost:8001/api/documentation/statistics").json()["statistics"]
+print(f"\nTotal Projects: {overall_stats['total_projects']}")
+print(f"Total Generated Docs: {overall_stats['total_generated_docs']}")
+print(f"Total SDKs: {overall_stats['total_sdks']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (5% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (10% complete)
 
-Current Progress: Commit 77/100 - Testing Framework and Validation Complete
+Current Progress: Commit 78/100 - API Documentation Generator Complete
 
 ## Implementation Roadmap
 
