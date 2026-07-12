@@ -21755,15 +21755,250 @@ print(f"Dashboards: {stats['dashboards']}")
 print(f"SLAs configured: {stats['slas']}")
 ```
 
+### 14.5.7 Log Aggregation and Analysis
+
+Centralized log collection, search, and analysis system with pattern detection, parsers, and retention policies for distributed systems monitoring and debugging.
+
+**Features:**
+- Centralized log ingestion with bulk support
+- Full-text search with filtering and pagination
+- Log parsers for extracting structured fields
+- Pattern detection with regex matching
+- Automatic alert generation on pattern matches
+- Multiple aggregation types (count, unique, terms, timeline, stats)
+- Retention policies by source and level
+- Real-time log streaming
+- Export to JSON, CSV, and text formats
+
+**API Endpoints:**
+- `POST /api/logs/ingest` - Ingest a single log entry
+- `POST /api/logs/ingest/bulk` - Ingest multiple logs in bulk
+- `POST /api/logs/search` - Search logs with filters
+- `POST /api/logs/aggregate` - Aggregate logs for analysis
+- `POST /api/logs/parsers` - Create log parser
+- `GET /api/logs/parsers` - List all parsers
+- `POST /api/logs/patterns` - Create log pattern
+- `GET /api/logs/patterns` - Get all patterns
+- `GET /api/logs/patterns/{pattern_id}/matches` - Get logs matching a pattern
+- `POST /api/logs/retention-policies` - Create retention policy
+- `GET /api/logs/retention-policies` - List retention policies
+- `POST /api/logs/streams` - Create log stream
+- `GET /api/logs/streams/{stream_id}` - Get log stream
+- `POST /api/logs/export` - Export logs
+- `GET /api/logs/statistics` - Get log statistics
+
+**Use Cases:**
+
+1. **Ingest Application Logs**
+```python
+# Ingest a single log
+response = requests.post('http://localhost:8001/api/logs/ingest', json={
+    "message": "User login successful for user@example.com",
+    "level": "info",
+    "source": "auth-service",
+    "source_type": "application",
+    "metadata": {"user_id": "12345", "ip": "192.168.1.100"},
+    "tags": ["authentication", "security"]
+})
+
+print(f"Log ingested: {response.json()['ingestion']['log_id']}")
+```
+
+2. **Bulk Log Ingestion**
+```python
+# Ingest multiple logs at once
+logs = [
+    {
+        "message": "Database query executed in 45ms",
+        "level": "debug",
+        "source": "db-service",
+        "source_type": "database"
+    },
+    {
+        "message": "API request received: GET /api/users",
+        "level": "info",
+        "source": "api-gateway",
+        "source_type": "webserver"
+    },
+    {
+        "message": "Cache miss for key: user_profile_123",
+        "level": "warn",
+        "source": "cache-service",
+        "source_type": "application"
+    }
+]
+
+response = requests.post('http://localhost:8001/api/logs/ingest/bulk', json={
+    "logs": logs
+})
+
+result = response.json()['bulk_ingestion']
+print(f"Ingested: {result['ingested_count']}, Failed: {result['failed_count']}")
+```
+
+3. **Search Logs with Filters**
+```python
+# Search for error logs from last 24 hours
+from datetime import datetime, timedelta
+
+start_time = (datetime.utcnow() - timedelta(days=1)).isoformat()
+
+response = requests.post('http://localhost:8001/api/logs/search', json={
+    "query": "exception",
+    "level": "error",
+    "source": "api-service",
+    "start_time": start_time,
+    "limit": 50,
+    "offset": 0
+})
+
+result = response.json()['search_results']
+print(f"Found {result['total']} error logs")
+for log in result['logs']:
+    print(f"[{log['timestamp']}] {log['message']}")
+```
+
+4. **Create Log Parser for Structured Extraction**
+```python
+# Create parser to extract HTTP request details
+response = requests.post('http://localhost:8001/api/logs/parsers', json={
+    "parser_id": "http_parser",
+    "name": "HTTP Request Parser",
+    "patterns": {
+        "method": r"(GET|POST|PUT|DELETE|PATCH)",
+        "path": r"(\/[\w\/\-]+)",
+        "status_code": r"status=(\d{3})",
+        "response_time": r"(\d+)ms"
+    },
+    "source_filter": ["api-gateway", "webserver"],
+    "enabled": True
+})
+
+print(f"Parser created: {response.json()['parser']['name']}")
+```
+
+5. **Detect Error Patterns**
+```python
+# Create pattern to detect SQL injection attempts
+response = requests.post('http://localhost:8001/api/logs/patterns', json={
+    "pattern_id": "sql_injection",
+    "name": "SQL Injection Attempt",
+    "regex": r"(SELECT|DROP|INSERT|UPDATE|DELETE).*FROM.*WHERE",
+    "description": "Detects potential SQL injection attempts",
+    "level_filter": ["warn", "error"],
+    "alert_on_match": True,
+    "alert_severity": "critical",
+    "enabled": True
+})
+
+print(f"Pattern created: {response.json()['pattern']['name']}")
+
+# Get matching logs
+matches = requests.get('http://localhost:8001/api/logs/patterns/sql_injection/matches')
+print(f"Found {matches.json()['matches']['count']} potential SQL injection attempts")
+```
+
+6. **Aggregate Logs by Error Types**
+```python
+# Count unique error types
+response = requests.post('http://localhost:8001/api/logs/aggregate', json={
+    "aggregation_type": "terms",
+    "field": "level",
+    "start_time": "2024-01-01T00:00:00"
+})
+
+result = response.json()['aggregation']
+print("Log level distribution:")
+for term in result['terms']:
+    print(f"  {term['term']}: {term['count']}")
+```
+
+7. **Create Timeline Aggregation**
+```python
+# Get error log timeline
+response = requests.post('http://localhost:8001/api/logs/aggregate', json={
+    "aggregation_type": "timeline",
+    "field": "timestamp",
+    "level": "error",
+    "start_time": "2024-01-01T00:00:00"
+})
+
+result = response.json()['aggregation']
+print("Error log timeline:")
+for point in result['timeline']:
+    print(f"  {point['timestamp']}: {point['count']} errors")
+```
+
+8. **Configure Retention Policies**
+```python
+# Keep debug logs for 7 days, errors for 90 days
+requests.post('http://localhost:8001/api/logs/retention-policies', json={
+    "policy_id": "debug_retention",
+    "name": "Debug Log Retention",
+    "retention_days": 7,
+    "level_filter": ["debug", "trace"],
+    "enabled": True
+})
+
+requests.post('http://localhost:8001/api/logs/retention-policies', json={
+    "policy_id": "error_retention",
+    "name": "Error Log Retention",
+    "retention_days": 90,
+    "level_filter": ["error", "fatal"],
+    "enabled": True
+})
+
+print("Retention policies created")
+```
+
+9. **Export Logs for Analysis**
+```python
+# Export error logs as JSON
+response = requests.post('http://localhost:8001/api/logs/export', json={
+    "format": "json",
+    "query": "database connection",
+    "level": "error",
+    "start_time": "2024-01-01T00:00:00",
+    "limit": 1000
+})
+
+export_result = response.json()['export']
+print(f"Exported {export_result['log_count']} logs")
+
+# Save to file
+with open('error_logs.json', 'w') as f:
+    f.write(export_result['data'])
+```
+
+10. **Get Comprehensive Log Statistics**
+```python
+# Get overall log statistics
+response = requests.get('http://localhost:8001/api/logs/statistics')
+stats = response.json()['statistics']
+
+print("Log Statistics:")
+print(f"Total logs: {stats['total_logs']}")
+print(f"\nBy level:")
+for level, count in stats['by_level'].items():
+    print(f"  {level}: {count}")
+print(f"\nBy source type:")
+for source_type, count in stats['by_source_type'].items():
+    print(f"  {source_type}: {count}")
+print(f"\nParsers: {stats['parsers']}")
+print(f"Patterns: {stats['patterns']}")
+print(f"Pattern alerts: {stats['pattern_alerts']}")
+print(f"Retention policies: {stats['retention_policies']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (30% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (35% complete)
 
-Current Progress: Commit 82/100 - Monitoring and Observability Complete
+Current Progress: Commit 83/100 - Log Aggregation and Analysis Complete
 
 ## Implementation Roadmap
 
