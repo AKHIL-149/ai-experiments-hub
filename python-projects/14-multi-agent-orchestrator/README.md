@@ -22263,15 +22263,263 @@ print(f"Query analyses: {stats['query_analyses']}")
 print(f"Benchmarks: {stats['benchmarks']}")
 ```
 
+### 14.5.9 Capacity Planning and Auto-Scaling
+
+Intelligent capacity forecasting, resource planning, and automatic scaling system based on demand patterns and utilization trends.
+
+**Features:**
+- Capacity planning with forecasting
+- Historical usage tracking and trend analysis
+- Auto-scaling policies with threshold-based triggers
+- Multiple forecast periods (daily, weekly, monthly, quarterly)
+- Resource utilization monitoring
+- Scaling recommendations with priority levels
+- Cost estimation and budgeting
+- Cooldown periods to prevent scaling thrashing
+
+**API Endpoints:**
+- `POST /api/capacity/plans` - Create capacity plan
+- `GET /api/capacity/plans` - List capacity plans
+- `POST /api/capacity/usage` - Record resource usage
+- `POST /api/capacity/plans/{plan_id}/forecast` - Generate forecast
+- `GET /api/capacity/forecasts` - List forecasts
+- `POST /api/capacity/scaling-policies` - Create scaling policy
+- `GET /api/capacity/scaling-policies` - List scaling policies
+- `POST /api/capacity/scaling-policies/{policy_id}/evaluate` - Evaluate scaling
+- `GET /api/capacity/scaling-history` - Get scaling history
+- `GET /api/capacity/recommendations` - Get recommendations
+- `POST /api/capacity/recommendations/{recommendation_id}/apply` - Apply recommendation
+- `POST /api/capacity/costs/estimate` - Estimate costs
+- `GET /api/capacity/statistics` - Get statistics
+
+**Use Cases:**
+
+1. **Create Capacity Plan**
+```python
+# Define capacity planning for compute resources
+response = requests.post('http://localhost:8001/api/capacity/plans', json={
+    "plan_id": "compute_plan_1",
+    "name": "API Server Capacity Plan",
+    "resource_type": "compute",
+    "current_capacity": 10.0,  # 10 instances
+    "target_utilization": 70.0,  # Target 70% utilization
+    "buffer_percentage": 20.0,  # 20% safety buffer
+    "forecast_period": "monthly"
+})
+
+plan = response.json()['plan']
+print(f"Capacity plan created: {plan['name']}")
+print(f"Current capacity: {plan['current_capacity']} instances")
+print(f"Target utilization: {plan['target_utilization']}%")
+```
+
+2. **Record Resource Usage**
+```python
+# Record daily resource usage
+import time
+
+for day in range(30):
+    # Simulate varying usage patterns
+    used_instances = 5 + (day % 7) * 0.5  # Simulate weekly patterns
+    total_instances = 10
+
+    response = requests.post('http://localhost:8001/api/capacity/usage', json={
+        "resource_type": "compute",
+        "used": used_instances,
+        "total": total_instances,
+        "metadata": {"day": day, "environment": "production"}
+    })
+
+    usage = response.json()['usage']
+    print(f"Day {day}: {usage['utilization_percent']:.1f}% utilization")
+    time.sleep(0.1)  # Small delay to simulate time passing
+```
+
+3. **Generate Capacity Forecast**
+```python
+# Generate forecast based on historical usage
+response = requests.post('http://localhost:8001/api/capacity/plans/compute_plan_1/forecast')
+forecast = response.json()['forecast']
+
+print(f"Capacity Forecast:")
+print(f"  Period: {forecast['forecast_period']}")
+print(f"  Current utilization: {forecast['current_utilization']:.1f}%")
+print(f"  Projected utilization: {forecast['projected_utilization']:.1f}%")
+print(f"  Growth rate: {forecast['growth_rate']:.2f}%")
+print(f"\n  Current capacity: {forecast['current_capacity']}")
+print(f"  Forecasted demand: {forecast['forecasted_demand']:.2f}")
+print(f"  Recommended capacity: {forecast['recommended_capacity']:.2f}")
+print(f"  Capacity gap: {forecast['capacity_gap']:.2f}")
+print(f"\n  Requires scaling: {forecast['requires_scaling']}")
+```
+
+4. **Create Auto-Scaling Policy**
+```python
+# Define auto-scaling policy
+response = requests.post('http://localhost:8001/api/capacity/scaling-policies', json={
+    "policy_id": "compute_autoscale",
+    "name": "Compute Auto-Scaling Policy",
+    "resource_type": "compute",
+    "policy_type": "target_tracking",
+    "scale_up_threshold": 80.0,  # Scale up at 80% utilization
+    "scale_down_threshold": 40.0,  # Scale down at 40% utilization
+    "cooldown_minutes": 5,  # 5 minute cooldown between scaling events
+    "min_capacity": 2.0,  # Minimum 2 instances
+    "max_capacity": 50.0,  # Maximum 50 instances
+    "enabled": True
+})
+
+policy = response.json()['policy']
+print(f"Scaling policy created: {policy['name']}")
+print(f"Scale up at: {policy['scale_up_threshold']}%")
+print(f"Scale down at: {policy['scale_down_threshold']}%")
+print(f"Capacity range: {policy['min_capacity']}-{policy['max_capacity']}")
+```
+
+5. **Evaluate Scaling Decision**
+```python
+# Check if scaling is needed
+response = requests.post(
+    'http://localhost:8001/api/capacity/scaling-policies/compute_autoscale/evaluate',
+    json={
+        "current_utilization": 85.0,  # Current at 85%
+        "current_capacity": 10.0
+    }
+)
+
+evaluation = response.json()['evaluation']
+print(f"Scaling evaluation:")
+print(f"  Decision: {evaluation['decision']}")
+print(f"  Reason: {evaluation['reason']}")
+print(f"  Current capacity: {evaluation['current_capacity']}")
+print(f"  New capacity: {evaluation['new_capacity']}")
+print(f"  Capacity change: {evaluation['capacity_change']}")
+```
+
+6. **View Scaling History**
+```python
+# Get recent scaling events
+response = requests.get('http://localhost:8001/api/capacity/scaling-history', params={
+    "resource_type": "compute",
+    "limit": 10
+})
+
+events = response.json()['events']
+print(f"Recent scaling events ({len(events)}):\n")
+
+for event in events:
+    print(f"{event['executed_at']}")
+    print(f"  Direction: {event['direction']}")
+    print(f"  Capacity: {event['old_capacity']} → {event['new_capacity']}")
+    print(f"  Reason: {event['reason']}")
+    print()
+```
+
+7. **Get Capacity Recommendations**
+```python
+# View pending capacity recommendations
+response = requests.get('http://localhost:8001/api/capacity/recommendations', params={
+    "applied": False
+})
+
+recommendations = response.json()['recommendations']
+print(f"Pending recommendations: {len(recommendations)}\n")
+
+for rec in recommendations:
+    print(f"{rec['recommendation_id']} - Priority: {rec['priority'].upper()}")
+    print(f"  Resource: {rec['resource_type']}")
+    print(f"  Current: {rec['current_capacity']}")
+    print(f"  Recommended: {rec['recommended_capacity']}")
+    print(f"  Increase: {rec['increase_percentage']:.1f}%")
+    print(f"  Justification: {rec['justification']}")
+    print(f"  Timeline: {rec['timeline']}")
+    print()
+```
+
+8. **Apply Capacity Recommendation**
+```python
+# Implement a capacity recommendation
+recommendation_id = "rec_compute_plan_1_12345"
+
+response = requests.post(
+    f'http://localhost:8001/api/capacity/recommendations/{recommendation_id}/apply',
+    json={
+        "notes": "Scaled up to handle projected holiday traffic increase. Added 5 additional instances."
+    }
+)
+
+application = response.json()['application']
+print(f"Recommendation applied:")
+print(f"  Status: {application['status']}")
+print(f"  Applied at: {application['applied_at']}")
+print(f"  New capacity: {application['new_capacity']}")
+```
+
+9. **Estimate Capacity Costs**
+```python
+# Estimate costs for different capacity levels
+capacities = [10, 20, 30, 40, 50]
+
+print("Capacity Cost Estimates:\n")
+for capacity in capacities:
+    response = requests.post('http://localhost:8001/api/capacity/costs/estimate', json={
+        "resource_type": "compute",
+        "capacity": capacity,
+        "unit_cost": 0.10,  # $0.10 per instance per hour
+        "duration_hours": 720  # 30 days
+    })
+
+    estimate = response.json()['estimate']
+    print(f"{capacity} instances:")
+    print(f"  Monthly cost: ${estimate['monthly_cost']:.2f}")
+    print(f"  Daily cost: ${estimate['daily_cost']:.2f}")
+    print()
+```
+
+10. **Get Comprehensive Statistics**
+```python
+# View overall capacity planning statistics
+response = requests.get('http://localhost:8001/api/capacity/statistics')
+stats = response.json()['statistics']
+
+print("Capacity Planning Statistics:\n")
+print(f"Capacity plans: {stats['capacity_plans']}")
+print(f"\nScaling policies:")
+print(f"  Total: {stats['scaling_policies']['total']}")
+print(f"  Enabled: {stats['scaling_policies']['enabled']}")
+
+print(f"\nScaling events:")
+print(f"  Total: {stats['scaling_events']['total']}")
+print(f"  Scale up: {stats['scaling_events']['scale_up']}")
+print(f"  Scale down: {stats['scaling_events']['scale_down']}")
+
+print(f"\nData collected:")
+print(f"  Resource usage records: {stats['resource_usage_records']}")
+print(f"  Forecasts generated: {stats['forecasts']}")
+
+print(f"\nRecommendations:")
+print(f"  Total: {stats['recommendations']['total']}")
+print(f"  Pending: {stats['recommendations']['pending']}")
+print(f"  Applied: {stats['recommendations']['applied']}")
+
+if stats.get('average_utilization'):
+    print("\nAverage utilization by resource type:")
+    for resource_type, util in stats['average_utilization'].items():
+        print(f"  {resource_type}:")
+        print(f"    Avg: {util['avg']:.1f}%")
+        print(f"    Max: {util['max']:.1f}%")
+        print(f"    Min: {util['min']:.1f}%")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (40% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (45% complete)
 
-Current Progress: Commit 84/100 - Performance Optimization Complete
+Current Progress: Commit 85/100 - Capacity Planning and Auto-Scaling Complete
 
 ## Implementation Roadmap
 
