@@ -21490,15 +21490,280 @@ for db, count in stats['database_distribution'].items():
     print(f"  {db}: {count}")
 ```
 
+### 14.5.6 Monitoring and Observability
+
+Comprehensive monitoring, metrics collection, and observability system for tracking system health, performance, and SLA compliance with real-time alerts and dashboards.
+
+**Features:**
+- Multi-type metrics (counters, gauges, histograms, summaries)
+- Alert rules with configurable severity and conditions
+- Service health monitoring with uptime tracking
+- Custom dashboards with auto-refresh widgets
+- SLA compliance monitoring and reporting
+- Time-series data queries with aggregations
+- Metric retention policies
+- Alert notifications and status management
+
+**API Endpoints:**
+- `POST /api/monitoring/metrics` - Create metric definition
+- `POST /api/monitoring/metrics/{metric_id}/record` - Record metric data point
+- `POST /api/monitoring/metrics/{metric_id}/query` - Query metric data with aggregation
+- `GET /api/monitoring/metrics` - List all metrics
+- `POST /api/monitoring/alert-rules` - Create alert rule
+- `GET /api/monitoring/alert-rules` - List alert rules
+- `GET /api/monitoring/alerts` - Get alerts with filtering
+- `PUT /api/monitoring/alerts/{alert_id}/status` - Update alert status
+- `POST /api/monitoring/services` - Register service for monitoring
+- `PUT /api/monitoring/services/{service_id}/health` - Update service health
+- `GET /api/monitoring/services/health` - Get service health status
+- `POST /api/monitoring/dashboards` - Create monitoring dashboard
+- `GET /api/monitoring/dashboards/{dashboard_id}` - Get dashboard with data
+- `POST /api/monitoring/sla` - Configure SLA monitoring
+- `GET /api/monitoring/sla/{sla_id}/compliance` - Get SLA compliance
+- `GET /api/monitoring/statistics` - Get monitoring statistics
+
+**Use Cases:**
+
+1. **Track API Response Times**
+```python
+# Create response time metric
+response = requests.post('http://localhost:8001/api/monitoring/metrics', json={
+    "metric_id": "api_response_time",
+    "name": "API Response Time",
+    "metric_type": "histogram",
+    "description": "HTTP API response time",
+    "unit": "milliseconds",
+    "retention_days": 30
+})
+
+# Record response times
+requests.post('http://localhost:8001/api/monitoring/metrics/api_response_time/record', json={
+    "value": 145.3,
+    "labels": {"endpoint": "/api/tasks", "method": "GET"}
+})
+
+# Query average response time
+result = requests.post('http://localhost:8001/api/monitoring/metrics/api_response_time/query', json={
+    "start_time": "2024-01-01T00:00:00",
+    "aggregation": "avg"
+})
+print(f"Average response time: {result.json()['query_result']['value']}ms")
+```
+
+2. **Create High Latency Alert**
+```python
+# Create alert rule for high response times
+response = requests.post('http://localhost:8001/api/monitoring/alert-rules', json={
+    "rule_id": "high_latency_alert",
+    "name": "High API Latency",
+    "metric_id": "api_response_time",
+    "condition": "gt",
+    "threshold": 500.0,
+    "severity": "warning",
+    "notification_channels": ["slack", "email"],
+    "enabled": True
+})
+
+print(f"Alert rule created: {response.json()['alert_rule']['name']}")
+```
+
+3. **Monitor Service Health**
+```python
+# Register service for monitoring
+response = requests.post('http://localhost:8001/api/monitoring/services', json={
+    "service_id": "postgres_db",
+    "name": "PostgreSQL Database",
+    "service_type": "database",
+    "endpoints": ["localhost:5432"],
+    "health_check_url": "http://localhost:5432/health",
+    "dependencies": []
+})
+
+# Update health status after check
+requests.put('http://localhost:8001/api/monitoring/services/postgres_db/health', json={
+    "status": "healthy",
+    "response_time_ms": 12.5
+})
+
+# Get overall service health
+health = requests.get('http://localhost:8001/api/monitoring/services/health')
+print(f"Services healthy: {health.json()['health']['summary']['healthy']}/{health.json()['health']['summary']['total']}")
+```
+
+4. **Create Performance Dashboard**
+```python
+# Create dashboard with multiple widgets
+response = requests.post('http://localhost:8001/api/monitoring/dashboards', json={
+    "dashboard_id": "performance_overview",
+    "name": "Performance Overview",
+    "description": "System performance metrics",
+    "refresh_interval": 30,
+    "widgets": [
+        {
+            "type": "metric",
+            "metric_id": "api_response_time",
+            "aggregation": "avg",
+            "title": "Avg Response Time"
+        },
+        {
+            "type": "service_health",
+            "title": "Service Health"
+        },
+        {
+            "type": "alerts",
+            "title": "Active Alerts"
+        }
+    ]
+})
+
+# Get dashboard with populated data
+dashboard = requests.get('http://localhost:8001/api/monitoring/dashboards/performance_overview')
+print(f"Dashboard: {dashboard.json()['dashboard']['name']}")
+for widget in dashboard.json()['dashboard']['widgets']:
+    print(f"  Widget: {widget['title']}")
+```
+
+5. **Track Error Rates**
+```python
+# Create error rate metric
+requests.post('http://localhost:8001/api/monitoring/metrics', json={
+    "metric_id": "error_rate",
+    "name": "Error Rate",
+    "metric_type": "counter",
+    "description": "Application errors per minute",
+    "unit": "errors/min"
+})
+
+# Record errors
+requests.post('http://localhost:8001/api/monitoring/metrics/error_rate/record', json={
+    "value": 1,
+    "labels": {"type": "database_error", "severity": "high"}
+})
+
+# Query error count with p95
+result = requests.post('http://localhost:8001/api/monitoring/metrics/error_rate/query', json={
+    "start_time": "2024-01-01T00:00:00",
+    "aggregation": "p95"
+})
+print(f"P95 error rate: {result.json()['query_result']['value']}")
+```
+
+6. **Configure SLA Monitoring**
+```python
+# Configure 99.9% uptime SLA
+response = requests.post('http://localhost:8001/api/monitoring/sla', json={
+    "sla_id": "api_uptime_sla",
+    "name": "API Uptime SLA",
+    "metric_id": "api_uptime",
+    "target_value": 1.0,
+    "comparison": "gte",
+    "time_window": 30,
+    "compliance_threshold": 99.9
+})
+
+# Check SLA compliance
+compliance = requests.get('http://localhost:8001/api/monitoring/sla/api_uptime_sla/compliance')
+result = compliance.json()['compliance']
+print(f"SLA Status: {result['status']}")
+print(f"Compliance: {result['compliance']:.2f}%")
+print(f"Data points: {result['compliant_points']}/{result['data_points']}")
+```
+
+7. **Handle Active Alerts**
+```python
+# Get active critical alerts
+response = requests.get('http://localhost:8001/api/monitoring/alerts', params={
+    "status": "active",
+    "severity": "critical"
+})
+
+alerts = response.json()['alerts']
+print(f"Active critical alerts: {len(alerts)}")
+
+# Acknowledge alert
+if alerts:
+    alert_id = alerts[0]['alert_id']
+    requests.put(f'http://localhost:8001/api/monitoring/alerts/{alert_id}/status', json={
+        "status": "acknowledged",
+        "notes": "Investigating high database load"
+    })
+    print(f"Alert {alert_id} acknowledged")
+```
+
+8. **Monitor Resource Usage**
+```python
+# Create CPU usage metric
+requests.post('http://localhost:8001/api/monitoring/metrics', json={
+    "metric_id": "cpu_usage",
+    "name": "CPU Usage",
+    "metric_type": "gauge",
+    "description": "System CPU usage percentage",
+    "unit": "percent"
+})
+
+# Record CPU usage
+requests.post('http://localhost:8001/api/monitoring/metrics/cpu_usage/record', json={
+    "value": 78.5,
+    "labels": {"host": "server-1"}
+})
+
+# Create alert for high CPU
+requests.post('http://localhost:8001/api/monitoring/alert-rules', json={
+    "rule_id": "high_cpu",
+    "name": "High CPU Usage",
+    "metric_id": "cpu_usage",
+    "condition": "gte",
+    "threshold": 80.0,
+    "severity": "error",
+    "enabled": True
+})
+```
+
+9. **Query Metrics with Time Range**
+```python
+# Query last 24 hours of data
+from datetime import datetime, timedelta
+
+end_time = datetime.utcnow()
+start_time = end_time - timedelta(days=1)
+
+response = requests.post('http://localhost:8001/api/monitoring/metrics/api_response_time/query', json={
+    "start_time": start_time.isoformat(),
+    "end_time": end_time.isoformat(),
+    "aggregation": "avg"
+})
+
+result = response.json()['query_result']
+print(f"24h Average: {result['value']:.2f}ms")
+print(f"Data points: {result['data_points_count']}")
+```
+
+10. **Get Comprehensive Monitoring Statistics**
+```python
+# Get overall monitoring stats
+response = requests.get('http://localhost:8001/api/monitoring/statistics')
+stats = response.json()['statistics']
+
+print("Monitoring Statistics:")
+print(f"Total metrics: {stats['metrics']['total']}")
+print(f"Total data points: {stats['metrics']['total_data_points']}")
+print(f"Total alerts: {stats['alerts']['total']}")
+print(f"Active alerts: {stats['alerts']['by_status']['active']}")
+print(f"Alert rules enabled: {stats['alert_rules']['enabled']}")
+print(f"Services monitored: {stats['services']['total']}")
+print(f"Dashboards: {stats['dashboards']}")
+print(f"SLAs configured: {stats['slas']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (25% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (30% complete)
 
-Current Progress: Commit 81/100 - Database Migration Management Complete
+Current Progress: Commit 82/100 - Monitoring and Observability Complete
 
 ## Implementation Roadmap
 
