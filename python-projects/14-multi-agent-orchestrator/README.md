@@ -22511,15 +22511,333 @@ if stats.get('average_utilization'):
         print(f"    Min: {util['min']:.1f}%")
 ```
 
+### 14.5.10 Disaster Recovery and Failover
+
+Comprehensive disaster recovery planning and automated failover system to ensure business continuity and system resilience during outages.
+
+**Features:**
+- Multiple failover strategies (active-passive, active-active, pilot light, warm standby, multi-region)
+- Automated health checks with configurable thresholds
+- Automatic and manual failover capabilities
+- RPO/RTO objective tracking
+- DR drill planning and execution
+- Data replication monitoring
+- Rollback functionality
+- Comprehensive failover history
+
+**API Endpoints:**
+- `POST /api/disaster-recovery/plans` - Create DR plan
+- `GET /api/disaster-recovery/plans` - List DR plans
+- `POST /api/disaster-recovery/failover-configs` - Create failover config
+- `GET /api/disaster-recovery/failover-configs` - List failover configs
+- `POST /api/disaster-recovery/health-check/{config_id}` - Perform health check
+- `POST /api/disaster-recovery/failover/{config_id}/trigger` - Trigger manual failover
+- `POST /api/disaster-recovery/failover/{config_id}/rollback` - Rollback failover
+- `GET /api/disaster-recovery/failover-history` - Get failover history
+- `POST /api/disaster-recovery/drills` - Create DR drill
+- `POST /api/disaster-recovery/drills/{drill_id}/execute` - Execute DR drill
+- `GET /api/disaster-recovery/drills` - List drills
+- `POST /api/disaster-recovery/replicas` - Create replica
+- `PUT /api/disaster-recovery/replicas/{replica_id}/status` - Update replica status
+- `GET /api/disaster-recovery/replicas` - List replicas
+- `GET /api/disaster-recovery/plans/{plan_id}/status` - Get DR status
+- `GET /api/disaster-recovery/statistics` - Get statistics
+
+**Use Cases:**
+
+1. **Create DR Plan with RPO/RTO Objectives**
+```python
+# Define disaster recovery plan
+response = requests.post('http://localhost:8001/api/disaster-recovery/plans', json={
+    "plan_id": "production_dr",
+    "name": "Production Disaster Recovery Plan",
+    "strategy": "active_passive",
+    "primary_region": "us-east-1",
+    "secondary_region": "us-west-2",
+    "rpo_minutes": 15,  # Maximum 15 minutes of data loss
+    "rto_minutes": 30,  # Recovery within 30 minutes
+    "critical_services": [
+        "api-server",
+        "database",
+        "cache",
+        "message-queue"
+    ],
+    "enabled": True
+})
+
+plan = response.json()['plan']
+print(f"DR plan created: {plan['name']}")
+print(f"Strategy: {plan['strategy']}")
+print(f"RPO: {plan['rpo_minutes']} minutes")
+print(f"RTO: {plan['rto_minutes']} minutes")
+print(f"Regions: {plan['primary_region']} → {plan['secondary_region']}")
+```
+
+2. **Configure Automatic Failover for Service**
+```python
+# Set up failover configuration
+response = requests.post('http://localhost:8001/api/disaster-recovery/failover-configs', json={
+    "config_id": "api_failover",
+    "plan_id": "production_dr",
+    "service_name": "api-server",
+    "primary_endpoint": "https://api.us-east-1.example.com",
+    "failover_endpoint": "https://api.us-west-2.example.com",
+    "health_check_interval": 30,  # Check every 30 seconds
+    "failure_threshold": 3,  # Failover after 3 consecutive failures
+    "auto_failover": True  # Enable automatic failover
+})
+
+config = response.json()['config']
+print(f"Failover config created for: {config['service_name']}")
+print(f"Primary: {config['primary_endpoint']}")
+print(f"Failover: {config['failover_endpoint']}")
+print(f"Auto-failover: {'enabled' if config['auto_failover'] else 'disabled'}")
+```
+
+3. **Monitor Service Health and Trigger Auto-Failover**
+```python
+# Simulate health check monitoring
+import time
+
+for i in range(5):
+    # Simulate health check result
+    is_healthy = i < 3  # Fail on 4th and 5th checks
+
+    response = requests.post(
+        'http://localhost:8001/api/disaster-recovery/health-check/api_failover',
+        json={
+            "is_healthy": is_healthy,
+            "response_time_ms": 150.5 if is_healthy else None,
+            "error_message": None if is_healthy else "Connection timeout"
+        }
+    )
+
+    check = response.json()['health_check']
+    print(f"Health check {i+1}: {'✓ Healthy' if check['is_healthy'] else '✗ Unhealthy'}")
+
+    # Get current config status
+    configs = requests.get('http://localhost:8001/api/disaster-recovery/failover-configs')
+    api_config = [c for c in configs.json()['configs'] if c['config_id'] == 'api_failover'][0]
+
+    if api_config['is_failed_over']:
+        print(f"⚠️  FAILOVER TRIGGERED - Now using: {api_config['current_endpoint']}")
+        break
+
+    time.sleep(1)
+```
+
+4. **Manually Trigger Failover**
+```python
+# Trigger failover manually for maintenance
+response = requests.post(
+    'http://localhost:8001/api/disaster-recovery/failover/api_failover/trigger',
+    json={
+        "reason": "Planned maintenance on primary region us-east-1"
+    }
+)
+
+result = response.json()['failover']
+print(f"Failover status: {result['status']}")
+print(f"Now using endpoint: {result['current_endpoint']}")
+```
+
+5. **Rollback to Primary After Recovery**
+```python
+# Rollback to primary endpoint after issue is resolved
+response = requests.post(
+    'http://localhost:8001/api/disaster-recovery/failover/api_failover/rollback'
+)
+
+result = response.json()['rollback']
+print(f"Rollback status: {result['status']}")
+print(f"Restored to primary: {result['current_endpoint']}")
+```
+
+6. **View Failover History**
+```python
+# Get recent failover events
+response = requests.get('http://localhost:8001/api/disaster-recovery/failover-history', params={
+    "plan_id": "production_dr",
+    "limit": 10
+})
+
+events = response.json()['events']
+print(f"Failover history ({len(events)} events):\n")
+
+for event in events:
+    print(f"{event['started_at']}")
+    print(f"  Service: {event['service_name']}")
+    print(f"  {event['from_endpoint']} → {event['to_endpoint']}")
+    print(f"  Reason: {event['reason']}")
+    print(f"  Duration: {event['duration_seconds']}s")
+    print(f"  Type: {'Automatic' if event['automatic'] else 'Manual'}")
+    print()
+```
+
+7. **Schedule and Execute DR Drill**
+```python
+from datetime import datetime, timedelta
+
+# Schedule DR drill for next week
+scheduled_time = (datetime.utcnow() + timedelta(days=7)).isoformat()
+
+response = requests.post('http://localhost:8001/api/disaster-recovery/drills', json={
+    "drill_id": "quarterly_drill_q1",
+    "plan_id": "production_dr",
+    "name": "Q1 2024 Disaster Recovery Drill",
+    "scheduled_at": scheduled_time,
+    "duration_minutes": 120,
+    "test_failover": True
+})
+
+drill = response.json()['drill']
+print(f"DR drill scheduled: {drill['name']}")
+print(f"Scheduled for: {drill['scheduled_at']}")
+
+# Execute the drill
+execution = requests.post(
+    f'http://localhost:8001/api/disaster-recovery/drills/{drill["drill_id"]}/execute'
+)
+
+results = execution.json()['execution']['results']
+print("\nDrill Results:")
+print(f"RPO validation: {results['rpo_validation']['status']}")
+print(f"  Target: {results['rpo_validation']['target_minutes']} min")
+print(f"  Achieved: {results['rpo_validation']['achieved_minutes']} min")
+
+print(f"\nRTO validation: {results['rto_validation']['status']}")
+print(f"  Target: {results['rto_validation']['target_minutes']} min")
+print(f"  Achieved: {results['rto_validation']['achieved_minutes']} min")
+
+print(f"\nFailover tests:")
+for test in results['failover_tests']:
+    print(f"  {test['service']}: {'✓' if test['success'] else '✗'}")
+    print(f"    Failover time: {test['failover_time_seconds']}s")
+
+if results['recommendations']:
+    print("\nRecommendations:")
+    for rec in results['recommendations']:
+        print(f"  - {rec}")
+```
+
+8. **Configure Data Replication**
+```python
+# Set up database replication
+response = requests.post('http://localhost:8001/api/disaster-recovery/replicas', json={
+    "replica_id": "db_replica_west",
+    "plan_id": "production_dr",
+    "source_region": "us-east-1",
+    "target_region": "us-west-2",
+    "data_type": "postgresql_database",
+    "replication_lag_seconds": 0
+})
+
+replica = response.json()['replica']
+print(f"Replica created: {replica['source_region']} → {replica['target_region']}")
+print(f"Data type: {replica['data_type']}")
+print(f"Status: {replica['status']}")
+
+# Update replication status periodically
+import time
+for i in range(5):
+    lag = i * 2  # Simulate increasing lag
+    status = "in_sync" if lag < 5 else "syncing"
+
+    requests.put(
+        f'http://localhost:8001/api/disaster-recovery/replicas/{replica["replica_id"]}/status',
+        json={
+            "status": status,
+            "replication_lag_seconds": lag,
+            "bytes_replicated": 1024 * 1024 * 100 * (i + 1)  # Simulate data transfer
+        }
+    )
+
+    print(f"Replication status: {status}, Lag: {lag}s")
+    time.sleep(1)
+```
+
+9. **Get Comprehensive DR Status**
+```python
+# View overall DR status
+response = requests.get('http://localhost:8001/api/disaster-recovery/plans/production_dr/status')
+status = response.json()['status']
+
+print(f"DR Plan: {status['plan_name']}")
+print(f"Strategy: {status['strategy']}")
+print(f"Overall status: {status['status']}")
+print(f"Readiness score: {status['readiness_score']:.1f}%")
+
+print(f"\nRegions:")
+print(f"  Primary: {status['regions']['primary']}")
+print(f"  Secondary: {status['regions']['secondary']}")
+
+print(f"\nObjectives:")
+print(f"  RPO: {status['objectives']['rpo_minutes']} minutes")
+print(f"  RTO: {status['objectives']['rto_minutes']} minutes")
+
+print(f"\nServices:")
+print(f"  Total: {status['services']['total']}")
+print(f"  Healthy: {status['services']['healthy']}")
+print(f"  Failed over: {status['services']['failed_over']}")
+
+print(f"\nReplication:")
+print(f"  Total replicas: {status['replication']['total_replicas']}")
+print(f"  In sync: {status['replication']['in_sync']}")
+print(f"  Out of sync: {status['replication']['out_of_sync']}")
+
+print(f"\nHistory:")
+print(f"  Total failovers: {status['history']['total_failovers']}")
+print(f"  Last failover: {status['history']['last_failover']}")
+print(f"  Total drills: {status['history']['total_drills']}")
+print(f"  Last drill: {status['history']['last_drill']}")
+```
+
+10. **Get DR Statistics**
+```python
+# View comprehensive DR statistics
+response = requests.get('http://localhost:8001/api/disaster-recovery/statistics')
+stats = response.json()['statistics']
+
+print("Disaster Recovery Statistics:\n")
+
+print(f"DR Plans:")
+print(f"  Total: {stats['dr_plans']['total']}")
+print(f"  Enabled: {stats['dr_plans']['enabled']}")
+
+print(f"\nFailover Configurations:")
+print(f"  Total: {stats['failover_configs']['total']}")
+print(f"  Currently failed over: {stats['failover_configs']['failed_over']}")
+print(f"  Healthy: {stats['failover_configs']['healthy']}")
+
+print(f"\nFailover Events:")
+print(f"  Total: {stats['failover_events']['total']}")
+print(f"  Automatic: {stats['failover_events']['automatic']}")
+print(f"  Manual: {stats['failover_events']['manual']}")
+
+print(f"\nDR Drills:")
+print(f"  Total: {stats['drills']['total']}")
+print(f"  Completed: {stats['drills']['completed']}")
+print(f"  Planned: {stats['drills']['planned']}")
+
+print(f"\nReplicas:")
+print(f"  Total: {stats['replicas']['total']}")
+if stats['replicas']['by_status']:
+    print(f"  By status:")
+    for status, count in stats['replicas']['by_status'].items():
+        print(f"    {status}: {count}")
+
+print(f"\nHealth checks performed: {stats['health_checks']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (45% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (50% complete)
 
-Current Progress: Commit 85/100 - Capacity Planning and Auto-Scaling Complete
+Current Progress: Commit 86/100 - Disaster Recovery and Failover Complete
 
 ## Implementation Roadmap
 
