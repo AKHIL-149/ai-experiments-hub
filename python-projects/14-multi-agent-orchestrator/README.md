@@ -23240,15 +23240,543 @@ while True:
     time.sleep(300)
 ```
 
+### 14.5.12 Resource Quota Management (AKHIL-291)
+
+**Description**: Multi-tenant resource allocation, quota enforcement, usage tracking, and isolation for production environments.
+
+**Features**:
+- Per-tenant resource quotas with customizable limits
+- Multiple resource types (CPU, memory, storage, API calls, tasks, agents, workflows)
+- Automatic quota enforcement with configurable actions (block, throttle, alert)
+- Flexible reset periods (hourly, daily, weekly, monthly, never)
+- Warning thresholds for proactive alerts
+- Usage trend analysis and forecasting
+- Temporary quota overrides with expiration
+- Violation tracking and reporting
+- Comprehensive usage history and analytics
+
+**API Endpoints**:
+- `POST /api/quota/quotas` - Create quota
+- `GET /api/quota/quotas` - List all quotas
+- `GET /api/quota/quotas/{quota_id}` - Get quota details
+- `PUT /api/quota/quotas/{quota_id}` - Update quota
+- `GET /api/quota/quotas/{quota_id}/status` - Get quota status
+- `POST /api/quota/quotas/{quota_id}/usage` - Record usage
+- `POST /api/quota/quotas/{quota_id}/check` - Check quota availability
+- `POST /api/quota/quotas/{quota_id}/reset` - Reset quota
+- `GET /api/quota/tenants/{tenant_id}/quotas` - Get tenant quotas
+- `GET /api/quota/tenants/{tenant_id}/summary` - Get tenant summary
+- `POST /api/quota/quotas/{quota_id}/overrides` - Create quota override
+- `DELETE /api/quota/overrides/{override_id}` - Remove quota override
+- `GET /api/quota/violations` - Get violations
+- `GET /api/quota/usage-history` - Get usage history
+- `GET /api/quota/statistics` - Get statistics
+
+**Use Case Scenarios**:
+
+**Scenario 1: Multi-Tenant API Rate Limiting**
+```python
+import requests
+
+# Create API call quota for tenant
+quota_data = {
+    "quota_id": "tenant_a_api_calls",
+    "name": "Tenant A API Call Quota",
+    "tenant_id": "tenant_a",
+    "resource_type": "api_calls",
+    "limit": 10000,  # 10k calls per month
+    "warning_threshold": 80.0,
+    "reset_period": "monthly",
+    "enforcement_action": "block",
+    "description": "Monthly API call limit for Tenant A"
+}
+
+response = requests.post("http://localhost:8000/api/quota/quotas", json=quota_data)
+print(f"Quota Created: {response.json()['quota']['name']}")
+
+# Check quota before making API call
+check_data = {"amount": 1}
+response = requests.post(
+    "http://localhost:8000/api/quota/quotas/tenant_a_api_calls/check",
+    json=check_data
+)
+
+if response.json()['check_result']['is_allowed']:
+    # Proceed with API call
+    # ... make actual API call ...
+
+    # Record usage
+    usage_data = {
+        "amount": 1,
+        "metadata": {"endpoint": "/api/tasks", "method": "POST"}
+    }
+
+    requests.post(
+        "http://localhost:8000/api/quota/quotas/tenant_a_api_calls/usage",
+        json=usage_data
+    )
+else:
+    print("⚠️  API call would exceed quota - blocked")
+```
+
+**Scenario 2: Resource Isolation for Multi-Tenancy**
+```python
+# Create multiple quotas for comprehensive tenant isolation
+tenants = ["tenant_a", "tenant_b", "tenant_c"]
+
+for tenant_id in tenants:
+    # CPU quota
+    cpu_quota = {
+        "quota_id": f"{tenant_id}_cpu",
+        "name": f"{tenant_id.upper()} CPU Quota",
+        "tenant_id": tenant_id,
+        "resource_type": "cpu",
+        "limit": 100.0,  # 100 CPU hours per month
+        "warning_threshold": 85.0,
+        "reset_period": "monthly",
+        "enforcement_action": "throttle"
+    }
+    requests.post("http://localhost:8000/api/quota/quotas", json=cpu_quota)
+
+    # Memory quota
+    memory_quota = {
+        "quota_id": f"{tenant_id}_memory",
+        "name": f"{tenant_id.upper()} Memory Quota",
+        "tenant_id": tenant_id,
+        "resource_type": "memory",
+        "limit": 10240,  # 10GB
+        "warning_threshold": 85.0,
+        "reset_period": "monthly",
+        "enforcement_action": "block"
+    }
+    requests.post("http://localhost:8000/api/quota/quotas", json=memory_quota)
+
+    # Task quota
+    task_quota = {
+        "quota_id": f"{tenant_id}_tasks",
+        "name": f"{tenant_id.upper()} Task Quota",
+        "tenant_id": tenant_id,
+        "resource_type": "tasks",
+        "limit": 1000,  # 1000 tasks per month
+        "warning_threshold": 80.0,
+        "reset_period": "monthly",
+        "enforcement_action": "block"
+    }
+    requests.post("http://localhost:8000/api/quota/quotas", json=task_quota)
+
+print("✓ Multi-tenant quotas created")
+```
+
+**Scenario 3: Usage Tracking and Monitoring**
+```python
+# Record task execution against quota
+def execute_task_with_quota(tenant_id, task_data):
+    quota_id = f"{tenant_id}_tasks"
+
+    # Check if quota allows this task
+    check_data = {"amount": 1}
+    response = requests.post(
+        f"http://localhost:8000/api/quota/quotas/{quota_id}/check",
+        json=check_data
+    )
+
+    check_result = response.json()['check_result']
+
+    if not check_result['is_allowed']:
+        return {
+            "success": False,
+            "error": "Task quota exceeded",
+            "remaining": check_result['remaining']
+        }
+
+    # Execute task
+    # ... task execution logic ...
+
+    # Record usage
+    usage_data = {
+        "amount": 1,
+        "metadata": {
+            "task_id": task_data['task_id'],
+            "task_type": task_data['type']
+        }
+    }
+
+    response = requests.post(
+        f"http://localhost:8000/api/quota/quotas/{quota_id}/usage",
+        json=usage_data
+    )
+
+    usage_record = response.json()['usage_record']
+
+    return {
+        "success": True,
+        "usage_after": usage_record['usage_after'],
+        "action_taken": usage_record['action_taken']
+    }
+
+# Execute tasks for tenant
+result = execute_task_with_quota("tenant_a", {
+    "task_id": "task_123",
+    "type": "data_processing"
+})
+
+print(f"Task Result: {result}")
+```
+
+**Scenario 4: Quota Status Dashboard**
+```python
+# Get comprehensive status for all tenant quotas
+def get_tenant_dashboard(tenant_id):
+    # Get tenant summary
+    response = requests.get(f"http://localhost:8000/api/quota/tenants/{tenant_id}/summary")
+    summary = response.json()['summary']
+
+    print(f"\n{'='*60}")
+    print(f"Tenant: {tenant_id}")
+    print(f"{'='*60}")
+
+    print(f"\nQuota Overview:")
+    print(f"  Total Quotas: {summary['total_quotas']}")
+    print(f"  Active: {summary['quota_status']['active']}")
+    print(f"  Warning: {summary['quota_status']['warning']}")
+    print(f"  Exceeded: {summary['quota_status']['exceeded']}")
+    print(f"  Active Violations: {summary['active_violations']}")
+
+    print(f"\nResource Usage:")
+    for resource_type, usage_data in summary['usage_by_resource'].items():
+        usage_pct = usage_data['percent']
+        indicator = "🟢" if usage_pct < 70 else "🟡" if usage_pct < 90 else "🔴"
+
+        print(f"  {indicator} {resource_type}:")
+        print(f"      Usage: {usage_data['usage']:.2f} / {usage_data['limit']:.2f}")
+        print(f"      Percentage: {usage_pct:.1f}%")
+
+    # Get detailed status for each quota
+    response = requests.get(f"http://localhost:8000/api/quota/tenants/{tenant_id}/quotas")
+    quotas = response.json()['quotas']
+
+    print(f"\nDetailed Quota Status:")
+    for quota in quotas:
+        response = requests.get(f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}/status")
+        status = response.json()['status']
+
+        print(f"\n  {quota['name']}:")
+        print(f"    Current: {status['current_usage']:.2f} / {status['limit']:.2f}")
+        print(f"    Usage: {status['usage_percent']:.1f}%")
+        print(f"    Remaining: {status['remaining']:.2f}")
+        print(f"    Status: {status['status']}")
+        print(f"    Trend: {status['usage_trend']}")
+        print(f"    Next Reset: {status['next_reset']}")
+
+# Display dashboard for tenant
+get_tenant_dashboard("tenant_a")
+```
+
+**Scenario 5: Temporary Quota Overrides**
+```python
+from datetime import datetime, timedelta
+
+# Create temporary quota increase for special event
+override_data = {
+    "override_id": "tenant_a_black_friday_override",
+    "temporary_limit": 50000,  # Increase from 10k to 50k
+    "expires_at": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+    "reason": "Black Friday sale - expected 5x traffic increase"
+}
+
+response = requests.post(
+    "http://localhost:8000/api/quota/quotas/tenant_a_api_calls/overrides",
+    json=override_data
+)
+
+override = response.json()['override']
+
+print(f"Quota Override Created:")
+print(f"  Original Limit: {override['original_limit']}")
+print(f"  Temporary Limit: {override['temporary_limit']}")
+print(f"  Expires: {override['expires_at']}")
+print(f"  Reason: {override['reason']}")
+
+# After event, remove override
+requests.delete(
+    f"http://localhost:8000/api/quota/overrides/{override_data['override_id']}"
+)
+
+print("✓ Override removed, quota restored to normal")
+```
+
+**Scenario 6: Violation Management**
+```python
+# Get all quota violations for a tenant
+response = requests.get(
+    "http://localhost:8000/api/quota/violations",
+    params={"tenant_id": "tenant_a", "resolved": False}
+)
+
+violations = response.json()['violations']
+
+print(f"Active Violations for Tenant A: {len(violations)}")
+
+for violation in violations:
+    print(f"\nViolation: {violation['violation_id']}")
+    print(f"  Resource: {violation['resource_type']}")
+    print(f"  Quota: {violation['quota_id']}")
+    print(f"  Limit: {violation['quota_limit']}")
+    print(f"  Current Usage: {violation['current_usage']}")
+    print(f"  Requested: {violation['requested_amount']}")
+    print(f"  Overage: {violation['overage']:.2f} ({violation['overage_percent']:.1f}%)")
+    print(f"  Action Taken: {violation['enforcement_action']}")
+    print(f"  Occurred: {violation['occurred_at']}")
+
+    # Alert tenant about violation
+    # send_notification(tenant_id, violation)
+```
+
+**Scenario 7: Usage History and Analytics**
+```python
+from datetime import datetime, timedelta
+
+# Get usage history for analysis
+start_time = (datetime.utcnow() - timedelta(days=30)).isoformat()
+
+response = requests.get(
+    "http://localhost:8000/api/quota/usage-history",
+    params={
+        "tenant_id": "tenant_a",
+        "start_time": start_time,
+        "limit": 1000
+    }
+)
+
+usage_history = response.json()['usage_history']
+
+# Analyze usage patterns
+from collections import defaultdict
+import statistics
+
+usage_by_hour = defaultdict(list)
+usage_by_resource = defaultdict(float)
+
+for record in usage_history:
+    hour = datetime.fromisoformat(record['timestamp']).hour
+    usage_by_hour[hour].append(record['amount'])
+    usage_by_resource[record['resource_type']] += record['amount']
+
+print("Usage Analysis:")
+print("\nPeak Hours:")
+for hour in sorted(usage_by_hour.keys(),
+                   key=lambda h: sum(usage_by_hour[h]),
+                   reverse=True)[:5]:
+    total = sum(usage_by_hour[hour])
+    avg = statistics.mean(usage_by_hour[hour])
+    print(f"  Hour {hour:02d}: Total={total:.2f}, Avg={avg:.2f}")
+
+print("\nUsage by Resource Type:")
+for resource_type, total_usage in sorted(usage_by_resource.items(),
+                                          key=lambda x: x[1],
+                                          reverse=True):
+    print(f"  {resource_type}: {total_usage:.2f}")
+```
+
+**Scenario 8: Dynamic Quota Adjustments**
+```python
+# Automatically adjust quotas based on usage patterns
+def auto_adjust_quotas(tenant_id):
+    # Get tenant quotas
+    response = requests.get(f"http://localhost:8000/api/quota/tenants/{tenant_id}/quotas")
+    quotas = response.json()['quotas']
+
+    for quota in quotas:
+        # Get status
+        response = requests.get(f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}/status")
+        status = response.json()['status']
+
+        # Increase quota if consistently hitting warning threshold
+        if status['usage_percent'] > 85 and status['usage_trend'] == 'increasing':
+            new_limit = quota['limit'] * 1.5  # Increase by 50%
+
+            update_data = {
+                "limit": new_limit
+            }
+
+            requests.put(
+                f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}",
+                json=update_data
+            )
+
+            print(f"✓ Increased {quota['name']} limit: {quota['limit']} → {new_limit}")
+
+        # Decrease quota if consistently underutilized
+        elif status['usage_percent'] < 30 and status['usage_trend'] == 'stable':
+            new_limit = quota['limit'] * 0.7  # Decrease by 30%
+
+            update_data = {
+                "limit": new_limit
+            }
+
+            requests.put(
+                f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}",
+                json=update_data
+            )
+
+            print(f"✓ Decreased {quota['name']} limit: {quota['limit']} → {new_limit}")
+
+# Run auto-adjustment
+auto_adjust_quotas("tenant_a")
+```
+
+**Scenario 9: Quota Reset Management**
+```python
+# Manual quota reset for billing period
+def reset_tenant_quotas(tenant_id):
+    # Get all quotas for tenant
+    response = requests.get(f"http://localhost:8000/api/quota/tenants/{tenant_id}/quotas")
+    quotas = response.json()['quotas']
+
+    print(f"Resetting quotas for {tenant_id}...")
+
+    for quota in quotas:
+        response = requests.post(
+            f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}/reset"
+        )
+
+        reset_result = response.json()['reset']
+
+        print(f"  ✓ {quota['name']}")
+        print(f"      Previous Usage: {reset_result['previous_usage']}")
+        print(f"      Reset At: {reset_result['reset_at']}")
+
+# Reset at start of billing period
+reset_tenant_quotas("tenant_a")
+```
+
+**Scenario 10: Comprehensive Quota Enforcement System**
+```python
+import time
+
+def quota_enforcement_middleware(tenant_id, resource_type, amount):
+    """
+    Middleware to enforce quotas before allowing operations
+    """
+    # Find quota for this tenant and resource type
+    response = requests.get(f"http://localhost:8000/api/quota/tenants/{tenant_id}/quotas")
+    quotas = response.json()['quotas']
+
+    quota = next(
+        (q for q in quotas if q['resource_type'] == resource_type),
+        None
+    )
+
+    if not quota:
+        # No quota defined, allow operation
+        return {"allowed": True, "reason": "no_quota_defined"}
+
+    # Check quota
+    check_data = {"amount": amount}
+    response = requests.post(
+        f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}/check",
+        json=check_data
+    )
+
+    check_result = response.json()['check_result']
+
+    if not check_result['is_allowed']:
+        return {
+            "allowed": False,
+            "reason": "quota_exceeded",
+            "quota_id": quota['quota_id'],
+            "current_usage": check_result['current_usage'],
+            "limit": check_result['limit'],
+            "enforcement_action": check_result['enforcement_action']
+        }
+
+    # Record usage
+    usage_data = {
+        "amount": amount,
+        "metadata": {"timestamp": datetime.utcnow().isoformat()}
+    }
+
+    response = requests.post(
+        f"http://localhost:8000/api/quota/quotas/{quota['quota_id']}/usage",
+        json=usage_data
+    )
+
+    usage_record = response.json()['usage_record']
+
+    result = {
+        "allowed": usage_record['can_proceed'],
+        "reason": usage_record['action_taken'],
+        "usage_after": usage_record['usage_after'],
+        "remaining": check_result['limit'] - usage_record['usage_after']
+    }
+
+    # Send warning if approaching limit
+    usage_percent = (usage_record['usage_after'] / check_result['limit']) * 100
+    if usage_percent >= quota['warning_threshold']:
+        result['warning'] = f"Approaching quota limit: {usage_percent:.1f}% used"
+
+    return result
+
+# Example usage in API endpoint
+def create_task_endpoint(tenant_id, task_data):
+    # Check quota before creating task
+    enforcement_result = quota_enforcement_middleware(
+        tenant_id=tenant_id,
+        resource_type="tasks",
+        amount=1
+    )
+
+    if not enforcement_result['allowed']:
+        return {
+            "success": False,
+            "error": "Quota exceeded",
+            "details": enforcement_result
+        }
+
+    # Proceed with task creation
+    # ... create task ...
+
+    response = {
+        "success": True,
+        "task_id": "task_123",
+        "quota_remaining": enforcement_result['remaining']
+    }
+
+    if 'warning' in enforcement_result:
+        response['warning'] = enforcement_result['warning']
+
+    return response
+
+# Test the enforcement
+result = create_task_endpoint("tenant_a", {"type": "data_processing"})
+print(result)
+
+# Monitor quotas continuously
+def monitor_quotas():
+    while True:
+        response = requests.get("http://localhost:8000/api/quota/statistics")
+        stats = response.json()['statistics']
+
+        print(f"\nQuota Monitoring Report:")
+        print(f"  Total Quotas: {stats['quotas']['total']}")
+        print(f"  Exceeded: {stats['quotas']['by_status'].get('exceeded', 0)}")
+        print(f"  Warning: {stats['quotas']['by_status'].get('warning', 0)}")
+        print(f"  Blocked Requests: {stats['usage']['blocked_requests']}")
+        print(f"  Block Rate: {stats['usage']['block_rate']:.2f}%")
+        print(f"  Active Violations: {stats['violations']['active']}")
+
+        time.sleep(60)  # Check every minute
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (55% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (60% complete)
 
-Current Progress: Commit 87/100 - SLA Management and Tracking Complete
+Current Progress: Commit 88/100 - Resource Quota Management Complete
 
 ## Implementation Roadmap
 
