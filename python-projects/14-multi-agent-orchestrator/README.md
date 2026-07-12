@@ -21990,15 +21990,288 @@ print(f"Pattern alerts: {stats['pattern_alerts']}")
 print(f"Retention policies: {stats['retention_policies']}")
 ```
 
+### 14.5.8 Performance Optimization
+
+Advanced performance profiling, bottleneck detection, and optimization recommendation system for improving system performance and resource utilization.
+
+**Features:**
+- Performance profiling (CPU, memory, I/O, database, API)
+- Automatic bottleneck detection
+- Optimization recommendations with expected impact
+- Resource utilization tracking
+- Query performance analysis
+- Performance benchmarking
+- Multi-type optimization strategies
+
+**API Endpoints:**
+- `POST /api/performance/profiles` - Create performance profile
+- `POST /api/performance/profiles/{profile_id}/start` - Start profiling
+- `POST /api/performance/profiles/{profile_id}/stop` - Stop profiling and generate results
+- `GET /api/performance/profiles` - List all profiles
+- `GET /api/performance/bottlenecks` - Get detected bottlenecks
+- `GET /api/performance/optimizations` - Get optimization recommendations
+- `POST /api/performance/optimizations/{optimization_id}/apply` - Apply optimization
+- `POST /api/performance/resource-metrics` - Record resource metrics
+- `GET /api/performance/resource-utilization` - Get resource utilization stats
+- `POST /api/performance/query-analysis` - Analyze query performance
+- `GET /api/performance/query-analysis` - List query analyses
+- `POST /api/performance/benchmarks` - Create benchmark
+- `POST /api/performance/benchmarks/{benchmark_id}/run` - Run benchmark
+- `GET /api/performance/benchmarks` - List benchmarks
+- `GET /api/performance/statistics` - Get optimization statistics
+
+**Use Cases:**
+
+1. **Profile CPU Usage**
+```python
+# Create CPU profiling session
+response = requests.post('http://localhost:8001/api/performance/profiles', json={
+    "profile_id": "cpu_profile_1",
+    "name": "API Server CPU Profile",
+    "profile_type": "cpu",
+    "target": "api_server",
+    "duration_seconds": 120,
+    "sample_rate": 100,
+    "enabled": True
+})
+
+# Start profiling
+requests.post('http://localhost:8001/api/performance/profiles/cpu_profile_1/start')
+print("Profiling started... collecting CPU data")
+
+# After duration, stop profiling
+result = requests.post('http://localhost:8001/api/performance/profiles/cpu_profile_1/stop')
+profile_results = result.json()['profiling']['results']
+
+print(f"CPU Usage - Avg: {profile_results['cpu_usage']['avg']}%")
+print(f"CPU Usage - Max: {profile_results['cpu_usage']['max']}%")
+print("\nTop CPU-consuming functions:")
+for func in profile_results['top_functions']:
+    print(f"  {func['function']}: {func['cpu_time']}ms ({func['calls']} calls)")
+```
+
+2. **Detect Memory Leaks**
+```python
+# Create memory profiling session
+response = requests.post('http://localhost:8001/api/performance/profiles', json={
+    "profile_id": "memory_profile_1",
+    "name": "Memory Leak Detection",
+    "profile_type": "memory",
+    "target": "background_worker",
+    "duration_seconds": 300,
+    "enabled": True
+})
+
+# Start and stop profiling
+requests.post('http://localhost:8001/api/performance/profiles/memory_profile_1/start')
+# ... wait for duration ...
+result = requests.post('http://localhost:8001/api/performance/profiles/memory_profile_1/stop')
+
+memory_results = result.json()['profiling']['results']
+print(f"Memory leaked: {memory_results['memory_usage']['leaked_mb']} MB")
+print(f"Allocations: {memory_results['allocations']}")
+print(f"Deallocations: {memory_results['deallocations']}")
+```
+
+3. **Get Detected Bottlenecks**
+```python
+# Get all unresolved bottlenecks
+response = requests.get('http://localhost:8001/api/performance/bottlenecks', params={
+    "resolved": False
+})
+
+bottlenecks = response.json()['bottlenecks']
+print(f"Found {len(bottlenecks)} performance bottlenecks:")
+
+for bottleneck in bottlenecks:
+    print(f"\n{bottleneck['severity'].upper()}: {bottleneck['description']}")
+    print(f"  Location: {bottleneck['location']}")
+    print(f"  Type: {bottleneck['bottleneck_type']}")
+    print(f"  Detected: {bottleneck['detected_at']}")
+```
+
+4. **Get Optimization Recommendations**
+```python
+# Get pending optimization recommendations
+response = requests.get('http://localhost:8001/api/performance/optimizations', params={
+    "status": "pending"
+})
+
+optimizations = response.json()['optimizations']
+print(f"Found {len(optimizations)} optimization recommendations:\n")
+
+for opt in optimizations:
+    print(f"{opt['title']} ({opt['severity'].upper()})")
+    print(f"  Type: {opt['optimization_type']}")
+    print(f"  Expected improvement: {opt['expected_improvement']}")
+    print(f"  Recommendations:")
+    for rec in opt['recommendations']:
+        print(f"    - {rec}")
+    print()
+```
+
+5. **Apply Optimization and Track Impact**
+```python
+# Apply an optimization
+optimization_id = "opt_12345"
+
+response = requests.post(
+    f'http://localhost:8001/api/performance/optimizations/{optimization_id}/apply',
+    json={
+        "impact_notes": "Added database index on user_id column. Query time reduced from 1.2s to 0.08s (93% improvement)."
+    }
+)
+
+print(f"Optimization applied: {response.json()['application']['status']}")
+print(f"Applied at: {response.json()['application']['applied_at']}")
+```
+
+6. **Track Resource Utilization**
+```python
+# Record resource metrics periodically
+import psutil
+import time
+
+for _ in range(10):
+    cpu = psutil.cpu_percent(interval=1)
+    memory = psutil.virtual_memory().used / (1024 ** 2)  # MB
+
+    requests.post('http://localhost:8001/api/performance/resource-metrics', json={
+        "cpu_percent": cpu,
+        "memory_mb": memory,
+        "disk_io_mb": 15.3,
+        "network_io_mb": 8.7,
+        "active_connections": 45
+    })
+
+    time.sleep(10)
+
+# Get utilization statistics
+stats = requests.get('http://localhost:8001/api/performance/resource-utilization')
+utilization = stats.json()['utilization']
+
+print(f"CPU - Avg: {utilization['cpu']['avg']:.1f}%, Max: {utilization['cpu']['max']:.1f}%")
+print(f"Memory - Avg: {utilization['memory_mb']['avg']:.1f} MB, P95: {utilization['memory_mb']['p95']:.1f} MB")
+```
+
+7. **Analyze Slow Database Queries**
+```python
+# Analyze a slow query
+response = requests.post('http://localhost:8001/api/performance/query-analysis', json={
+    "query_id": "query_001",
+    "query": "SELECT * FROM orders WHERE user_id = 123 ORDER BY created_at DESC",
+    "execution_time_ms": 1245.3,
+    "rows_examined": 50000,
+    "rows_returned": 10,
+    "index_used": False
+})
+
+analysis = response.json()['analysis']
+print(f"Query optimization score: {analysis['optimization_score']}/100")
+print(f"Severity: {analysis['severity']}")
+
+print("\nIssues detected:")
+for issue in analysis['issues']:
+    print(f"  - {issue}")
+
+print("\nRecommendations:")
+for rec in analysis['recommendations']:
+    print(f"  - {rec}")
+```
+
+8. **Run Performance Benchmark**
+```python
+# Create and run a benchmark
+response = requests.post('http://localhost:8001/api/performance/benchmarks', json={
+    "benchmark_id": "api_benchmark_1",
+    "name": "API Endpoint Benchmark",
+    "target": "/api/users",
+    "operations": 10000,
+    "concurrency": 50
+})
+
+# Run the benchmark
+result = requests.post('http://localhost:8001/api/performance/benchmarks/api_benchmark_1/run')
+benchmark = result.json()['benchmark']['results']
+
+print(f"Total operations: {benchmark['total_operations']}")
+print(f"Successful: {benchmark['successful']}")
+print(f"Failed: {benchmark['failed']}")
+print(f"Throughput: {benchmark['throughput_ops_per_sec']:.2f} ops/sec")
+print(f"\nResponse times:")
+print(f"  Average: {benchmark['response_time_ms']['avg']:.2f}ms")
+print(f"  P50: {benchmark['response_time_ms']['p50']:.2f}ms")
+print(f"  P95: {benchmark['response_time_ms']['p95']:.2f}ms")
+print(f"  P99: {benchmark['response_time_ms']['p99']:.2f}ms")
+```
+
+9. **Profile Database Performance**
+```python
+# Create database profiling session
+response = requests.post('http://localhost:8001/api/performance/profiles', json={
+    "profile_id": "db_profile_1",
+    "name": "Database Performance Profile",
+    "profile_type": "database",
+    "target": "postgres_main",
+    "duration_seconds": 180,
+    "enabled": True
+})
+
+# Start profiling
+requests.post('http://localhost:8001/api/performance/profiles/db_profile_1/start')
+# ... application runs queries ...
+result = requests.post('http://localhost:8001/api/performance/profiles/db_profile_1/stop')
+
+db_results = result.json()['profiling']['results']
+print(f"Total queries: {db_results['query_count']}")
+print(f"Avg query time: {db_results['avg_query_time_ms']}ms")
+print(f"Slow queries: {db_results['slow_queries']}")
+print(f"N+1 queries detected: {db_results['n_plus_one_detected']}")
+print(f"Missing indexes: {db_results['missing_indexes']}")
+
+print("\nSlowest queries:")
+for query in db_results['top_slow_queries']:
+    print(f"  {query['time_ms']}ms ({query['count']} times): {query['query'][:50]}...")
+```
+
+10. **Get Comprehensive Performance Statistics**
+```python
+# Get overall performance optimization statistics
+response = requests.get('http://localhost:8001/api/performance/statistics')
+stats = response.json()['statistics']
+
+print("Performance Optimization Statistics:")
+print(f"\nProfiles:")
+print(f"  Total: {stats['profiles']['total']}")
+print(f"  Completed: {stats['profiles']['completed']}")
+
+print(f"\nBottlenecks:")
+print(f"  Total detected: {stats['bottlenecks']['total']}")
+print(f"  Unresolved: {stats['bottlenecks']['unresolved']}")
+print(f"  By severity:")
+for severity, count in stats['bottlenecks']['by_severity'].items():
+    print(f"    {severity}: {count}")
+
+print(f"\nOptimizations:")
+print(f"  Total: {stats['optimizations']['total']}")
+print(f"  By status:")
+for status, count in stats['optimizations']['by_status'].items():
+    print(f"    {status}: {count}")
+
+print(f"\nResource metrics collected: {stats['resource_metrics']}")
+print(f"Query analyses: {stats['query_analyses']}")
+print(f"Benchmarks: {stats['benchmarks']}")
+```
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (35% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (40% complete)
 
-Current Progress: Commit 83/100 - Log Aggregation and Analysis Complete
+Current Progress: Commit 84/100 - Performance Optimization Complete
 
 ## Implementation Roadmap
 
