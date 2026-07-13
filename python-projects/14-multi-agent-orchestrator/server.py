@@ -12,7 +12,7 @@ from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management, secret_management, api_rate_limiting, data_retention, circuit_breaker, service_discovery, event_streaming, distributed_tracing, agent_profiling, agent_versioning, testing_framework, api_documentation, deployment_orchestration, environment_config, database_migration, monitoring_observability, log_aggregation, performance_optimization, capacity_planning, disaster_recovery, sla_management, resource_quota
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management, secret_management, api_rate_limiting, data_retention, circuit_breaker, service_discovery, event_streaming, distributed_tracing, agent_profiling, agent_versioning, testing_framework, api_documentation, deployment_orchestration, environment_config, database_migration, monitoring_observability, log_aggregation, performance_optimization, capacity_planning, disaster_recovery, sla_management, resource_quota, multi_region
 
 
 @asynccontextmanager
@@ -127,6 +127,7 @@ app.include_router(capacity_planning.router, prefix="/api/capacity", tags=["Capa
 app.include_router(disaster_recovery.router, prefix="/api/disaster-recovery", tags=["Disaster Recovery"])
 app.include_router(sla_management.router, prefix="/api/sla", tags=["SLA Management"])
 app.include_router(resource_quota.router, prefix="/api/quota", tags=["Resource Quota"])
+app.include_router(multi_region.router, prefix="/api/multi-region", tags=["Multi-Region"])
 app.include_router(metrics.router, prefix="/api", tags=["Metrics"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])
