@@ -23802,15 +23802,51 @@ def monitor_quotas():
 
 **Use Case Scenarios**: See full documentation for 10 comprehensive multi-region deployment scenarios including rolling deployments, blue-green strategies, canary releases, traffic routing, health monitoring, automated failover, replication management, and global status dashboards.
 
+### 14.5.14 API Gateway and Service Mesh (AKHIL-293)
+
+**Description**: API gateway and service mesh management providing API routing, traffic management, circuit breaking, and service-to-service communication.
+
+**Features**:
+- Backend service registration and management
+- API route creation with path-based routing
+- Multiple HTTP methods support (GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD)
+- Circuit breaker pattern implementation (CLOSED, OPEN, HALF_OPEN states)
+- Rate limiting per route
+- Load balancing strategies (round-robin, least-connections, random, weighted)
+- Service instance registration for load balancing
+- Request/response transformation pipeline
+- Gateway-level health monitoring
+- Service health checks
+- Route statistics and performance metrics
+- Request logging and audit trail
+
+**API Endpoints**:
+- `POST /api/gateway/services` - Register backend service
+- `GET /api/gateway/services` - List registered services
+- `GET /api/gateway/services/{service_id}/health` - Get service health status
+- `POST /api/gateway/routes` - Create API route
+- `GET /api/gateway/routes` - List all routes
+- `GET /api/gateway/routes/{route_id}/stats` - Get route statistics
+- `POST /api/gateway/routes/{route_id}/request` - Route request through gateway
+- `POST /api/gateway/transformations` - Create transformation rule
+- `GET /api/gateway/transformations` - List transformations
+- `POST /api/gateway/services/{service_id}/instances` - Register service instance
+- `GET /api/gateway/services/{service_id}/instances` - List service instances
+- `GET /api/gateway/circuit-breakers` - List circuit breaker states
+- `GET /api/gateway/gateway-stats` - Get overall gateway statistics
+- `GET /api/gateway/statistics` - Get comprehensive statistics
+
+**Use Case Scenarios**: API gateway routing, microservices communication, circuit breaking for fault tolerance, rate limiting, load balancing across service instances, request transformation, service mesh orchestration, traffic management, health monitoring, and performance tracking.
+
 ## Project Status
 
 ✅ **Block Phase 1 Complete!** - Foundation & Infrastructure (100% complete)
 ✅ **Block Phase 2 Complete!** - Basic Agent Implementation (100% complete)
 ✅ **Block Phase 3 Complete!** - Multi-Agent Coordination (100% complete)
 ✅ **Block Phase 4 Complete!** - Advanced Features (100% complete)
-🚧 **Block Phase 5 In Progress** - Production & Scaling (65% complete)
+🚧 **Block Phase 5 In Progress** - Production & Scaling (70% complete)
 
-Current Progress: Commit 89/100 - Multi-Region Deployment Complete
+Current Progress: Commit 90/100 - API Gateway and Service Mesh Complete
 
 ## Implementation Roadmap
 
