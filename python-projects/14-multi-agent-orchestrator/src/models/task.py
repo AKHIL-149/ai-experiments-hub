@@ -26,6 +26,15 @@ class TaskStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class TaskPriority(str, enum.Enum):
+    """Task priority levels"""
+    CRITICAL = "critical"  # Priority 1-2
+    HIGH = "high"          # Priority 3-4
+    NORMAL = "normal"      # Priority 5-6
+    LOW = "low"            # Priority 7-8
+    MINIMAL = "minimal"    # Priority 9-10
+
+
 class Task(Base):
     """
     Task model representing a unit of work in the multi-agent system.
