@@ -8,7 +8,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
 from sqlalchemy.orm import relationship
 from passlib.context import CryptContext
 
-from src.models.base import Base
+from src.core.database import Base
 
 
 # Password hashing context

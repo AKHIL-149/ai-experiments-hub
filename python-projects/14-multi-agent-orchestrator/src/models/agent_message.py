@@ -94,7 +94,7 @@ class AgentMessage(Base):
     expires_at = Column(DateTime, nullable=True)
 
     # Metadata
-    metadata = Column(JSON, nullable=True)  # Additional metadata
+    extra_metadata = Column(JSON, nullable=True)  # Additional metadata
     error_message = Column(Text, nullable=True)  # Error details if failed
 
     def __repr__(self):

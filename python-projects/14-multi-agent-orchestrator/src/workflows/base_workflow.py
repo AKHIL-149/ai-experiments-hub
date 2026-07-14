@@ -10,7 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolExecutor
+# from langgraph.prebuilt import ToolExecutor  # Not available in current langgraph version
 
 from src.core.logging import logger
 

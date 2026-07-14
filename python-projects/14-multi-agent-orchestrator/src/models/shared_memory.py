@@ -76,7 +76,7 @@ class SharedMemory(Base):
     expires_at = Column(DateTime, nullable=True, index=True)  # Expiration timestamp
 
     # Metadata
-    metadata = Column(JSON, nullable=True)  # Additional metadata
+    extra_metadata = Column(JSON, nullable=True)  # Additional metadata
     tags = Column(JSON, nullable=True)  # Tags for categorization
 
     # Timestamps

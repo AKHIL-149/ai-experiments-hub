@@ -266,3 +266,45 @@ def authenticate_user(username: str, password: str, db: Session) -> Optional[Use
 
     logger.info(f"User authenticated successfully: {username}")
     return user
+
+
+async def get_current_user_ws(token: str, db: Session) -> User:
+    """
+    Get current authenticated user from JWT token for WebSocket connections.
+    
+    Args:
+        token: JWT token string
+        db: Database session
+    
+    Returns:
+        User: Current user
+    
+    Raises:
+        HTTPException: If authentication fails
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials"
+            )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        )
+    
+    user = db.query(User).filter(User.email == email).first()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive"
+        )
+    
+    return user
