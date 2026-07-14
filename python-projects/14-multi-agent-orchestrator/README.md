@@ -1,11 +1,14 @@
 # Project 14: Multi-Agent Task Orchestrator
 
 [![CI - Tests and Coverage](https://github.com/yourusername/ai-experiments-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/ai-experiments-hub/actions/workflows/ci.yml)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An advanced AI-powered system that coordinates multiple specialized agents to autonomously break down, execute, and monitor complex tasks using LangGraph.
+
+> **🚀 Quick Start**: See [STARTUP.md](STARTUP.md) for setup instructions
+> **🐛 Recent Fixes**: See [FIXES.md](FIXES.md) for version 14.6.x bug fixes (Server now fully operational!)
 
 ## Overview
 
