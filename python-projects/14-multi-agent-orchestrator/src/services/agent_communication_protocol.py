@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_, desc, func
 from collections import defaultdict
 import json
 
-from src.models.database import Agent, AgentMessage
+from src.models import Agent, AgentMessage
 from src.core.logging import logger
 
 

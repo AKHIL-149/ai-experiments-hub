@@ -4,7 +4,7 @@ Configuration Management API
 REST API endpoints for centralized configuration management with versioning.
 """
 
-from typing import Optional
+from typing import Optional, Union
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -24,7 +24,7 @@ router = APIRouter()
 # Request/Response Models
 class CreateConfigurationRequest(BaseModel):
     key: str = Field(..., description="Configuration key")
-    value: dict | str | int | float | bool = Field(..., description="Configuration value")
+    value: Union[dict, str, int, float, bool] = Field(..., description="Configuration value")
     config_type: str = Field(..., description="Type of configuration")
     environment: str = Field(ConfigEnvironment.DEVELOPMENT, description="Target environment")
     description: Optional[str] = Field(None, description="Configuration description")
@@ -34,7 +34,7 @@ class CreateConfigurationRequest(BaseModel):
 
 
 class UpdateConfigurationRequest(BaseModel):
-    value: Optional[dict | str | int | float | bool] = Field(None, description="New value")
+    value: Optional[Union[dict, str, int, float, bool]] = Field(None, description="New value")
     description: Optional[str] = Field(None, description="Updated description")
     metadata: Optional[dict] = Field(None, description="Updated metadata")
 

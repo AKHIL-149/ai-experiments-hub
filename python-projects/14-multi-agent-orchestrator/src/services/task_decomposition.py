@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 import json
 
-from src.models.database import Task, Agent
+from src.models import Task, Agent
 from src.core.logging import logger
 
 

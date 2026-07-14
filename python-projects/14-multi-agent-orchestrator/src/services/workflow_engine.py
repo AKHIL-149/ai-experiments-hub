@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_, desc, func
 from collections import defaultdict, deque
 import json
 
-from src.models.database import Workflow, Task, Agent, AgentExecution
+from src.models import Workflow, Task, Agent, AgentExecution
 from src.core.logging import logger
 
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 
-from src.database import get_db_session
+from src.core.database import get_db_session
 from src.services.api_gateway import (
     APIGateway,
     RouteMethod,

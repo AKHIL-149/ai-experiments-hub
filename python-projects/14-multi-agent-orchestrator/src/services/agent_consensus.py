@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from collections import Counter
 
-from src.models.database import Agent
+from src.models import Agent
 from src.core.logging import logger
 
 

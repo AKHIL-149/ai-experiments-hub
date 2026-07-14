@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 
-from src.models.database import Agent, Task
+from src.models import Agent, Task
 from src.core.logging import logger
 
 

@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from src.models.database import Agent
+from src.models import Agent
 from src.core.logging import logger
 
 
