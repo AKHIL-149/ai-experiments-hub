@@ -15,7 +15,7 @@ from src.services.workflow_service import workflow_service
 from src.core.logging import logger
 from src.core.exceptions import (
     TaskNotFoundError,
-    ValidationError,
+    ValidationException,
     WorkflowExecutionError,
     AgentNotFoundError
 )
@@ -77,12 +77,12 @@ class TaskService:
             Task: Created task
 
         Raises:
-            ValidationError: If validation fails
+            ValidationException: If validation fails
         """
         try:
             # Validate priority
             if not 1 <= priority <= 10:
-                raise ValidationError("Priority must be between 1 and 10")
+                raise ValidationException("Priority must be between 1 and 10")
 
             # Create task
             task = Task(
@@ -121,7 +121,7 @@ class TaskService:
 
             return task
 
-        except ValidationError:
+        except ValidationException:
             raise
         except Exception as e:
             session.rollback()
@@ -237,10 +237,10 @@ class TaskService:
 
         Raises:
             TaskNotFoundError: If task not found
-            ValidationError: If progress is invalid
+            ValidationException: If progress is invalid
         """
         if not 0 <= progress_percentage <= 100:
-            raise ValidationError("Progress must be between 0 and 100")
+            raise ValidationException("Progress must be between 0 and 100")
 
         task = TaskService.get_task_by_id(session, task_id)
         task.progress_percentage = progress_percentage
@@ -270,18 +270,18 @@ class TaskService:
         Raises:
             TaskNotFoundError: If task not found
             AgentNotFoundError: If agent not found
-            ValidationError: If assignment is invalid
+            ValidationException: If assignment is invalid
         """
         task = TaskService.get_task_by_id(session, task_id)
         agent = AgentService.get_agent_by_id(session, agent_id)
 
         # Validate task can be assigned
         if task.status not in [TaskStatus.PENDING, TaskStatus.QUEUED]:
-            raise ValidationError(f"Cannot assign task with status {task.status}")
+            raise ValidationException(f"Cannot assign task with status {task.status}")
 
         # Validate agent is available
         if not agent.is_available():
-            raise ValidationError(f"Agent {agent_id} is not available")
+            raise ValidationException(f"Agent {agent_id} is not available")
 
         # Assign task to agent
         task.assigned_agent_id = agent_id
@@ -331,7 +331,7 @@ class TaskService:
 
         Raises:
             TaskNotFoundError: If task not found
-            ValidationError: If no suitable agent available
+            ValidationException: If no suitable agent available
         """
         task = TaskService.get_task_by_id(session, task_id)
 
@@ -351,7 +351,7 @@ class TaskService:
         agent = AgentService.find_best_agent_for_role(session, required_role)
 
         if not agent:
-            raise ValidationError(f"No available agent found for role {required_role}")
+            raise ValidationException(f"No available agent found for role {required_role}")
 
         # Assign task
         return TaskService.assign_task_to_agent(session, task_id, agent.id)
@@ -379,7 +379,7 @@ class TaskService:
 
         Raises:
             TaskNotFoundError: If either task not found
-            ValidationError: If dependency is invalid
+            ValidationException: If dependency is invalid
         """
         # Validate both tasks exist
         task = TaskService.get_task_by_id(session, task_id)
@@ -387,7 +387,7 @@ class TaskService:
 
         # Check for circular dependency
         if TaskService._would_create_cycle(session, task_id, depends_on_task_id):
-            raise ValidationError("Dependency would create a circular dependency")
+            raise ValidationException("Dependency would create a circular dependency")
 
         # Create dependency
         dependency = TaskDependency(
@@ -618,13 +618,13 @@ class TaskService:
 
         Raises:
             TaskNotFoundError: If task not found
-            ValidationError: If task cannot be cancelled
+            ValidationException: If task cannot be cancelled
         """
         task = TaskService.get_task_by_id(session, task_id)
 
         # Can only cancel pending, queued, or waiting tasks
         if task.status not in [TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.WAITING_APPROVAL]:
-            raise ValidationError(f"Cannot cancel task with status {task.status}")
+            raise ValidationException(f"Cannot cancel task with status {task.status}")
 
         # Release agent if assigned
         if task.assigned_agent_id:

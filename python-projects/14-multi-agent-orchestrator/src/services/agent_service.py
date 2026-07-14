@@ -13,7 +13,7 @@ from src.models.agent_execution import AgentExecution, ExecutionStatus
 from src.agents import agent_registry, AgentConfig, AgentContext, AgentResult, AgentExecutor
 from src.agents.base.llm_provider import create_llm_provider
 from src.core.logging import logger
-from src.core.exceptions import AgentNotFoundError, ValidationError
+from src.core.exceptions import AgentNotFoundError, ValidationException
 
 
 def _run_async(coro):
@@ -74,13 +74,13 @@ class AgentService:
             Agent: Created agent
 
         Raises:
-            ValidationError: If validation fails
+            ValidationException: If validation fails
         """
         try:
             # Check if agent with same name exists
             existing = session.query(Agent).filter(Agent.name == name).first()
             if existing:
-                raise ValidationError(f"Agent with name '{name}' already exists")
+                raise ValidationException(f"Agent with name '{name}' already exists")
 
             # Set default model based on provider
             if not llm_model:
@@ -108,7 +108,7 @@ class AgentService:
 
             return agent
 
-        except ValidationError:
+        except ValidationException:
             raise
         except Exception as e:
             session.rollback()
@@ -208,12 +208,12 @@ class AgentService:
 
         Raises:
             AgentNotFoundError: If agent not found
-            ValidationError: If agent is not available
+            ValidationException: If agent is not available
         """
         agent = AgentService.get_agent_by_id(session, agent_id)
 
         if not agent.is_available():
-            raise ValidationError(
+            raise ValidationException(
                 f"Agent {agent_id} is not available (status: {agent.status})"
             )
 
@@ -392,12 +392,12 @@ class AgentService:
 
         Raises:
             AgentNotFoundError: If agent not found
-            ValidationError: If agent is busy
+            ValidationException: If agent is busy
         """
         agent = AgentService.get_agent_by_id(session, agent_id)
 
         if agent.status == AgentStatus.BUSY:
-            raise ValidationError("Cannot deactivate agent while busy")
+            raise ValidationException("Cannot deactivate agent while busy")
 
         agent.is_active = False
         agent.status = AgentStatus.OFFLINE
@@ -477,13 +477,13 @@ class AgentService:
 
         Raises:
             AgentNotFoundError: If agent not found
-            ValidationError: If agent is not active
+            ValidationException: If agent is not active
         """
         # Get agent from database
         agent_model = AgentService.get_agent_by_id(session, agent_id)
 
         if not agent_model.is_active:
-            raise ValidationError(f"Agent {agent_id} is not active")
+            raise ValidationException(f"Agent {agent_id} is not active")
 
         # Create execution record
         execution = AgentExecution(
