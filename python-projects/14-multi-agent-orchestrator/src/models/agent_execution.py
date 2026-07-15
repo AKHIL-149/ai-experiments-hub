@@ -56,7 +56,12 @@ class AgentExecution(Base):
     # Execution Context
     session_id = Column(String(100), nullable=True, index=True)
     parent_execution_id = Column(Integer, ForeignKey("agent_executions.id"), nullable=True)
-    parent_execution = relationship("AgentExecution", remote_side=[id], backref="child_executions")
+    parent_execution = relationship(
+        "AgentExecution",
+        foreign_keys=[parent_execution_id],
+        remote_side=[id],
+        backref="child_executions"
+    )
 
     # Input Data
     input_data = Column(JSON, nullable=False)

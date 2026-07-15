@@ -65,7 +65,11 @@ class Task(Base):
 
     # Agent Assignment
     assigned_agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)
-    assigned_agent = relationship("Agent", back_populates="assigned_tasks")
+    assigned_agent = relationship(
+        "Agent",
+        foreign_keys=[assigned_agent_id],
+        back_populates="assigned_tasks"
+    )
 
     # Task Execution Details
     input_data = Column(JSON, nullable=True)  # Input parameters for the task

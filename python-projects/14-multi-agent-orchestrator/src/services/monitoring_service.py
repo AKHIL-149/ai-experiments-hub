@@ -35,7 +35,7 @@ class MonitoringService:
             Task.status == TaskStatus.PENDING
         ).scalar()
         tasks_running = db.query(func.count(Task.id)).filter(
-            Task.status == TaskStatus.RUNNING
+            Task.status == TaskStatus.IN_PROGRESS
         ).scalar()
         tasks_completed = db.query(func.count(Task.id)).filter(
             Task.status == TaskStatus.COMPLETED
@@ -50,7 +50,7 @@ class MonitoringService:
         # Agent metrics
         total_agents = db.query(func.count(Agent.id)).scalar()
         agents_active = db.query(func.count(Agent.id)).filter(
-            Agent.status == AgentStatus.ACTIVE
+            Agent.status.in_([AgentStatus.IDLE, AgentStatus.BUSY, AgentStatus.WAITING])
         ).scalar()
         agents_busy = db.query(func.count(Agent.id)).filter(
             Agent.status == AgentStatus.BUSY
@@ -330,7 +330,7 @@ class MonitoringService:
         # Check for stuck tasks (running for > 1 hour)
         one_hour_ago = now - timedelta(hours=1)
         stuck_tasks = db.query(func.count(Task.id)).filter(
-            Task.status == TaskStatus.RUNNING,
+            Task.status == TaskStatus.IN_PROGRESS,
             Task.created_at < one_hour_ago
         ).scalar()
 
@@ -343,7 +343,7 @@ class MonitoringService:
         # Check agent availability
         total_agents = db.query(func.count(Agent.id)).scalar()
         active_agents = db.query(func.count(Agent.id)).filter(
-            Agent.status.in_([AgentStatus.ACTIVE, AgentStatus.BUSY, AgentStatus.IDLE])
+            Agent.status.in_([AgentStatus.IDLE, AgentStatus.BUSY, AgentStatus.WAITING])
         ).scalar()
 
         # Determine health status

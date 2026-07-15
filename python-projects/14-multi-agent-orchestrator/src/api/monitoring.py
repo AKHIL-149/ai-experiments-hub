@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 
-from src.core.database import get_db
+from src.core.database import get_db_session
 from src.services.monitoring_service import MonitoringService
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
 @router.get("/dashboard", response_model=Dict[str, Any])
 async def get_dashboard_overview(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)
 ):
     """
     Get high-level overview metrics for monitoring dashboard
@@ -33,7 +33,7 @@ async def get_dashboard_overview(
 @router.get("/tasks", response_model=Dict[str, Any])
 async def get_task_metrics(
     time_range: str = Query("24h", regex="^(24h|7d|30d)$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)
 ):
     """
     Get detailed task metrics over specified time range
@@ -50,7 +50,7 @@ async def get_task_metrics(
 
 @router.get("/agents", response_model=List[Dict[str, Any]])
 async def get_agent_performance(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)
 ):
     """
     Get performance metrics for all agents
@@ -68,7 +68,7 @@ async def get_agent_performance(
 
 @router.get("/workflows", response_model=Dict[str, Any])
 async def get_workflow_metrics(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)
 ):
     """
     Get workflow execution metrics
@@ -85,7 +85,7 @@ async def get_workflow_metrics(
 
 @router.get("/health", response_model=Dict[str, Any])
 async def get_system_health(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)
 ):
     """
     Get overall system health status
