@@ -39,7 +39,27 @@ createdb multi_agent_orchestrator
 psql -U postgres -c "CREATE DATABASE multi_agent_orchestrator;"
 ```
 
-### 4. Start Redis
+### 4. Run Database Migrations
+
+Initialize database schema with Alembic migrations:
+
+```bash
+# Using the helper script (recommended)
+./migrate.sh upgrade
+
+# Or using alembic directly
+alembic upgrade head
+```
+
+This will create all required tables including:
+- `tasks`, `agents`, `agent_executions`
+- `agent_messages`, `shared_memory`
+- `workflows`, `workflow_steps`
+- `users` and other application tables
+
+See [migrations/README.md](migrations/README.md) for detailed migration documentation.
+
+### 5. Start Redis
 
 ```bash
 # macOS (using Homebrew)
@@ -52,7 +72,7 @@ sudo systemctl start redis
 redis-server
 ```
 
-### 5. Start the Server
+### 6. Start the Server
 
 #### Full Server (All 500+ Endpoints)
 
