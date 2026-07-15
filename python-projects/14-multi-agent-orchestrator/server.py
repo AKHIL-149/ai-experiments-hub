@@ -5,14 +5,16 @@ FastAPI server for Multi-Agent Task Orchestrator
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
+import os
 
 from src.core.config import settings
 from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
-from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management, secret_management, api_rate_limiting, data_retention, circuit_breaker, service_discovery, event_streaming, distributed_tracing, agent_profiling, agent_versioning, testing_framework, api_documentation, deployment_orchestration, environment_config, database_migration, monitoring_observability, log_aggregation, performance_optimization, capacity_planning, disaster_recovery, sla_management, resource_quota, multi_region, api_gateway, feature_flags, data_privacy, webhook_management, notification_service, search_indexing, analytics_dashboard, graphql_api, admin_dashboard, integration_testing, production_readiness
+from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management, secret_management, api_rate_limiting, data_retention, circuit_breaker, service_discovery, event_streaming, distributed_tracing, agent_profiling, agent_versioning, testing_framework, api_documentation, deployment_orchestration, environment_config, database_migration, monitoring_observability, log_aggregation, performance_optimization, capacity_planning, disaster_recovery, sla_management, resource_quota, multi_region, api_gateway, feature_flags, data_privacy, webhook_management, notification_service, search_indexing, analytics_dashboard, graphql_api, admin_dashboard, integration_testing, production_readiness, monitoring
 
 
 @asynccontextmanager
@@ -144,6 +146,7 @@ app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(errors.router, prefix="/api/errors", tags=["Error Tracking"])
 app.include_router(rate_limits.router, prefix="/api", tags=["Rate Limits"])
 app.include_router(cache.router, prefix="/api", tags=["Cache"])
+app.include_router(monitoring.router)
 
 
 @app.get("/")
@@ -154,7 +157,15 @@ async def root():
         "version": "0.1.0",
         "status": "running",
         "docs": "/docs",
+        "dashboard": "/dashboard",
     }
+
+
+@app.get("/dashboard")
+async def dashboard():
+    """Serve monitoring dashboard HTML"""
+    dashboard_path = os.path.join(os.path.dirname(__file__), "templates", "dashboard.html")
+    return FileResponse(dashboard_path)
 
 
 if __name__ == "__main__":
