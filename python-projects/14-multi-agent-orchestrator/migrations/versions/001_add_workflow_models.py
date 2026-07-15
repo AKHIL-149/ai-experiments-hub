@@ -22,21 +22,29 @@ def upgrade() -> None:
     """
     Add workflows and workflow_steps tables
     """
-    # Create enum types for PostgreSQL
-    workflow_status = postgresql.ENUM(
-        'PENDING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED',
-        name='workflowstatus',
-        create_type=False
-    )
-    workflow_type = postgresql.ENUM(
-        'SIMPLE', 'DEFAULT', 'CUSTOM', 'DAG',
-        name='workflowtype',
-        create_type=False
-    )
+    # Detect database type
+    bind = op.get_bind()
+    is_postgresql = bind.dialect.name == 'postgresql'
 
-    # Create enums if using PostgreSQL
-    op.execute("CREATE TYPE IF NOT EXISTS workflowstatus AS ENUM ('PENDING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED')")
-    op.execute("CREATE TYPE IF NOT EXISTS workflowtype AS ENUM ('SIMPLE', 'DEFAULT', 'CUSTOM', 'DAG')")
+    # Create enum types for PostgreSQL only
+    if is_postgresql:
+        workflow_status = postgresql.ENUM(
+            'PENDING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED',
+            name='workflowstatus',
+            create_type=False
+        )
+        workflow_type = postgresql.ENUM(
+            'SIMPLE', 'DEFAULT', 'CUSTOM', 'DAG',
+            name='workflowtype',
+            create_type=False
+        )
+        # Create enums for PostgreSQL
+        op.execute("CREATE TYPE IF NOT EXISTS workflowstatus AS ENUM ('PENDING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED')")
+        op.execute("CREATE TYPE IF NOT EXISTS workflowtype AS ENUM ('SIMPLE', 'DEFAULT', 'CUSTOM', 'DAG')")
+    else:
+        # For SQLite and other databases, use String columns
+        workflow_status = sa.String(50)
+        workflow_type = sa.String(50)
 
     # Create workflows table
     op.create_table(
@@ -97,5 +105,8 @@ def downgrade() -> None:
     op.drop_table('workflows')
 
     # Drop enum types if using PostgreSQL
-    op.execute("DROP TYPE IF EXISTS workflowstatus")
-    op.execute("DROP TYPE IF EXISTS workflowtype")
+    bind = op.get_bind()
+    is_postgresql = bind.dialect.name == 'postgresql'
+    if is_postgresql:
+        op.execute("DROP TYPE IF EXISTS workflowstatus")
+        op.execute("DROP TYPE IF EXISTS workflowtype")
