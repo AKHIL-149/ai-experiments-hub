@@ -44,12 +44,12 @@ def create_task_via_api(title, description, task_type, priority, agent_id=None):
 
     try:
         response = requests.post(
-            f"{BASE_URL}/api/tasks",
+            f"{BASE_URL}/api/tasks/",
             json=task_data,
             timeout=10
         )
 
-        if response.status_code == 200:
+        if response.status_code in [200, 201]:
             return True, response.json()
         else:
             return False, response.json()
