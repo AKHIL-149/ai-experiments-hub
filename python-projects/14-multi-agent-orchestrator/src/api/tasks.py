@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from src.core.database import get_db_session
 from src.models import Task, TaskStatus
-from src.workers.task_worker import create_task, update_task_status
+from src.workers.task_worker import update_task_status
 
 router = APIRouter()
 
@@ -22,6 +22,7 @@ class TaskCreate(BaseModel):
     priority: int = 5
     input_data: Optional[Dict[str, Any]] = None
     parent_task_id: Optional[int] = None
+    assigned_agent_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
@@ -123,32 +124,47 @@ async def get_task(task_id: int, db: Session = Depends(get_db_session)) -> Dict[
 
 
 @router.post("/", status_code=201)
-async def create_new_task(task: TaskCreate) -> Dict[str, Any]:
+async def create_new_task(task: TaskCreate, db: Session = Depends(get_db_session)) -> Dict[str, Any]:
     """
     Create a new task
 
     Args:
         task: Task creation data
+        db: Database session
 
     Returns:
         dict: Created task information
     """
-    result = create_task.delay(
-        title=task.title,
-        description=task.description,
-        task_type=task.task_type,
-        priority=task.priority,
-        input_data=task.input_data,
-        parent_task_id=task.parent_task_id
-    )
+    try:
+        new_task = Task(
+            title=task.title,
+            description=task.description,
+            task_type=task.task_type,
+            priority=task.priority,
+            status=TaskStatus.PENDING,
+            input_data=task.input_data or {},
+            parent_task_id=task.parent_task_id,
+            assigned_agent_id=task.assigned_agent_id
+        )
 
-    # Wait for task creation (should be fast)
-    task_data = result.get(timeout=5)
+        db.add(new_task)
+        db.commit()
+        db.refresh(new_task)
 
-    if not task_data.get('success'):
-        raise HTTPException(status_code=500, detail=task_data.get('error', 'Failed to create task'))
-
-    return task_data
+        return {
+            "id": new_task.id,
+            "title": new_task.title,
+            "description": new_task.description,
+            "task_type": new_task.task_type,
+            "status": new_task.status.value,
+            "priority": new_task.priority,
+            "assigned_agent_id": new_task.assigned_agent_id,
+            "progress_percentage": new_task.progress_percentage,
+            "created_at": new_task.created_at.isoformat(),
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 
 @router.patch("/{task_id}")
