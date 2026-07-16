@@ -234,6 +234,224 @@
             font-size: 12px;
             margin-top: 10px;
         }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .close {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .close:hover {
+            opacity: 0.7;
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ecf0f1;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .priority-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .priority-slider {
+            flex: 1;
+        }
+
+        .priority-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: #ecf0f1;
+            color: #2c3e50;
+        }
+
+        .btn-secondary:hover {
+            background: #bdc3c7;
+        }
+
+        .create-task-btn {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 10px;
+        }
+
+        .create-task-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            animation: slideInRight 0.3s;
+            max-width: 400px;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification-success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+
+        .notification-error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+
+        .required {
+            color: #e74c3c;
+        }
     </style>
 </head>
 <body>
@@ -244,6 +462,7 @@
         </div>
 
         <div style="text-align: right; margin-bottom: 20px;">
+            <button class="create-task-btn" onclick="openCreateTaskModal()">➕ Create Task</button>
             <button class="refresh-btn" onclick="loadAllMetrics()">🔄 Refresh Dashboard</button>
         </div>
 
@@ -280,6 +499,88 @@
         </div>
 
         <div class="last-updated" id="last-updated"></div>
+    </div>
+
+    <!-- Create Task Modal -->
+    <div id="createTaskModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Create New Task</h2>
+                <span class="close" onclick="closeCreateTaskModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="createTaskForm" onsubmit="handleCreateTask(event)">
+                    <div class="form-group">
+                        <label for="taskTitle">Task Title <span class="required">*</span></label>
+                        <input
+                            type="text"
+                            id="taskTitle"
+                            name="title"
+                            placeholder="Enter task title"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="taskDescription">Description <span class="required">*</span></label>
+                        <textarea
+                            id="taskDescription"
+                            name="description"
+                            placeholder="Describe what this task should accomplish"
+                            required
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="taskType">Task Type <span class="required">*</span></label>
+                        <select id="taskType" name="task_type" required>
+                            <option value="">Select task type...</option>
+                            <option value="code_review">Code Review</option>
+                            <option value="data_analysis">Data Analysis</option>
+                            <option value="documentation">Documentation</option>
+                            <option value="research">Research</option>
+                            <option value="testing">Testing</option>
+                            <option value="deployment">Deployment</option>
+                            <option value="optimization">Optimization</option>
+                            <option value="bugfix">Bug Fix</option>
+                            <option value="feature">Feature Development</option>
+                            <option value="refactoring">Refactoring</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="taskPriority">Priority: <span class="priority-value" id="priorityValue">5</span></label>
+                        <div class="priority-slider-container">
+                            <span style="color: #95a5a6;">Low (1)</span>
+                            <input
+                                type="range"
+                                id="taskPriority"
+                                name="priority"
+                                min="1"
+                                max="10"
+                                value="5"
+                                class="priority-slider"
+                                oninput="updatePriorityValue(this.value)"
+                            >
+                            <span style="color: #95a5a6;">High (10)</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="assignedAgent">Assign to Agent (Optional)</label>
+                        <select id="assignedAgent" name="assigned_agent_id">
+                            <option value="">No assignment (will auto-assign)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeCreateTaskModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create Task</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -490,6 +791,122 @@
             const now = new Date();
             document.getElementById('last-updated').textContent =
                 `Last updated: ${now.toLocaleString()}`;
+        }
+
+        // ===== Task Creation Modal Functions =====
+
+        async function openCreateTaskModal() {
+            document.getElementById('createTaskModal').style.display = 'block';
+            await loadAgentsForDropdown();
+        }
+
+        function closeCreateTaskModal() {
+            document.getElementById('createTaskModal').style.display = 'none';
+            document.getElementById('createTaskForm').reset();
+            document.getElementById('priorityValue').textContent = '5';
+        }
+
+        async function loadAgentsForDropdown() {
+            try {
+                const response = await fetch('/api/agents');
+                const agents = await response.json();
+
+                const dropdown = document.getElementById('assignedAgent');
+                dropdown.innerHTML = '<option value="">No assignment (will auto-assign)</option>';
+
+                agents.forEach(agent => {
+                    const option = document.createElement('option');
+                    option.value = agent.id;
+                    option.textContent = `${agent.name} (${agent.role})`;
+                    dropdown.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load agents:', error);
+            }
+        }
+
+        function updatePriorityValue(value) {
+            document.getElementById('priorityValue').textContent = value;
+        }
+
+        async function handleCreateTask(event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const formData = new FormData(form);
+
+            const taskData = {
+                title: formData.get('title'),
+                description: formData.get('description'),
+                task_type: formData.get('task_type'),
+                priority: parseInt(formData.get('priority')),
+                input_data: {
+                    created_from: 'dashboard',
+                    timestamp: new Date().toISOString()
+                }
+            };
+
+            // Add agent assignment if selected
+            const agentId = formData.get('assigned_agent_id');
+            if (agentId) {
+                taskData.assigned_agent_id = parseInt(agentId);
+            }
+
+            try {
+                const response = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(taskData)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to create task');
+                }
+
+                const task = await response.json();
+
+                // Show success notification
+                showNotification('success', `Task "${task.title}" created successfully! (ID: ${task.id})`);
+
+                // Close modal and reset form
+                closeCreateTaskModal();
+
+                // Refresh dashboard to show new task
+                await loadAllMetrics();
+
+            } catch (error) {
+                showNotification('error', `Failed to create task: ${error.message}`);
+            }
+        }
+
+        function showNotification(type, message) {
+            // Remove any existing notifications
+            const existingNotifications = document.querySelectorAll('.notification');
+            existingNotifications.forEach(n => n.remove());
+
+            // Create new notification
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                notification.style.animation = 'slideInRight 0.3s reverse';
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('createTaskModal');
+            if (event.target === modal) {
+                closeCreateTaskModal();
+            }
         }
 
         // Load all metrics on page load
