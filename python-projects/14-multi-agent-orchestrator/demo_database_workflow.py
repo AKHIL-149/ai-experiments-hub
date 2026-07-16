@@ -3,10 +3,9 @@
 Database Workflow Demo - Direct database interaction to demonstrate the system
 """
 
-import sys
 from datetime import datetime
 from src.core.database import SessionLocal
-from src.models.task import Task, TaskStatus, TaskPriority
+from src.models.task import Task, TaskStatus
 from src.models.agent import Agent, AgentStatus, AgentRole
 from src.models.agent_execution import AgentExecution, ExecutionStatus
 import requests
@@ -23,113 +22,126 @@ def create_sample_data():
     try:
         print_header("📊 Creating Sample Data in Database")
 
-        # Create agents
-        print("Creating agents...")
-        agents = []
+        # Check if agents already exist
+        existing_agents = db.query(Agent).all()
+        if existing_agents:
+            print(f"⚠️  Found {len(existing_agents)} existing agents in database")
+            print("   Using existing agents instead of creating new ones\n")
+            agents = existing_agents
+        else:
+            # Create agents
+            print("Creating agents...")
+            agents = []
 
-        agent1 = Agent(
-            name="CodeReviewer",
-            role=AgentRole.REVIEWER,
-            description="Specialized in code review and security analysis",
-            status=AgentStatus.IDLE,
-            capabilities={"languages": ["Python", "JavaScript"], "skills": ["security", "performance"]},
-            llm_provider="openai",
-            llm_model="gpt-4-turbo-preview"
-        )
-        db.add(agent1)
-        agents.append(agent1)
+            agent1 = Agent(
+                name="CodeReviewer",
+                role=AgentRole.REVIEWER,
+                description="Specialized in code review and security analysis",
+                status=AgentStatus.IDLE,
+                capabilities={"languages": ["Python", "JavaScript"], "skills": ["security", "performance"]},
+                llm_provider="openai",
+                llm_model="gpt-4-turbo-preview"
+            )
+            db.add(agent1)
+            agents.append(agent1)
 
-        agent2 = Agent(
-            name="DataAnalyst",
-            role=AgentRole.RESEARCHER,
-            description="Specialized in data analysis and visualization",
-            status=AgentStatus.IDLE,
-            capabilities={"tools": ["pandas", "matplotlib"], "skills": ["statistics", "visualization"]},
-            llm_provider="openai",
-            llm_model="gpt-4-turbo-preview"
-        )
-        db.add(agent2)
-        agents.append(agent2)
+            agent2 = Agent(
+                name="DataAnalyst",
+                role=AgentRole.RESEARCHER,
+                description="Specialized in data analysis and visualization",
+                status=AgentStatus.IDLE,
+                capabilities={"tools": ["pandas", "matplotlib"], "skills": ["statistics", "visualization"]},
+                llm_provider="openai",
+                llm_model="gpt-4-turbo-preview"
+            )
+            db.add(agent2)
+            agents.append(agent2)
 
-        agent3 = Agent(
-            name="DocWriter",
-            role=AgentRole.WRITER,
-            description="Specialized in technical documentation",
-            status=AgentStatus.IDLE,
-            capabilities={"formats": ["markdown", "rst"], "skills": ["technical-writing"]},
-            llm_provider="openai",
-            llm_model="gpt-4-turbo-preview"
-        )
-        db.add(agent3)
-        agents.append(agent3)
+            agent3 = Agent(
+                name="DocWriter",
+                role=AgentRole.WRITER,
+                description="Specialized in technical documentation",
+                status=AgentStatus.IDLE,
+                capabilities={"formats": ["markdown", "rst"], "skills": ["technical-writing"]},
+                llm_provider="openai",
+                llm_model="gpt-4-turbo-preview"
+            )
+            db.add(agent3)
+            agents.append(agent3)
 
-        db.commit()
-        print(f"   ✅ Created {len(agents)} agents\n")
+            db.commit()
+            print(f"   ✅ Created {len(agents)} agents\n")
 
         # Create tasks
         print("Creating tasks...")
         tasks = []
 
+        # Use timestamps to ensure unique titles
+        timestamp = datetime.now().strftime("%H:%M:%S")
+
         task1 = Task(
-            title="Security Review - Authentication Module",
+            title=f"Security Review - Authentication Module [{timestamp}]",
             description="Perform comprehensive security review of the authentication system",
             task_type="code_review",
             priority=3,
             status=TaskStatus.PENDING,
-            assigned_agent_id=agent1.id,
-            input_data={"file": "auth.py", "focus": ["security", "vulnerabilities"]},
+            assigned_agent_id=agents[0].id,
+            input_data={"file": "auth.py", "focus": ["security", "vulnerabilities"], "created_at": timestamp},
             requires_approval=False
         )
         db.add(task1)
         tasks.append(task1)
 
         task2 = Task(
-            title="Analyze User Engagement Metrics",
+            title=f"Analyze User Engagement Metrics [{timestamp}]",
             description="Process and analyze last month's user engagement data",
             task_type="data_analysis",
             priority=5,
-            status=TaskStatus.IN_PROGRESS,
-            assigned_agent_id=agent2.id,
-            input_data={"dataset": "user_engagement_2026_06.csv"},
-            progress_percentage=45.0
+            status=TaskStatus.PENDING,  # Changed from IN_PROGRESS to avoid stuck task
+            assigned_agent_id=agents[1].id if len(agents) > 1 else agents[0].id,
+            input_data={"dataset": "user_engagement_2026_06.csv", "created_at": timestamp},
+            progress_percentage=0.0
         )
         db.add(task2)
         tasks.append(task2)
 
         task3 = Task(
-            title="Update API Documentation",
+            title=f"Update API Documentation [{timestamp}]",
             description="Document all new endpoints added in v2.0 release",
             task_type="documentation",
             priority=7,
             status=TaskStatus.PENDING,
-            assigned_agent_id=agent3.id,
-            input_data={"version": "2.0", "endpoints": ["/api/tasks", "/api/agents"]}
+            assigned_agent_id=agents[2].id if len(agents) > 2 else agents[0].id,
+            input_data={"version": "2.0", "endpoints": ["/api/tasks", "/api/agents"], "created_at": timestamp}
         )
         db.add(task3)
         tasks.append(task3)
 
+        # Create a completed task with proper timestamps
+        now = datetime.now()
         task4 = Task(
-            title="Code Optimization - Database Queries",
+            title=f"Code Optimization - Database Queries [{timestamp}]",
             description="Optimize slow database queries in the reporting module",
             task_type="optimization",
             priority=4,
             status=TaskStatus.COMPLETED,
-            assigned_agent_id=agent1.id,
+            assigned_agent_id=agents[0].id,
             progress_percentage=100.0,
-            started_at=datetime.now(),
-            completed_at=datetime.now()
+            started_at=now,
+            completed_at=now
         )
         db.add(task4)
         tasks.append(task4)
 
         task5 = Task(
-            title="Fix Bug #1234 - Login Timeout",
+            title=f"Fix Bug #1234 - Login Timeout [{timestamp}]",
             description="Fix the login timeout issue reported in production",
             task_type="bugfix",
             priority=2,
             status=TaskStatus.FAILED,
-            assigned_agent_id=agent1.id,
-            error_message="Unable to reproduce the issue in test environment"
+            assigned_agent_id=agents[0].id,
+            error_message="Unable to reproduce the issue in test environment",
+            input_data={"bug_id": "1234", "created_at": timestamp}
         )
         db.add(task5)
         tasks.append(task5)
@@ -137,14 +149,17 @@ def create_sample_data():
         db.commit()
         print(f"   ✅ Created {len(tasks)} tasks\n")
 
-        # Create agent executions
+        # Create agent executions (only for completed tasks to avoid stuck executions)
         print("Creating agent execution records...")
         execution = AgentExecution(
-            agent_id=agent2.id,
-            task_id=task2.id,
-            status=ExecutionStatus.RUNNING,
-            input_data={"dataset_path": "/data/user_engagement.csv"},
-            started_at=datetime.now(),
+            agent_id=agents[0].id,
+            task_id=task4.id,  # Use the completed task
+            status=ExecutionStatus.COMPLETED,
+            input_data={"optimization_target": "database queries"},
+            output_data={"queries_optimized": 5, "performance_improvement": "45%"},
+            started_at=now,
+            completed_at=now,
+            execution_time_seconds=120.5,
             llm_provider="openai",
             llm_model="gpt-4-turbo-preview"
         )

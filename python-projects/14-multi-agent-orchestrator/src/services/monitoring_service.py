@@ -58,6 +58,9 @@ class MonitoringService:
         agents_idle = db.query(func.count(Agent.id)).filter(
             Agent.status == AgentStatus.IDLE
         ).scalar()
+        agents_offline = db.query(func.count(Agent.id)).filter(
+            Agent.status == AgentStatus.OFFLINE
+        ).scalar()
 
         # Execution metrics
         total_executions = db.query(func.count(AgentExecution.id)).scalar()
@@ -108,7 +111,7 @@ class MonitoringService:
                 "active": agents_active,
                 "busy": agents_busy,
                 "idle": agents_idle,
-                "offline": total_agents - agents_active - agents_busy - agents_idle
+                "offline": agents_offline
             },
             "executions": {
                 "running": executions_running,
@@ -168,17 +171,20 @@ class MonitoringService:
         ).group_by(Task.priority).all()
 
         # Average task duration (completed tasks only)
+        # Calculate from started_at to completed_at for accurate duration
         avg_duration_result = db.query(
             func.avg(
-                func.extract('epoch', Task.completed_at - Task.created_at)
+                func.extract('epoch', Task.completed_at - Task.started_at)
             ).label('avg_duration')
         ).filter(
             Task.status == TaskStatus.COMPLETED,
             Task.completed_at.isnot(None),
+            Task.started_at.isnot(None),
             Task.created_at >= start_time
         ).scalar()
 
-        avg_duration = avg_duration_result if avg_duration_result else 0
+        # Ensure non-negative duration
+        avg_duration = avg_duration_result if avg_duration_result and avg_duration_result > 0 else 0
 
         return {
             "time_range": time_range,
