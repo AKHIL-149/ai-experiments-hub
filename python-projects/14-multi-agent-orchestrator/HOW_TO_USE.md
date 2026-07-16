@@ -59,6 +59,7 @@ You'll see:
 - 🤖 Agent status (active, busy, idle)
 - 📈 Execution statistics
 - ✅ System health indicators
+- ➕ **NEW: Create Task button** - Create tasks directly from the dashboard!
 
 ### Option 3: Explore API Documentation
 
@@ -112,7 +113,30 @@ curl http://localhost:8001/api/monitoring/dashboard | python3 -m json.tool
 
 ## 🎯 Common Use Cases
 
-### 1. View All Tasks in Database
+### 1. Create a Task via Dashboard (Easiest!)
+
+**New in 14.9.8**: Create tasks directly from the web interface!
+
+```bash
+# Open dashboard
+open http://localhost:8001/dashboard
+```
+
+Then:
+1. Click the green **➕ Create Task** button
+2. Fill in the form:
+   - Task Title (required)
+   - Description (required)
+   - Task Type: Choose from 11 types (code_review, data_analysis, etc.)
+   - Priority: Use slider (1-10)
+   - Assign to Agent: Optional dropdown
+3. Click **Create Task**
+4. See success notification
+5. Dashboard auto-refreshes with new task
+
+**See [DASHBOARD_TASK_CREATION.md](DASHBOARD_TASK_CREATION.md) for full guide**
+
+### 2. View All Tasks in Database
 
 ```python
 # Start Python
@@ -131,7 +155,7 @@ for task in tasks:
 db.close()
 ```
 
-### 2. View All Agents
+### 3. View All Agents
 
 ```python
 from src.core.database import SessionLocal
@@ -146,7 +170,7 @@ for agent in agents:
 db.close()
 ```
 
-### 3. Create a New Task (Programmatically)
+### 4. Create a New Task (Programmatically)
 
 ```python
 from src.core.database import SessionLocal
@@ -171,7 +195,7 @@ print(f"✅ Created task with ID: {new_task.id}")
 db.close()
 ```
 
-### 4. Monitor System in Real-Time
+### 5. Monitor System in Real-Time
 
 ```bash
 # Watch dashboard metrics update every 2 seconds
