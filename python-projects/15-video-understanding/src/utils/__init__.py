@@ -29,6 +29,12 @@ from src.utils.batch_frame_processor import (
     ExecutorType,
     process_frames_parallel,
 )
+from src.utils.frame_quality_filter import (
+    FrameQualityFilter,
+    QualityMetrics,
+    filter_high_quality_frames,
+    remove_blurry_frames,
+)
 
 __all__ = [
     'VideoValidator',
@@ -52,4 +58,8 @@ __all__ = [
     'BatchResult',
     'ExecutorType',
     'process_frames_parallel',
+    'FrameQualityFilter',
+    'QualityMetrics',
+    'filter_high_quality_frames',
+    'remove_blurry_frames',
 ]
