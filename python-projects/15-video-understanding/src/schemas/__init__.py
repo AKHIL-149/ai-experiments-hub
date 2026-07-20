@@ -1,0 +1,176 @@
+"""
+Pydantic schemas for video understanding platform
+"""
+
+from src.schemas.video import (
+    VideoBase,
+    VideoCreate,
+    VideoUpdate,
+    VideoResponse,
+    VideoListResponse,
+    VideoStatusResponse,
+    YouTubeVideoCreate,
+    StreamingVideoCreate,
+    VideoStatistics,
+)
+
+from src.schemas.scene import (
+    SceneBase,
+    SceneCreate,
+    SceneUpdate,
+    SceneResponse,
+    SceneListResponse,
+    SceneDetailResponse,
+    SceneAnalysisRequest,
+    SceneSearchRequest,
+    SceneStatistics,
+)
+
+from src.schemas.frame import (
+    FrameBase,
+    FrameCreate,
+    FrameUpdate,
+    FrameResponse,
+    FrameListResponse,
+    FrameSearchRequest,
+    FrameWithEmbedding,
+    FrameAnalysisRequest,
+    OCRResult,
+    ObjectDetectionResult,
+)
+
+from src.schemas.transcript import (
+    TranscriptBase,
+    TranscriptCreate,
+    TranscriptUpdate,
+    TranscriptResponse,
+    TranscriptListResponse,
+    TranscriptWithSpeaker,
+    TranscriptSearchRequest,
+    TranscriptAggregation,
+    SpeakerStatistics,
+    TranscriptionRequest,
+    TranscriptionStatus,
+    FullVideoTranscript,
+)
+
+from src.schemas.summary import (
+    SummaryBase,
+    SummaryCreate,
+    SummaryUpdate,
+    SummaryResponse,
+    SummaryListResponse,
+    SummaryGenerationRequest,
+    SummaryWithVideo,
+    ChapterSummary,
+    StructuredSummary,
+)
+
+from src.schemas.highlight import (
+    HighlightBase,
+    HighlightCreate,
+    HighlightUpdate,
+    HighlightResponse,
+    HighlightListResponse,
+    HighlightGenerationRequest,
+    HighlightWithVideo,
+    HighlightReel,
+    HighlightImportanceBreakdown,
+    HighlightSearchRequest,
+)
+
+from src.schemas.embedding import (
+    EmbeddingBase,
+    EmbeddingCreate,
+    EmbeddingUpdate,
+    EmbeddingResponse,
+    EmbeddingListResponse,
+    EmbeddingGenerationRequest,
+    SimilaritySearchRequest,
+    SimilaritySearchResult,
+    BatchSimilaritySearchRequest,
+    EmbeddingStatistics,
+    MultiModalEmbedding,
+    EmbeddingExportRequest,
+)
+
+__all__ = [
+    # Video schemas
+    "VideoBase",
+    "VideoCreate",
+    "VideoUpdate",
+    "VideoResponse",
+    "VideoListResponse",
+    "VideoStatusResponse",
+    "YouTubeVideoCreate",
+    "StreamingVideoCreate",
+    "VideoStatistics",
+    # Scene schemas
+    "SceneBase",
+    "SceneCreate",
+    "SceneUpdate",
+    "SceneResponse",
+    "SceneListResponse",
+    "SceneDetailResponse",
+    "SceneAnalysisRequest",
+    "SceneSearchRequest",
+    "SceneStatistics",
+    # Frame schemas
+    "FrameBase",
+    "FrameCreate",
+    "FrameUpdate",
+    "FrameResponse",
+    "FrameListResponse",
+    "FrameSearchRequest",
+    "FrameWithEmbedding",
+    "FrameAnalysisRequest",
+    "OCRResult",
+    "ObjectDetectionResult",
+    # Transcript schemas
+    "TranscriptBase",
+    "TranscriptCreate",
+    "TranscriptUpdate",
+    "TranscriptResponse",
+    "TranscriptListResponse",
+    "TranscriptWithSpeaker",
+    "TranscriptSearchRequest",
+    "TranscriptAggregation",
+    "SpeakerStatistics",
+    "TranscriptionRequest",
+    "TranscriptionStatus",
+    "FullVideoTranscript",
+    # Summary schemas
+    "SummaryBase",
+    "SummaryCreate",
+    "SummaryUpdate",
+    "SummaryResponse",
+    "SummaryListResponse",
+    "SummaryGenerationRequest",
+    "SummaryWithVideo",
+    "ChapterSummary",
+    "StructuredSummary",
+    # Highlight schemas
+    "HighlightBase",
+    "HighlightCreate",
+    "HighlightUpdate",
+    "HighlightResponse",
+    "HighlightListResponse",
+    "HighlightGenerationRequest",
+    "HighlightWithVideo",
+    "HighlightReel",
+    "HighlightImportanceBreakdown",
+    "HighlightSearchRequest",
+    # Embedding schemas
+    "EmbeddingBase",
+    "EmbeddingCreate",
+    "EmbeddingUpdate",
+    "EmbeddingResponse",
+    "EmbeddingListResponse",
+    "EmbeddingGenerationRequest",
+    "SimilaritySearchRequest",
+    "SimilaritySearchResult",
+    "BatchSimilaritySearchRequest",
+    "EmbeddingStatistics",
+    "MultiModalEmbedding",
+    "EmbeddingExportRequest",
+]

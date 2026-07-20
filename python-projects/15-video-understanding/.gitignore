@@ -1,0 +1,158 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+video_understanding.db
+
+# Storage Directories
+storage/
+videos/
+frames/
+clips/
+temp/
+cache/
+
+# ChromaDB
+chroma_data/
+*.chroma
+
+# Logs
+logs/
+*.log
+
+# Test Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Model Weights & Cache (exclude ML model files, not source code)
+/models/
+*.pth
+*.pt
+*.onnx
+*.pkl
+*.bin
+clip_cache/
+transformers_cache/
+
+# Temporary Files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Video Files (large files)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.flv
+*.wmv
+*.m4v
+
+# Audio Files
+*.mp3
+*.wav
+*.flac
+*.aac
+
+# Image Files (frame outputs)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+
+# Documentation Build
+docs/_build/
+docs/.doctrees/
+
+# Alembic
+# Keep alembic/ but ignore generated files
+alembic/versions/*.pyc
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Profiling
+*.prof
+*.lprof
+
+# Docker
+docker-compose.override.yml
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+*.csr
+
+# Benchmark Results
+benchmark_results/
+performance_data/

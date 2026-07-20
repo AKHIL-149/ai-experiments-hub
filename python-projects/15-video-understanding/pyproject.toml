@@ -1,0 +1,105 @@
+[project]
+name = "video-understanding"
+version = "15.1.1"
+description = "Multi-modal video analysis platform with scene detection, transcription, and semantic search"
+authors = [{name = "Akhil", email = "akhil@example.com"}]
+requires-python = ">=3.9"
+readme = "README.md"
+license = {text = "MIT"}
+
+dependencies = [
+    # Web Framework
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+    "websockets>=12.0",
+
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "psycopg2-binary>=2.9.9",
+
+    # Video/Audio Processing
+    "ffmpeg-python>=0.2.0",
+    "opencv-python>=4.8.0",
+    "PySceneDetect[opencv]>=0.6.2",
+    "pydub>=0.25.1",
+
+    # AI/ML Models
+    "openai-whisper>=20231117",
+    "transformers>=4.35.0",
+    "sentence-transformers>=2.2.2",
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "Pillow>=10.1.0",
+
+    # Vector Storage
+    "chromadb>=0.4.15",
+    "faiss-cpu>=1.7.4",
+
+    # Video Download
+    "yt-dlp>=2023.11.16",
+
+    # OCR
+    "pytesseract>=0.3.10",
+    "easyocr>=1.7.0",
+
+    # Speaker Diarization
+    "pyannote.audio>=3.1.0",
+
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "imagehash>=4.3.1",
+    "numpy>=1.24.0",
+    "pandas>=2.1.0",
+    "tqdm>=4.66.1",
+    "aiofiles>=23.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.11.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.0",
+    "ipython>=8.17.0",
+    "jupyter>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --cov=src --cov-report=term-missing"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
