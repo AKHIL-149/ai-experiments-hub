@@ -22,6 +22,13 @@ from src.utils.frame_preprocessor import (
     preprocess_frame,
     create_preprocessor_for_model,
 )
+from src.utils.batch_frame_processor import (
+    BatchFrameProcessor,
+    StreamingBatchProcessor,
+    BatchResult,
+    ExecutorType,
+    process_frames_parallel,
+)
 
 __all__ = [
     'VideoValidator',
@@ -40,4 +47,9 @@ __all__ = [
     'NormalizationMode',
     'preprocess_frame',
     'create_preprocessor_for_model',
+    'BatchFrameProcessor',
+    'StreamingBatchProcessor',
+    'BatchResult',
+    'ExecutorType',
+    'process_frames_parallel',
 ]
