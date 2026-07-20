@@ -15,6 +15,13 @@ from src.utils.frame_hasher import (
     compute_frame_hash,
     deduplicate_frame_list,
 )
+from src.utils.frame_preprocessor import (
+    FramePreprocessor,
+    ResizeMode,
+    NormalizationMode,
+    preprocess_frame,
+    create_preprocessor_for_model,
+)
 
 __all__ = [
     'VideoValidator',
@@ -28,4 +35,9 @@ __all__ = [
     'HashAlgorithm',
     'compute_frame_hash',
     'deduplicate_frame_list',
+    'FramePreprocessor',
+    'ResizeMode',
+    'NormalizationMode',
+    'preprocess_frame',
+    'create_preprocessor_for_model',
 ]
