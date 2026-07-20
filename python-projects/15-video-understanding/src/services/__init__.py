@@ -14,6 +14,12 @@ from src.services.keyframe_detector import (
     DetectionMethod,
     detect_keyframes,
 )
+from src.services.frame_analyzer import (
+    FrameAnalyzer,
+    FrameAnalysisPipeline,
+    AnalysisResult,
+    analyze_video_frames,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -24,4 +30,8 @@ __all__ = [
     'Keyframe',
     'DetectionMethod',
     'detect_keyframes',
+    'FrameAnalyzer',
+    'FrameAnalysisPipeline',
+    'AnalysisResult',
+    'analyze_video_frames',
 ]
