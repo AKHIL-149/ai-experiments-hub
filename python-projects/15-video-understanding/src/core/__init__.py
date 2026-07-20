@@ -8,10 +8,16 @@ from src.core.video_processor import (
     ProcessingProgress,
     create_video_processor,
 )
+from src.core.frame_storage import (
+    FrameStorageManager,
+    frame_storage,
+)
 
 __all__ = [
     'VideoProcessor',
     'VideoProcessingError',
     'ProcessingProgress',
     'create_video_processor',
+    'FrameStorageManager',
+    'frame_storage',
 ]
