@@ -38,6 +38,13 @@ from src.services.scene_detection.scene_classifier import (
     SceneClassifier,
     classify_scenes,
 )
+from src.services.scene_detection.pipeline import (
+    SceneDetectionPipeline,
+    PipelineConfig,
+    detect_scenes_ensemble,
+    detect_scenes_fast,
+    detect_scenes_accurate,
+)
 
 __all__ = [
     'SceneDetector',
@@ -60,4 +67,9 @@ __all__ = [
     'refine_scene_boundaries',
     'SceneClassifier',
     'classify_scenes',
+    'SceneDetectionPipeline',
+    'PipelineConfig',
+    'detect_scenes_ensemble',
+    'detect_scenes_fast',
+    'detect_scenes_accurate',
 ]
