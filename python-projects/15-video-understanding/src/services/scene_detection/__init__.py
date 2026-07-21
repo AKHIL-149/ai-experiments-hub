@@ -30,6 +30,10 @@ from src.services.scene_detection.audio_detector import (
     AudioBasedSceneDetector,
     detect_scenes_audio,
 )
+from src.services.scene_detection.boundary_refiner import (
+    SceneBoundaryRefiner,
+    refine_scene_boundaries,
+)
 
 __all__ = [
     'SceneDetector',
@@ -48,4 +52,6 @@ __all__ = [
     'detect_scenes_color_histogram',
     'AudioBasedSceneDetector',
     'detect_scenes_audio',
+    'SceneBoundaryRefiner',
+    'refine_scene_boundaries',
 ]
