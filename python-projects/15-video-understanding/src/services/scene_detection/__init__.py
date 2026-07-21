@@ -22,6 +22,10 @@ from src.services.scene_detection.optical_flow_detector import (
     OpticalFlowDetector,
     detect_scenes_optical_flow,
 )
+from src.services.scene_detection.color_histogram import (
+    ColorHistogramAnalyzer,
+    detect_scenes_color_histogram,
+)
 
 __all__ = [
     'SceneDetector',
@@ -36,4 +40,6 @@ __all__ = [
     'detect_scenes_threshold',
     'OpticalFlowDetector',
     'detect_scenes_optical_flow',
+    'ColorHistogramAnalyzer',
+    'detect_scenes_color_histogram',
 ]
