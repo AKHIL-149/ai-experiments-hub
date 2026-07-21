@@ -10,6 +10,10 @@ from src.services.scene_detection.base import (
     TransitionType,
     SceneDetectorConfig,
 )
+from src.services.scene_detection.content_detector import (
+    ContentBasedSceneDetector,
+    detect_scenes_content,
+)
 
 __all__ = [
     'SceneDetector',
@@ -18,4 +22,6 @@ __all__ = [
     'SceneType',
     'TransitionType',
     'SceneDetectorConfig',
+    'ContentBasedSceneDetector',
+    'detect_scenes_content',
 ]
