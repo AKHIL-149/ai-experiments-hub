@@ -26,6 +26,10 @@ from src.services.scene_detection.color_histogram import (
     ColorHistogramAnalyzer,
     detect_scenes_color_histogram,
 )
+from src.services.scene_detection.audio_detector import (
+    AudioBasedSceneDetector,
+    detect_scenes_audio,
+)
 
 __all__ = [
     'SceneDetector',
@@ -42,4 +46,6 @@ __all__ = [
     'detect_scenes_optical_flow',
     'ColorHistogramAnalyzer',
     'detect_scenes_color_histogram',
+    'AudioBasedSceneDetector',
+    'detect_scenes_audio',
 ]
