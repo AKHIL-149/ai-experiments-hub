@@ -46,6 +46,12 @@ from src.services.audio_features import (
     AudioFeatures,
     extract_audio_features,
 )
+from src.services.language_detector import (
+    LanguageDetector,
+    LanguageDetection,
+    detect_language_from_audio,
+    detect_language_from_text,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -76,4 +82,8 @@ __all__ = [
     'AudioFeatureExtractor',
     'AudioFeatures',
     'extract_audio_features',
+    'LanguageDetector',
+    'LanguageDetection',
+    'detect_language_from_audio',
+    'detect_language_from_text',
 ]
