@@ -41,6 +41,11 @@ from src.services.transcript_segmenter import (
     TranscriptSegment as SegmenterSegment,
     segment_transcript,
 )
+from src.services.audio_features import (
+    AudioFeatureExtractor,
+    AudioFeatures,
+    extract_audio_features,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -68,4 +73,7 @@ __all__ = [
     'TranscriptSegmenter',
     'SegmenterSegment',
     'segment_transcript',
+    'AudioFeatureExtractor',
+    'AudioFeatures',
+    'extract_audio_features',
 ]
