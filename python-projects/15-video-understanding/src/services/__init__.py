@@ -24,6 +24,12 @@ from src.services.audio_processor import (
     AudioProcessor,
     extract_audio_from_video,
 )
+from src.services.transcription_service import (
+    TranscriptionService,
+    TranscriptionSegment,
+    TranscriptionResult,
+    transcribe_audio,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -40,4 +46,8 @@ __all__ = [
     'analyze_video_frames',
     'AudioProcessor',
     'extract_audio_from_video',
+    'TranscriptionService',
+    'TranscriptionSegment',
+    'TranscriptionResult',
+    'transcribe_audio',
 ]
