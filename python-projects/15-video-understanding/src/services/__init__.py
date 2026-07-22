@@ -30,6 +30,12 @@ from src.services.transcription_service import (
     TranscriptionResult,
     transcribe_audio,
 )
+from src.services.speaker_diarization import (
+    SpeakerDiarization,
+    SpeakerSegment,
+    DiarizationResult,
+    diarize_audio,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -50,4 +56,8 @@ __all__ = [
     'TranscriptionSegment',
     'TranscriptionResult',
     'transcribe_audio',
+    'SpeakerDiarization',
+    'SpeakerSegment',
+    'DiarizationResult',
+    'diarize_audio',
 ]
