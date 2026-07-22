@@ -20,6 +20,10 @@ from src.services.frame_analyzer import (
     AnalysisResult,
     analyze_video_frames,
 )
+from src.services.audio_processor import (
+    AudioProcessor,
+    extract_audio_from_video,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -34,4 +38,6 @@ __all__ = [
     'FrameAnalysisPipeline',
     'AnalysisResult',
     'analyze_video_frames',
+    'AudioProcessor',
+    'extract_audio_from_video',
 ]
