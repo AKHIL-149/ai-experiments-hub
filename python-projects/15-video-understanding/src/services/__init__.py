@@ -52,6 +52,12 @@ from src.services.language_detector import (
     detect_language_from_audio,
     detect_language_from_text,
 )
+from src.services.audio_pipeline import (
+    AudioProcessingPipeline,
+    AudioPipelineConfig,
+    AudioPipelineResult,
+    process_video_audio,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -86,4 +92,8 @@ __all__ = [
     'LanguageDetection',
     'detect_language_from_audio',
     'detect_language_from_text',
+    'AudioProcessingPipeline',
+    'AudioPipelineConfig',
+    'AudioPipelineResult',
+    'process_video_audio',
 ]
