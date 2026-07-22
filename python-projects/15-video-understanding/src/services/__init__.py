@@ -64,6 +64,13 @@ from src.services.image_captioning import (
     caption_image,
     caption_frames,
 )
+from src.services.object_detection import (
+    ObjectDetectionService,
+    DetectedObject,
+    ObjectDetectionResult,
+    detect_objects_in_image,
+    detect_objects_in_frames,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -106,4 +113,9 @@ __all__ = [
     'ImageCaption',
     'caption_image',
     'caption_frames',
+    'ObjectDetectionService',
+    'DetectedObject',
+    'ObjectDetectionResult',
+    'detect_objects_in_image',
+    'detect_objects_in_frames',
 ]
