@@ -58,6 +58,12 @@ from src.services.audio_pipeline import (
     AudioPipelineResult,
     process_video_audio,
 )
+from src.services.image_captioning import (
+    ImageCaptioningService,
+    ImageCaption,
+    caption_image,
+    caption_frames,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -96,4 +102,8 @@ __all__ = [
     'AudioPipelineConfig',
     'AudioPipelineResult',
     'process_video_audio',
+    'ImageCaptioningService',
+    'ImageCaption',
+    'caption_image',
+    'caption_frames',
 ]
