@@ -98,6 +98,12 @@ from src.services.visual_features import (
     extract_visual_features,
     extract_features_batch,
 )
+from src.services.visual_pipeline import (
+    VisualAnalysisPipeline,
+    VisualAnalysisConfig,
+    FrameAnalysis,
+    VideoAnalysisResult,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -164,4 +170,8 @@ __all__ = [
     'SimilarityResult',
     'extract_visual_features',
     'extract_features_batch',
+    'VisualAnalysisPipeline',
+    'VisualAnalysisConfig',
+    'FrameAnalysis',
+    'VideoAnalysisResult',
 ]
