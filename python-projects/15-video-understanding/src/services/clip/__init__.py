@@ -4,5 +4,18 @@ For semantic text-to-image search and multi-modal embeddings
 """
 
 from src.services.clip.clip_model import CLIPModel, CLIPConfig
+from src.services.clip.frame_embedder import (
+    CLIPFrameEmbedder,
+    FrameEmbedding,
+    VideoEmbeddings,
+    embed_video_frames,
+)
 
-__all__ = ['CLIPModel', 'CLIPConfig']
+__all__ = [
+    'CLIPModel',
+    'CLIPConfig',
+    'CLIPFrameEmbedder',
+    'FrameEmbedding',
+    'VideoEmbeddings',
+    'embed_video_frames',
+]

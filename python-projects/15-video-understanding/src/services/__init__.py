@@ -107,6 +107,10 @@ from src.services.visual_pipeline import (
 from src.services.clip import (
     CLIPModel,
     CLIPConfig,
+    CLIPFrameEmbedder,
+    FrameEmbedding,
+    VideoEmbeddings,
+    embed_video_frames,
 )
 
 __all__ = [
@@ -180,4 +184,8 @@ __all__ = [
     'VideoAnalysisResult',
     'CLIPModel',
     'CLIPConfig',
+    'CLIPFrameEmbedder',
+    'FrameEmbedding',
+    'VideoEmbeddings',
+    'embed_video_frames',
 ]
