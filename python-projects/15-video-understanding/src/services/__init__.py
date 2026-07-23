@@ -104,6 +104,10 @@ from src.services.visual_pipeline import (
     FrameAnalysis,
     VideoAnalysisResult,
 )
+from src.services.clip import (
+    CLIPModel,
+    CLIPConfig,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -174,4 +178,6 @@ __all__ = [
     'VisualAnalysisConfig',
     'FrameAnalysis',
     'VideoAnalysisResult',
+    'CLIPModel',
+    'CLIPConfig',
 ]
