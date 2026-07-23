@@ -111,6 +111,10 @@ from src.services.clip import (
     FrameEmbedding,
     VideoEmbeddings,
     embed_video_frames,
+    CLIPTextEmbedder,
+    TextEmbedding,
+    QueryResult,
+    search_video_frames,
 )
 
 __all__ = [
@@ -188,4 +192,8 @@ __all__ = [
     'FrameEmbedding',
     'VideoEmbeddings',
     'embed_video_frames',
+    'CLIPTextEmbedder',
+    'TextEmbedding',
+    'QueryResult',
+    'search_video_frames',
 ]
