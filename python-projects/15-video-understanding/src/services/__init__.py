@@ -71,6 +71,13 @@ from src.services.object_detection import (
     detect_objects_in_image,
     detect_objects_in_frames,
 )
+from src.services.face_detection import (
+    FaceDetectionService,
+    DetectedFace,
+    FaceDetectionResult,
+    detect_faces_in_image,
+    detect_faces_in_frames,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -118,4 +125,9 @@ __all__ = [
     'ObjectDetectionResult',
     'detect_objects_in_image',
     'detect_objects_in_frames',
+    'FaceDetectionService',
+    'DetectedFace',
+    'FaceDetectionResult',
+    'detect_faces_in_image',
+    'detect_faces_in_frames',
 ]
