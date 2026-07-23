@@ -85,6 +85,12 @@ from src.services.ocr_service import (
     extract_text_from_image,
     extract_text_from_frames,
 )
+from src.services.action_recognition import (
+    ActionRecognitionService,
+    RecognizedAction,
+    ActionRecognitionResult,
+    recognize_actions,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -142,4 +148,8 @@ __all__ = [
     'OCRResult',
     'extract_text_from_image',
     'extract_text_from_frames',
+    'ActionRecognitionService',
+    'RecognizedAction',
+    'ActionRecognitionResult',
+    'recognize_actions',
 ]
