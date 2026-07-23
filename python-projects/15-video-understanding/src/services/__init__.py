@@ -78,6 +78,13 @@ from src.services.face_detection import (
     detect_faces_in_image,
     detect_faces_in_frames,
 )
+from src.services.ocr_service import (
+    OCRService,
+    TextRegion,
+    OCRResult,
+    extract_text_from_image,
+    extract_text_from_frames,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -130,4 +137,9 @@ __all__ = [
     'FaceDetectionResult',
     'detect_faces_in_image',
     'detect_faces_in_frames',
+    'OCRService',
+    'TextRegion',
+    'OCRResult',
+    'extract_text_from_image',
+    'extract_text_from_frames',
 ]
