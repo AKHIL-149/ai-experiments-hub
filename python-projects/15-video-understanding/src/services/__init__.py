@@ -91,6 +91,13 @@ from src.services.action_recognition import (
     ActionRecognitionResult,
     recognize_actions,
 )
+from src.services.visual_features import (
+    VisualFeatureExtractor,
+    VisualFeatures,
+    SimilarityResult,
+    extract_visual_features,
+    extract_features_batch,
+)
 
 __all__ = [
     'FrameExtractor',
@@ -152,4 +159,9 @@ __all__ = [
     'RecognizedAction',
     'ActionRecognitionResult',
     'recognize_actions',
+    'VisualFeatureExtractor',
+    'VisualFeatures',
+    'SimilarityResult',
+    'extract_visual_features',
+    'extract_features_batch',
 ]
