@@ -12,6 +12,11 @@ from src.services.vector.transcript_store import (
     TranscriptSearchResult,
     add_transcript_to_vector_store,
 )
+from src.services.vector.scene_store import (
+    SceneVectorStore,
+    SceneSearchResult,
+    add_scenes_to_vector_store,
+)
 
 __all__ = [
     'FrameVectorStore',
@@ -20,4 +25,7 @@ __all__ = [
     'TranscriptVectorStore',
     'TranscriptSearchResult',
     'add_transcript_to_vector_store',
+    'SceneVectorStore',
+    'SceneSearchResult',
+    'add_scenes_to_vector_store',
 ]
