@@ -28,6 +28,12 @@ from src.services.fusion.timeline_builder import (
     VideoTimeline,
     build_video_timeline,
 )
+from src.services.fusion.scene_enricher import (
+    SceneEnricher,
+    EnrichedScene,
+    VideoEnrichmentResult,
+    enrich_scene,
+)
 
 __all__ = [
     'TemporalAligner',
@@ -47,4 +53,8 @@ __all__ = [
     'TimelineSegment',
     'VideoTimeline',
     'build_video_timeline',
+    'SceneEnricher',
+    'EnrichedScene',
+    'VideoEnrichmentResult',
+    'enrich_scene',
 ]
