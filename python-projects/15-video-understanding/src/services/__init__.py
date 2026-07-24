@@ -119,6 +119,10 @@ from src.services.clip import (
     SimilarityMatrix,
     SimilarityPair,
     compute_clip_similarity,
+    EmbeddingIndexer,
+    IndexConfig,
+    SearchResult,
+    create_frame_index,
 )
 
 __all__ = [
@@ -204,4 +208,8 @@ __all__ = [
     'SimilarityMatrix',
     'SimilarityPair',
     'compute_clip_similarity',
+    'EmbeddingIndexer',
+    'IndexConfig',
+    'SearchResult',
+    'create_frame_index',
 ]

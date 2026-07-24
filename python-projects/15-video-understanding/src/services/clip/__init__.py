@@ -22,6 +22,12 @@ from src.services.clip.similarity import (
     SimilarityPair,
     compute_clip_similarity,
 )
+from src.services.clip.indexer import (
+    EmbeddingIndexer,
+    IndexConfig,
+    SearchResult,
+    create_frame_index,
+)
 
 __all__ = [
     'CLIPModel',
@@ -38,4 +44,8 @@ __all__ = [
     'SimilarityMatrix',
     'SimilarityPair',
     'compute_clip_similarity',
+    'EmbeddingIndexer',
+    'IndexConfig',
+    'SearchResult',
+    'create_frame_index',
 ]
