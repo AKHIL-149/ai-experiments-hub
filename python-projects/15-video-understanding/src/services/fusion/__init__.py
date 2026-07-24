@@ -9,10 +9,20 @@ from src.services.fusion.temporal_aligner import (
     AlignmentResult,
     align_transcript_with_scenes,
 )
+from src.services.fusion.visual_audio_fuser import (
+    VisualAudioFuser,
+    FusionWeights,
+    FusedScene,
+    fuse_visual_audio_context,
+)
 
 __all__ = [
     'TemporalAligner',
     'AlignedSegment',
     'AlignmentResult',
     'align_transcript_with_scenes',
+    'VisualAudioFuser',
+    'FusionWeights',
+    'FusedScene',
+    'fuse_visual_audio_context',
 ]
