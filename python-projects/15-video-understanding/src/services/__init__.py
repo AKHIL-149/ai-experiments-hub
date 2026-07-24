@@ -115,6 +115,10 @@ from src.services.clip import (
     TextEmbedding,
     QueryResult,
     search_video_frames,
+    SemanticSimilarityCalculator,
+    SimilarityMatrix,
+    SimilarityPair,
+    compute_clip_similarity,
 )
 
 __all__ = [
@@ -196,4 +200,8 @@ __all__ = [
     'TextEmbedding',
     'QueryResult',
     'search_video_frames',
+    'SemanticSimilarityCalculator',
+    'SimilarityMatrix',
+    'SimilarityPair',
+    'compute_clip_similarity',
 ]

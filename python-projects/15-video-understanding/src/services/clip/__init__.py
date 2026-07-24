@@ -16,6 +16,12 @@ from src.services.clip.text_embedder import (
     QueryResult,
     search_video_frames,
 )
+from src.services.clip.similarity import (
+    SemanticSimilarityCalculator,
+    SimilarityMatrix,
+    SimilarityPair,
+    compute_clip_similarity,
+)
 
 __all__ = [
     'CLIPModel',
@@ -28,4 +34,8 @@ __all__ = [
     'TextEmbedding',
     'QueryResult',
     'search_video_frames',
+    'SemanticSimilarityCalculator',
+    'SimilarityMatrix',
+    'SimilarityPair',
+    'compute_clip_similarity',
 ]
