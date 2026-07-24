@@ -21,6 +21,13 @@ from src.services.fusion.context_aggregator import (
     VideoContext,
     aggregate_scene_context,
 )
+from src.services.fusion.timeline_builder import (
+    TimelineBuilder,
+    TimelineEvent,
+    TimelineSegment,
+    VideoTimeline,
+    build_video_timeline,
+)
 
 __all__ = [
     'TemporalAligner',
@@ -35,4 +42,9 @@ __all__ = [
     'SceneContext',
     'VideoContext',
     'aggregate_scene_context',
+    'TimelineBuilder',
+    'TimelineEvent',
+    'TimelineSegment',
+    'VideoTimeline',
+    'build_video_timeline',
 ]
