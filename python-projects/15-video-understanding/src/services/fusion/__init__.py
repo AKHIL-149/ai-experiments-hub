@@ -15,6 +15,12 @@ from src.services.fusion.visual_audio_fuser import (
     FusedScene,
     fuse_visual_audio_context,
 )
+from src.services.fusion.context_aggregator import (
+    ContextAggregator,
+    SceneContext,
+    VideoContext,
+    aggregate_scene_context,
+)
 
 __all__ = [
     'TemporalAligner',
@@ -25,4 +31,8 @@ __all__ = [
     'FusionWeights',
     'FusedScene',
     'fuse_visual_audio_context',
+    'ContextAggregator',
+    'SceneContext',
+    'VideoContext',
+    'aggregate_scene_context',
 ]
