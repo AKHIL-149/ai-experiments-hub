@@ -17,6 +17,11 @@ from src.services.vector.scene_store import (
     SceneSearchResult,
     add_scenes_to_vector_store,
 )
+from src.services.vector.retriever import (
+    MultiModalVectorRetriever,
+    MultiModalResult,
+    RankedResult,
+)
 
 __all__ = [
     'FrameVectorStore',
@@ -28,4 +33,7 @@ __all__ = [
     'SceneVectorStore',
     'SceneSearchResult',
     'add_scenes_to_vector_store',
+    'MultiModalVectorRetriever',
+    'MultiModalResult',
+    'RankedResult',
 ]
