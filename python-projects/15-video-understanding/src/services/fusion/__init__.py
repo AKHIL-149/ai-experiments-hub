@@ -42,6 +42,15 @@ from src.services.fusion.multimodal_embedder import (
     FusionStrategy,
     fuse_multimodal_embeddings,
 )
+from src.services.fusion.contextual_search import (
+    ContextualSearchEngine,
+    SearchQuery,
+    SearchResult,
+    SearchResults,
+    SearchMode,
+    ReRankingMethod,
+    search_contextual,
+)
 
 __all__ = [
     'TemporalAligner',
@@ -71,4 +80,11 @@ __all__ = [
     'EmbeddingFusionConfig',
     'FusionStrategy',
     'fuse_multimodal_embeddings',
+    'ContextualSearchEngine',
+    'SearchQuery',
+    'SearchResult',
+    'SearchResults',
+    'SearchMode',
+    'ReRankingMethod',
+    'search_contextual',
 ]
