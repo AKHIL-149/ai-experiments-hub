@@ -9,10 +9,20 @@ from src.services.summarization.video_summarizer import (
     SummaryLength,
     summarize_video,
 )
+from src.services.summarization.scene_summarizer import (
+    SceneSummarizer,
+    SceneSummary,
+    KeyMoment,
+    summarize_scene,
+)
 
 __all__ = [
     'VideoSummarizer',
     'VideoSummary',
     'SummaryLength',
     'summarize_video',
+    'SceneSummarizer',
+    'SceneSummary',
+    'KeyMoment',
+    'summarize_scene',
 ]
