@@ -21,6 +21,13 @@ from src.services.summarization.chapter_generator import (
     ChapterCollection,
     generate_chapters,
 )
+from src.services.summarization.templates import (
+    SummaryTemplateManager,
+    SummaryTemplate,
+    TemplateFormat,
+    format_summary,
+    get_template_manager,
+)
 
 __all__ = [
     'VideoSummarizer',
@@ -35,4 +42,9 @@ __all__ = [
     'Chapter',
     'ChapterCollection',
     'generate_chapters',
+    'SummaryTemplateManager',
+    'SummaryTemplate',
+    'TemplateFormat',
+    'format_summary',
+    'get_template_manager',
 ]
