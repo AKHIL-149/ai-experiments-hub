@@ -15,6 +15,12 @@ from src.services.summarization.scene_summarizer import (
     KeyMoment,
     summarize_scene,
 )
+from src.services.summarization.chapter_generator import (
+    ChapterGenerator,
+    Chapter,
+    ChapterCollection,
+    generate_chapters,
+)
 
 __all__ = [
     'VideoSummarizer',
@@ -25,4 +31,8 @@ __all__ = [
     'SceneSummary',
     'KeyMoment',
     'summarize_scene',
+    'ChapterGenerator',
+    'Chapter',
+    'ChapterCollection',
+    'generate_chapters',
 ]
