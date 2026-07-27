@@ -10,6 +10,13 @@ from src.services.highlights.importance_scorer import (
     SceneImportanceScore,
     score_scene_importance,
 )
+from src.services.highlights.highlight_detector import (
+    HighlightDetector,
+    Highlight,
+    HighlightCollection,
+    HighlightType,
+    detect_highlights,
+)
 
 __all__ = [
     'ImportanceScorer',
@@ -17,4 +24,9 @@ __all__ = [
     'ScoringWeights',
     'SceneImportanceScore',
     'score_scene_importance',
+    'HighlightDetector',
+    'Highlight',
+    'HighlightCollection',
+    'HighlightType',
+    'detect_highlights',
 ]
