@@ -34,6 +34,14 @@ from src.services.fusion.scene_enricher import (
     VideoEnrichmentResult,
     enrich_scene,
 )
+from src.services.fusion.multimodal_embedder import (
+    MultiModalEmbedder,
+    MultiModalEmbedding,
+    ModalityEmbedding,
+    EmbeddingFusionConfig,
+    FusionStrategy,
+    fuse_multimodal_embeddings,
+)
 
 __all__ = [
     'TemporalAligner',
@@ -57,4 +65,10 @@ __all__ = [
     'EnrichedScene',
     'VideoEnrichmentResult',
     'enrich_scene',
+    'MultiModalEmbedder',
+    'MultiModalEmbedding',
+    'ModalityEmbedding',
+    'EmbeddingFusionConfig',
+    'FusionStrategy',
+    'fuse_multimodal_embeddings',
 ]
