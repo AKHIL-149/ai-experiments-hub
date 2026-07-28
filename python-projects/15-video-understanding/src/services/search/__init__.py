@@ -25,6 +25,13 @@ from src.services.search.transcript_search import (
     TranscriptSearchResults,
     search_transcripts,
 )
+from src.services.search.query_processor import (
+    VideoQueryProcessor,
+    QueryConfig,
+    QuerySource,
+    QueryAnswer,
+    answer_video_query,
+)
 
 __all__ = [
     'SemanticVideoSearch',
@@ -43,4 +50,9 @@ __all__ = [
     'TranscriptMatch',
     'TranscriptSearchResults',
     'search_transcripts',
+    'VideoQueryProcessor',
+    'QueryConfig',
+    'QuerySource',
+    'QueryAnswer',
+    'answer_video_query',
 ]
