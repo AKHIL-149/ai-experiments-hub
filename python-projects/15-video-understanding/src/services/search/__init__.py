@@ -18,6 +18,13 @@ from src.services.search.frame_search import (
     FrameSearchResults,
     search_frames,
 )
+from src.services.search.transcript_search import (
+    TranscriptSearchEngine,
+    TranscriptSearchConfig,
+    TranscriptMatch,
+    TranscriptSearchResults,
+    search_transcripts,
+)
 
 __all__ = [
     'SemanticVideoSearch',
@@ -31,4 +38,9 @@ __all__ = [
     'FrameMatch',
     'FrameSearchResults',
     'search_frames',
+    'TranscriptSearchEngine',
+    'TranscriptSearchConfig',
+    'TranscriptMatch',
+    'TranscriptSearchResults',
+    'search_transcripts',
 ]
