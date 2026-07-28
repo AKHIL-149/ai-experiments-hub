@@ -11,6 +11,13 @@ from src.services.search.semantic_search import (
     SearchResults,
     search_videos,
 )
+from src.services.search.frame_search import (
+    FrameSearchEngine,
+    FrameSearchConfig,
+    FrameMatch,
+    FrameSearchResults,
+    search_frames,
+)
 
 __all__ = [
     'SemanticVideoSearch',
@@ -19,4 +26,9 @@ __all__ = [
     'SearchResult',
     'SearchResults',
     'search_videos',
+    'FrameSearchEngine',
+    'FrameSearchConfig',
+    'FrameMatch',
+    'FrameSearchResults',
+    'search_frames',
 ]

@@ -3,4 +3,4 @@ Video Understanding & Summarization Platform
 Main package initialization
 """
 
-__version__ = "15.12.1"
+__version__ = "15.12.2"
