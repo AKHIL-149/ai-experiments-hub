@@ -32,6 +32,11 @@ from src.services.search.query_processor import (
     QueryAnswer,
     answer_video_query,
 )
+from src.services.search.result_ranker import (
+    SearchResultRanker,
+    RankingConfig,
+    rank_search_results,
+)
 
 __all__ = [
     'SemanticVideoSearch',
@@ -55,4 +60,7 @@ __all__ = [
     'QuerySource',
     'QueryAnswer',
     'answer_video_query',
+    'SearchResultRanker',
+    'RankingConfig',
+    'rank_search_results',
 ]
