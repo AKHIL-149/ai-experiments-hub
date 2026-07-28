@@ -28,6 +28,13 @@ from src.services.highlights.ranker import (
     RankingConfig,
     rank_highlights,
 )
+from src.services.highlights.exporter import (
+    HighlightExporter,
+    ExportConfig,
+    TransitionConfig,
+    HighlightReel,
+    export_highlight_reel,
+)
 
 __all__ = [
     'ImportanceScorer',
@@ -47,4 +54,9 @@ __all__ = [
     'HighlightRanker',
     'RankingConfig',
     'rank_highlights',
+    'HighlightExporter',
+    'ExportConfig',
+    'TransitionConfig',
+    'HighlightReel',
+    'export_highlight_reel',
 ]
