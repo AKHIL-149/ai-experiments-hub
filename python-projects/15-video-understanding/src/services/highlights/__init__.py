@@ -23,6 +23,11 @@ from src.services.highlights.clip_creator import (
     ClipMetadata,
     create_clip,
 )
+from src.services.highlights.ranker import (
+    HighlightRanker,
+    RankingConfig,
+    rank_highlights,
+)
 
 __all__ = [
     'ImportanceScorer',
@@ -39,4 +44,7 @@ __all__ = [
     'ClipConfig',
     'ClipMetadata',
     'create_clip',
+    'HighlightRanker',
+    'RankingConfig',
+    'rank_highlights',
 ]
