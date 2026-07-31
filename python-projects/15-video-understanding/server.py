@@ -66,8 +66,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Create database tables (if not using migrations)
     # Note: In production, use Alembic migrations instead
     if settings.debug:
-        logger.info("Creating database tables...")
-        Base.metadata.create_all(bind=engine)
+        try:
+            logger.info("Creating database tables...")
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created successfully")
+        except Exception as e:
+            logger.warning(f"Could not create database tables: {e}")
+            logger.warning("Server will run without database (API endpoints will return errors)")
 
     logger.info("✅ Application startup complete")
 
