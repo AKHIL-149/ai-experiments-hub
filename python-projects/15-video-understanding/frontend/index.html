@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Understanding Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-video"></i>
+                    <h1>Video Understanding Platform</h1>
+                </div>
+                <nav class="nav">
+                    <a href="#home" class="nav-link active" data-page="home">
+                        <i class="fas fa-home"></i> Home
+                    </a>
+                    <a href="#upload" class="nav-link" data-page="upload">
+                        <i class="fas fa-upload"></i> Upload
+                    </a>
+                    <a href="#search" class="nav-link" data-page="search">
+                        <i class="fas fa-search"></i> Search
+                    </a>
+                    <a href="#videos" class="nav-link" data-page="videos">
+                        <i class="fas fa-film"></i> Videos
+                    </a>
+                    <a href="#docs" class="nav-link" data-page="docs">
+                        <i class="fas fa-book"></i> API Docs
+                    </a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Home Page -->
+        <section id="home-page" class="page active">
+            <div class="container">
+                <div class="hero">
+                    <h2>AI-Powered Video Analysis Platform</h2>
+                    <p>Upload, process, and search your videos with advanced AI capabilities</p>
+                    <div class="hero-stats" id="stats">
+                        <div class="stat">
+                            <i class="fas fa-server"></i>
+                            <div>
+                                <strong>Status</strong>
+                                <span id="server-status">Checking...</span>
+                            </div>
+                        </div>
+                        <div class="stat">
+                            <i class="fas fa-code-branch"></i>
+                            <div>
+                                <strong>Version</strong>
+                                <span id="api-version">...</span>
+                            </div>
+                        </div>
+                        <div class="stat">
+                            <i class="fas fa-video"></i>
+                            <div>
+                                <strong>Videos</strong>
+                                <span id="video-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="features">
+                    <h3>Features</h3>
+                    <div class="feature-grid">
+                        <div class="feature-card">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <h4>Video Upload</h4>
+                            <p>Upload local files, YouTube videos, or streaming URLs</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-film"></i>
+                            <h4>Scene Detection</h4>
+                            <p>Automatic scene boundary detection and analysis</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-closed-captioning"></i>
+                            <h4>Transcription</h4>
+                            <p>Speech-to-text with speaker diarization</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-eye"></i>
+                            <h4>Visual Analysis</h4>
+                            <p>Object detection, OCR, and action recognition</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-search"></i>
+                            <h4>Semantic Search</h4>
+                            <p>Multi-modal search across video content</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-file-alt"></i>
+                            <h4>Summaries</h4>
+                            <p>AI-powered summaries and chapters</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-star"></i>
+                            <h4>Highlights</h4>
+                            <p>Automatic highlight moment detection</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fas fa-cut"></i>
+                            <h4>Clip Creation</h4>
+                            <p>Generate clips and highlight reels</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Upload Page -->
+        <section id="upload-page" class="page">
+            <div class="container">
+                <h2>Upload Video</h2>
+
+                <div class="upload-tabs">
+                    <button class="tab-btn active" data-tab="file">
+                        <i class="fas fa-file-video"></i> Local File
+                    </button>
+                    <button class="tab-btn" data-tab="youtube">
+                        <i class="fab fa-youtube"></i> YouTube
+                    </button>
+                    <button class="tab-btn" data-tab="stream">
+                        <i class="fas fa-stream"></i> Stream URL
+                    </button>
+                </div>
+
+                <!-- File Upload -->
+                <div class="tab-content active" id="file-tab">
+                    <div class="upload-area" id="dropzone">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Drag & drop video file here or click to browse</p>
+                        <input type="file" id="file-input" accept="video/*" hidden>
+                        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                            Choose File
+                        </button>
+                    </div>
+                    <div id="file-preview" class="file-preview" style="display: none;">
+                        <i class="fas fa-file-video"></i>
+                        <span id="file-name"></span>
+                        <button class="btn btn-sm" onclick="clearFile()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <label for="file-title">Title (optional)</label>
+                        <input type="text" id="file-title" class="form-control" placeholder="Video title">
+                    </div>
+                    <div class="form-group">
+                        <label for="file-description">Description (optional)</label>
+                        <textarea id="file-description" class="form-control" rows="3" placeholder="Video description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox">
+                            <input type="checkbox" id="auto-process" checked>
+                            <span>Automatically start processing</span>
+                        </label>
+                    </div>
+                    <button class="btn btn-success" onclick="uploadFile()">
+                        <i class="fas fa-upload"></i> Upload Video
+                    </button>
+                </div>
+
+                <!-- YouTube Upload -->
+                <div class="tab-content" id="youtube-tab">
+                    <div class="form-group">
+                        <label for="youtube-url">YouTube URL</label>
+                        <input type="url" id="youtube-url" class="form-control"
+                               placeholder="https://www.youtube.com/watch?v=...">
+                    </div>
+                    <div class="form-group">
+                        <label for="youtube-quality">Quality</label>
+                        <select id="youtube-quality" class="form-control">
+                            <option value="best">Best</option>
+                            <option value="1080p">1080p</option>
+                            <option value="720p" selected>720p</option>
+                            <option value="480p">480p</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-success" onclick="uploadYouTube()">
+                        <i class="fab fa-youtube"></i> Process YouTube Video
+                    </button>
+                </div>
+
+                <!-- Stream Upload -->
+                <div class="tab-content" id="stream-tab">
+                    <div class="form-group">
+                        <label for="stream-url">Stream URL</label>
+                        <input type="url" id="stream-url" class="form-control"
+                               placeholder="https://example.com/video.mp4 or .m3u8">
+                    </div>
+                    <button class="btn btn-success" onclick="uploadStream()">
+                        <i class="fas fa-stream"></i> Process Stream
+                    </button>
+                </div>
+
+                <!-- Upload Progress -->
+                <div id="upload-progress" class="upload-progress" style="display: none;">
+                    <h4>Processing Video</h4>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <p id="progress-text">Initializing...</p>
+                    <div id="progress-stages"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Search Page -->
+        <section id="search-page" class="page">
+            <div class="container">
+                <h2>Search Videos</h2>
+
+                <div class="search-box">
+                    <input type="text" id="search-query" class="search-input"
+                           placeholder="Search for anything in your videos...">
+                    <button class="btn btn-primary" onclick="performSearch()">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+
+                <div class="search-options">
+                    <label>Search Type:</label>
+                    <select id="search-type" class="form-control">
+                        <option value="semantic">Multi-modal (Text + Visual)</option>
+                        <option value="frames">Visual Only</option>
+                        <option value="transcript">Transcript Only</option>
+                        <option value="query">Natural Language Q&A</option>
+                    </select>
+                </div>
+
+                <div id="search-results" class="search-results"></div>
+            </div>
+        </section>
+
+        <!-- Videos Page -->
+        <section id="videos-page" class="page">
+            <div class="container">
+                <div class="page-header">
+                    <h2>My Videos</h2>
+                    <button class="btn btn-primary" onclick="loadVideos()">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+
+                <div id="videos-list" class="videos-grid"></div>
+            </div>
+        </section>
+
+        <!-- Docs Page -->
+        <section id="docs-page" class="page">
+            <div class="container">
+                <h2>API Documentation</h2>
+                <div class="docs-links">
+                    <a href="http://localhost:8000/docs" target="_blank" class="doc-link">
+                        <i class="fas fa-book"></i>
+                        <div>
+                            <h4>Swagger UI</h4>
+                            <p>Interactive API documentation</p>
+                        </div>
+                    </a>
+                    <a href="http://localhost:8000/redoc" target="_blank" class="doc-link">
+                        <i class="fas fa-file-alt"></i>
+                        <div>
+                            <h4>ReDoc</h4>
+                            <p>Alternative API documentation</p>
+                        </div>
+                    </a>
+                    <a href="http://localhost:8000/openapi.json" target="_blank" class="doc-link">
+                        <i class="fas fa-code"></i>
+                        <div>
+                            <h4>OpenAPI Schema</h4>
+                            <p>JSON specification</p>
+                        </div>
+                    </a>
+                </div>
+
+                <div class="endpoints-section">
+                    <h3>Quick Reference</h3>
+                    <div class="endpoint-group">
+                        <h4>Health & Info</h4>
+                        <code>GET /health</code>
+                        <code>GET /api/info</code>
+                    </div>
+                    <div class="endpoint-group">
+                        <h4>Video Management</h4>
+                        <code>POST /api/videos/upload</code>
+                        <code>GET /api/videos</code>
+                        <code>GET /api/videos/{id}</code>
+                    </div>
+                    <div class="endpoint-group">
+                        <h4>Search</h4>
+                        <code>POST /api/search/semantic</code>
+                        <code>POST /api/search/frames</code>
+                        <code>POST /api/search/query</code>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Video Modal -->
+    <div id="video-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeVideoModal()">&times;</span>
+            <div id="video-details"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
