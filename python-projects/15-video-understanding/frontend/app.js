@@ -289,11 +289,16 @@ async function uploadStream() {
 function connectWebSocket(videoId) {
     const wsUrl = `${WS_BASE_URL}/api/ws/process/${videoId}`;
 
+    // Ensure progress bar is visible
+    showProgress('Connecting to processing updates...');
+
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
         console.log('WebSocket connected');
         showToast('Connected to processing updates', 'info');
+        // Update to waiting state
+        updateProgress(0, 'Waiting for processing to start...');
     };
 
     ws.onmessage = (event) => {
@@ -385,16 +390,39 @@ function showProgress(message) {
 }
 
 function updateProgress(percent, message) {
-    document.getElementById('progress-fill').style.width = `${percent}%`;
-    document.getElementById('progress-text').textContent = message;
+    console.log(`🎨 Updating UI: ${percent}% - ${message}`);
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    const progressDiv = document.getElementById('upload-progress');
+
+    // Ensure progress bar is visible
+    if (progressDiv) {
+        progressDiv.style.display = 'block';
+    }
+
+    if (progressFill) {
+        progressFill.style.width = `${percent}%`;
+    }
+
+    if (progressText) {
+        progressText.textContent = message;
+    }
 }
 
 function addStageComplete(stage, message) {
+    console.log(`✨ Adding stage complete: ${stage} - ${message}`);
     const stagesDiv = document.getElementById('progress-stages');
+
+    if (!stagesDiv) {
+        console.error('❌ progress-stages element not found!');
+        return;
+    }
+
     const stageEl = document.createElement('div');
     stageEl.className = 'stage complete';
     stageEl.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
     stagesDiv.appendChild(stageEl);
+    console.log(`✅ Stage added to UI: ${message}`);
 }
 
 function hideProgress() {
