@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -142,14 +142,21 @@ app.add_middleware(LoggingMiddleware)
 # ============================================================================
 
 @app.get("/")
-async def root():
-    """Root endpoint - API information"""
+async def root(request: Request):
+    """Root endpoint - Serve frontend or API info"""
+    # Check if client accepts HTML (browser request)
+    accept_header = request.headers.get("accept", "")
+    if "text/html" in accept_header and os.path.exists("frontend/index.html"):
+        return FileResponse("frontend/index.html")
+
+    # Return JSON for API clients
     return {
         "name": "Video Understanding & Summarization Platform",
         "version": __version__,
         "status": "operational",
         "docs": "/docs",
         "redoc": "/redoc",
+        "frontend": "/static/index.html",
         "endpoints": {
             "videos": "/api/videos",
             "search": "/api/search",
