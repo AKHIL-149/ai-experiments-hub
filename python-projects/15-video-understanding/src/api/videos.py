@@ -512,17 +512,33 @@ async def download_youtube_video(
     try:
         logger.info(f"Downloading YouTube video: {url}")
 
-        # TODO: Use yt-dlp to download
-        # import yt_dlp
-        #
-        # ydl_opts = {
-        #     'format': quality,
-        #     'outtmpl': f'./uploads/videos/{video_id}.%(ext)s',
-        # }
-        #
-        # with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        #     info = ydl.extract_info(url, download=True)
-        #     # Update database with file path, duration, etc.
+        import yt_dlp
+
+        # Configure output directory
+        output_dir = "./data/uploads"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Configure yt-dlp options
+        ydl_opts = {
+            'format': f'bestvideo[height<={quality.replace("p", "")}]+bestaudio/best' if quality != 'best' else 'best',
+            'outtmpl': f'{output_dir}/{video_id}.%(ext)s',
+            'merge_output_format': 'mp4',
+            'quiet': False,
+            'no_warnings': False,
+        }
+
+        # Download video
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+            # Get downloaded file info
+            video_title = title or info.get('title', 'YouTube Video')
+            duration = info.get('duration', 0)
+
+            # Find the downloaded file
+            file_path = f"{output_dir}/{video_id}.mp4"
+
+            logger.info(f"Downloaded: {video_title} ({duration}s) -> {file_path}")
 
         # If auto_process, start processing
         if auto_process:
