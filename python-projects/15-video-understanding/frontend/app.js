@@ -1,5 +1,6 @@
-// Configuration
-const API_BASE_URL = 'http://localhost:8000';
+// Configuration - use same origin to avoid CORS/tracking prevention
+const API_BASE_URL = window.location.origin.includes(':8000') ? window.location.origin : 'http://localhost:8000';
+const WS_BASE_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://');
 let currentVideo = null;
 let ws = null;
 
@@ -286,7 +287,7 @@ async function uploadStream() {
 // ============================================================================
 
 function connectWebSocket(videoId) {
-    const wsUrl = `ws://localhost:8000/api/ws/process/${videoId}`;
+    const wsUrl = `${WS_BASE_URL}/api/ws/process/${videoId}`;
 
     ws = new WebSocket(wsUrl);
 

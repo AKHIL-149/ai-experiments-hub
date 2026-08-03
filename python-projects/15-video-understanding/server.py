@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import os
 
@@ -238,6 +238,10 @@ if os.path.exists("data/clips"):
 if os.path.exists("data/thumbnails"):
     app.mount("/thumbnails", StaticFiles(directory="data/thumbnails"), name="thumbnails")
 
+# Serve frontend files (fixes tracking prevention by using same origin)
+if os.path.exists("frontend"):
+    app.mount("/static", StaticFiles(directory="frontend"), name="frontend")
+
 
 # ============================================================================
 # Error Handlers
@@ -245,7 +249,22 @@ if os.path.exists("data/thumbnails"):
 
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
-    """Handle 404 errors"""
+    """Handle 404 errors - serve frontend for SPA routes"""
+    # If the request is for an API endpoint, return JSON error
+    if request.url.path.startswith("/api/") or request.url.path.startswith("/docs") or request.url.path.startswith("/redoc"):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "Not Found",
+                "message": f"The requested resource '{request.url.path}' was not found",
+            }
+        )
+
+    # For frontend routes, serve index.html (SPA handling)
+    if os.path.exists("frontend/index.html"):
+        return FileResponse("frontend/index.html")
+
+    # Fallback to JSON error if no frontend
     return JSONResponse(
         status_code=404,
         content={
