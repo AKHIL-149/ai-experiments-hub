@@ -319,13 +319,46 @@ function handleProcessingUpdate(data) {
     } else if (event === 'stage_complete') {
         addStageComplete(stage, message);
     } else if (event === 'complete') {
-        showToast('Processing complete!', 'success');
-        hideProgress();
+        // Show completion state
+        updateProgress(100, 'Processing complete! ✅');
+
+        // Add final completion indicator
+        const stagesDiv = document.getElementById('progress-stages');
+        const completionEl = document.createElement('div');
+        completionEl.className = 'stage complete';
+        completionEl.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${message}</strong>`;
+        completionEl.style.color = 'var(--success-color)';
+        completionEl.style.fontSize = '1.1rem';
+        stagesDiv.appendChild(completionEl);
+
+        showToast('Processing complete! ✅', 'success');
+
+        // Hide after longer delay to show completion
+        setTimeout(() => {
+            hideProgress();
+            loadVideos();
+        }, 3000);
+
         if (ws) ws.close();
-        loadVideos();
     } else if (event === 'error') {
+        // Show error state
+        updateProgress(progress || 0, `❌ Error: ${message}`);
+
+        // Add error indicator
+        const stagesDiv = document.getElementById('progress-stages');
+        const errorEl = document.createElement('div');
+        errorEl.className = 'stage';
+        errorEl.innerHTML = `<i class="fas fa-times-circle"></i> <strong>Processing failed</strong>`;
+        errorEl.style.color = 'var(--danger-color)';
+        stagesDiv.appendChild(errorEl);
+
         showToast(`Error: ${message}`, 'error');
-        hideProgress();
+
+        // Hide after delay
+        setTimeout(() => {
+            hideProgress();
+        }, 5000);
+
         if (ws) ws.close();
     }
 }
@@ -356,9 +389,7 @@ function addStageComplete(stage, message) {
 }
 
 function hideProgress() {
-    setTimeout(() => {
-        document.getElementById('upload-progress').style.display = 'none';
-    }, 2000);
+    document.getElementById('upload-progress').style.display = 'none';
 }
 
 // ============================================================================
