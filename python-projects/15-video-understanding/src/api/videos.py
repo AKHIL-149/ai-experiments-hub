@@ -493,11 +493,11 @@ async def process_video_background(video_id: str):
 
         logger.info(f"Starting background processing for video {video_id}")
 
-        # Stage 1: Frame Extraction (0-20%)
+        # Stage 1: Frame Extraction (10-20%)
         await send_progress_update(
             video_id=video_id,
             stage="frame_extraction",
-            progress=5.0,
+            progress=10.0,
             message="Extracting frames from video...",
         )
         await asyncio.sleep(2)  # Simulate processing
@@ -643,11 +643,20 @@ async def download_youtube_video(
     quality: str,
     auto_process: bool,
 ):
-    """Download YouTube video"""
+    """Download YouTube video with progress updates"""
     try:
+        from src.api.websockets import send_progress_update, send_processing_error
+        import yt_dlp
+
         logger.info(f"Downloading YouTube video: {url}")
 
-        import yt_dlp
+        # Send initial download progress (0-30%)
+        await send_progress_update(
+            video_id=video_id,
+            stage="download",
+            progress=5.0,
+            message="Starting YouTube video download...",
+        )
 
         # Configure output directory
         output_dir = "./data/uploads"
@@ -664,6 +673,14 @@ async def download_youtube_video(
 
         # Download video
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Inform user download is in progress
+            await send_progress_update(
+                video_id=video_id,
+                stage="download",
+                progress=15.0,
+                message="Fetching video information...",
+            )
+
             info = ydl.extract_info(url, download=True)
 
             # Get downloaded file info
@@ -675,13 +692,25 @@ async def download_youtube_video(
 
             logger.info(f"Downloaded: {video_title} ({duration}s) -> {file_path}")
 
+        # Download complete
+        await send_progress_update(
+            video_id=video_id,
+            stage="download",
+            progress=30.0,
+            message=f"Download complete: {video_title}",
+        )
+
         # If auto_process, start processing
         if auto_process:
             await process_video_background(video_id)
 
     except Exception as e:
         logger.error(f"YouTube download failed: {e}")
-        # Update database with error
+        await send_processing_error(
+            video_id=video_id,
+            stage="download",
+            error_message=f"Download failed: {str(e)}",
+        )
 
 
 async def download_streaming_video(

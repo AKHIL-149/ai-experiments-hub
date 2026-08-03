@@ -312,13 +312,22 @@ function connectWebSocket(videoId) {
 }
 
 function handleProcessingUpdate(data) {
+    console.log('📊 Processing update received:', data);
     const { event, stage, progress, message } = data;
 
+    if (event === 'connected') {
+        console.log('✅ WebSocket connected, waiting for updates...');
+        return;
+    }
+
     if (event === 'progress') {
+        console.log(`📈 Progress: ${progress}% - ${message}`);
         updateProgress(progress, message);
     } else if (event === 'stage_complete') {
+        console.log(`✔️ Stage complete: ${stage} - ${message}`);
         addStageComplete(stage, message);
     } else if (event === 'complete') {
+        console.log('🎉 Processing complete!', data);
         // Show completion state
         updateProgress(100, 'Processing complete! ✅');
 
