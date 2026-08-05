@@ -100,6 +100,34 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - Production features: rate limiting, health checks, cleanup tasks
 - _Note: Core features working (231 refactorings generated), requires GitHub token for issue creation, needs monitoring for AI service stability and performance optimization_
 
+### Phase 5: Advanced AI Systems
+
+**14. Multi-Agent Orchestrator** (Full-stack)
+- Swarm intelligence with multiple specialized agents
+- Collaborative task decomposition
+- Agent communication protocols
+- Task queue and result aggregation
+- WebSocket real-time monitoring
+
+**15. Video Understanding & Summarization Platform** (Python) ⚠️ Pending
+- Multi-modal video analysis with vision + audio fusion
+- Frame extraction and scene detection
+- Audio transcription with speaker diarization
+- Visual content analysis (objects, actions, OCR)
+- CLIP-based semantic search across videos
+- AI-powered summaries and highlight detection
+- WebSocket progress tracking for processing
+- _Note: Backend API operational, YouTube processing working (~35-40s for 10min video), all 6 processing stages functional, frontend with real-time updates deployed_
+
+**16. Knowledge Graph Builder & Query System** (Full-stack) - Planned
+- Automatic entity and relationship extraction
+- Dynamic knowledge graph from unstructured data
+- Graph-based RAG with multi-hop reasoning
+- Visual graph exploration UI
+- Temporal knowledge tracking
+- Conflict resolution and fact verification
+- Export to Neo4j/NetworkX
+
 ## Tech Stack
 
 **Languages:** Python 3.11+, JavaScript (Node.js 18+)
@@ -108,14 +136,22 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - Ollama for LLM inference
 - Sentence Transformers for embeddings
 - Whisper.cpp for speech-to-text
+- OpenAI Whisper for audio transcription
+- CLIP for multi-modal embeddings
 
 **Cloud AI (Optional):**
 - Anthropic Claude API
-- OpenAI API
+- OpenAI API (GPT-4V for vision tasks)
 
 **Storage:**
 - ChromaDB for vector storage
 - PostgreSQL for application data
+
+**Video/Media Processing:**
+- ffmpeg for video/audio extraction
+- yt-dlp for YouTube downloads
+- PySceneDetect for scene detection
+- OpenCV for frame processing
 
 **Frameworks:**
 - FastAPI for Python backends
@@ -151,7 +187,11 @@ ai-experiments-hub/
 │   ├── 01-text-generator/
 │   ├── 02-email-responder/
 │   ├── 04-rag-knowledge-assistant/
+│   ├── 07-content-analyzer/
+│   ├── 09-meeting-summarizer/
 │   ├── 13-code-review-assistant/  # Full-stack production app
+│   ├── 14-multi-agent-orchestrator/
+│   ├── 15-video-understanding/     # Multi-modal video analysis ⚠️ Pending
 │   └── ...
 └── javascript-projects/
     ├── 03-prompt-playground/
@@ -167,13 +207,16 @@ ai-experiments-hub/
 - [x] Project 4: Personal Knowledge Assistant
 - [x] Project 5: AI Workflow Automation
 - [ ] Project 6: Code Documentation Generator
-- [ ] Project 7: Content Analyzer
+- [x] Project 7: Content Analyzer
 - [ ] Project 8: Voice Assistant
-- [ ] Project 9: Meeting Summarizer
+- [x] Project 9: Meeting Summarizer
 - [ ] Project 10: Chat Application
 - [ ] Project 11: Research Assistant
 - [ ] Project 12: Content Moderation System
 - [x] Project 13: AI Code Review Assistant ⚠️ (Core complete, needs monitoring)
+- [x] Project 14: Multi-Agent Orchestrator
+- [ ] Project 15: Video Understanding Platform ⚠️ (Pending - backend operational, needs full pipeline integration)
+- [ ] Project 16: Knowledge Graph Builder (Planned)
 
 ## Learning Resources
 
