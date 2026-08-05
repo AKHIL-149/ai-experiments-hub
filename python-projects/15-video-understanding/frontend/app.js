@@ -387,6 +387,11 @@ function showProgress(message) {
     document.getElementById('progress-text').textContent = message;
     document.getElementById('progress-fill').style.width = '0%';
     document.getElementById('progress-stages').innerHTML = '';
+
+    // Scroll progress bar into view
+    setTimeout(() => {
+        progressDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
 }
 
 function updateProgress(percent, message) {
