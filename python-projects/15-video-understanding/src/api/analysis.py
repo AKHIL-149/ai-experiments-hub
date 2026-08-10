@@ -644,7 +644,7 @@ async def generate_highlights_task(
             transcripts_by_scene = {}
             for s in scene_rows:
                 transcripts_by_scene[s.scene_number] = [
-                    {"text": t.text, "start": t.start_time, "end": t.end_time}
+                    {"text": t.text, "start": t.start_time, "end": t.end_time, "speaker": t.speaker_id}
                     for t in transcript_rows
                     if t.start_time >= s.start_time and t.start_time < s.end_time
                 ]

@@ -570,6 +570,19 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
     transcriber = TranscriptionService(prefer_local=True, model_name=settings.whisper_model)
     transcription = transcriber.transcribe(audio_path, use_local=True)
 
+    # Real speaker diarization (pyannote.audio), if a HF token is configured
+    if settings.diarization_use_auth_token and settings.hf_token:
+        try:
+            from src.services.speaker_diarization import SpeakerDiarization
+            diarizer = SpeakerDiarization(hf_token=settings.hf_token)
+            diarization_result = diarizer.diarize(audio_path)
+            merged = diarizer.merge_with_transcription(diarization_result, transcription.segments)
+            for seg, merged_seg in zip(transcription.segments, merged):
+                seg.speaker = merged_seg["speaker"]
+            logger.info(f"Diarization found {diarization_result.num_speakers} speakers")
+        except Exception as e:
+            logger.warning(f"Speaker diarization failed, continuing without it: {e}")
+
     # Real motion-based action recognition, once for the whole video
     try:
         action_result = ActionRecognitionService(method="motion_based").recognize_actions(path)
@@ -793,6 +806,7 @@ async def process_video_background(video_id: str):
                     text=seg.text,
                     confidence=seg.confidence,
                     language=seg.language or transcription.language,
+                    speaker_id=seg.speaker,
                 )
                 db.add(t_row)
                 transcript_rows.append(t_row)
