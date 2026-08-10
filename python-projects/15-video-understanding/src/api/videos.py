@@ -500,11 +500,40 @@ async def get_video_duration(file_path: str) -> float:
         return 0.0
 
 
+def _aggregate_scene_actions(actions: list, start_time: float, end_time: float) -> dict:
+    """
+    Motion-based action recognition emits one event per few frames (hundreds
+    per scene), which is too granular to feed the importance scorer directly
+    (it would saturate identically for every scene). Aggregate to a 0-1
+    activity ratio (fraction of the scene's duration spent in a non-stationary
+    action) and the single dominant action label.
+    """
+    scene_duration = max(end_time - start_time, 0.001)
+    overlapping = [a for a in actions if a.start_time < end_time and a.end_time > start_time]
+
+    active_seconds = sum(
+        (min(a.end_time, end_time) - max(a.start_time, start_time))
+        for a in overlapping if a.action != "stationary"
+    )
+    activity_ratio = min(1.0, active_seconds / scene_duration)
+
+    dominant_action = None
+    if overlapping:
+        by_duration = {}
+        for a in overlapping:
+            dur = min(a.end_time, end_time) - max(a.start_time, start_time)
+            by_duration[a.action] = by_duration.get(a.action, 0.0) + dur
+        dominant_action = max(by_duration, key=by_duration.get)
+
+    return {"activity_ratio": activity_ratio, "dominant_action": dominant_action}
+
+
 def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
     """
     Real (synchronous, CPU/IO-bound) analysis pipeline: sparse frame
-    sampling, scene detection, audio transcription, and per-scene keyframe
-    captioning. Run off the event loop via asyncio.to_thread.
+    sampling, scene detection, audio transcription, per-scene keyframe
+    captioning, and visual/audio understanding (objects, faces, OCR,
+    actions, audio energy). Run off the event loop via asyncio.to_thread.
     """
     from pathlib import Path
     from src.core.config import settings
@@ -513,6 +542,11 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
     from src.services.scene_detection.base import SceneDetectorConfig
     from src.services.transcription_service import TranscriptionService
     from src.services.image_captioning import ImageCaptioningService
+    from src.services.object_detection import ObjectDetectionService
+    from src.services.face_detection import FaceDetectionService
+    from src.services.ocr_service import OCRService
+    from src.services.action_recognition import ActionRecognitionService
+    from src.services.audio_features import AudioFeatureExtractor
 
     path = Path(video_path)
     processor = create_video_processor()
@@ -536,8 +570,22 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
     transcriber = TranscriptionService(prefer_local=True, model_name=settings.whisper_model)
     transcription = transcriber.transcribe(audio_path, use_local=True)
 
-    # Real per-scene keyframe extraction + captioning (local BLIP)
+    # Real motion-based action recognition, once for the whole video
+    try:
+        action_result = ActionRecognitionService(method="motion_based").recognize_actions(path)
+        all_actions = action_result.actions
+    except Exception as e:
+        logger.warning(f"Action recognition failed: {e}")
+        all_actions = []
+
+    # Real per-scene keyframe extraction, captioning (local BLIP), and
+    # visual understanding (objects/faces/OCR) + audio energy
     captioner = ImageCaptioningService(use_local=True)
+    object_detector = ObjectDetectionService()
+    face_detector = FaceDetectionService(backend="opencv")
+    ocr = OCRService(engine="easyocr")
+    audio_extractor = AudioFeatureExtractor()
+
     keyframes_dir = frames_dir / "keyframes"
     keyframes_dir.mkdir(parents=True, exist_ok=True)
     scene_results = []
@@ -545,12 +593,50 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
         ts = scene.keyframe_timestamp or scene.middle_timestamp
         kf_path = keyframes_dir / f"scene_{scene.scene_id:03d}.jpg"
         caption = ""
+        objects, faces, ocr_text = [], [], ""
+
         try:
             processor.extract_single_frame(path, kf_path, ts)
             caption = captioner.caption_image(kf_path).text
         except Exception as e:
             logger.warning(f"Keyframe/caption failed for scene {scene.scene_id}: {e}")
-        scene_results.append({"scene": scene, "keyframe_path": str(kf_path), "caption": caption})
+
+        if kf_path.exists():
+            try:
+                objects = [o.label for o in object_detector.detect_objects(kf_path).objects]
+            except Exception as e:
+                logger.warning(f"Object detection failed for scene {scene.scene_id}: {e}")
+            try:
+                faces = [{"bbox": f.bbox, "confidence": f.confidence} for f in face_detector.detect_faces(kf_path).faces]
+            except Exception as e:
+                logger.warning(f"Face detection failed for scene {scene.scene_id}: {e}")
+            try:
+                ocr_text = ocr.extract_text(kf_path).text
+            except Exception as e:
+                logger.warning(f"OCR failed for scene {scene.scene_id}: {e}")
+
+        action_summary = _aggregate_scene_actions(all_actions, scene.start_time, scene.end_time)
+
+        audio_energy = 0.0
+        try:
+            features = audio_extractor.extract_segment_features(audio_path, scene.start_time, scene.end_time)
+            # RMS energy on typical speech/ambient audio sits well under 1.0;
+            # scale so a normal speaking segment isn't perpetually near zero
+            audio_energy = min(1.0, features.rms_energy * 10)
+        except Exception as e:
+            logger.warning(f"Audio feature extraction failed for scene {scene.scene_id}: {e}")
+
+        scene_results.append({
+            "scene": scene,
+            "keyframe_path": str(kf_path),
+            "caption": caption,
+            "objects": objects,
+            "faces": faces,
+            "ocr_text": ocr_text,
+            "activity_ratio": action_summary["activity_ratio"],
+            "dominant_action": action_summary["dominant_action"],
+            "audio_energy": audio_energy,
+        })
 
     return {
         "sampled_frame_paths": [str(f) for f in sampled_frames],
@@ -660,6 +746,12 @@ async def process_video_background(video_id: str):
             scene_rows = []
             for item in analysis["scenes"]:
                 s = item["scene"]
+                scene_metadata = dict(s.metadata or {})
+                scene_metadata.update({
+                    "activity_ratio": item["activity_ratio"],
+                    "dominant_action": item["dominant_action"],
+                    "audio_energy": item["audio_energy"],
+                })
                 scene_row = SceneModel(
                     video_id=video.id,
                     scene_number=s.scene_id,
@@ -671,7 +763,7 @@ async def process_video_background(video_id: str):
                     scene_type=SceneTypeDB(s.scene_type.value),
                     transition_type=TransitionTypeDB(s.transition_type.value),
                     description=item["caption"],
-                    extra_metadata=s.metadata or {},
+                    extra_metadata=scene_metadata,
                 )
                 db.add(scene_row)
                 scene_rows.append(scene_row)
@@ -687,6 +779,9 @@ async def process_video_background(video_id: str):
                     file_path=item["keyframe_path"],
                     is_keyframe=True,
                     description=item["caption"],
+                    objects_detected=item["objects"],
+                    faces_detected=item["faces"],
+                    ocr_text=item["ocr_text"],
                 ))
 
             transcript_rows = []
