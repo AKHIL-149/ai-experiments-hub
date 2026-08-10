@@ -144,6 +144,8 @@ faiss_index/
 
 # AI/ML Specific
 models/
+!**/src/models/
+!**/src/models/**
 *.h5
 *.pkl
 *.pickle
