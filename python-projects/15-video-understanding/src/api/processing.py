@@ -240,16 +240,32 @@ async def get_video_scenes(video_id: str):
     try:
         logger.info(f"Getting scenes for video {video_id}")
 
-        # TODO: Query database
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
-        #
-        # scenes = db.query(Scene).filter(Scene.video_id == video_id).order_by(Scene.start_time).all()
+        from src.core.database import get_db
+        from src.models import Video, Scene
 
-        # Mock response
-        scenes = []
-        total_duration = 0.0
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            rows = db.query(Scene).filter(Scene.video_id == video.id).order_by(Scene.start_time).all()
+
+            scenes = [
+                SceneResponse(
+                    scene_id=s.id,
+                    scene_number=s.scene_number,
+                    start_time=s.start_time,
+                    end_time=s.end_time,
+                    duration=s.duration,
+                    frame_count=s.frame_count or 0,
+                    keyframe_path=s.keyframe_path,
+                    scene_type=s.scene_type.value if s.scene_type else None,
+                    transition_type=s.transition_type.value if s.transition_type else None,
+                    description=s.description,
+                )
+                for s in rows
+            ]
+            total_duration = sum(s.duration for s in scenes)
 
         return ScenesListResponse(
             video_id=video_id,
@@ -284,26 +300,41 @@ async def get_video_transcript(
     try:
         logger.info(f"Getting transcript for video {video_id}")
 
-        # TODO: Query database
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
-        #
-        # query = db.query(Transcript).filter(Transcript.video_id == video_id)
-        # if speaker_id:
-        #     query = query.filter(Transcript.speaker_id == speaker_id)
-        #
-        # segments = query.order_by(Transcript.start_time).all()
+        from src.core.database import get_db
+        from src.models import Video, Transcript
 
-        # Mock response
-        segments = []
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            query = db.query(Transcript).filter(Transcript.video_id == video.id)
+            if speaker_id:
+                query = query.filter(Transcript.speaker_id == speaker_id)
+            rows = query.order_by(Transcript.start_time).all()
+
+            segments = [
+                TranscriptSegment(
+                    segment_id=str(t.id),
+                    start_time=t.start_time,
+                    end_time=t.end_time,
+                    text=t.text,
+                    speaker_id=t.speaker_id,
+                    confidence=t.confidence,
+                )
+                for t in rows
+            ]
+            language = rows[0].language if rows else None
+            num_speakers = len({s.speaker_id for s in segments if s.speaker_id})
+            total_duration = max((s.end_time for s in segments), default=0.0)
 
         return TranscriptResponse(
             video_id=video_id,
             segments=segments,
             total_segments=len(segments),
-            total_duration=0.0,
-            num_speakers=0,
+            total_duration=total_duration,
+            language=language,
+            num_speakers=num_speakers,
         )
 
     except HTTPException:
@@ -338,27 +369,45 @@ async def get_video_frames(
     try:
         logger.info(f"Getting frames for video {video_id}")
 
-        # TODO: Query database
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
-        #
-        # query = db.query(Frame).filter(Frame.video_id == video_id)
-        # if keyframes_only:
-        #     query = query.filter(Frame.is_keyframe == True)
-        # if scene_id is not None:
-        #     query = query.filter(Frame.scene_id == scene_id)
-        #
-        # total = query.count()
-        # frames = query.order_by(Frame.timestamp).offset((page - 1) * page_size).limit(page_size).all()
+        from src.core.database import get_db
+        from src.models import Video, Frame
 
-        # Mock response
-        frames = []
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            query = db.query(Frame).filter(Frame.video_id == video.id)
+            if keyframes_only:
+                query = query.filter(Frame.is_keyframe == True)
+            if scene_id is not None:
+                query = query.filter(Frame.scene_id == scene_id)
+
+            total = query.count()
+            rows = (
+                query.order_by(Frame.timestamp)
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+                .all()
+            )
+
+            frames = [
+                FrameResponse(
+                    frame_id=str(f.id),
+                    frame_number=f.frame_number,
+                    timestamp=f.timestamp,
+                    file_path=f.file_path or "",
+                    is_keyframe=f.is_keyframe,
+                    scene_id=f.scene_id,
+                    description=f.description,
+                )
+                for f in rows
+            ]
 
         return FramesListResponse(
             video_id=video_id,
             frames=frames,
-            total_frames=0,
+            total_frames=total,
             page=page,
             page_size=page_size,
         )
