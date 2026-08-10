@@ -563,14 +563,27 @@ async def generate_summary_task(
         logger.error(f"Summary generation failed: {e}", exc_info=True)
 
 
-def _run_highlight_detection(video_id: str, duration: float, scenes: list, transcripts_by_scene: dict, config: GenerateHighlightsRequest) -> list:
+def _run_highlight_detection(
+    video_id: str,
+    duration: float,
+    scenes: list,
+    transcripts_by_scene: dict,
+    visual_contexts_by_scene: dict,
+    audio_contexts_by_scene: dict,
+    config: GenerateHighlightsRequest,
+) -> list:
     """Synchronous scoring/detection run off the event loop"""
     from src.services.highlights.importance_scorer import ImportanceScorer
     from src.services.highlights.highlight_detector import HighlightDetector
 
     scorer = ImportanceScorer()
     scores = [
-        scorer.score_scene(scene_data=s, transcript_segments=transcripts_by_scene.get(s["scene_number"], []))
+        scorer.score_scene(
+            scene_data=s,
+            transcript_segments=transcripts_by_scene.get(s["scene_number"], []),
+            visual_context=visual_contexts_by_scene.get(s["scene_number"]),
+            audio_context=audio_contexts_by_scene.get(s["scene_number"]),
+        )
         for s in scenes
     ]
 
@@ -597,7 +610,10 @@ async def generate_highlights_task(
     """Generate highlights in background using ImportanceScorer + HighlightDetector"""
     import asyncio
     from src.core.database import get_db
-    from src.models import Video, Scene, Transcript, Highlight as HighlightModel, HighlightType as HighlightTypeDB
+    from src.models import (
+        Video, Scene, Transcript, Frame,
+        Highlight as HighlightModel, HighlightType as HighlightTypeDB,
+    )
 
     try:
         logger.info(f"Starting highlight generation for video {video_id}")
@@ -610,6 +626,10 @@ async def generate_highlights_task(
 
             scene_rows = db.query(Scene).filter(Scene.video_id == video.id).order_by(Scene.start_time).all()
             transcript_rows = db.query(Transcript).filter(Transcript.video_id == video.id).all()
+            keyframes = {
+                f.scene_id: f
+                for f in db.query(Frame).filter(Frame.video_id == video.id, Frame.is_keyframe == True).all()
+            }
             duration = video.duration_seconds or 0.0
 
             scenes = [
@@ -629,12 +649,34 @@ async def generate_highlights_task(
                     if t.start_time >= s.start_time and t.start_time < s.end_time
                 ]
 
+            # Real visual/audio context from the visual-understanding pass
+            # (object/face/OCR detection on the keyframe, motion-based action
+            # ratio and audio energy stored on the scene) - see AKHIL-409.
+            visual_contexts_by_scene = {}
+            audio_contexts_by_scene = {}
+            for s in scene_rows:
+                meta = s.extra_metadata or {}
+                keyframe = keyframes.get(s.id)
+                activity_ratio = meta.get("activity_ratio", 0.0)
+                visual_contexts_by_scene[s.scene_number] = {
+                    "objects": (keyframe.objects_detected if keyframe else None) or [],
+                    "faces": (keyframe.faces_detected if keyframe else None) or [],
+                    # Synthesize a count proportional to motion activity so it
+                    # contributes real, differentiated signal through the
+                    # existing len(actions)-based scoring path.
+                    "actions": ["motion"] * round(activity_ratio * 10),
+                }
+                audio_contexts_by_scene[s.scene_number] = {
+                    "features": {"energy": meta.get("audio_energy", 0.0)}
+                }
+
         if not scenes:
             logger.info(f"No scenes available for video {video_id}, skipping highlight generation")
             return
 
         highlights = await asyncio.to_thread(
-            _run_highlight_detection, video_id, duration, scenes, transcripts_by_scene, config
+            _run_highlight_detection, video_id, duration, scenes, transcripts_by_scene,
+            visual_contexts_by_scene, audio_contexts_by_scene, config
         )
 
         known_types = {t.value for t in HighlightTypeDB}
