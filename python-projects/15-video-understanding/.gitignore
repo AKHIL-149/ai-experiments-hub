@@ -53,6 +53,7 @@ frames/
 clips/
 temp/
 cache/
+llm_cache/
 
 # ChromaDB
 chroma_data/

@@ -138,25 +138,36 @@ async def get_video_summary(
     try:
         logger.info(f"Getting {summary_type} summary for video {video_id}")
 
-        # TODO: Query database for summary
-        # summary = db.query(Summary).filter(
-        #     Summary.video_id == video_id,
-        #     Summary.summary_type == summary_type
-        # ).first()
-        #
-        # if not summary:
-        #     raise HTTPException(status_code=404, detail="Summary not found")
+        from src.core.database import get_db
+        from src.models import Video, Summary, SummaryType
 
-        # Mock response
-        return SummaryResponse(
-            video_id=video_id,
-            summary_type=summary_type,
-            content="This is a placeholder summary.",
-            timestamp_ranges=[],
-            key_points=[],
-            duration_covered=0.0,
-            generated_at=datetime.now(),
-        )
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            summary = (
+                db.query(Summary)
+                .filter(
+                    Summary.video_id == video.id,
+                    Summary.summary_type == SummaryType(summary_type),
+                )
+                .order_by(Summary.created_at.desc())
+                .first()
+            )
+            if not summary:
+                raise HTTPException(status_code=404, detail="Summary not found")
+
+            meta = summary.extra_metadata or {}
+            return SummaryResponse(
+                video_id=video_id,
+                summary_type=summary.summary_type.value,
+                content=summary.content,
+                timestamp_ranges=summary.timestamp_ranges or [],
+                key_points=meta.get("key_points", []),
+                duration_covered=meta.get("duration_covered", 0.0),
+                generated_at=summary.created_at,
+            )
 
     except HTTPException:
         raise
@@ -279,24 +290,48 @@ async def get_video_highlights(
     try:
         logger.info(f"Getting highlights for video {video_id}")
 
-        # TODO: Query database for highlights
-        # query = db.query(Highlight).filter(
-        #     Highlight.video_id == video_id,
-        #     Highlight.importance_score >= min_importance
-        # )
-        # if highlight_type:
-        #     query = query.filter(Highlight.highlight_type == highlight_type)
-        #
-        # highlights = query.order_by(Highlight.importance_score.desc()).all()
+        from src.core.database import get_db
+        from src.models import Video, Highlight as HighlightModel, HighlightType as HighlightTypeDB
 
-        # Mock response
-        highlights = []
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            query = db.query(HighlightModel).filter(
+                HighlightModel.video_id == video.id,
+                HighlightModel.importance_score >= min_importance,
+            )
+            if highlight_type:
+                query = query.filter(HighlightModel.highlight_type == HighlightTypeDB(highlight_type))
+            rows = query.order_by(HighlightModel.importance_score.desc()).all()
+
+            highlights = [
+                HighlightResponse(
+                    highlight_id=str(h.id),
+                    title=h.title,
+                    description=h.description or "",
+                    start_time=h.start_time,
+                    end_time=h.end_time,
+                    duration=h.end_time - h.start_time,
+                    importance_score=h.importance_score,
+                    highlight_type=h.highlight_type.value,
+                    clip_path=h.clip_path,
+                    thumbnail_path=h.thumbnail_path,
+                    tags=(h.extra_metadata or {}).get("tags", []),
+                )
+                for h in rows
+            ]
+            avg_importance = (
+                sum(h.importance_score for h in highlights) / len(highlights)
+                if highlights else 0.0
+            )
 
         return HighlightsResponse(
             video_id=video_id,
             highlights=highlights,
             total_highlights=len(highlights),
-            average_importance=0.0,
+            average_importance=avg_importance,
         )
 
     except HTTPException:
@@ -449,49 +484,179 @@ async def filter_video_timeline(
 # ============================================================================
 
 
+def _run_summary_generation(video_id: str, duration: float, transcript_text: str, scenes: list, length: str) -> dict:
+    """Synchronous LLM call (local Ollama) run off the event loop"""
+    from src.core.llm_client import LLMClient
+    from src.services.summarization.video_summarizer import VideoSummarizer, SummaryLength
+
+    llm_client = LLMClient(backend="ollama", model="llama3.2")
+    summarizer = VideoSummarizer(llm_client=llm_client, default_length=SummaryLength(length))
+    result = summarizer.summarize_video(
+        video_id=video_id,
+        duration=duration,
+        transcript=transcript_text,
+        scenes=scenes,
+    )
+    return {
+        "summary_text": result.summary_text,
+        "key_points": result.key_points,
+        "main_topics": result.main_topics,
+        "word_count": result.word_count,
+    }
+
+
 async def generate_summary_task(
     video_id: str,
     config: GenerateSummaryRequest,
 ):
-    """
-    Generate summary in background
+    """Generate summary in background using VideoSummarizer (local Ollama LLM)"""
+    import asyncio
+    from src.core.database import get_db
+    from src.models import Video, Scene, Transcript, Summary, SummaryType
 
-    Uses VideoSummarizer service to create summary based on configuration
-    """
     try:
         logger.info(f"Starting summary generation for video {video_id}")
 
-        # TODO: Implement summary generation
-        # 1. Load video metadata, scenes, transcript
-        # 2. Use VideoSummarizer or SceneSummarizer
-        # 3. Generate summary based on config
-        # 4. Store summary in database
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                logger.error(f"Video {video_id} not found for summary generation")
+                return
+
+            scene_rows = db.query(Scene).filter(Scene.video_id == video.id).order_by(Scene.start_time).all()
+            transcript_rows = (
+                db.query(Transcript).filter(Transcript.video_id == video.id).order_by(Transcript.start_time).all()
+            )
+            duration = video.duration_seconds or 0.0
+            scenes = [
+                {
+                    "scene_number": s.scene_number,
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "description": s.description,
+                }
+                for s in scene_rows
+            ]
+            transcript_text = " ".join(t.text for t in transcript_rows)
+
+        result = await asyncio.to_thread(
+            _run_summary_generation, video_id, duration, transcript_text, scenes, config.length
+        )
+
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            db.add(Summary(
+                video_id=video.id,
+                summary_type=SummaryType(config.summary_type),
+                content=result["summary_text"],
+                timestamp_ranges=[],
+                extra_metadata={
+                    "key_points": result["key_points"],
+                    "main_topics": result["main_topics"],
+                    "duration_covered": duration,
+                },
+            ))
 
         logger.info(f"Summary generation complete for video {video_id}")
 
     except Exception as e:
-        logger.error(f"Summary generation failed: {e}")
+        logger.error(f"Summary generation failed: {e}", exc_info=True)
+
+
+def _run_highlight_detection(video_id: str, duration: float, scenes: list, transcripts_by_scene: dict, config: GenerateHighlightsRequest) -> list:
+    """Synchronous scoring/detection run off the event loop"""
+    from src.services.highlights.importance_scorer import ImportanceScorer
+    from src.services.highlights.highlight_detector import HighlightDetector
+
+    scorer = ImportanceScorer()
+    scores = [
+        scorer.score_scene(scene_data=s, transcript_segments=transcripts_by_scene.get(s["scene_number"], []))
+        for s in scenes
+    ]
+
+    detector = HighlightDetector(
+        importance_scorer=scorer,
+        min_importance=config.min_importance,
+        min_highlight_duration=config.min_duration,
+        max_highlight_duration=config.max_duration,
+    )
+    collection = detector.detect_highlights(
+        video_id=video_id,
+        duration=duration,
+        scenes=scenes,
+        scene_scores=scores,
+        max_highlights=config.max_highlights,
+    )
+    return collection.highlights
 
 
 async def generate_highlights_task(
     video_id: str,
     config: GenerateHighlightsRequest,
 ):
-    """
-    Generate highlights in background
+    """Generate highlights in background using ImportanceScorer + HighlightDetector"""
+    import asyncio
+    from src.core.database import get_db
+    from src.models import Video, Scene, Transcript, Highlight as HighlightModel, HighlightType as HighlightTypeDB
 
-    Uses HighlightDetector to find important moments
-    """
     try:
         logger.info(f"Starting highlight generation for video {video_id}")
 
-        # TODO: Implement highlight generation
-        # 1. Load video analysis results
-        # 2. Use ImportanceScorer to score moments
-        # 3. Use HighlightDetector to identify highlights
-        # 4. Use HighlightRanker to select top highlights
-        # 5. Optionally create clips with ClipCreator
-        # 6. Store highlights in database
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                logger.error(f"Video {video_id} not found for highlight generation")
+                return
+
+            scene_rows = db.query(Scene).filter(Scene.video_id == video.id).order_by(Scene.start_time).all()
+            transcript_rows = db.query(Transcript).filter(Transcript.video_id == video.id).all()
+            duration = video.duration_seconds or 0.0
+
+            scenes = [
+                {
+                    "scene_number": s.scene_number,
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "transition_type": s.transition_type.value if s.transition_type else None,
+                }
+                for s in scene_rows
+            ]
+            transcripts_by_scene = {}
+            for s in scene_rows:
+                transcripts_by_scene[s.scene_number] = [
+                    {"text": t.text, "start": t.start_time, "end": t.end_time}
+                    for t in transcript_rows
+                    if t.start_time >= s.start_time and t.start_time < s.end_time
+                ]
+
+        if not scenes:
+            logger.info(f"No scenes available for video {video_id}, skipping highlight generation")
+            return
+
+        highlights = await asyncio.to_thread(
+            _run_highlight_detection, video_id, duration, scenes, transcripts_by_scene, config
+        )
+
+        known_types = {t.value for t in HighlightTypeDB}
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            for h in highlights:
+                type_value = h.highlight_type.value if h.highlight_type.value in known_types else "unknown"
+                db.add(HighlightModel(
+                    video_id=video.id,
+                    title=h.title or f"Highlight at {h.start_time:.0f}s",
+                    description=h.description,
+                    start_time=h.start_time,
+                    end_time=h.end_time,
+                    importance_score=h.importance_score,
+                    highlight_type=HighlightTypeDB(type_value),
+                    extra_metadata=h.metadata or {},
+                ))
+
+        logger.info(f"Highlight generation complete for video {video_id}: {len(highlights)} highlights")
+
+    except Exception as e:
+        logger.error(f"Highlight generation failed: {e}", exc_info=True)
 
         logger.info(f"Highlight generation complete for video {video_id}")
 
