@@ -98,6 +98,11 @@ class SpeakerDiarization:
 
             diarization = self.pipeline(str(audio_path), **params)
 
+            # pyannote.audio 4.x wraps the Annotation in a DiarizeOutput
+            # dataclass instead of returning it directly
+            if hasattr(diarization, "speaker_diarization"):
+                diarization = diarization.speaker_diarization
+
             # Convert to SpeakerSegments
             segments = []
             speaker_labels = set()
@@ -151,9 +156,10 @@ class SpeakerDiarization:
             logger.info("Loading pyannote diarization pipeline")
 
             # Load pre-trained pipeline
+            # pyannote.audio 4.x renamed use_auth_token -> token
             self.pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
-                use_auth_token=self.hf_token
+                token=self.hf_token
             )
 
             logger.info("Pipeline loaded successfully")
