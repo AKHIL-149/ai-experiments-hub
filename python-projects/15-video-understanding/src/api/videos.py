@@ -11,6 +11,9 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks,
 from pydantic import BaseModel, Field
 from datetime import datetime
 
+from src.core.database import get_db
+from src.models import Video, VideoStatus, SourceType
+
 logger = logging.getLogger(__name__)
 
 # Create router
@@ -53,8 +56,8 @@ class VideoResponse(BaseModel):
     description: Optional[str] = None
     source_type: str
     source_url: Optional[str] = None
-    duration_seconds: float
-    file_path: str
+    duration_seconds: Optional[float] = None
+    file_path: Optional[str] = None
     thumbnail_path: Optional[str] = None
     processing_status: str
     error_message: Optional[str] = None
@@ -88,6 +91,13 @@ class DeleteResponse(BaseModel):
     video_id: str
     success: bool
     message: str
+
+
+def _video_to_response_dict(video: Video) -> dict:
+    """Map a Video ORM row to the VideoResponse field shape"""
+    d = video.to_dict()
+    d["video_id"] = d.pop("id")
+    return d
 
 
 # ============================================================================
@@ -150,18 +160,17 @@ async def upload_video(
         # Get video duration using ffprobe
         duration = await get_video_duration(file_path)
 
-        # TODO: Save to database
-        # video = Video(
-        #     id=video_id,
-        #     title=video_title,
-        #     description=description,
-        #     source_type="local",
-        #     file_path=file_path,
-        #     duration_seconds=duration,
-        #     processing_status="pending",
-        # )
-        # db.add(video)
-        # db.commit()
+        with get_db() as db:
+            video = Video(
+                external_id=video_id,
+                title=video_title,
+                description=description,
+                source_type=SourceType.LOCAL,
+                file_path=file_path,
+                duration_seconds=duration,
+                processing_status=VideoStatus.PENDING,
+            )
+            db.add(video)
 
         # Schedule processing if auto_process
         if auto_process:
@@ -214,6 +223,16 @@ async def process_youtube_video(
         # Generate video ID
         import uuid
         video_id = str(uuid.uuid4())
+
+        with get_db() as db:
+            video = Video(
+                external_id=video_id,
+                title=request.title or "YouTube Video",
+                source_type=SourceType.YOUTUBE,
+                source_url=request.url,
+                processing_status=VideoStatus.DOWNLOADING,
+            )
+            db.add(video)
 
         # Download video using yt-dlp (in background)
         background_tasks.add_task(
@@ -318,19 +337,21 @@ async def list_videos(
     Returns paginated list of videos
     """
     try:
-        # TODO: Query database
-        # query = db.query(Video)
-        # if status:
-        #     query = query.filter(Video.processing_status == status)
-        # if source_type:
-        #     query = query.filter(Video.source_type == source_type)
-        #
-        # total = query.count()
-        # videos = query.offset((page - 1) * page_size).limit(page_size).all()
+        with get_db() as db:
+            query = db.query(Video)
+            if status:
+                query = query.filter(Video.processing_status == VideoStatus(status))
+            if source_type:
+                query = query.filter(Video.source_type == SourceType(source_type))
 
-        # Mock response for now
-        videos = []
-        total = 0
+            total = query.count()
+            rows = (
+                query.order_by(Video.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+                .all()
+            )
+            videos = [VideoResponse(**_video_to_response_dict(v)) for v in rows]
 
         return VideoListResponse(
             videos=videos,
@@ -357,13 +378,12 @@ async def get_video(video_id: str):
     Returns complete video information
     """
     try:
-        # TODO: Query database
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
 
-        # Mock response for now
-        raise HTTPException(status_code=404, detail="Video not found")
+            return VideoResponse(**_video_to_response_dict(video))
 
     except HTTPException:
         raise
@@ -389,17 +409,15 @@ async def delete_video(
     Returns deletion status
     """
     try:
-        # TODO: Delete from database and optionally delete files
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
-        #
-        # if delete_files:
-        #     # Delete video file, frames, clips, etc.
-        #     delete_video_files(video)
-        #
-        # db.delete(video)
-        # db.commit()
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            if delete_files and video.file_path and os.path.exists(video.file_path):
+                os.remove(video.file_path)
+
+            db.delete(video)
 
         return DeleteResponse(
             video_id=video_id,
@@ -427,18 +445,20 @@ async def get_video_status(video_id: str):
     Returns current processing status and progress
     """
     try:
-        # TODO: Get status from database or processing queue
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
 
-        # Mock response
-        return VideoStatusResponse(
-            video_id=video_id,
-            status="pending",
-            progress=0.0,
-            stage=None,
-        )
+            return VideoStatusResponse(
+                video_id=video_id,
+                status=video.processing_status.value,
+                progress=100.0 if video.processing_status == VideoStatus.COMPLETED else 0.0,
+                stage=video.processing_status.value,
+                error_message=video.error_message,
+                started_at=video.created_at,
+                completed_at=video.processed_at,
+            )
 
     except HTTPException:
         raise
@@ -480,155 +500,276 @@ async def get_video_duration(file_path: str) -> float:
         return 0.0
 
 
-async def process_video_background(video_id: str):
-    """Process video in background with progress updates"""
-    try:
-        import asyncio
-        from src.api.websockets import (
-            send_progress_update,
-            send_stage_complete,
-            send_processing_complete,
-            send_processing_error,
-        )
+def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
+    """
+    Real (synchronous, CPU/IO-bound) analysis pipeline: sparse frame
+    sampling, scene detection, audio transcription, and per-scene keyframe
+    captioning. Run off the event loop via asyncio.to_thread.
+    """
+    from pathlib import Path
+    from src.core.config import settings
+    from src.core.video_processor import create_video_processor
+    from src.services.scene_detection.content_detector import ContentBasedSceneDetector
+    from src.services.scene_detection.base import SceneDetectorConfig
+    from src.services.transcription_service import TranscriptionService
+    from src.services.image_captioning import ImageCaptioningService
 
+    path = Path(video_path)
+    processor = create_video_processor()
+
+    # Sparse raw frame sampling (for storage/browsing)
+    frames_dir = Path(settings.frames_path) / video_uuid
+    sampled_frames = processor.extract_frames(path, frames_dir, fps=0.2)
+
+    # Real scene detection (histogram-based content detector)
+    detector = ContentBasedSceneDetector(
+        SceneDetectorConfig(
+            threshold=settings.scene_threshold,
+            min_scene_length=settings.min_scene_length,
+        )
+    )
+    scenes = detector.detect_scenes(path)
+
+    # Real audio transcription (local Whisper)
+    audio_path = Path(settings.temp_path) / f"{video_uuid}.wav"
+    processor.extract_audio(path, audio_path)
+    transcriber = TranscriptionService(prefer_local=True, model_name=settings.whisper_model)
+    transcription = transcriber.transcribe(audio_path, use_local=True)
+
+    # Real per-scene keyframe extraction + captioning (local BLIP)
+    captioner = ImageCaptioningService(use_local=True)
+    keyframes_dir = frames_dir / "keyframes"
+    keyframes_dir.mkdir(parents=True, exist_ok=True)
+    scene_results = []
+    for scene in scenes:
+        ts = scene.keyframe_timestamp or scene.middle_timestamp
+        kf_path = keyframes_dir / f"scene_{scene.scene_id:03d}.jpg"
+        caption = ""
+        try:
+            processor.extract_single_frame(path, kf_path, ts)
+            caption = captioner.caption_image(kf_path).text
+        except Exception as e:
+            logger.warning(f"Keyframe/caption failed for scene {scene.scene_id}: {e}")
+        scene_results.append({"scene": scene, "keyframe_path": str(kf_path), "caption": caption})
+
+    return {
+        "sampled_frame_paths": [str(f) for f in sampled_frames],
+        "scenes": scene_results,
+        "transcription": transcription,
+    }
+
+
+_embedding_model = None
+
+
+def _get_embedding_model():
+    """Lazily load a shared sentence-transformers model for text embeddings"""
+    global _embedding_model
+    if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer
+        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedding_model
+
+
+async def process_video_background(video_id: str):
+    """Process video in background: real analysis, DB persistence, and progress updates"""
+    import asyncio
+    from pathlib import Path
+    from src.core.config import settings
+    from src.core.vector_store import VideoVectorStore
+    from src.models import (
+        Scene as SceneModel,
+        SceneType as SceneTypeDB,
+        TransitionType as TransitionTypeDB,
+        Frame as FrameModel,
+        Transcript as TranscriptModel,
+    )
+    from src.api.websockets import (
+        send_progress_update,
+        send_stage_complete,
+        send_processing_complete,
+        send_processing_error,
+    )
+
+    try:
         logger.info(f"Starting background processing for video {video_id}")
 
-        # Stage 1: Frame Extraction (10-20%)
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise RuntimeError(f"Video {video_id} not found in database")
+            video.processing_status = VideoStatus.PROCESSING
+            file_path = video.file_path
+
+        # Stage 1-2: Frame sampling + scene detection + transcription + captioning
+        # (runs off the event loop; it's CPU/subprocess-bound)
         await send_progress_update(
             video_id=video_id,
             stage="frame_extraction",
             progress=10.0,
-            message="Extracting frames from video...",
+            message="Extracting frames and detecting scenes...",
         )
-        await asyncio.sleep(2)  # Simulate processing
-        await send_progress_update(
-            video_id=video_id,
-            stage="frame_extraction",
-            progress=15.0,
-            message="Analyzing video structure...",
-        )
-        await asyncio.sleep(2)
+
+        analysis = await asyncio.to_thread(_run_video_analysis, file_path, video_id)
+        transcription = analysis["transcription"]
+
         await send_stage_complete(
             video_id=video_id,
             stage="frame_extraction",
             message="Frame extraction complete",
-            results={"frames_extracted": 120},
+            results={"frames_extracted": len(analysis["sampled_frame_paths"])},
         )
 
-        # Stage 2: Scene Detection (20-35%)
-        await send_progress_update(
-            video_id=video_id,
-            stage="scene_detection",
-            progress=25.0,
-            message="Detecting scene boundaries...",
-        )
-        await asyncio.sleep(2)
-        await send_progress_update(
-            video_id=video_id,
-            stage="scene_detection",
-            progress=32.0,
-            message="Analyzing scene transitions...",
-        )
-        await asyncio.sleep(2)
         await send_stage_complete(
             video_id=video_id,
             stage="scene_detection",
             message="Scene detection complete",
-            results={"scenes_detected": 12},
+            results={"scenes_detected": len(analysis["scenes"])},
         )
 
-        # Stage 3: Audio Transcription (35-60%)
-        await send_progress_update(
-            video_id=video_id,
-            stage="transcription",
-            progress=40.0,
-            message="Extracting audio track...",
-        )
-        await asyncio.sleep(2)
-        await send_progress_update(
-            video_id=video_id,
-            stage="transcription",
-            progress=50.0,
-            message="Transcribing speech...",
-        )
-        await asyncio.sleep(3)
         await send_stage_complete(
             video_id=video_id,
             stage="transcription",
             message="Transcription complete",
-            results={"segments": 45},
+            results={"segments": len(transcription.segments), "language": transcription.language},
         )
 
-        # Stage 4: Visual Analysis (60-75%)
-        await send_progress_update(
-            video_id=video_id,
-            stage="visual_analysis",
-            progress=65.0,
-            message="Analyzing visual content...",
-        )
-        await asyncio.sleep(2)
-        await send_progress_update(
-            video_id=video_id,
-            stage="visual_analysis",
-            progress=72.0,
-            message="Detecting objects and actions...",
-        )
-        await asyncio.sleep(2)
         await send_stage_complete(
             video_id=video_id,
             stage="visual_analysis",
             message="Visual analysis complete",
-            results={"objects_detected": 156},
+            results={"scenes_captioned": len(analysis["scenes"])},
         )
 
-        # Stage 5: Embeddings (75-90%)
+        # Stage 3: Persist scenes/frames/transcript + build real embeddings
         await send_progress_update(
             video_id=video_id,
             stage="embeddings",
             progress=80.0,
             message="Generating embeddings...",
         )
-        await asyncio.sleep(2)
-        await send_progress_update(
-            video_id=video_id,
-            stage="embeddings",
-            progress=88.0,
-            message="Building vector index...",
-        )
-        await asyncio.sleep(2)
+
+        embed_model = await asyncio.to_thread(_get_embedding_model)
+
+        transcript_count = 0
+        caption_count = 0
+
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+
+            scene_rows = []
+            for item in analysis["scenes"]:
+                s = item["scene"]
+                scene_row = SceneModel(
+                    video_id=video.id,
+                    scene_number=s.scene_id,
+                    start_time=s.start_time,
+                    end_time=s.end_time,
+                    duration=s.duration,
+                    frame_count=s.frame_count,
+                    keyframe_path=item["keyframe_path"],
+                    scene_type=SceneTypeDB(s.scene_type.value),
+                    transition_type=TransitionTypeDB(s.transition_type.value),
+                    description=item["caption"],
+                    extra_metadata=s.metadata or {},
+                )
+                db.add(scene_row)
+                scene_rows.append(scene_row)
+            db.flush()  # assign scene_row.id values
+
+            for item, scene_row in zip(analysis["scenes"], scene_rows):
+                s = item["scene"]
+                db.add(FrameModel(
+                    video_id=video.id,
+                    scene_id=scene_row.id,
+                    timestamp=s.keyframe_timestamp or s.middle_timestamp,
+                    frame_number=s.start_frame,
+                    file_path=item["keyframe_path"],
+                    is_keyframe=True,
+                    description=item["caption"],
+                ))
+
+            transcript_rows = []
+            for seg in transcription.segments:
+                t_row = TranscriptModel(
+                    video_id=video.id,
+                    start_time=seg.start,
+                    end_time=seg.end,
+                    text=seg.text,
+                    confidence=seg.confidence,
+                    language=seg.language or transcription.language,
+                )
+                db.add(t_row)
+                transcript_rows.append(t_row)
+            db.flush()
+
+            video.duration_seconds = video.duration_seconds or transcription.duration
+
+            # Push real text embeddings into ChromaDB for semantic search
+            store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+            store.initialize_collections()
+
+            texts = [t.text for t in transcript_rows if t.text.strip()]
+            if texts:
+                text_rows = [t for t in transcript_rows if t.text.strip()]
+                vectors = embed_model.encode(texts)
+                store.add_transcript_embeddings(
+                    video_id=video_id,
+                    transcript_embeddings=vectors,
+                    segment_ids=[str(t.id) for t in text_rows],
+                    texts=texts,
+                    timestamps=[(t.start_time, t.end_time) for t in text_rows],
+                )
+                transcript_count = len(texts)
+
+            caption_pairs = [
+                (item["caption"], sr) for item, sr in zip(analysis["scenes"], scene_rows)
+                if item["caption"].strip()
+            ]
+            if caption_pairs:
+                captions = [c for c, _ in caption_pairs]
+                caption_scene_rows = [sr for _, sr in caption_pairs]
+                vectors = embed_model.encode(captions)
+                store.add_scene_embeddings(
+                    video_id=video_id,
+                    scene_embeddings=vectors,
+                    scene_numbers=[sr.scene_number for sr in caption_scene_rows],
+                    scene_timestamps=[(sr.start_time, sr.end_time) for sr in caption_scene_rows],
+                    scene_descriptions=captions,
+                )
+                caption_count = len(captions)
+
+            video.processing_status = VideoStatus.COMPLETED
+            video.processed_at = datetime.now()
+
         await send_stage_complete(
             video_id=video_id,
             stage="embeddings",
             message="Embedding generation complete",
-            results={"embeddings_created": 120},
+            results={"embeddings_created": transcript_count + caption_count},
         )
-
-        # Stage 6: Summary Generation (90-100%)
-        await send_progress_update(
-            video_id=video_id,
-            stage="summarization",
-            progress=95.0,
-            message="Generating video summary...",
-        )
-        await asyncio.sleep(2)
 
         # Final completion
         await send_processing_complete(
             video_id=video_id,
             message="Video processing complete! ✅",
             summary={
-                "frames": 120,
-                "scenes": 12,
-                "transcripts": 45,
-                "objects": 156,
-                "embeddings": 120,
+                "frames": len(analysis["sampled_frame_paths"]),
+                "scenes": len(analysis["scenes"]),
+                "transcripts": transcript_count,
+                "embeddings": transcript_count + caption_count,
             },
         )
 
         logger.info(f"Background processing complete for video {video_id}")
 
     except Exception as e:
-        logger.error(f"Background processing failed: {e}")
+        logger.error(f"Background processing failed: {e}", exc_info=True)
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if video:
+                video.processing_status = VideoStatus.FAILED
+                video.error_message = str(e)
         await send_processing_error(
             video_id=video_id,
             stage="unknown",
@@ -692,6 +833,16 @@ async def download_youtube_video(
 
             logger.info(f"Downloaded: {video_title} ({duration}s) -> {file_path}")
 
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if video:
+                video.title = video_title
+                video.file_path = file_path
+                video.duration_seconds = duration
+                video.processing_status = (
+                    VideoStatus.PROCESSING if auto_process else VideoStatus.PENDING
+                )
+
         # Download complete
         await send_progress_update(
             video_id=video_id,
@@ -706,6 +857,11 @@ async def download_youtube_video(
 
     except Exception as e:
         logger.error(f"YouTube download failed: {e}")
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if video:
+                video.processing_status = VideoStatus.FAILED
+                video.error_message = str(e)
         await send_processing_error(
             video_id=video_id,
             stage="download",
