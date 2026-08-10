@@ -436,6 +436,7 @@ async def get_video_keyframes(video_id: str):
         page=1,
         page_size=1000,
         keyframes_only=True,
+        scene_id=None,
     )
 
 
