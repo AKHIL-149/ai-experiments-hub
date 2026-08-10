@@ -21,7 +21,7 @@ dependencies = [
 
     # Video/Audio Processing
     "ffmpeg-python>=0.2.0",
-    "opencv-python>=4.8.0",
+    "opencv-python-headless>=4.8.0,<5.0.0",
     "scenedetect[opencv]>=0.6.2",
     "pydub>=0.25.1",
 
@@ -32,6 +32,8 @@ dependencies = [
     "torch>=2.1.0",
     "torchvision>=0.16.0",
     "Pillow>=10.1.0",
+    "ultralytics>=8.0.0",
+    "librosa>=0.10.0",
 
     # Vector Storage
     "chromadb>=0.4.15",
