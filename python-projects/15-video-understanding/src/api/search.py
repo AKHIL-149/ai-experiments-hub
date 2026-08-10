@@ -164,16 +164,67 @@ async def semantic_search(request: SemanticSearchRequest):
 
         start_time = datetime.now()
 
-        # TODO: Implement semantic search
-        # 1. Generate query embedding (CLIP for visual, text embedder for text)
-        # 2. Query ChromaDB collections based on search_type
-        # 3. Combine and rank results from multiple sources
-        # 4. Apply filters (video_ids, min_similarity)
-        # 5. Retrieve metadata from database
-        # 6. Return top_k results
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.models import Video
+        from src.core.vector_store import VideoVectorStore
+        from src.api.videos import _get_embedding_model
 
-        # Mock response
-        results = []
+        embed_model = _get_embedding_model()
+        query_vector = embed_model.encode([request.query])[0]
+
+        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store.initialize_collections()
+
+        raw_hits = []  # (similarity, result_type, timestamp, content, video_id, metadata)
+
+        transcript_hits = store.search_transcripts(query_vector, n_results=request.top_k)
+        for i, doc_id in enumerate(transcript_hits.ids):
+            meta = transcript_hits.metadatas[i]
+            similarity = 1.0 - transcript_hits.distances[i]
+            text = transcript_hits.documents[i] if transcript_hits.documents else ""
+            raw_hits.append((
+                similarity, "transcript", meta.get("start_time", 0.0), text,
+                meta.get("video_id"), meta,
+            ))
+
+        scene_hits = store.search_scenes(query_vector, n_results=request.top_k)
+        for i, doc_id in enumerate(scene_hits.ids):
+            meta = scene_hits.metadatas[i]
+            similarity = 1.0 - scene_hits.distances[i]
+            text = scene_hits.documents[i] if scene_hits.documents else ""
+            raw_hits.append((
+                similarity, "scene", meta.get("start_time", 0.0), text,
+                meta.get("video_id"), meta,
+            ))
+
+        if request.video_ids:
+            raw_hits = [h for h in raw_hits if h[4] in request.video_ids]
+        raw_hits = [h for h in raw_hits if h[0] >= request.min_similarity]
+        raw_hits.sort(key=lambda h: h[0], reverse=True)
+        raw_hits = raw_hits[:request.top_k]
+
+        video_titles = {}
+        with get_db() as db:
+            ext_ids = {h[4] for h in raw_hits if h[4]}
+            if ext_ids:
+                rows = db.query(Video).filter(Video.external_id.in_(ext_ids)).all()
+                video_titles = {v.external_id: v.title for v in rows}
+
+        results = [
+            SearchResult(
+                result_id=f"{h[1]}_{i}",
+                result_type=h[1],
+                video_id=h[4] or "",
+                video_title=video_titles.get(h[4], "Unknown"),
+                timestamp=h[2],
+                similarity_score=h[0],
+                content=h[3],
+                metadata=h[5],
+            )
+            for i, h in enumerate(raw_hits)
+        ]
 
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds() * 1000
