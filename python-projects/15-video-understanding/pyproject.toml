@@ -22,7 +22,7 @@ dependencies = [
     # Video/Audio Processing
     "ffmpeg-python>=0.2.0",
     "opencv-python>=4.8.0",
-    "PySceneDetect[opencv]>=0.6.2",
+    "scenedetect[opencv]>=0.6.2",
     "pydub>=0.25.1",
 
     # AI/ML Models

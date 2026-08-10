@@ -70,41 +70,35 @@ class ContentBasedSceneDetector(SceneDetector):
         )
 
         try:
-            from scenedetect import VideoManager, SceneManager
+            from scenedetect import open_video, SceneManager
             from scenedetect.detectors import ContentDetector
 
-            # Create video manager
-            video_manager = VideoManager([str(video_path)])
+            # Open video (modern scenedetect API; VideoManager was removed in 0.7+)
+            video = open_video(str(video_path))
 
             # Create scene manager
             scene_manager = SceneManager()
+
+            # Get FPS for time calculations
+            fps = float(video.frame_rate)
 
             # Add content detector
             scene_manager.add_detector(
                 ContentDetector(
                     threshold=self.config.threshold,
-                    min_scene_len=int(self.config.min_scene_length * 25)  # Frames at ~25fps
+                    min_scene_len=int(self.config.min_scene_length * fps)
                 )
             )
 
-            # Set start/end times if specified
-            start_frame = None
-            end_frame = None
-
-            if start_time is not None or end_time is not None:
-                video_manager.set_duration(start_time=start_time, end_time=end_time)
-
-            # Start video manager
-            video_manager.start()
+            # Seek to start time if specified
+            if start_time is not None:
+                video.seek(start_time)
 
             # Perform scene detection
-            scene_manager.detect_scenes(video_manager)
+            scene_manager.detect_scenes(video=video, end_time=end_time)
 
             # Get scene list
             scene_list = scene_manager.get_scene_list()
-
-            # Get FPS for time calculations
-            fps = video_manager.get_framerate()
 
             logger.info(f"Detected {len(scene_list)} scenes (FPS={fps})")
 
@@ -138,9 +132,6 @@ class ContentBasedSceneDetector(SceneDetector):
                 )
 
                 scenes.append(scene)
-
-            # Release video manager
-            video_manager.release()
 
             # Apply post-processing
             scenes = self._post_process_scenes(scenes)
