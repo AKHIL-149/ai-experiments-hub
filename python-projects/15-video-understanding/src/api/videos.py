@@ -749,6 +749,29 @@ async def process_video_background(video_id: str):
             results={"embeddings_created": transcript_count + caption_count},
         )
 
+        # Stage 4: Summary + highlight generation (local Ollama LLM + heuristic scoring)
+        await send_progress_update(
+            video_id=video_id,
+            stage="summarization",
+            progress=95.0,
+            message="Generating video summary and highlights...",
+        )
+
+        from src.api.analysis import (
+            generate_summary_task,
+            generate_highlights_task,
+            GenerateSummaryRequest,
+            GenerateHighlightsRequest,
+        )
+        await generate_summary_task(video_id, GenerateSummaryRequest())
+        await generate_highlights_task(video_id, GenerateHighlightsRequest())
+
+        await send_stage_complete(
+            video_id=video_id,
+            stage="summarization",
+            message="Summary and highlights generated",
+        )
+
         # Final completion
         await send_processing_complete(
             video_id=video_id,
