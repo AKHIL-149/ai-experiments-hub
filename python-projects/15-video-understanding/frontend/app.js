@@ -643,19 +643,89 @@ function closeVideoModal() {
 async function viewSummary(videoId) {
     try {
         const summary = await apiCall(`/api/videos/${videoId}/summary`);
-        alert(`Summary:\n\n${summary.content}`);
+
+        const keyPointsHtml = (summary.key_points && summary.key_points.length)
+            ? `
+                <h3 style="margin-top: 1.5rem;">Key Points</h3>
+                <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                    ${summary.key_points.map(p => `<li style="margin-bottom: 0.5rem;">${p}</li>`).join('')}
+                </ul>
+            `
+            : '';
+
+        document.getElementById('summary-details').innerHTML = `
+            <h2><i class="fas fa-file-alt"></i> Video Summary</h2>
+            <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
+                ${summary.summary_type} summary
+                ${summary.duration_covered ? ` &middot; covers ${formatTime(summary.duration_covered)}` : ''}
+                &middot; generated ${new Date(summary.generated_at).toLocaleString()}
+            </div>
+            <p style="margin-top: 1.5rem; white-space: pre-wrap; line-height: 1.6;">${summary.content}</p>
+            ${keyPointsHtml}
+        `;
+
+        document.getElementById('summary-modal').classList.add('active');
     } catch (error) {
         showToast('Summary not available yet', 'error');
     }
 }
 
+function closeSummaryModal() {
+    document.getElementById('summary-modal').classList.remove('active');
+}
+
 async function viewHighlights(videoId) {
     try {
-        const highlights = await apiCall(`/api/videos/${videoId}/highlights`);
-        alert(`Found ${highlights.total_highlights} highlights`);
+        const data = await apiCall(`/api/videos/${videoId}/highlights?min_importance=0`);
+
+        let bodyHtml;
+        if (!data.highlights || data.highlights.length === 0) {
+            bodyHtml = `
+                <p style="margin-top: 1.5rem; color: var(--text-muted);">
+                    No highlights found for this video yet.
+                </p>
+            `;
+        } else {
+            bodyHtml = `
+                <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                    ${data.highlights.map(h => `
+                        <div style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                <strong>${h.title}</strong>
+                                <span style="color: var(--text-muted); font-size: 0.85rem;">
+                                    ${formatTime(h.start_time)} - ${formatTime(h.end_time)}
+                                </span>
+                            </div>
+                            ${h.description ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">${h.description}</p>` : ''}
+                            <div style="margin-top: 0.5rem; font-size: 0.85rem;">
+                                <span class="result-badge">${h.highlight_type}</span>
+                                <span style="margin-left: 0.5rem; color: var(--text-muted);">
+                                    importance: ${h.importance_score.toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        document.getElementById('highlights-details').innerHTML = `
+            <h2><i class="fas fa-star"></i> Video Highlights</h2>
+            <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
+                ${data.total_highlights} highlight${data.total_highlights === 1 ? '' : 's'}
+                ${data.total_highlights ? ` &middot; avg importance ${data.average_importance.toFixed(2)}` : ''}
+            </div>
+            ${bodyHtml}
+        `;
+
+        document.getElementById('highlights-modal').classList.add('active');
     } catch (error) {
         showToast('Highlights not available yet', 'error');
     }
+}
+
+function closeHighlightsModal() {
+    document.getElementById('highlights-modal').classList.remove('active');
 }
 
 async function deleteVideo(videoId) {
@@ -716,8 +786,16 @@ function formatTime(seconds) {
 
 // Close modal on outside click
 window.onclick = function(event) {
-    const modal = document.getElementById('video-modal');
-    if (event.target === modal) {
+    const videoModal = document.getElementById('video-modal');
+    if (event.target === videoModal) {
         closeVideoModal();
+    }
+    const summaryModal = document.getElementById('summary-modal');
+    if (event.target === summaryModal) {
+        closeSummaryModal();
+    }
+    const highlightsModal = document.getElementById('highlights-modal');
+    if (event.target === highlightsModal) {
+        closeHighlightsModal();
     }
 }
