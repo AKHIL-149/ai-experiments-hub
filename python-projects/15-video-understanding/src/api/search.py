@@ -676,17 +676,77 @@ async def temporal_search(
     try:
         logger.info(f"Temporal search: '{query}' ({start_time}-{end_time})")
 
-        # TODO: Implement temporal-constrained search
-        # 1. Perform semantic search
-        # 2. Filter results by timestamp range
-        # 3. Return results within time bounds
+        search_started = datetime.now()
 
-        # Mock response
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.models import Video
+        from src.core.vector_store import VideoVectorStore
+        from src.api.videos import _get_embedding_model
+
+        embed_model = _get_embedding_model()
+        query_vector = embed_model.encode([query])[0]
+
+        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store.initialize_collections()
+
+        raw_hits = []  # (similarity, result_type, timestamp, content, video_id, metadata)
+
+        transcript_hits = store.search_transcripts(query_vector, n_results=top_k * 5 + 10)
+        for i in range(len(transcript_hits.ids)):
+            meta = transcript_hits.metadatas[i]
+            similarity = 1.0 - transcript_hits.distances[i]
+            text = transcript_hits.documents[i] if transcript_hits.documents else ""
+            raw_hits.append((
+                similarity, "transcript", meta.get("start_time", 0.0), text,
+                meta.get("video_id"), meta,
+            ))
+
+        scene_hits = store.search_scenes(query_vector, n_results=top_k * 5 + 10)
+        for i in range(len(scene_hits.ids)):
+            meta = scene_hits.metadatas[i]
+            similarity = 1.0 - scene_hits.distances[i]
+            text = scene_hits.documents[i] if scene_hits.documents else ""
+            raw_hits.append((
+                similarity, "scene", meta.get("start_time", 0.0), text,
+                meta.get("video_id"), meta,
+            ))
+
+        if video_ids:
+            raw_hits = [h for h in raw_hits if h[4] in video_ids]
+        raw_hits = [h for h in raw_hits if h[2] >= start_time]
+        if end_time is not None:
+            raw_hits = [h for h in raw_hits if h[2] <= end_time]
+        raw_hits.sort(key=lambda h: h[0], reverse=True)
+        raw_hits = raw_hits[:top_k]
+
+        video_titles = {}
+        with get_db() as db:
+            ext_ids = {h[4] for h in raw_hits if h[4]}
+            if ext_ids:
+                rows = db.query(Video).filter(Video.external_id.in_(ext_ids)).all()
+                video_titles = {v.external_id: v.title for v in rows}
+
+        results = [
+            SearchResult(
+                result_id=f"{h[1]}_{i}",
+                result_type=h[1],
+                video_id=h[4] or "",
+                video_title=video_titles.get(h[4], "Unknown"),
+                timestamp=h[2],
+                similarity_score=h[0],
+                content=h[3],
+                metadata=h[5],
+            )
+            for i, h in enumerate(raw_hits)
+        ]
+
         return SearchResponse(
             query=query,
-            results=[],
-            total_results=0,
-            search_time_ms=0.0,
+            results=results,
+            total_results=len(results),
+            search_time_ms=(datetime.now() - search_started).total_seconds() * 1000,
         )
 
     except Exception as e:
