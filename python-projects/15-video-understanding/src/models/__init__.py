@@ -9,6 +9,7 @@ from src.models.transcript import Transcript, SegmentType
 from src.models.summary import Summary, SummaryType
 from src.models.highlight import Highlight, HighlightType
 from src.models.embedding import VideoEmbedding, EmbeddingType
+from src.models.chapter import Chapter
 
 __all__ = [
     "Video",
@@ -26,4 +27,5 @@ __all__ = [
     "HighlightType",
     "VideoEmbedding",
     "EmbeddingType",
+    "Chapter",
 ]
