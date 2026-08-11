@@ -558,29 +558,94 @@ async def find_similar_videos(
     - **top_k**: Number of similar videos to return
     - **similarity_metric**: Comparison metric (visual, semantic, combined)
 
-    Compares videos based on visual content, transcript, or both
+    Compares videos by a "fingerprint" (the mean of a video's own
+    transcript + scene-caption embeddings), matched against other
+    videos' individual embeddings. No real CLIP visual embeddings are
+    wired up yet, so "visual" and "combined" currently behave the same
+    as "semantic".
     """
     try:
         logger.info(f"Finding videos similar to {video_id}")
 
-        # TODO: Implement similar video search
-        # 1. Load reference video embeddings (scene-level or aggregated)
-        # 2. Based on similarity_metric:
-        #    - visual: Compare CLIP embeddings
-        #    - semantic: Compare transcript embeddings
-        #    - combined: Weighted combination
-        # 3. Query vector store for nearest neighbors
-        # 4. Exclude reference video from results
-        # 5. Return top_k most similar videos
+        start_time = datetime.now()
 
-        # Mock response
+        # No real CLIP visual embeddings are wired up yet (deferred - see
+        # WORKFLOW_TEST_RESULTS.md), so "visual" and "combined" currently
+        # fall back to the same real text embeddings "semantic" uses.
+        import numpy as np
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.models import Video
+        from src.core.vector_store import VideoVectorStore
+
+        with get_db() as db:
+            ref_video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not ref_video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store.initialize_collections()
+
+        ref_embeddings = store.get_video_embeddings(video_id)
+        transcript_vecs = ref_embeddings.get("transcripts", {}).get("embeddings")
+        scene_vecs = ref_embeddings.get("scenes", {}).get("embeddings")
+        vectors = list(transcript_vecs) if transcript_vecs is not None else []
+        vectors += list(scene_vecs) if scene_vecs is not None else []
+        if not vectors:
+            return SearchResponse(
+                query=f"Videos similar to {video_id}",
+                results=[],
+                total_results=0,
+                search_time_ms=(datetime.now() - start_time).total_seconds() * 1000,
+            )
+
+        fingerprint = np.mean(np.array(vectors), axis=0)
+
+        best_per_video = {}
+        for hits in (
+            store.search_transcripts(fingerprint, n_results=top_k * 5 + 5),
+            store.search_scenes(fingerprint, n_results=top_k * 5 + 5),
+        ):
+            for i in range(len(hits.ids)):
+                other_video_id = hits.metadatas[i].get("video_id")
+                if not other_video_id or other_video_id == video_id:
+                    continue
+                similarity = 1.0 - hits.distances[i]
+                if other_video_id not in best_per_video or similarity > best_per_video[other_video_id]:
+                    best_per_video[other_video_id] = similarity
+
+        ranked = sorted(best_per_video.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
+
+        with get_db() as db:
+            titles = {
+                v.external_id: v.title
+                for v in db.query(Video).filter(Video.external_id.in_([vid for vid, _ in ranked])).all()
+            } if ranked else {}
+
+        results = [
+            SearchResult(
+                result_id=f"video_{vid}",
+                result_type="video",
+                video_id=vid,
+                video_title=titles.get(vid, "Unknown"),
+                timestamp=0.0,
+                similarity_score=score,
+                content=titles.get(vid, "Unknown"),
+                metadata={"similarity_metric": similarity_metric},
+            )
+            for vid, score in ranked
+        ]
+
         return SearchResponse(
             query=f"Videos similar to {video_id}",
-            results=[],
-            total_results=0,
-            search_time_ms=0.0,
+            results=results,
+            total_results=len(results),
+            search_time_ms=(datetime.now() - start_time).total_seconds() * 1000,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Similar video search failed: {e}")
         raise HTTPException(
