@@ -452,6 +452,27 @@ async def search_transcript(request: TranscriptSearchRequest):
 # ============================================================================
 
 
+def _run_rag_answer(question: str, context_text: str) -> str:
+    """Synchronous local-Ollama RAG call, run off the event loop"""
+    from src.core.llm_client import LLMClient
+
+    llm = LLMClient(backend="ollama", model="llama3.2")
+    system_prompt = (
+        "You answer questions about video content using short, timestamped "
+        "transcript/scene excerpts as context. The excerpts are fragments, not "
+        "full sentences - synthesize them into a complete, direct answer rather "
+        "than treating a fragment's brevity as a reason to refuse. Only say the "
+        "context is insufficient if the excerpts are genuinely unrelated to the "
+        "question."
+    )
+    prompt = (
+        f"Context (video excerpts):\n{context_text}\n\n"
+        f"Question: {question}\n\nAnswer:"
+    )
+    response = llm.generate(prompt=prompt, max_tokens=500, temperature=0.3, system_prompt=system_prompt)
+    return response["text"].strip()
+
+
 @router.post("/query", response_model=VideoQueryResponse)
 async def query_videos(request: VideoQueryRequest):
     """
@@ -469,27 +490,89 @@ async def query_videos(request: VideoQueryRequest):
 
         start_time = datetime.now()
 
-        # TODO: Implement RAG-based query
-        # 1. Parse and understand the question
-        # 2. Retrieve relevant context:
-        #    - Semantic search in transcripts
-        #    - Frame search for visual questions
-        #    - Scene summaries
-        # 3. Combine context from multiple sources
-        # 4. Use LLM to generate answer with context
-        # 5. Extract source references
-        # 6. Calculate confidence score
+        import asyncio
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.models import Video
+        from src.core.vector_store import VideoVectorStore
+        from src.api.videos import _get_embedding_model
 
-        # Mock response
-        end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds() * 1000
+        embed_model = _get_embedding_model()
+        query_vector = embed_model.encode([request.question])[0]
+
+        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store.initialize_collections()
+
+        transcript_hits = store.search_transcripts(
+            query_vector, n_results=request.max_context_items, video_id=request.video_id
+        )
+        scene_hits = store.search_scenes(
+            query_vector, n_results=request.max_context_items, video_id=request.video_id
+        )
+
+        raw_sources = []
+        for hits, source_type in ((transcript_hits, "transcript"), (scene_hits, "scene")):
+            for i in range(len(hits.ids)):
+                meta = hits.metadatas[i]
+                raw_sources.append({
+                    "source_type": source_type,
+                    "video_id": meta.get("video_id"),
+                    "timestamp": meta.get("start_time", 0.0),
+                    "content": hits.documents[i] if hits.documents else "",
+                    "relevance_score": 1.0 - hits.distances[i],
+                })
+
+        raw_sources.sort(key=lambda s: s["relevance_score"], reverse=True)
+        raw_sources = raw_sources[:request.max_context_items]
+
+        processing_time = (datetime.now() - start_time).total_seconds() * 1000
+
+        if not raw_sources:
+            return VideoQueryResponse(
+                question=request.question,
+                answer="No relevant content was found to answer this question.",
+                confidence=0.0,
+                sources=[],
+                video_ids=[],
+                processing_time_ms=processing_time,
+            )
+
+        with get_db() as db:
+            ext_ids = {s["video_id"] for s in raw_sources if s["video_id"]}
+            titles = {
+                v.external_id: v.title
+                for v in db.query(Video).filter(Video.external_id.in_(ext_ids)).all()
+            } if ext_ids else {}
+
+        context_text = "\n\n".join(
+            f"[{titles.get(s['video_id'], 'video')} @ {s['timestamp']:.0f}s]: {s['content']}"
+            for s in raw_sources
+        )
+
+        answer = await asyncio.to_thread(_run_rag_answer, request.question, context_text)
+        processing_time = (datetime.now() - start_time).total_seconds() * 1000
+
+        confidence = sum(s["relevance_score"] for s in raw_sources) / len(raw_sources)
+        video_ids = sorted({s["video_id"] for s in raw_sources if s["video_id"]})
+
+        sources = [
+            QuerySource(
+                source_type=s["source_type"],
+                video_id=s["video_id"] or "",
+                timestamp=s["timestamp"],
+                content=s["content"],
+                relevance_score=s["relevance_score"],
+            )
+            for s in raw_sources
+        ] if request.include_sources else []
 
         return VideoQueryResponse(
             question=request.question,
-            answer="This is a placeholder answer.",
-            confidence=0.0,
-            sources=[],
-            video_ids=[],
+            answer=answer,
+            confidence=confidence,
+            sources=sources,
+            video_ids=video_ids,
             processing_time_ms=processing_time,
         )
 
@@ -519,10 +602,12 @@ async def ask_video_question(
     try:
         logger.info(f"Video {video_id} query: '{request.question}'")
 
-        # TODO: Verify video exists
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
+        from src.core.database import get_db
+        from src.models import Video
+
+        with get_db() as db:
+            if not db.query(Video).filter(Video.external_id == video_id).first():
+                raise HTTPException(status_code=404, detail="Video not found")
 
         # Override video_id in request
         request.video_id = video_id
