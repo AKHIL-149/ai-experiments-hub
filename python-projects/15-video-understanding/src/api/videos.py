@@ -682,6 +682,9 @@ async def process_video_background(video_id: str):
         TransitionType as TransitionTypeDB,
         Frame as FrameModel,
         Transcript as TranscriptModel,
+        Summary as SummaryModel,
+        Highlight as HighlightModel,
+        Chapter as ChapterModel,
     )
     from src.api.websockets import (
         send_progress_update,
@@ -699,6 +702,22 @@ async def process_video_background(video_id: str):
                 raise RuntimeError(f"Video {video_id} not found in database")
             video.processing_status = VideoStatus.PROCESSING
             file_path = video.file_path
+
+            # Clear any prior analysis before regenerating, so calling this
+            # more than once (e.g. /process on an already-completed video,
+            # not just /reprocess) doesn't duplicate scenes/frames/
+            # transcripts - confirmed live: without this, a second run
+            # doubled every count (4->8 scenes, 149->298 transcripts).
+            db.query(ChapterModel).filter(ChapterModel.video_id == video.id).delete()
+            db.query(HighlightModel).filter(HighlightModel.video_id == video.id).delete()
+            db.query(SummaryModel).filter(SummaryModel.video_id == video.id).delete()
+            db.query(TranscriptModel).filter(TranscriptModel.video_id == video.id).delete()
+            db.query(FrameModel).filter(FrameModel.video_id == video.id).delete()
+            db.query(SceneModel).filter(SceneModel.video_id == video.id).delete()
+
+        vector_store_for_cleanup = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        vector_store_for_cleanup.initialize_collections()
+        vector_store_for_cleanup.delete_video_embeddings(video_id)
 
         # Stage 1-2: Frame sampling + scene detection + transcription + captioning
         # (runs off the event loop; it's CPU/subprocess-bound)

@@ -122,8 +122,10 @@ async def process_video(
     request: Optional[ProcessVideoRequest] = None,
 ):
     """
-    Start video processing for a video that was uploaded with
-    auto_process=false (or otherwise never processed).
+    Start video processing - typically for a video uploaded with
+    auto_process=false, but also safe to call again on an
+    already-completed video (it clears prior results first, same as
+    /reprocess).
 
     - **video_id**: Video identifier
 
@@ -183,21 +185,20 @@ async def reprocess_video(
 
     - **video_id**: Video identifier
 
-    Clears previously generated scenes, frames, transcript, summaries,
-    and highlights (and their vector embeddings), then re-runs the full
-    pipeline. The per-stage flags on the request body are not yet
-    honored - this always does a full reprocess, not a selective one.
+    Re-runs the full pipeline; process_video_background clears prior
+    scenes/frames/transcript/summaries/highlights/chapters (and their
+    vector embeddings) itself before regenerating, so this is safe to
+    call on an already-completed video. The per-stage flags on the
+    request body are not yet honored - this always does a full
+    reprocess, not a selective one.
 
     Returns processing status
     """
     try:
         logger.info(f"Reprocessing video {video_id}")
 
-        from pathlib import Path
-        from src.core.config import settings
         from src.core.database import get_db
-        from src.core.vector_store import VideoVectorStore
-        from src.models import Video, VideoStatus, Scene, Frame, Transcript, Summary, Highlight
+        from src.models import Video, VideoStatus
         from src.api.videos import process_video_background
 
         with get_db() as db:
@@ -209,20 +210,10 @@ async def reprocess_video(
             if video.processing_status == VideoStatus.PROCESSING:
                 raise HTTPException(status_code=409, detail="Video is already being processed")
 
-            db.query(Highlight).filter(Highlight.video_id == video.id).delete()
-            db.query(Summary).filter(Summary.video_id == video.id).delete()
-            db.query(Transcript).filter(Transcript.video_id == video.id).delete()
-            db.query(Frame).filter(Frame.video_id == video.id).delete()
-            db.query(Scene).filter(Scene.video_id == video.id).delete()
-            video.processing_status = VideoStatus.PROCESSING
             video.processed_at = None
             video.error_message = None
 
-        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
-        store.initialize_collections()
-        store.delete_video_embeddings(video_id)
-
-        # Schedule the real processing pipeline
+        # Schedule the real processing pipeline (it clears prior data itself)
         background_tasks.add_task(process_video_background, video_id)
 
         return ProcessVideoResponse(
