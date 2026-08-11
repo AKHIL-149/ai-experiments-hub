@@ -12,6 +12,18 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 
+def _combine_where(where: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    ChromaDB requires a single top-level operator in a where clause - a
+    plain multi-key dict like {"video_id": ..., "speaker": ...} raises
+    "Expected where to have exactly one operator". Wrap multi-condition
+    filters in $and; leave single-condition filters as-is.
+    """
+    if len(where) <= 1:
+        return where
+    return {"$and": [{k: v} for k, v in where.items()]}
+
+
 @dataclass
 class VectorStoreConfig:
     """Configuration for vector store"""
@@ -666,7 +678,7 @@ class VideoVectorStore(VectorStore):
         return self.query(
             query_embedding=query_embedding,
             n_results=n_results,
-            where=where if where else None,
+            where=_combine_where(where) if where else None,
         )
 
     def search_transcripts(
@@ -703,7 +715,7 @@ class VideoVectorStore(VectorStore):
         return self.query(
             query_embedding=query_embedding,
             n_results=n_results,
-            where=where if where else None,
+            where=_combine_where(where) if where else None,
         )
 
     def search_scenes(
@@ -740,7 +752,7 @@ class VideoVectorStore(VectorStore):
         return self.query(
             query_embedding=query_embedding,
             n_results=n_results,
-            where=where if where else None,
+            where=_combine_where(where) if where else None,
         )
 
     def get_video_embeddings(self, video_id: str) -> Dict[str, Any]:
