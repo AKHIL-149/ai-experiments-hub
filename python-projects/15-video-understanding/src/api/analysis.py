@@ -243,12 +243,35 @@ async def get_video_chapters(video_id: str):
     try:
         logger.info(f"Getting chapters for video {video_id}")
 
-        # TODO: Query database for chapters
-        # Chapters are generated during summary phase
+        from src.core.database import get_db
+        from src.models import Video, Chapter as ChapterModel
 
-        # Mock response
-        chapters = []
-        total_duration = 0.0
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            rows = (
+                db.query(ChapterModel)
+                .filter(ChapterModel.video_id == video.id)
+                .order_by(ChapterModel.chapter_number)
+                .all()
+            )
+
+            chapters = [
+                ChapterResponse(
+                    chapter_id=str(c.id),
+                    chapter_number=c.chapter_number,
+                    title=c.title,
+                    description=c.description or "",
+                    start_time=c.start_time,
+                    end_time=c.end_time,
+                    duration=c.end_time - c.start_time,
+                    keyframe_path=c.keyframe_path,
+                )
+                for c in rows
+            ]
+            total_duration = sum(c.duration for c in chapters)
 
         return ChaptersResponse(
             video_id=video_id,
@@ -545,6 +568,11 @@ async def generate_summary_task(
 
         with get_db() as db:
             video = db.query(Video).filter(Video.external_id == video_id).first()
+            # Replace any prior summary of the same type rather than accumulate
+            db.query(Summary).filter(
+                Summary.video_id == video.id,
+                Summary.summary_type == SummaryType(config.summary_type),
+            ).delete()
             db.add(Summary(
                 video_id=video.id,
                 summary_type=SummaryType(config.summary_type),
@@ -682,6 +710,8 @@ async def generate_highlights_task(
         known_types = {t.value for t in HighlightTypeDB}
         with get_db() as db:
             video = db.query(Video).filter(Video.external_id == video_id).first()
+            # Replace prior highlights rather than accumulate across calls
+            db.query(HighlightModel).filter(HighlightModel.video_id == video.id).delete()
             for h in highlights:
                 type_value = h.highlight_type.value if h.highlight_type.value in known_types else "unknown"
                 db.add(HighlightModel(
@@ -700,7 +730,103 @@ async def generate_highlights_task(
     except Exception as e:
         logger.error(f"Highlight generation failed: {e}", exc_info=True)
 
-        logger.info(f"Highlight generation complete for video {video_id}")
+
+def _run_chapter_generation(video_id: str, duration: float, scenes: list) -> list:
+    """Synchronous chapter detection run off the event loop"""
+    from src.services.summarization.chapter_generator import ChapterGenerator
+
+    generator = ChapterGenerator()
+    collection = generator.generate_chapters(
+        video_id=video_id,
+        duration=duration,
+        scenes=scenes,
+        method="auto",
+    )
+    return collection.chapters
+
+
+async def generate_chapters_task(video_id: str):
+    """Generate chapters in background using ChapterGenerator, scored by
+    the same real visual/audio/speaker importance signal as highlights"""
+    import asyncio
+    from src.core.database import get_db
+    from src.models import Video, Scene, Transcript, Frame, Chapter as ChapterModel
+    from src.services.highlights.importance_scorer import ImportanceScorer
+
+    try:
+        logger.info(f"Starting chapter generation for video {video_id}")
+
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                logger.error(f"Video {video_id} not found for chapter generation")
+                return
+
+            scene_rows = db.query(Scene).filter(Scene.video_id == video.id).order_by(Scene.start_time).all()
+            transcript_rows = db.query(Transcript).filter(Transcript.video_id == video.id).all()
+            keyframes = {
+                f.scene_id: f
+                for f in db.query(Frame).filter(Frame.video_id == video.id, Frame.is_keyframe == True).all()
+            }
+            duration = video.duration_seconds or 0.0
+
+            if not scene_rows:
+                logger.info(f"No scenes available for video {video_id}, skipping chapter generation")
+                return
+
+            scorer = ImportanceScorer()
+            scenes = []
+            for s in scene_rows:
+                meta = s.extra_metadata or {}
+                keyframe = keyframes.get(s.id)
+                segs = [
+                    {"text": t.text}
+                    for t in transcript_rows
+                    if s.start_time <= t.start_time < s.end_time
+                ]
+                visual_context = {
+                    "objects": (keyframe.objects_detected if keyframe else None) or [],
+                    "faces": (keyframe.faces_detected if keyframe else None) or [],
+                    "actions": ["motion"] * round(meta.get("activity_ratio", 0.0) * 10),
+                }
+                audio_context = {"features": {"energy": meta.get("audio_energy", 0.0)}}
+                score = scorer.score_scene(
+                    scene_data={"scene_number": s.scene_number, "start_time": s.start_time, "end_time": s.end_time},
+                    transcript_segments=segs,
+                    visual_context=visual_context,
+                    audio_context=audio_context,
+                ).importance_score
+                scenes.append({
+                    "scene_number": s.scene_number,
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "importance_score": score,
+                    "description": s.description,
+                    "keyframe_path": s.keyframe_path,
+                })
+
+        chapters = await asyncio.to_thread(_run_chapter_generation, video_id, duration, scenes)
+
+        keyframe_by_scene_number = {s["scene_number"]: s["keyframe_path"] for s in scenes}
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            # Replace prior chapters rather than accumulate across calls
+            db.query(ChapterModel).filter(ChapterModel.video_id == video.id).delete()
+            for c in chapters:
+                first_scene_id = c.scene_ids[0] if c.scene_ids else None
+                db.add(ChapterModel(
+                    video_id=video.id,
+                    chapter_number=c.chapter_number,
+                    title=c.title,
+                    description=c.description,
+                    start_time=c.start_time,
+                    end_time=c.end_time,
+                    keyframe_path=keyframe_by_scene_number.get(first_scene_id),
+                    importance_score=c.importance_score,
+                    extra_metadata=c.metadata or {},
+                ))
+
+        logger.info(f"Chapter generation complete for video {video_id}: {len(chapters)} chapters")
 
     except Exception as e:
-        logger.error(f"Highlight generation failed: {e}")
+        logger.error(f"Chapter generation failed: {e}", exc_info=True)

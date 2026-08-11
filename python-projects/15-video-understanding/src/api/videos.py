@@ -866,22 +866,24 @@ async def process_video_background(video_id: str):
             video_id=video_id,
             stage="summarization",
             progress=95.0,
-            message="Generating video summary and highlights...",
+            message="Generating video summary, highlights, and chapters...",
         )
 
         from src.api.analysis import (
             generate_summary_task,
             generate_highlights_task,
+            generate_chapters_task,
             GenerateSummaryRequest,
             GenerateHighlightsRequest,
         )
         await generate_summary_task(video_id, GenerateSummaryRequest())
         await generate_highlights_task(video_id, GenerateHighlightsRequest())
+        await generate_chapters_task(video_id)
 
         await send_stage_complete(
             video_id=video_id,
             stage="summarization",
-            message="Summary and highlights generated",
+            message="Summary, highlights, and chapters generated",
         )
 
         # Final completion
