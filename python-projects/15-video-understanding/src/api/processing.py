@@ -122,43 +122,38 @@ async def process_video(
     request: Optional[ProcessVideoRequest] = None,
 ):
     """
-    Start video processing
+    Start video processing for a video that was uploaded with
+    auto_process=false (or otherwise never processed).
 
     - **video_id**: Video identifier
-    - **extract_scenes**: Extract scene boundaries
-    - **extract_frames**: Extract frames from video
-    - **transcribe_audio**: Transcribe audio to text
-    - **analyze_visual**: Analyze visual content
-    - **generate_embeddings**: Generate CLIP and text embeddings
-    - **generate_summary**: Generate video summary
-    - **detect_highlights**: Detect highlight moments
+
+    Runs the full pipeline (frames, scenes, transcription, diarization,
+    visual understanding, embeddings, summary, highlights) - the
+    per-stage flags on the request body are not yet honored, it's
+    all-or-nothing.
 
     Returns processing status
     """
     try:
         logger.info(f"Starting processing for video {video_id}")
 
-        # TODO: Verify video exists
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
-        #
-        # if video.processing_status == "processing":
-        #     raise HTTPException(status_code=409, detail="Video is already being processed")
+        from src.core.database import get_db
+        from src.models import Video, VideoStatus
+        from src.api.videos import process_video_background
 
-        # Use default config if not provided
-        config = request or ProcessVideoRequest()
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+            if not video.file_path:
+                raise HTTPException(status_code=400, detail="Video has no source file yet (still downloading?)")
+            if video.processing_status == VideoStatus.PROCESSING:
+                raise HTTPException(status_code=409, detail="Video is already being processed")
 
-        # Schedule processing
-        background_tasks.add_task(
-            process_video_pipeline,
-            video_id,
-            config,
-        )
+            video.processing_status = VideoStatus.PROCESSING
 
-        # Update status
-        # video.processing_status = "processing"
-        # db.commit()
+        # Schedule the real processing pipeline
+        background_tasks.add_task(process_video_background, video_id)
 
         return ProcessVideoResponse(
             video_id=video_id,
@@ -184,27 +179,51 @@ async def reprocess_video(
     request: ReprocessRequest,
 ):
     """
-    Reprocess video with specific stages
+    Reprocess a video from scratch.
 
     - **video_id**: Video identifier
-    - **reprocess_scenes**: Rerun scene detection
-    - **reprocess_transcription**: Retranscribe audio
-    - **reprocess_visual**: Reanalyze visual content
-    - **regenerate_embeddings**: Regenerate embeddings
+
+    Clears previously generated scenes, frames, transcript, summaries,
+    and highlights (and their vector embeddings), then re-runs the full
+    pipeline. The per-stage flags on the request body are not yet
+    honored - this always does a full reprocess, not a selective one.
 
     Returns processing status
     """
     try:
         logger.info(f"Reprocessing video {video_id}")
 
-        # TODO: Verify video exists
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.core.vector_store import VideoVectorStore
+        from src.models import Video, VideoStatus, Scene, Frame, Transcript, Summary, Highlight
+        from src.api.videos import process_video_background
 
-        # Schedule reprocessing
-        background_tasks.add_task(
-            reprocess_video_pipeline,
-            video_id,
-            request,
-        )
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+            if not video.file_path:
+                raise HTTPException(status_code=400, detail="Video has no source file to reprocess")
+            if video.processing_status == VideoStatus.PROCESSING:
+                raise HTTPException(status_code=409, detail="Video is already being processed")
+
+            db.query(Highlight).filter(Highlight.video_id == video.id).delete()
+            db.query(Summary).filter(Summary.video_id == video.id).delete()
+            db.query(Transcript).filter(Transcript.video_id == video.id).delete()
+            db.query(Frame).filter(Frame.video_id == video.id).delete()
+            db.query(Scene).filter(Scene.video_id == video.id).delete()
+            video.processing_status = VideoStatus.PROCESSING
+            video.processed_at = None
+            video.error_message = None
+
+        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store.initialize_collections()
+        store.delete_video_embeddings(video_id)
+
+        # Schedule the real processing pipeline
+        background_tasks.add_task(process_video_background, video_id)
 
         return ProcessVideoResponse(
             video_id=video_id,
@@ -440,111 +459,3 @@ async def get_video_keyframes(video_id: str):
     )
 
 
-# ============================================================================
-# Background Processing Functions
-# ============================================================================
-
-
-async def process_video_pipeline(
-    video_id: str,
-    config: ProcessVideoRequest,
-):
-    """
-    Execute full video processing pipeline
-
-    Pipeline:
-    1. Extract frames
-    2. Detect scenes
-    3. Transcribe audio
-    4. Analyze visual content
-    5. Generate embeddings
-    6. Fuse multi-modal data
-    7. Generate summary
-    8. Detect highlights
-    """
-    try:
-        logger.info(f"Starting pipeline for video {video_id}")
-
-        # TODO: Implement full pipeline
-        # 1. Frame extraction
-        if config.extract_frames:
-            logger.info("Extracting frames...")
-            # await extract_frames_task(video_id)
-
-        # 2. Scene detection
-        if config.extract_scenes:
-            logger.info("Detecting scenes...")
-            # await detect_scenes_task(video_id)
-
-        # 3. Audio transcription
-        if config.transcribe_audio:
-            logger.info("Transcribing audio...")
-            # await transcribe_audio_task(video_id)
-
-        # 4. Visual analysis
-        if config.analyze_visual:
-            logger.info("Analyzing visual content...")
-            # await analyze_visual_task(video_id)
-
-        # 5. Generate embeddings
-        if config.generate_embeddings:
-            logger.info("Generating embeddings...")
-            # await generate_embeddings_task(video_id)
-
-        # 6. Multi-modal fusion
-        logger.info("Fusing multi-modal data...")
-        # await fuse_multimodal_task(video_id)
-
-        # 7. Generate summary
-        if config.generate_summary:
-            logger.info("Generating summary...")
-            # await generate_summary_task(video_id)
-
-        # 8. Detect highlights
-        if config.detect_highlights:
-            logger.info("Detecting highlights...")
-            # await detect_highlights_task(video_id)
-
-        # Update status
-        # video.processing_status = "completed"
-        # video.processed_at = datetime.now()
-        # db.commit()
-
-        logger.info(f"Pipeline complete for video {video_id}")
-
-    except Exception as e:
-        logger.error(f"Pipeline failed: {e}")
-        # Update video status to failed
-        # video.processing_status = "failed"
-        # video.error_message = str(e)
-        # db.commit()
-
-
-async def reprocess_video_pipeline(
-    video_id: str,
-    config: ReprocessRequest,
-):
-    """Execute selective reprocessing"""
-    try:
-        logger.info(f"Reprocessing video {video_id}")
-
-        if config.reprocess_scenes:
-            logger.info("Reprocessing scenes...")
-            # await detect_scenes_task(video_id)
-
-        if config.reprocess_transcription:
-            logger.info("Reprocessing transcription...")
-            # await transcribe_audio_task(video_id)
-
-        if config.reprocess_visual:
-            logger.info("Reprocessing visual analysis...")
-            # await analyze_visual_task(video_id)
-
-        if config.regenerate_embeddings:
-            logger.info("Regenerating embeddings...")
-            # await generate_embeddings_task(video_id)
-
-        logger.info(f"Reprocessing complete for video {video_id}")
-
-    except Exception as e:
-        logger.error(f"Reprocessing failed: {e}")
