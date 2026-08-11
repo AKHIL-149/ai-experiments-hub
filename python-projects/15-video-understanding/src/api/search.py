@@ -320,20 +320,114 @@ async def search_transcript(request: TranscriptSearchRequest):
 
         start_time = datetime.now()
 
-        # TODO: Implement transcript search
-        # Based on search_mode:
-        # - semantic: Use text embeddings and ChromaDB
-        # - keyword: Use PostgreSQL full-text search
-        # - fuzzy: Use fuzzy string matching
-        #
-        # 1. Execute search based on mode
-        # 2. Apply filters (video_ids, speaker_id)
-        # 3. Retrieve matching segments
-        # 4. Include context window (segments before/after)
-        # 5. Return top_k results
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.models import Video, Transcript
+        from src.core.vector_store import VideoVectorStore
 
-        # Mock response
-        results = []
+        with get_db() as db:
+            if request.search_mode == "semantic":
+                from src.api.videos import _get_embedding_model
+                embed_model = _get_embedding_model()
+                query_vector = embed_model.encode([request.query])[0]
+
+                store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+                store.initialize_collections()
+
+                video_id_filter = request.video_ids[0] if request.video_ids and len(request.video_ids) == 1 else None
+                hits = store.search_transcripts(
+                    query_vector,
+                    n_results=request.top_k,
+                    video_id=video_id_filter,
+                    speaker=request.speaker_id,
+                )
+                matches = [
+                    {
+                        "video_id": hits.metadatas[i].get("video_id"),
+                        "segment_id": hits.metadatas[i].get("segment_id"),
+                        "seg_start": hits.metadatas[i].get("start_time", 0.0),
+                        "seg_end": hits.metadatas[i].get("end_time", 0.0),
+                        "text": hits.documents[i] if hits.documents else "",
+                        "similarity": 1.0 - hits.distances[i],
+                        "speaker_id": hits.metadatas[i].get("speaker") or None,
+                    }
+                    for i in range(len(hits.ids))
+                ]
+                if request.video_ids and len(request.video_ids) > 1:
+                    matches = [m for m in matches if m["video_id"] in request.video_ids]
+            else:
+                # keyword / fuzzy: case-insensitive substring match against Postgres
+                query_db = db.query(Transcript).filter(Transcript.text.ilike(f"%{request.query}%"))
+                if request.speaker_id:
+                    query_db = query_db.filter(Transcript.speaker_id == request.speaker_id)
+                if request.video_ids:
+                    query_db = query_db.join(Video).filter(Video.external_id.in_(request.video_ids))
+                rows = query_db.limit(request.top_k).all()
+                matches = [
+                    {
+                        "video_id": t.video.external_id,
+                        "segment_id": str(t.id),
+                        "seg_start": t.start_time,
+                        "seg_end": t.end_time,
+                        "text": t.text,
+                        "similarity": 1.0,
+                        "speaker_id": t.speaker_id,
+                    }
+                    for t in rows
+                ]
+
+            matches = matches[:request.top_k]
+
+            video_titles = {}
+            ext_ids = {m["video_id"] for m in matches if m["video_id"]}
+            if ext_ids:
+                video_titles = {
+                    v.external_id: v.title
+                    for v in db.query(Video).filter(Video.external_id.in_(ext_ids)).all()
+                }
+
+            results = []
+            for m in matches:
+                context_before, context_after = None, None
+                if request.context_window > 0 and m["video_id"]:
+                    video = db.query(Video).filter(Video.external_id == m["video_id"]).first()
+                    if video:
+                        before = (
+                            db.query(Transcript)
+                            .filter(
+                                Transcript.video_id == video.id,
+                                Transcript.end_time <= m["seg_start"],
+                                Transcript.end_time >= m["seg_start"] - request.context_window,
+                            )
+                            .order_by(Transcript.start_time)
+                            .all()
+                        )
+                        after = (
+                            db.query(Transcript)
+                            .filter(
+                                Transcript.video_id == video.id,
+                                Transcript.start_time >= m["seg_end"],
+                                Transcript.start_time <= m["seg_end"] + request.context_window,
+                            )
+                            .order_by(Transcript.start_time)
+                            .all()
+                        )
+                        context_before = " ".join(t.text for t in before) or None
+                        context_after = " ".join(t.text for t in after) or None
+
+                results.append(TranscriptSearchResult(
+                    segment_id=str(m["segment_id"]),
+                    video_id=m["video_id"] or "",
+                    video_title=video_titles.get(m["video_id"], "Unknown"),
+                    start_time=m["seg_start"],
+                    end_time=m["seg_end"],
+                    text=m["text"],
+                    speaker_id=m["speaker_id"],
+                    similarity_score=m["similarity"],
+                    context_before=context_before,
+                    context_after=context_after,
+                ))
 
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds() * 1000

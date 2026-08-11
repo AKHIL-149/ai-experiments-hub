@@ -828,6 +828,9 @@ async def process_video_background(video_id: str):
                     segment_ids=[str(t.id) for t in text_rows],
                     texts=texts,
                     timestamps=[(t.start_time, t.end_time) for t in text_rows],
+                    # ChromaDB metadata rejects None, so use "" for
+                    # segments with no diarization data
+                    speakers=[t.speaker_id or "" for t in text_rows],
                 )
                 transcript_count = len(texts)
 
