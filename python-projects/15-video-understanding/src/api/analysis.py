@@ -419,6 +419,62 @@ async def generate_video_highlights(
 # ============================================================================
 
 
+def _build_timeline_events(db, video) -> List[TimelineEvent]:
+    """Aggregate scenes, transcript, highlights, and chapters into a
+    single chronological timeline for a video. Must be called with an
+    open db session (attributes are read while it's still active)."""
+    from src.models import Scene, Transcript, Highlight, Chapter
+
+    events: List[TimelineEvent] = []
+
+    scenes = db.query(Scene).filter(Scene.video_id == video.id).order_by(Scene.start_time).all()
+    for s in scenes:
+        events.append(TimelineEvent(
+            event_id=f"scene_{s.id}",
+            timestamp=s.start_time,
+            event_type="scene",
+            title=f"Scene {s.scene_number}",
+            description=s.description,
+            metadata={"end_time": s.end_time, "scene_number": s.scene_number},
+        ))
+
+    transcripts = db.query(Transcript).filter(Transcript.video_id == video.id).order_by(Transcript.start_time).all()
+    for t in transcripts:
+        events.append(TimelineEvent(
+            event_id=f"transcript_{t.id}",
+            timestamp=t.start_time,
+            event_type="speech",
+            title=t.speaker_id or "Speech",
+            description=t.text,
+            metadata={"end_time": t.end_time, "speaker_id": t.speaker_id},
+        ))
+
+    highlights = db.query(Highlight).filter(Highlight.video_id == video.id).order_by(Highlight.start_time).all()
+    for h in highlights:
+        events.append(TimelineEvent(
+            event_id=f"highlight_{h.id}",
+            timestamp=h.start_time,
+            event_type="highlight",
+            title=h.title,
+            description=h.description,
+            metadata={"end_time": h.end_time, "importance_score": h.importance_score},
+        ))
+
+    chapters = db.query(Chapter).filter(Chapter.video_id == video.id).order_by(Chapter.start_time).all()
+    for c in chapters:
+        events.append(TimelineEvent(
+            event_id=f"chapter_{c.id}",
+            timestamp=c.start_time,
+            event_type="chapter",
+            title=c.title,
+            description=c.description,
+            metadata={"end_time": c.end_time, "chapter_number": c.chapter_number},
+        ))
+
+    events.sort(key=lambda e: e.timestamp)
+    return events
+
+
 @router.get("/{video_id}/timeline", response_model=TimelineResponse)
 async def get_video_timeline(video_id: str):
     """
@@ -431,23 +487,23 @@ async def get_video_timeline(video_id: str):
     try:
         logger.info(f"Getting timeline for video {video_id}")
 
-        # TODO: Build timeline from multiple sources
-        # - Scene boundaries
-        # - Speaker changes
-        # - Object detections
-        # - Action events
-        # - OCR text appearances
-        # - Highlight moments
+        from src.core.database import get_db
+        from src.models import Video
 
-        # Mock response
-        events = []
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            events = _build_timeline_events(db, video)
+            duration = video.duration_seconds or 0.0
 
         return TimelineResponse(
             video_id=video_id,
             events=events,
             total_events=len(events),
-            duration=0.0,
-            event_types=[],
+            duration=duration,
+            event_types=sorted({e.event_type for e in events}),
         )
 
     except HTTPException:
@@ -478,18 +534,30 @@ async def filter_video_timeline(
     try:
         logger.info(f"Filtering timeline for video {video_id}")
 
-        # TODO: Query and filter timeline events
-        # Apply filters for event type and time range
+        from src.core.database import get_db
+        from src.models import Video
 
-        # Mock response
-        events = []
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            events = _build_timeline_events(db, video)
+            duration = video.duration_seconds or 0.0
+
+        if request.event_types:
+            events = [e for e in events if e.event_type in request.event_types]
+        if request.start_time is not None:
+            events = [e for e in events if e.timestamp >= request.start_time]
+        if request.end_time is not None:
+            events = [e for e in events if e.timestamp <= request.end_time]
 
         return TimelineResponse(
             video_id=video_id,
             events=events,
             total_events=len(events),
-            duration=0.0,
-            event_types=[],
+            duration=duration,
+            event_types=sorted({e.event_type for e in events}),
         )
 
     except HTTPException:
