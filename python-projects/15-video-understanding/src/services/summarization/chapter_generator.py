@@ -364,22 +364,25 @@ class ChapterGenerator:
         if not scenes:
             return f"Chapter {chapter.chapter_number}"
 
-        # Try to extract from first scene
+        # Try to extract from first scene (supports both plain dicts and objects)
         first_scene = scenes[0]
+        title = first_scene.get("title") if isinstance(first_scene, dict) else getattr(first_scene, "title", None)
+        description = (
+            first_scene.get("description") if isinstance(first_scene, dict)
+            else getattr(first_scene, "description", None)
+        )
 
         # Check for title attribute
-        if hasattr(first_scene, "title") and first_scene.title:
+        if title:
             # Extract topic from scene title
-            title = first_scene.title
             if ":" in title:
                 topic = title.split(":", 1)[1].strip()
                 return f"Chapter {chapter.chapter_number}: {topic}"
 
         # Check for description
-        if hasattr(first_scene, "description") and first_scene.description:
-            desc = first_scene.description
+        if description:
             # Take first few words
-            words = desc.split()[:4]
+            words = description.split()[:4]
             return f"Chapter {chapter.chapter_number}: {' '.join(words)}"
 
         # Fallback
@@ -394,13 +397,17 @@ class ChapterGenerator:
         if not scenes:
             return ""
 
-        # Collect scene descriptions
+        # Collect scene descriptions (supports both plain dicts and objects)
         descriptions = []
         for scene in scenes[:3]:  # First 3 scenes
-            if hasattr(scene, "description") and scene.description:
-                descriptions.append(scene.description)
-            elif hasattr(scene, "summary_text") and scene.summary_text:
-                descriptions.append(scene.summary_text)
+            desc = scene.get("description") if isinstance(scene, dict) else getattr(scene, "description", None)
+            summary_text = (
+                scene.get("summary_text") if isinstance(scene, dict) else getattr(scene, "summary_text", None)
+            )
+            if desc:
+                descriptions.append(desc)
+            elif summary_text:
+                descriptions.append(summary_text)
 
         if descriptions:
             return " | ".join(descriptions)
