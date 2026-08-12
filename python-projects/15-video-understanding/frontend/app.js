@@ -488,10 +488,48 @@ async function performSearch() {
             return;
         }
 
-        displaySearchResults(results);
+        displaySearchResults(normalizeSearchResults(results, searchType));
     } catch (error) {
         resultsDiv.innerHTML = '<div class="error">Search failed</div>';
     }
+}
+
+// /api/search/semantic returns {result_type, content, timestamp, ...} but
+// /api/search/frames and /api/search/transcript use their own real, but
+// differently-shaped, response models (no result_type/content at all, and
+// transcript uses start_time/text instead of timestamp/content) - rendering
+// those directly against a template built for the semantic shape produced
+// literal "undefined" text for every card. Normalize to a common shape here
+// instead of changing the backend response models real clients may depend on.
+function normalizeSearchResults(data, searchType) {
+    if (searchType === 'semantic') {
+        return data;
+    }
+
+    const results = data.results.map(r => {
+        if (searchType === 'frames') {
+            const objects = r.objects_detected && r.objects_detected.length
+                ? `Detected: ${r.objects_detected.join(', ')}`
+                : '';
+            return {
+                ...r,
+                result_type: 'frame',
+                content: r.description || objects || 'Visual match',
+                timestamp: r.timestamp,
+            };
+        }
+        if (searchType === 'transcript') {
+            return {
+                ...r,
+                result_type: 'transcript',
+                content: r.text,
+                timestamp: r.start_time,
+            };
+        }
+        return r;
+    });
+
+    return { ...data, results };
 }
 
 function displaySearchResults(data) {
@@ -624,6 +662,9 @@ async function showVideoDetails(videoId) {
                 <button class="btn btn-primary" onclick="viewHighlights('${videoId}')">
                     <i class="fas fa-star"></i> View Highlights
                 </button>
+                <button class="btn btn-primary" onclick="viewClips('${videoId}')">
+                    <i class="fas fa-cut"></i> View Clips
+                </button>
                 <button class="btn btn-sm" onclick="deleteVideo('${videoId}')">
                     <i class="fas fa-trash"></i> Delete
                 </button>
@@ -689,19 +730,31 @@ async function viewHighlights(videoId) {
             bodyHtml = `
                 <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
                     ${data.highlights.map(h => `
-                        <div style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem;">
-                            <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                <strong>${h.title}</strong>
-                                <span style="color: var(--text-muted); font-size: 0.85rem;">
-                                    ${formatTime(h.start_time)} - ${formatTime(h.end_time)}
-                                </span>
-                            </div>
-                            ${h.description ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">${h.description}</p>` : ''}
-                            <div style="margin-top: 0.5rem; font-size: 0.85rem;">
-                                <span class="result-badge">${h.highlight_type}</span>
-                                <span style="margin-left: 0.5rem; color: var(--text-muted);">
-                                    importance: ${h.importance_score.toFixed(2)}
-                                </span>
+                        <div style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem; display: flex; gap: 1rem;">
+                            ${h.thumbnail_path ? `
+                                <img src="/api/videos/${videoId}/highlights/${h.highlight_id}/thumbnail"
+                                     alt="Highlight thumbnail"
+                                     style="width: 120px; height: 68px; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; background: #111;"
+                                     onerror="this.style.display='none'">
+                            ` : ''}
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                    <strong>${h.title}</strong>
+                                    <span style="color: var(--text-muted); font-size: 0.85rem;">
+                                        ${formatTime(h.start_time)} - ${formatTime(h.end_time)}
+                                    </span>
+                                </div>
+                                ${h.description ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">${h.description}</p>` : ''}
+                                <div style="margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <span class="result-badge">${h.highlight_type}</span>
+                                    <span style="color: var(--text-muted);" title="Relative to the most notable moments in this video">
+                                        confidence: ${Math.round(h.importance_score * 100)}%
+                                    </span>
+                                    <button class="btn btn-sm" style="margin-left: auto;"
+                                            onclick="createClipFromHighlight('${videoId}', ${h.start_time}, ${h.end_time}, '${(h.title || 'Highlight clip').replace(/'/g, "\\'")}', this)">
+                                        <i class="fas fa-cut"></i> Create Clip
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     `).join('')}
@@ -726,6 +779,205 @@ async function viewHighlights(videoId) {
 
 function closeHighlightsModal() {
     document.getElementById('highlights-modal').classList.remove('active');
+}
+
+// ============================================================================
+// Clip Creation
+// ============================================================================
+
+function clipStatusBadge(status) {
+    const colors = {
+        completed: 'var(--success-color, #4caf50)',
+        failed: 'var(--danger-color, #e53935)',
+        processing: 'var(--text-muted)',
+        pending: 'var(--text-muted)',
+    };
+    return `<span style="color: ${colors[status] || 'var(--text-muted)'};">${status}</span>`;
+}
+
+function renderClipCard(c) {
+    const thumb = c.status === 'completed'
+        ? `<img src="/api/clips/${c.clip_id}/thumbnail" alt="Clip thumbnail"
+                style="width: 120px; height: 68px; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; background: #111;"
+                onerror="this.style.display='none'">`
+        : `<div style="width: 120px; height: 68px; border-radius: 0.35rem; flex-shrink: 0; background: #111;
+                        display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.75rem;">
+             ${c.status === 'failed' ? 'failed' : 'processing...'}
+           </div>`;
+
+    return `
+        <div id="clip-card-${c.clip_id}" style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem; display: flex; gap: 1rem;">
+            ${thumb}
+            <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <strong>${c.title}</strong>
+                    <span style="color: var(--text-muted); font-size: 0.85rem;">
+                        ${formatTime(c.start_time)} - ${formatTime(c.end_time)}
+                    </span>
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem;">
+                    ${clipStatusBadge(c.status)}
+                    ${c.error_message ? `<span style="color: var(--danger-color, #e53935);">${c.error_message}</span>` : ''}
+                    ${c.status === 'completed' ? `
+                        <a href="/api/clips/${c.clip_id}/download" style="margin-left: auto;">
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                        <button class="btn btn-sm" onclick="deleteClip('${c.clip_id}', '${c.video_id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function pollClipUntilDone(clipId, videoId, onUpdate, attempts = 10) {
+    for (let i = 0; i < attempts; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        let clip;
+        try {
+            clip = await apiCall(`/api/clips/${clipId}`);
+        } catch (e) {
+            return;
+        }
+        if (onUpdate) onUpdate(clip);
+        if (clip.status === 'completed' || clip.status === 'failed') {
+            return clip;
+        }
+    }
+}
+
+async function createClipFromHighlight(videoId, startTime, endTime, title, buttonEl) {
+    if (buttonEl) {
+        buttonEl.disabled = true;
+        buttonEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    }
+    try {
+        const clip = await apiCall(`/api/videos/${videoId}/clip`, {
+            method: 'POST',
+            body: JSON.stringify({ start_time: startTime, end_time: endTime, title }),
+        });
+        showToast('Clip creation started...', 'info');
+
+        const finalClip = await pollClipUntilDone(clip.clip_id, videoId);
+        if (finalClip && finalClip.status === 'completed') {
+            showToast('Clip ready!', 'success');
+            if (buttonEl) {
+                buttonEl.outerHTML = `<a href="/api/clips/${clip.clip_id}/download" class="btn btn-sm" style="margin-left: auto;">
+                    <i class="fas fa-download"></i> Download Clip
+                </a>`;
+            }
+        } else if (finalClip && finalClip.status === 'failed') {
+            showToast(`Clip failed: ${finalClip.error_message || 'unknown error'}`, 'error');
+            if (buttonEl) {
+                buttonEl.disabled = false;
+                buttonEl.innerHTML = '<i class="fas fa-cut"></i> Retry Clip';
+            }
+        } else {
+            showToast('Clip is still processing - check View Clips shortly', 'info');
+            if (buttonEl) {
+                buttonEl.disabled = false;
+                buttonEl.innerHTML = '<i class="fas fa-cut"></i> Create Clip';
+            }
+        }
+    } catch (error) {
+        if (buttonEl) {
+            buttonEl.disabled = false;
+            buttonEl.innerHTML = '<i class="fas fa-cut"></i> Create Clip';
+        }
+    }
+}
+
+async function viewClips(videoId) {
+    try {
+        const data = await apiCall(`/api/clips?video_id=${videoId}&page_size=50`);
+
+        const listHtml = (!data.clips || data.clips.length === 0)
+            ? `<p style="margin-top: 1.5rem; color: var(--text-muted);">No clips created for this video yet.</p>`
+            : `
+                <div id="clips-list" style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                    ${data.clips.map(renderClipCard).join('')}
+                </div>
+            `;
+
+        document.getElementById('clips-details').innerHTML = `
+            <h2><i class="fas fa-cut"></i> Video Clips</h2>
+            <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
+                ${data.total} clip${data.total === 1 ? '' : 's'}
+            </div>
+            ${listHtml}
+
+            <div style="margin-top: 1.5rem; border-top: 1px solid var(--border-color, #333); padding-top: 1rem;">
+                <h3>Create a New Clip</h3>
+                <div style="margin-top: 0.75rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted);">Start (seconds)</label>
+                        <input id="clip-start-input" type="number" min="0" step="0.1" value="0" style="width: 100px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted);">End (seconds)</label>
+                        <input id="clip-end-input" type="number" min="0" step="0.1" value="10" style="width: 100px;">
+                    </div>
+                    <div style="flex: 1; min-width: 150px;">
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted);">Title (optional)</label>
+                        <input id="clip-title-input" type="text" placeholder="My clip" style="width: 100%;">
+                    </div>
+                    <button class="btn btn-primary" id="clip-create-btn" onclick="submitManualClip('${videoId}')">
+                        <i class="fas fa-cut"></i> Create Clip
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('clips-modal').classList.add('active');
+    } catch (error) {
+        showToast('Failed to load clips', 'error');
+    }
+}
+
+async function submitManualClip(videoId) {
+    const startTime = parseFloat(document.getElementById('clip-start-input').value);
+    const endTime = parseFloat(document.getElementById('clip-end-input').value);
+    const title = document.getElementById('clip-title-input').value || undefined;
+    const btn = document.getElementById('clip-create-btn');
+
+    if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
+        showToast('End time must be greater than start time', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+
+    try {
+        const clip = await apiCall(`/api/videos/${videoId}/clip`, {
+            method: 'POST',
+            body: JSON.stringify({ start_time: startTime, end_time: endTime, title }),
+        });
+        showToast('Clip creation started...', 'info');
+
+        await pollClipUntilDone(clip.clip_id, videoId);
+        await viewClips(videoId);
+    } catch (error) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-cut"></i> Create Clip';
+    }
+}
+
+async function deleteClip(clipId, videoId) {
+    if (!confirm('Delete this clip?')) return;
+    try {
+        await apiCall(`/api/clips/${clipId}`, { method: 'DELETE' });
+        showToast('Clip deleted', 'success');
+        await viewClips(videoId);
+    } catch (error) {
+        // apiCall already surfaced the error via toast
+    }
+}
+
+function closeClipsModal() {
+    document.getElementById('clips-modal').classList.remove('active');
 }
 
 async function deleteVideo(videoId) {
@@ -797,5 +1049,9 @@ window.onclick = function(event) {
     const highlightsModal = document.getElementById('highlights-modal');
     if (event.target === highlightsModal) {
         closeHighlightsModal();
+    }
+    const clipsModal = document.getElementById('clips-modal');
+    if (event.target === clipsModal) {
+        closeClipsModal();
     }
 }

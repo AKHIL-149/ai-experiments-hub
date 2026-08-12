@@ -55,7 +55,17 @@ class FrameSearchRequest(BaseModel):
     query: str = Field(..., description="Visual search query")
     top_k: int = Field(10, ge=1, le=100)
     video_ids: Optional[List[str]] = None
-    min_similarity: float = Field(0.6, ge=0.0, le=1.0)
+    # CLIP cross-modal (text<->image) cosine similarity sits in a much lower,
+    # narrower band than same-modality similarity - confirmed against real
+    # processed video frames: a correct match ("whiteboard" query against a
+    # frame captioned "a man is writing on a blackboard") scored ~0.29, a
+    # deliberately nonsensical query ("purple elephant riding a bicycle")
+    # still scored ~0.22. A 0.6 default (calibrated for a same-modality
+    # threshold like the sentence-transformer text search uses) silently
+    # filtered out every real result regardless of query. Relevance here
+    # comes from relative ranking within top_k, not the absolute score, so
+    # this floor only needs to reject true noise, not gate on "goodness".
+    min_similarity: float = Field(0.15, ge=0.0, le=1.0)
     keyframes_only: bool = Field(False, description="Search only keyframes")
 
 
