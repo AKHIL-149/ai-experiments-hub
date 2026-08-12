@@ -289,6 +289,16 @@ async def process_streaming_video(
         import uuid
         video_id = str(uuid.uuid4())
 
+        with get_db() as db:
+            video = Video(
+                external_id=video_id,
+                title=request.title or "Streaming Video",
+                source_type=SourceType.STREAM,
+                source_url=request.url,
+                processing_status=VideoStatus.DOWNLOADING,
+            )
+            db.add(video)
+
         # Download video in background
         background_tasks.add_task(
             download_streaming_video,
@@ -1031,23 +1041,79 @@ async def download_streaming_video(
     title: Optional[str],
     auto_process: bool,
 ):
-    """Download streaming video"""
+    """Download streaming video (HTTP/HLS) with ffmpeg"""
+    import subprocess
+    from src.api.websockets import send_progress_update, send_processing_error
+
+    # Safety cap: a truly live (infinite) stream would otherwise hang the
+    # pipeline forever. VOD streams finish well before this.
+    MAX_STREAM_DURATION_SECONDS = 3600
+
     try:
         logger.info(f"Downloading streaming video: {url}")
 
-        # TODO: Download using ffmpeg or similar
-        # output_path = f'./uploads/videos/{video_id}.mp4'
-        # subprocess.run([
-        #     'ffmpeg',
-        #     '-i', url,
-        #     '-c', 'copy',
-        #     output_path,
-        # ])
+        await send_progress_update(
+            video_id=video_id,
+            stage="download",
+            progress=5.0,
+            message="Starting stream download...",
+        )
 
-        # If auto_process, start processing
+        output_dir = "./data/uploads"
+        os.makedirs(output_dir, exist_ok=True)
+        file_path = f"{output_dir}/{video_id}.mp4"
+
+        cmd = [
+            "ffmpeg",
+            "-i", url,
+            "-t", str(MAX_STREAM_DURATION_SECONDS),
+            "-c", "copy",
+            "-y",
+            "-hide_banner",
+            "-loglevel", "error",
+            file_path,
+        ]
+        import asyncio
+        result = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True, timeout=MAX_STREAM_DURATION_SECONDS + 60
+        )
+        if result.returncode != 0 or not os.path.exists(file_path):
+            raise RuntimeError(f"ffmpeg failed: {result.stderr[-500:]}")
+
+        duration = await get_video_duration(file_path)
+        video_title = title or "Streaming Video"
+
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if video:
+                video.title = video_title
+                video.file_path = file_path
+                video.duration_seconds = duration
+                video.processing_status = (
+                    VideoStatus.PROCESSING if auto_process else VideoStatus.PENDING
+                )
+
+        logger.info(f"Downloaded stream: {video_title} ({duration:.1f}s) -> {file_path}")
+
+        await send_progress_update(
+            video_id=video_id,
+            stage="download",
+            progress=30.0,
+            message=f"Download complete: {video_title}",
+        )
+
         if auto_process:
             await process_video_background(video_id)
 
     except Exception as e:
         logger.error(f"Streaming download failed: {e}")
-        # Update database with error
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if video:
+                video.processing_status = VideoStatus.FAILED
+                video.error_message = str(e)
+        await send_processing_error(
+            video_id=video_id,
+            stage="download",
+            error_message=f"Stream download failed: {str(e)}",
+        )
