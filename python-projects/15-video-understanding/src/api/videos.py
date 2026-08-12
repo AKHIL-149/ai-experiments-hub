@@ -189,6 +189,8 @@ async def upload_video(
             created_at=datetime.now(),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
@@ -252,6 +254,8 @@ async def process_youtube_video(
             created_at=datetime.now(),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"YouTube processing failed: {e}")
         raise HTTPException(
@@ -316,6 +320,8 @@ async def process_streaming_video(
             created_at=datetime.now(),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Streaming processing failed: {e}")
         raise HTTPException(

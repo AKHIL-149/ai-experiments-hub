@@ -4,13 +4,24 @@ Tests for video management API endpoints
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, AsyncMock
+from fastapi import BackgroundTasks
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from contextlib import contextmanager
 from datetime import datetime
 import io
 import os
+import subprocess
 
 # Import FastAPI app (will need to be created)
 # from server import app
+
+
+def _mock_get_db(mock_session):
+    """Build a get_db() replacement usable as `with get_db() as db: ...`"""
+    @contextmanager
+    def _get_db():
+        yield mock_session
+    return _get_db
 
 
 class TestVideoUploadEndpoint:
@@ -90,21 +101,215 @@ class TestStreamingVideoEndpoint:
 
     @pytest.mark.asyncio
     async def test_streaming_video_http_url(self):
-        """Test processing HTTP streaming URL"""
-        # TODO: Test valid HTTP/HTTPS URLs
-        pass
+        """A valid http:// URL is accepted, persisted, and scheduled for download"""
+        from src.api.videos import process_streaming_video, StreamingVideoRequest
+
+        mock_db = MagicMock()
+        background_tasks = BackgroundTasks()
+
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)):
+            response = await process_streaming_video(
+                background_tasks=background_tasks,
+                request=StreamingVideoRequest(url="http://example.com/video.mp4", title="My Stream"),
+                auto_process=True,
+            )
+
+        assert response.status == "downloading"
+        assert response.video_id
+
+        # A Video row was persisted with the right source metadata
+        added_video = mock_db.add.call_args[0][0]
+        assert added_video.source_url == "http://example.com/video.mp4"
+        assert added_video.title == "My Stream"
+        assert added_video.source_type.value == "stream"
+        assert added_video.processing_status.value == "downloading"
+
+        # The real download was scheduled, not skipped
+        assert len(background_tasks.tasks) == 1
+        scheduled = background_tasks.tasks[0]
+        assert scheduled.func.__name__ == "download_streaming_video"
+        assert scheduled.args == (response.video_id, "http://example.com/video.mp4", "My Stream", True)
 
     @pytest.mark.asyncio
     async def test_streaming_video_m3u8_playlist(self):
-        """Test processing M3U8 playlist"""
-        # TODO: Test M3U8 URL handling
-        pass
+        """An HLS (.m3u8) URL is accepted the same as any other http(s) URL -
+        ffmpeg handles the protocol distinction, not this endpoint"""
+        from src.api.videos import process_streaming_video, StreamingVideoRequest
+
+        mock_db = MagicMock()
+        background_tasks = BackgroundTasks()
+        url = "https://example.com/stream/playlist.m3u8"
+
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)):
+            response = await process_streaming_video(
+                background_tasks=background_tasks,
+                request=StreamingVideoRequest(url=url),
+                auto_process=False,
+            )
+
+        assert response.status == "downloading"
+        added_video = mock_db.add.call_args[0][0]
+        assert added_video.source_url == url
+        # No title given -> falls back to the generic default
+        assert added_video.title == "Streaming Video"
 
     @pytest.mark.asyncio
     async def test_streaming_video_invalid_protocol(self):
-        """Test rejection of invalid protocols"""
-        # TODO: Test rejection of ftp://, file://, etc.
-        pass
+        """Non-HTTP(S) protocols are rejected with 400 before anything is persisted"""
+        from fastapi import HTTPException
+        from src.api.videos import process_streaming_video, StreamingVideoRequest
+
+        mock_db = MagicMock()
+        background_tasks = BackgroundTasks()
+
+        for bad_url in ["ftp://example.com/video.mp4", "file:///etc/passwd", "not-a-url"]:
+            with patch("src.api.videos.get_db", _mock_get_db(mock_db)):
+                with pytest.raises(HTTPException) as exc_info:
+                    await process_streaming_video(
+                        background_tasks=background_tasks,
+                        request=StreamingVideoRequest(url=bad_url),
+                    )
+            assert exc_info.value.status_code == 400
+
+        # Nothing should have been persisted or scheduled for any of them
+        mock_db.add.assert_not_called()
+        assert len(background_tasks.tasks) == 0
+
+
+class TestDownloadStreamingVideoTask:
+    """Tests for the download_streaming_video background task
+    (the actual ffmpeg download logic, AKHIL-423)"""
+
+    def _mock_video_row(self):
+        """A Mock standing in for the SQLAlchemy Video row, with settable attrs"""
+        video = Mock()
+        video.title = None
+        video.file_path = None
+        video.duration_seconds = None
+        video.processing_status = None
+        video.error_message = None
+        return video
+
+    @pytest.mark.asyncio
+    async def test_successful_download_updates_video_and_triggers_processing(self):
+        from src.api.videos import download_streaming_video
+
+        mock_video = self._mock_video_row()
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+
+        fake_ffmpeg_result = Mock(returncode=0, stderr="")
+
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
+             patch("src.api.videos.os.path.exists", return_value=True), \
+             patch("asyncio.to_thread", new=AsyncMock(return_value=fake_ffmpeg_result)), \
+             patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=123.4)), \
+             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_process, \
+             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
+             patch("src.api.websockets.send_processing_error", new=AsyncMock()):
+
+            await download_streaming_video(
+                video_id="vid-123",
+                url="http://example.com/video.mp4",
+                title="My Stream",
+                auto_process=True,
+            )
+
+        # Real duration and file path were written to the Video row
+        assert mock_video.duration_seconds == 123.4
+        assert mock_video.file_path == "./data/uploads/vid-123.mp4"
+        assert mock_video.title == "My Stream"
+        assert mock_video.processing_status.value == "processing"
+        # Auto-process was actually invoked, not just claimed
+        mock_process.assert_awaited_once_with("vid-123")
+
+    @pytest.mark.asyncio
+    async def test_download_without_auto_process_stays_pending(self):
+        from src.api.videos import download_streaming_video
+
+        mock_video = self._mock_video_row()
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+        fake_ffmpeg_result = Mock(returncode=0, stderr="")
+
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
+             patch("src.api.videos.os.path.exists", return_value=True), \
+             patch("asyncio.to_thread", new=AsyncMock(return_value=fake_ffmpeg_result)), \
+             patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=60.0)), \
+             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_process, \
+             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
+             patch("src.api.websockets.send_processing_error", new=AsyncMock()):
+
+            await download_streaming_video(
+                video_id="vid-456", url="http://example.com/video.mp4", title=None, auto_process=False,
+            )
+
+        assert mock_video.processing_status.value == "pending"
+        mock_process.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ffmpeg_failure_marks_video_failed_not_silently_lost(self):
+        """This is the exact bug AKHIL-423 fixed: a failed download used to
+        vanish silently (Video row never existed). Now it must land as FAILED
+        with a real error message, and auto-process must never run."""
+        from src.api.videos import download_streaming_video
+
+        mock_video = self._mock_video_row()
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+
+        fake_ffmpeg_result = Mock(returncode=1, stderr="Connection refused")
+
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
+             patch("src.api.videos.os.path.exists", return_value=False), \
+             patch("asyncio.to_thread", new=AsyncMock(return_value=fake_ffmpeg_result)), \
+             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_process, \
+             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
+             patch("src.api.websockets.send_processing_error", new=AsyncMock()) as mock_error:
+
+            await download_streaming_video(
+                video_id="vid-789", url="http://bad.example.com/nope.mp4", title=None, auto_process=True,
+            )
+
+        assert mock_video.processing_status.value == "failed"
+        assert "Connection refused" in mock_video.error_message
+        mock_process.assert_not_awaited()
+        mock_error.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ffmpeg_command_includes_safety_duration_cap(self):
+        """A truly live (infinite) stream must not hang the pipeline forever -
+        verify the -t cap is actually passed to ffmpeg, not just documented"""
+        from src.api.videos import download_streaming_video
+
+        mock_video = self._mock_video_row()
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+
+        captured_cmd = {}
+
+        async def fake_to_thread(func, *args, **kwargs):
+            # args[0] is the ffmpeg argv list passed to subprocess.run
+            captured_cmd["cmd"] = args[0]
+            return Mock(returncode=0, stderr="")
+
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
+             patch("src.api.videos.os.path.exists", return_value=True), \
+             patch("asyncio.to_thread", new=fake_to_thread), \
+             patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=10.0)), \
+             patch("src.api.videos.process_video_background", new=AsyncMock()), \
+             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
+             patch("src.api.websockets.send_processing_error", new=AsyncMock()):
+
+            await download_streaming_video(
+                video_id="vid-cap", url="http://example.com/live.m3u8", title=None, auto_process=False,
+            )
+
+        cmd = captured_cmd["cmd"]
+        assert cmd[0] == "ffmpeg"
+        assert "-t" in cmd
+        assert cmd[cmd.index("-t") + 1] == "3600"
+        assert "-c" in cmd and cmd[cmd.index("-c") + 1] == "copy"
 
 
 class TestListVideosEndpoint:
