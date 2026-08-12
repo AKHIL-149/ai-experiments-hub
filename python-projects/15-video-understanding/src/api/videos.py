@@ -544,12 +544,17 @@ def _aggregate_scene_actions(actions: list, start_time: float, end_time: float) 
     return {"activity_ratio": activity_ratio, "dominant_action": dominant_action}
 
 
-def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
+def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None) -> dict:
     """
     Real (synchronous, CPU/IO-bound) analysis pipeline: sparse frame
     sampling, scene detection, audio transcription, per-scene keyframe
     captioning, and visual/audio understanding (objects, faces, OCR,
     actions, audio energy). Run off the event loop via asyncio.to_thread.
+
+    progress_callback(scene_index, total_scenes), if given, is invoked
+    after each scene's per-scene analysis - this is the longest-running
+    part of the pipeline (BLIP/YOLO/OCR/CLIP per scene, all on CPU) and
+    otherwise produces zero progress feedback for its entire duration.
     """
     from pathlib import Path
     from src.core.config import settings
@@ -619,7 +624,8 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
     keyframes_dir = frames_dir / "keyframes"
     keyframes_dir.mkdir(parents=True, exist_ok=True)
     scene_results = []
-    for scene in scenes:
+    total_scenes = len(scenes)
+    for scene_index, scene in enumerate(scenes):
         ts = scene.keyframe_timestamp or scene.middle_timestamp
         kf_path = keyframes_dir / f"scene_{scene.scene_id:03d}.jpg"
         caption = ""
@@ -675,6 +681,12 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
             "audio_energy": audio_energy,
             "clip_embedding": clip_embedding,
         })
+
+        if progress_callback:
+            try:
+                progress_callback(scene_index, total_scenes)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
 
     return {
         "sampled_frame_paths": [str(f) for f in sampled_frames],
@@ -767,7 +779,30 @@ async def process_video_background(video_id: str):
             message="Extracting frames and detecting scenes...",
         )
 
-        analysis = await asyncio.to_thread(_run_video_analysis, file_path, video_id)
+        # _run_video_analysis is the longest-running stage (per-scene BLIP/
+        # YOLO/OCR/CLIP, all on CPU) and runs in a worker thread, so report
+        # its progress back to the frontend via a thread-safe callback -
+        # otherwise the UI sees zero updates for the whole stage and looks
+        # frozen even though real work is happening (confirmed live: WS
+        # connects and receives the "connected" event, then nothing until
+        # the entire analysis finishes several minutes later).
+        loop = asyncio.get_running_loop()
+
+        def _on_scene_progress(scene_index: int, total_scenes: int):
+            if total_scenes <= 0:
+                return
+            pct = 10.0 + (scene_index + 1) / total_scenes * 60.0
+            asyncio.run_coroutine_threadsafe(
+                send_progress_update(
+                    video_id=video_id,
+                    stage="scene_analysis",
+                    progress=pct,
+                    message=f"Analyzing scene {scene_index + 1}/{total_scenes}...",
+                ),
+                loop,
+            )
+
+        analysis = await asyncio.to_thread(_run_video_analysis, file_path, video_id, _on_scene_progress)
         transcription = analysis["transcription"]
 
         await send_stage_complete(

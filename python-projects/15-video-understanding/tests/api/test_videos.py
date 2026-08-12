@@ -607,6 +607,67 @@ class TestBackgroundTasks:
         # TODO: Test full processing pipeline execution
         pass
 
+    def test_run_video_analysis_reports_progress_per_scene(self):
+        """_run_video_analysis invokes progress_callback(index, total) once
+        per scene, so the frontend gets granular updates during the
+        longest-running stage (BLIP/YOLO/OCR/CLIP per scene) instead of
+        going silent for the whole stage - confirmed live: without this,
+        the UI sat at "Waiting for processing to start..." the entire time
+        despite the backend genuinely processing."""
+        from types import SimpleNamespace
+        from src.api.videos import _run_video_analysis
+
+        fake_scenes = [
+            SimpleNamespace(scene_id=i, start_time=float(i), end_time=float(i + 1),
+                             keyframe_timestamp=float(i), middle_timestamp=float(i))
+            for i in range(3)
+        ]
+
+        mock_processor = Mock()
+        mock_processor.extract_frames.return_value = []
+        mock_processor.extract_audio.return_value = None
+        mock_processor.extract_single_frame.return_value = None
+
+        mock_transcriber = Mock()
+        mock_transcriber.transcribe.return_value = Mock(segments=[], language="en", duration=3.0)
+
+        mock_action_service = Mock()
+        mock_action_service.recognize_actions.return_value = Mock(actions=[])
+
+        mock_audio_extractor = Mock()
+        mock_audio_extractor.extract_segment_features.return_value = Mock(rms_energy=0.1)
+
+        progress_calls = []
+
+        with patch("src.core.video_processor.create_video_processor", return_value=mock_processor), \
+             patch("src.services.scene_detection.content_detector.ContentBasedSceneDetector") as mock_detector_cls, \
+             patch("src.services.transcription_service.TranscriptionService", return_value=mock_transcriber), \
+             patch("src.services.image_captioning.ImageCaptioningService"), \
+             patch("src.services.object_detection.ObjectDetectionService"), \
+             patch("src.services.face_detection.FaceDetectionService"), \
+             patch("src.services.ocr_service.OCRService"), \
+             patch("src.services.action_recognition.ActionRecognitionService", return_value=mock_action_service), \
+             patch("src.services.audio_features.AudioFeatureExtractor", return_value=mock_audio_extractor), \
+             patch("src.api.videos._get_clip_model"), \
+             patch("src.core.config.settings") as mock_settings:
+
+            mock_settings.diarization_use_auth_token = False
+            mock_settings.hf_token = None
+            mock_settings.frames_path = "/tmp/frames"
+            mock_settings.temp_path = "/tmp/temp"
+            mock_settings.whisper_model = "base"
+            mock_settings.scene_threshold = 30.0
+            mock_settings.min_scene_length = 1.0
+
+            mock_detector_cls.return_value.detect_scenes.return_value = fake_scenes
+
+            _run_video_analysis(
+                "video.mp4", "video-uuid",
+                progress_callback=lambda idx, total: progress_calls.append((idx, total)),
+            )
+
+        assert progress_calls == [(0, 3), (1, 3), (2, 3)]
+
     @pytest.mark.asyncio
     @patch('yt_dlp.YoutubeDL')
     async def test_download_youtube_video(self, mock_ytdl):
