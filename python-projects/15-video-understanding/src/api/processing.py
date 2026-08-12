@@ -91,6 +91,9 @@ class FrameResponse(BaseModel):
     is_keyframe: bool
     scene_id: Optional[int] = None
     description: Optional[str] = None
+    objects_detected: Optional[list] = None
+    faces_detected: Optional[list] = None
+    ocr_text: Optional[str] = None
 
 
 class FramesListResponse(BaseModel):
@@ -410,6 +413,9 @@ async def get_video_frames(
                     is_keyframe=f.is_keyframe,
                     scene_id=f.scene_id,
                     description=f.description,
+                    objects_detected=f.objects_detected,
+                    faces_detected=f.faces_detected,
+                    ocr_text=f.ocr_text,
                 )
                 for f in rows
             ]
@@ -430,6 +436,30 @@ async def get_video_frames(
             status_code=500,
             detail=f"Failed to get frames: {str(e)}"
         )
+
+
+@router.get("/{video_id}/frames/{frame_id}/image")
+async def get_frame_image(video_id: str, frame_id: str):
+    """Get the actual image for a frame/keyframe - previously there was no
+    way to view any extracted frame, only the detection results about it."""
+    import os as os_module
+    from fastapi.responses import FileResponse
+    from src.core.database import get_db
+    from src.models import Frame
+
+    try:
+        with get_db() as db:
+            frame = db.query(Frame).filter(Frame.id == int(frame_id)).first()
+            if not frame or not frame.file_path or not os_module.path.exists(frame.file_path):
+                raise HTTPException(status_code=404, detail="Frame image not found")
+
+            return FileResponse(path=frame.file_path, media_type="image/jpeg")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get frame image: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get frame image: {str(e)}")
 
 
 @router.get("/{video_id}/keyframes", response_model=FramesListResponse)

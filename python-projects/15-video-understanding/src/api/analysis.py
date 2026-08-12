@@ -367,6 +367,30 @@ async def get_video_highlights(
         )
 
 
+@router.get("/{video_id}/highlights/{highlight_id}/thumbnail")
+async def get_highlight_thumbnail(video_id: str, highlight_id: str):
+    """Get the keyframe image for a highlight, so a viewer can see what the
+    moment actually looks like instead of just an importance score."""
+    import os as os_module
+    from fastapi.responses import FileResponse
+    from src.core.database import get_db
+    from src.models import Highlight as HighlightModel
+
+    try:
+        with get_db() as db:
+            highlight = db.query(HighlightModel).filter(HighlightModel.id == int(highlight_id)).first()
+            if not highlight or not highlight.thumbnail_path or not os_module.path.exists(highlight.thumbnail_path):
+                raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+            return FileResponse(path=highlight.thumbnail_path, media_type="image/jpeg")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get highlight thumbnail: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get highlight thumbnail: {str(e)}")
+
+
 @router.post("/{video_id}/highlights/generate", response_model=HighlightsResponse)
 async def generate_video_highlights(
     video_id: str,
@@ -659,6 +683,48 @@ async def generate_summary_task(
         logger.error(f"Summary generation failed: {e}", exc_info=True)
 
 
+def _describe_highlight_reason(
+    visual_context: Optional[dict],
+    audio_context: Optional[dict],
+    transcript_segments: list,
+) -> str:
+    """Turn the same raw signals ImportanceScorer weighs (objects, faces,
+    motion, audio energy, speech) into a plain-language explanation of why a
+    moment was picked - a data scientist can read an importance score, but a
+    regular viewer needs "why", not "0.82"."""
+    objects = (visual_context or {}).get("objects", [])
+    faces = (visual_context or {}).get("faces", [])
+    action_count = len((visual_context or {}).get("actions", []))
+    energy = ((audio_context or {}).get("features", {}) or {}).get("energy", 0.0)
+
+    reasons = []
+    if action_count >= 7:
+        reasons.append("a lot of visual movement/action")
+    elif action_count >= 4:
+        reasons.append("noticeable movement")
+    if len(faces) > 0:
+        reasons.append(f"{len(faces)} face{'s' if len(faces) != 1 else ''} on screen")
+    unique_objects = sorted(set(objects) - {"person"})
+    if unique_objects:
+        reasons.append(f"{', '.join(unique_objects)} visible")
+    if energy >= 0.6:
+        reasons.append("raised/emphatic speaking energy")
+
+    quote = ""
+    if transcript_segments:
+        text = " ".join(s.get("text", "") for s in transcript_segments).strip()
+        if text:
+            quote = text if len(text) <= 140 else text[:137] + "..."
+
+    if not reasons and not quote:
+        return "Selected as a comparatively distinctive moment in this video."
+
+    summary = "Picked for " + " and ".join(reasons) + "." if reasons else "Picked as a notable moment."
+    if quote:
+        summary += f' Spoken here: "{quote}"'
+    return summary
+
+
 def _run_highlight_detection(
     video_id: str,
     duration: float,
@@ -666,6 +732,7 @@ def _run_highlight_detection(
     transcripts_by_scene: dict,
     visual_contexts_by_scene: dict,
     audio_contexts_by_scene: dict,
+    keyframe_by_scene: dict,
     config: GenerateHighlightsRequest,
 ) -> list:
     """Synchronous scoring/detection run off the event loop"""
@@ -682,6 +749,16 @@ def _run_highlight_detection(
         )
         for s in scenes
     ]
+    # The raw heuristic score (see ImportanceScorer._calculate_heuristic_score)
+    # realistically tops out well under the 0.7 min_importance default for
+    # genuinely eventful scenes - confirmed live, every processed video got 0
+    # highlights regardless of scene count or content. score_scenes_batch()
+    # normalizes scores to each video's own 0-1 range before ranking, but this
+    # per-scene scoring path (needed to wire in visual/audio/transcript
+    # context per scene) bypassed that step entirely. Apply the same
+    # normalization here so the threshold is relative to the video, not an
+    # absolute bar the formula can't reach.
+    scores = scorer._normalize_scene_scores(scores)
 
     detector = HighlightDetector(
         importance_scorer=scorer,
@@ -696,6 +773,21 @@ def _run_highlight_detection(
         scene_scores=scores,
         max_highlights=config.max_highlights,
     )
+
+    # HighlightDetector's own description is a generic template ("Action
+    # highlight from X to Y (importance: Z)") with no thumbnail - real but
+    # meaningless to a non-technical viewer. Replace it with plain-language
+    # reasoning and a real keyframe image using the same per-scene signals
+    # already scored above.
+    for h in collection.highlights:
+        scene_number = h.scene_ids[0] if h.scene_ids else None
+        h.thumbnail_path = keyframe_by_scene.get(scene_number)
+        h.description = _describe_highlight_reason(
+            visual_contexts_by_scene.get(scene_number),
+            audio_contexts_by_scene.get(scene_number),
+            transcripts_by_scene.get(scene_number, []),
+        )
+
     return collection.highlights
 
 
@@ -750,6 +842,7 @@ async def generate_highlights_task(
             # ratio and audio energy stored on the scene) - see AKHIL-409.
             visual_contexts_by_scene = {}
             audio_contexts_by_scene = {}
+            keyframe_by_scene = {}
             for s in scene_rows:
                 meta = s.extra_metadata or {}
                 keyframe = keyframes.get(s.id)
@@ -765,6 +858,7 @@ async def generate_highlights_task(
                 audio_contexts_by_scene[s.scene_number] = {
                     "features": {"energy": meta.get("audio_energy", 0.0)}
                 }
+                keyframe_by_scene[s.scene_number] = (keyframe.file_path if keyframe else None) or s.keyframe_path
 
         if not scenes:
             logger.info(f"No scenes available for video {video_id}, skipping highlight generation")
@@ -772,7 +866,7 @@ async def generate_highlights_task(
 
         highlights = await asyncio.to_thread(
             _run_highlight_detection, video_id, duration, scenes, transcripts_by_scene,
-            visual_contexts_by_scene, audio_contexts_by_scene, config
+            visual_contexts_by_scene, audio_contexts_by_scene, keyframe_by_scene, config
         )
 
         known_types = {t.value for t in HighlightTypeDB}
@@ -790,6 +884,7 @@ async def generate_highlights_task(
                     end_time=h.end_time,
                     importance_score=h.importance_score,
                     highlight_type=HighlightTypeDB(type_value),
+                    thumbnail_path=h.thumbnail_path,
                     extra_metadata=h.metadata or {},
                 ))
 
