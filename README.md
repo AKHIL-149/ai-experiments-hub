@@ -109,15 +109,15 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - Task queue and result aggregation
 - WebSocket real-time monitoring
 
-**15. Video Understanding & Summarization Platform** (Python) ⚠️ Pending
+**15. Video Understanding & Summarization Platform** (Python) ✅ Working
 - Multi-modal video analysis with vision + audio fusion
-- Frame extraction and scene detection
-- Audio transcription with speaker diarization
-- Visual content analysis (objects, actions, OCR)
-- CLIP-based semantic search across videos
-- AI-powered summaries and highlight detection
-- WebSocket progress tracking for processing
-- _Note: Backend API operational, YouTube processing working (~35-40s for 10min video), all 6 processing stages functional, frontend with real-time updates deployed_
+- Frame extraction, real scene detection, and per-scene visual analysis (BLIP captioning, YOLO object detection, face detection, OCR, motion-based action recognition)
+- Audio transcription (local Whisper) with speaker diarization (pyannote.audio)
+- CLIP-based semantic search across videos, plus transcript, temporal, and natural-language Q&A search (local Ollama RAG)
+- AI-generated summaries, chapters, and importance-scored highlights with real keyframe thumbnails and plain-language reasoning (not just a raw score)
+- Clip creation UI - cut a clip from any time range or straight from a highlight, with live status polling
+- WebSocket progress tracking with granular per-scene updates during processing
+- _Note: Ingestion (YouTube/local upload/streaming), the full analysis pipeline, all search modes, highlights, and clip creation are real and verified end-to-end through the actual UI - not stubs. CPU-only local inference makes longer videos slow to process. Backend-only (no UI yet): chapters view, timeline, similar-videos search, and highlight reels._
 
 **16. Knowledge Graph Builder & Query System** (Full-stack) - Planned
 - Automatic entity and relationship extraction
@@ -191,7 +191,7 @@ ai-experiments-hub/
 │   ├── 09-meeting-summarizer/
 │   ├── 13-code-review-assistant/  # Full-stack production app
 │   ├── 14-multi-agent-orchestrator/
-│   ├── 15-video-understanding/     # Multi-modal video analysis ⚠️ Pending
+│   ├── 15-video-understanding/     # Multi-modal video analysis ✅ Working
 │   └── ...
 └── javascript-projects/
     ├── 03-prompt-playground/
@@ -215,7 +215,7 @@ ai-experiments-hub/
 - [ ] Project 12: Content Moderation System
 - [x] Project 13: AI Code Review Assistant ⚠️ (Core complete, needs monitoring)
 - [x] Project 14: Multi-Agent Orchestrator
-- [ ] Project 15: Video Understanding Platform ⚠️ (Pending - backend operational, needs full pipeline integration)
+- [x] Project 15: Video Understanding Platform ✅ (Ingestion, analysis pipeline, search, highlights, and clip creation working end-to-end; chapters/timeline/similar-videos/highlight-reels are backend-only, no UI yet)
 - [ ] Project 16: Knowledge Graph Builder (Planned)
 
 ## Learning Resources
