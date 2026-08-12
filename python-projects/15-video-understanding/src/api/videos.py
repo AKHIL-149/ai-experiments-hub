@@ -614,6 +614,7 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
     face_detector = FaceDetectionService(backend="opencv")
     ocr = OCRService(engine="easyocr")
     audio_extractor = AudioFeatureExtractor()
+    clip_model = _get_clip_model()
 
     keyframes_dir = frames_dir / "keyframes"
     keyframes_dir.mkdir(parents=True, exist_ok=True)
@@ -644,6 +645,13 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
             except Exception as e:
                 logger.warning(f"OCR failed for scene {scene.scene_id}: {e}")
 
+        clip_embedding = None
+        if kf_path.exists():
+            try:
+                clip_embedding = clip_model.encode_image(kf_path)
+            except Exception as e:
+                logger.warning(f"CLIP embedding failed for scene {scene.scene_id}: {e}")
+
         action_summary = _aggregate_scene_actions(all_actions, scene.start_time, scene.end_time)
 
         audio_energy = 0.0
@@ -665,6 +673,7 @@ def _run_video_analysis(video_path: str, video_uuid: str) -> dict:
             "activity_ratio": action_summary["activity_ratio"],
             "dominant_action": action_summary["dominant_action"],
             "audio_energy": audio_energy,
+            "clip_embedding": clip_embedding,
         })
 
     return {
@@ -684,6 +693,20 @@ def _get_embedding_model():
         from sentence_transformers import SentenceTransformer
         _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _embedding_model
+
+
+_clip_model = None
+
+
+def _get_clip_model():
+    """Lazily load a shared CLIP model for real image/text visual embeddings.
+    Separate vector space from _get_embedding_model()'s sentence-transformer -
+    never mix the two in the same ChromaDB collection or query."""
+    global _clip_model
+    if _clip_model is None:
+        from src.services.clip.clip_model import CLIPModel, CLIPConfig
+        _clip_model = CLIPModel(CLIPConfig(device="cpu"))
+    return _clip_model
 
 
 async def process_video_background(video_id: str):
@@ -817,9 +840,11 @@ async def process_video_background(video_id: str):
                 scene_rows.append(scene_row)
             db.flush()  # assign scene_row.id values
 
+            frame_rows = []
             for item, scene_row in zip(analysis["scenes"], scene_rows):
                 s = item["scene"]
-                db.add(FrameModel(
+                clip_emb = item.get("clip_embedding")
+                frame_row = FrameModel(
                     video_id=video.id,
                     scene_id=scene_row.id,
                     timestamp=s.keyframe_timestamp or s.middle_timestamp,
@@ -830,7 +855,11 @@ async def process_video_background(video_id: str):
                     objects_detected=item["objects"],
                     faces_detected=item["faces"],
                     ocr_text=item["ocr_text"],
-                ))
+                    clip_embedding=clip_emb.tolist() if clip_emb is not None else None,
+                )
+                db.add(frame_row)
+                frame_rows.append(frame_row)
+            db.flush()  # assign frame_row.id values
 
             transcript_rows = []
             for seg in transcription.segments:
@@ -886,6 +915,23 @@ async def process_video_background(video_id: str):
                 )
                 caption_count = len(captions)
 
+            frame_count = 0
+            frames_with_clip = [f for f in frame_rows if f.clip_embedding]
+            if frames_with_clip:
+                import numpy as np
+                store.add_frame_embeddings(
+                    video_id=video_id,
+                    frame_embeddings=np.array([f.clip_embedding for f in frames_with_clip]),
+                    frame_numbers=[f.frame_number for f in frames_with_clip],
+                    timestamps=[f.timestamp for f in frames_with_clip],
+                    frame_paths=[f.file_path for f in frames_with_clip],
+                    additional_metadata=[
+                        {"scene_id": f.scene_id, "description": f.description or "", "frame_db_id": f.id}
+                        for f in frames_with_clip
+                    ],
+                )
+                frame_count = len(frames_with_clip)
+
             video.processing_status = VideoStatus.COMPLETED
             video.processed_at = datetime.now()
 
@@ -893,7 +939,7 @@ async def process_video_background(video_id: str):
             video_id=video_id,
             stage="embeddings",
             message="Embedding generation complete",
-            results={"embeddings_created": transcript_count + caption_count},
+            results={"embeddings_created": transcript_count + caption_count + frame_count},
         )
 
         # Stage 4: Summary + highlight generation (local Ollama LLM + heuristic scoring)
@@ -929,7 +975,7 @@ async def process_video_background(video_id: str):
                 "frames": len(analysis["sampled_frame_paths"]),
                 "scenes": len(analysis["scenes"]),
                 "transcripts": transcript_count,
-                "embeddings": transcript_count + caption_count,
+                "embeddings": transcript_count + caption_count + frame_count,
             },
         )
 
