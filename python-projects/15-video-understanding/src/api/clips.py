@@ -83,6 +83,32 @@ class BatchClipRequest(BaseModel):
     create_highlight_reel: bool = Field(False, description="Also create reel from clips")
 
 
+def _clip_to_response(clip, db) -> "ClipResponse":
+    """Map a Clip ORM row to the ClipResponse shape (video_id as the
+    external/public video identifier, not the internal integer FK)"""
+    from src.models import Video
+
+    video = db.query(Video).filter(Video.id == clip.video_id).first()
+    return ClipResponse(
+        clip_id=clip.external_id,
+        video_id=video.external_id if video else "",
+        title=clip.title,
+        description=clip.description,
+        start_time=clip.start_time,
+        end_time=clip.end_time,
+        duration=clip.end_time - clip.start_time,
+        file_path=clip.file_path,
+        file_size=clip.file_size,
+        format=clip.format,
+        resolution=clip.resolution,
+        status=clip.status.value,
+        error_message=clip.error_message,
+        thumbnail_path=clip.thumbnail_path,
+        created_at=clip.created_at,
+        completed_at=clip.completed_at,
+    )
+
+
 # ============================================================================
 # Clip Creation Endpoints
 # ============================================================================
@@ -119,20 +145,32 @@ async def create_clip(
 
         logger.info(f"Creating clip for video {video_id}: {request.start_time}-{request.end_time}")
 
-        # TODO: Verify video exists
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
+        from src.core.database import get_db
+        from src.models import Video, Clip, ClipStatus
 
-        # Generate clip ID
-        import uuid
-        clip_id = str(uuid.uuid4())
+        with get_db() as db:
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not video:
+                raise HTTPException(status_code=404, detail="Video not found")
+            if not video.file_path:
+                raise HTTPException(status_code=400, detail="Video has no source file")
 
-        # Calculate duration
-        duration = request.end_time - request.start_time
+            import uuid
+            clip_id = str(uuid.uuid4())
+            duration = request.end_time - request.start_time
+            title = request.title or f"Clip {request.start_time:.1f}-{request.end_time:.1f}"
 
-        # Generate title if not provided
-        title = request.title or f"Clip {request.start_time:.1f}-{request.end_time:.1f}"
+            db.add(Clip(
+                external_id=clip_id,
+                video_id=video.id,
+                title=title,
+                description=request.description,
+                start_time=request.start_time,
+                end_time=request.end_time,
+                format=request.format,
+                resolution=request.resolution or "original",
+                status=ClipStatus.PENDING,
+            ))
 
         # Schedule clip creation
         background_tasks.add_task(
@@ -141,21 +179,6 @@ async def create_clip(
             video_id,
             request,
         )
-
-        # TODO: Save clip metadata to database
-        # clip = Clip(
-        #     id=clip_id,
-        #     video_id=video_id,
-        #     title=title,
-        #     description=request.description,
-        #     start_time=request.start_time,
-        #     end_time=request.end_time,
-        #     duration=duration,
-        #     format=request.format,
-        #     status="pending",
-        # )
-        # db.add(clip)
-        # db.commit()
 
         return ClipResponse(
             clip_id=clip_id,
@@ -207,12 +230,37 @@ async def create_clips_batch(
             clip_response = await create_clip(video_id, background_tasks, clip_req)
             clips.append(clip_response)
 
-        # If requested, create highlight reel
+        # If requested, create highlight reel. The individual clips above are
+        # only *scheduled* at this point, not yet completed - BackgroundTasks
+        # run strictly in the order they were added, so by the time this
+        # task actually executes they will be, but that means (unlike
+        # create_highlight_reel) we can't validate completion status yet.
         if request.create_highlight_reel:
             clip_ids = [c.clip_id for c in clips]
-            # Schedule reel creation after all clips complete
+            total_duration = sum(c.duration for c in clips)
+
+            from src.core.database import get_db
+            from src.models import Video, Clip as ClipModel, ClipStatus
+
+            import uuid
+            reel_id = str(uuid.uuid4())
+            with get_db() as db:
+                source_video = db.query(Video).filter(Video.external_id == video_id).first()
+                db.add(ClipModel(
+                    external_id=reel_id,
+                    video_id=source_video.id,
+                    title="Highlight Reel",
+                    start_time=0.0,
+                    end_time=total_duration,
+                    format="mp4",
+                    resolution="original",
+                    status=ClipStatus.PENDING,
+                    extra_metadata={"is_reel": True, "source_clip_ids": clip_ids},
+                ))
+
             background_tasks.add_task(
                 create_highlight_reel_task,
+                reel_id,
                 clip_ids,
                 "Highlight Reel",
                 "fade",
@@ -254,42 +302,71 @@ async def create_highlight_reel(
     - **outro_text**: Text for outro card
     - **background_music**: Optional background music
 
-    Concatenates clips with transitions and optional intro/outro
+    Concatenates clips with real transitions (fade/dissolve/wipe via
+    ffmpeg). Intro/outro text cards and background music are not yet
+    implemented - the underlying HighlightExporter.add_title_cards()
+    is itself an unimplemented stub - so those fields are accepted but
+    have no effect rather than silently claiming to work.
     """
     try:
         logger.info(f"Creating highlight reel from {len(request.clip_ids)} clips")
 
-        # TODO: Verify all clips exist
-        # clips = db.query(Clip).filter(Clip.id.in_(request.clip_ids)).all()
-        # if len(clips) != len(request.clip_ids):
-        #     raise HTTPException(status_code=404, detail="One or more clips not found")
+        from src.core.database import get_db
+        from src.models import Clip as ClipModel, ClipStatus
 
-        # Generate reel ID
-        import uuid
-        reel_id = str(uuid.uuid4())
+        from src.models import Video
+
+        with get_db() as db:
+            clips = db.query(ClipModel).filter(ClipModel.external_id.in_(request.clip_ids)).all()
+            if len(clips) != len(request.clip_ids):
+                raise HTTPException(status_code=404, detail="One or more clips not found")
+            not_ready = [c.external_id for c in clips if c.status != ClipStatus.COMPLETED]
+            if not_ready:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Clips not ready (must be completed): {not_ready}"
+                )
+
+            # Associate the reel with the first clip's source video, so it's
+            # queryable through the same /clips endpoints as a normal clip
+            reel_video_id = clips[0].video_id
+            reel_source_video = db.query(Video).filter(Video.id == reel_video_id).first()
+            reel_source_video_ext_id = reel_source_video.external_id if reel_source_video else ""
+            total_duration = sum(c.end_time - c.start_time for c in clips)
+
+            import uuid
+            reel_id = str(uuid.uuid4())
+            db.add(ClipModel(
+                external_id=reel_id,
+                video_id=reel_video_id,
+                title=request.title,
+                description=request.description,
+                start_time=0.0,
+                end_time=total_duration,
+                format="mp4",
+                resolution="original",
+                status=ClipStatus.PENDING,
+                extra_metadata={"is_reel": True, "source_clip_ids": request.clip_ids},
+            ))
 
         # Schedule reel creation
         background_tasks.add_task(
             create_highlight_reel_task,
+            reel_id,
             request.clip_ids,
             request.title,
             request.transition_type,
             request.transition_duration,
-            request.add_intro,
-            request.intro_text,
-            request.add_outro,
-            request.outro_text,
-            request.background_music,
         )
 
         return ClipResponse(
             clip_id=reel_id,
-            video_id="multiple",  # Reel from multiple videos
+            video_id=reel_source_video_ext_id,
             title=request.title,
             description=request.description,
             start_time=0.0,
-            end_time=0.0,
-            duration=0.0,
+            end_time=total_duration,
+            duration=total_duration,
             format="mp4",
             resolution="original",
             status="pending",
@@ -331,19 +408,25 @@ async def list_clips(
     try:
         logger.info(f"Listing clips (page={page}, video_id={video_id})")
 
-        # TODO: Query database
-        # query = db.query(Clip)
-        # if video_id:
-        #     query = query.filter(Clip.video_id == video_id)
-        # if status:
-        #     query = query.filter(Clip.status == status)
-        #
-        # total = query.count()
-        # clips = query.order_by(Clip.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        from src.core.database import get_db
+        from src.models import Video, Clip as ClipModel, ClipStatus
 
-        # Mock response
-        clips = []
-        total = 0
+        with get_db() as db:
+            query = db.query(ClipModel)
+            if video_id:
+                video = db.query(Video).filter(Video.external_id == video_id).first()
+                query = query.filter(ClipModel.video_id == (video.id if video else -1))
+            if status:
+                query = query.filter(ClipModel.status == ClipStatus(status))
+
+            total = query.count()
+            rows = (
+                query.order_by(ClipModel.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+                .all()
+            )
+            clips = [_clip_to_response(c, db) for c in rows]
 
         return ClipListResponse(
             clips=clips,
@@ -372,13 +455,14 @@ async def get_clip(clip_id: str):
     try:
         logger.info(f"Getting clip {clip_id}")
 
-        # TODO: Query database
-        # clip = db.query(Clip).filter(Clip.id == clip_id).first()
-        # if not clip:
-        #     raise HTTPException(status_code=404, detail="Clip not found")
+        from src.core.database import get_db
+        from src.models import Clip as ClipModel
 
-        # Mock response
-        raise HTTPException(status_code=404, detail="Clip not found")
+        with get_db() as db:
+            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            if not clip:
+                raise HTTPException(status_code=404, detail="Clip not found")
+            return _clip_to_response(clip, db)
 
     except HTTPException:
         raise
@@ -406,18 +490,19 @@ async def delete_clip(
     try:
         logger.info(f"Deleting clip {clip_id}")
 
-        # TODO: Delete from database and optionally delete file
-        # clip = db.query(Clip).filter(Clip.id == clip_id).first()
-        # if not clip:
-        #     raise HTTPException(status_code=404, detail="Clip not found")
-        #
-        # if delete_file and clip.file_path:
-        #     import os
-        #     if os.path.exists(clip.file_path):
-        #         os.remove(clip.file_path)
-        #
-        # db.delete(clip)
-        # db.commit()
+        import os as os_module
+        from src.core.database import get_db
+        from src.models import Clip as ClipModel
+
+        with get_db() as db:
+            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            if not clip:
+                raise HTTPException(status_code=404, detail="Clip not found")
+
+            if delete_file and clip.file_path and os_module.path.exists(clip.file_path):
+                os_module.remove(clip.file_path)
+
+            db.delete(clip)
 
         return {
             "clip_id": clip_id,
@@ -452,25 +537,24 @@ async def download_clip(clip_id: str):
     try:
         logger.info(f"Downloading clip {clip_id}")
 
-        # TODO: Get clip from database
-        # clip = db.query(Clip).filter(Clip.id == clip_id).first()
-        # if not clip:
-        #     raise HTTPException(status_code=404, detail="Clip not found")
-        #
-        # if clip.status != "completed":
-        #     raise HTTPException(status_code=400, detail="Clip not ready for download")
-        #
-        # if not clip.file_path or not os.path.exists(clip.file_path):
-        #     raise HTTPException(status_code=404, detail="Clip file not found")
-        #
-        # # Return file response
-        # return FileResponse(
-        #     path=clip.file_path,
-        #     media_type="video/mp4",
-        #     filename=f"{clip.title}.{clip.format}"
-        # )
+        import os as os_module
+        from src.core.database import get_db
+        from src.models import Clip as ClipModel, ClipStatus
 
-        raise HTTPException(status_code=404, detail="Clip not found")
+        with get_db() as db:
+            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            if not clip:
+                raise HTTPException(status_code=404, detail="Clip not found")
+            if clip.status != ClipStatus.COMPLETED:
+                raise HTTPException(status_code=400, detail="Clip not ready for download")
+            if not clip.file_path or not os_module.path.exists(clip.file_path):
+                raise HTTPException(status_code=404, detail="Clip file not found")
+
+            return FileResponse(
+                path=clip.file_path,
+                media_type="video/mp4",
+                filename=f"{clip.title}.{clip.format}",
+            )
 
     except HTTPException:
         raise
@@ -494,17 +578,16 @@ async def get_clip_thumbnail(clip_id: str):
     try:
         logger.info(f"Getting thumbnail for clip {clip_id}")
 
-        # TODO: Get clip and return thumbnail
-        # clip = db.query(Clip).filter(Clip.id == clip_id).first()
-        # if not clip or not clip.thumbnail_path:
-        #     raise HTTPException(status_code=404, detail="Thumbnail not found")
-        #
-        # return FileResponse(
-        #     path=clip.thumbnail_path,
-        #     media_type="image/jpeg"
-        # )
+        import os as os_module
+        from src.core.database import get_db
+        from src.models import Clip as ClipModel
 
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
+        with get_db() as db:
+            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            if not clip or not clip.thumbnail_path or not os_module.path.exists(clip.thumbnail_path):
+                raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+            return FileResponse(path=clip.thumbnail_path, media_type="image/jpeg")
 
     except HTTPException:
         raise
@@ -529,60 +612,161 @@ async def create_clip_task(
     """
     Create video clip in background
 
-    Uses ffmpeg to extract clip from source video
+    Uses ffmpeg (via ClipCreator) to extract clip from source video.
+    add_subtitles is not yet implemented - it's ignored rather than
+    silently claimed to have worked.
     """
+    import asyncio
+    from pathlib import Path
+    from src.core.database import get_db
+    from src.models import Video, Clip as ClipModel, ClipStatus
+
+    RESOLUTION_HEIGHTS = {"480p": 480, "720p": 720, "1080p": 1080}
+
     try:
         logger.info(f"Creating clip {clip_id}")
 
-        # TODO: Implement clip creation
-        # 1. Get source video file path
-        # 2. Use ClipCreator service (from highlights module)
-        # 3. Extract clip with ffmpeg:
-        #    - Set start/end time
-        #    - Apply resolution if specified
-        #    - Include/exclude audio
-        #    - Add fade effects if requested
-        #    - Burn in subtitles if requested
-        # 4. Generate thumbnail from middle frame
-        # 5. Update clip status in database
+        with get_db() as db:
+            clip_row = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            video = db.query(Video).filter(Video.external_id == video_id).first()
+            if not clip_row or not video or not video.file_path:
+                raise RuntimeError(f"Clip {clip_id} or its source video not found")
+            clip_row.status = ClipStatus.PROCESSING
+            video_path = video.file_path
 
-        logger.info(f"Clip {clip_id} created successfully")
+        from src.services.highlights.clip_creator import ClipCreator, ClipConfig
+
+        clip_config = ClipConfig(
+            output_format=config.format,
+            include_audio=config.include_audio,
+            fade_in_duration=0.5 if config.add_fade else 0.0,
+            fade_out_duration=0.5 if config.add_fade else 0.0,
+            max_height=RESOLUTION_HEIGHTS.get(config.resolution) if config.resolution else None,
+        )
+
+        def _create():
+            creator = ClipCreator(output_dir="./storage/clips")
+            return creator.create_clip(
+                video_path=video_path,
+                start_time=config.start_time,
+                end_time=config.end_time,
+                video_id=video_id,
+                output_filename=f"{video_id}_{clip_id}.{config.format}",
+                config=clip_config,
+            )
+
+        metadata = await asyncio.to_thread(_create)
+
+        # Thumbnail from the clip's midpoint
+        thumbnail_path = None
+        try:
+            from src.core.video_processor import create_video_processor
+            processor = create_video_processor()
+            thumb_dir = Path("./storage/clips/thumbnails")
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+            thumb_path = thumb_dir / f"{clip_id}.jpg"
+            midpoint = (config.start_time + config.end_time) / 2
+            await asyncio.to_thread(
+                processor.extract_single_frame, Path(video_path), thumb_path, midpoint
+            )
+            thumbnail_path = str(thumb_path)
+        except Exception as e:
+            logger.warning(f"Thumbnail generation failed for clip {clip_id}: {e}")
+
+        with get_db() as db:
+            clip_row = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            clip_row.file_path = metadata.output_path
+            clip_row.file_size = metadata.file_size_bytes
+            clip_row.thumbnail_path = thumbnail_path
+            clip_row.status = ClipStatus.COMPLETED
+            clip_row.completed_at = datetime.now()
+
+        logger.info(f"Clip {clip_id} created successfully: {metadata.output_path}")
 
     except Exception as e:
-        logger.error(f"Clip creation failed: {e}")
-        # Update clip status to failed
+        logger.error(f"Clip creation failed: {e}", exc_info=True)
+        with get_db() as db:
+            clip_row = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            if clip_row:
+                clip_row.status = ClipStatus.FAILED
+                clip_row.error_message = str(e)
 
 
 async def create_highlight_reel_task(
+    reel_id: str,
     clip_ids: List[str],
     title: str,
     transition_type: str,
     transition_duration: float,
-    add_intro: bool = False,
-    intro_text: Optional[str] = None,
-    add_outro: bool = False,
-    outro_text: Optional[str] = None,
-    background_music: Optional[str] = None,
 ):
     """
     Create highlight reel from multiple clips
 
-    Uses ffmpeg to concatenate clips with transitions
+    Uses ffmpeg (via HighlightExporter) to concatenate clips with real
+    transitions. Intro/outro cards and background music aren't
+    implemented yet (see create_highlight_reel's docstring).
     """
+    import asyncio
+    from types import SimpleNamespace
+    from src.core.database import get_db
+    from src.models import Clip as ClipModel, ClipStatus
+
     try:
-        logger.info(f"Creating highlight reel from {len(clip_ids)} clips")
+        logger.info(f"Creating highlight reel {reel_id} from {len(clip_ids)} clips")
 
-        # TODO: Implement reel creation
-        # 1. Get all clip file paths
-        # 2. Use HighlightExporter service
-        # 3. Create transition effects
-        # 4. Generate intro/outro cards if requested
-        # 5. Concatenate clips with ffmpeg
-        # 6. Add background music if provided
-        # 7. Generate final output file
-        # 8. Save reel metadata
+        with get_db() as db:
+            reel_row = db.query(ClipModel).filter(ClipModel.external_id == reel_id).first()
+            source_clips = (
+                db.query(ClipModel)
+                .filter(ClipModel.external_id.in_(clip_ids))
+                .all()
+            )
+            # Preserve the order the caller requested, not DB return order
+            by_id = {c.external_id: c for c in source_clips}
+            ordered_clips = [by_id[cid] for cid in clip_ids]
+            clip_paths = [c.file_path for c in ordered_clips]
+            durations = [c.end_time - c.start_time for c in ordered_clips]
+            if not reel_row or any(p is None for p in clip_paths):
+                raise RuntimeError(f"Reel {reel_id} or one of its source clips is missing a file")
+            reel_row.status = ClipStatus.PROCESSING
 
-        logger.info("Highlight reel created successfully")
+        from src.services.highlights.exporter import HighlightExporter, ExportConfig, TransitionConfig
+
+        export_config = ExportConfig(
+            transition=TransitionConfig(
+                transition_type=transition_type if transition_type != "cut" else "none",
+                transition_duration=transition_duration,
+            ),
+        )
+        # export_highlight_reel only needs .duration off each "highlight"
+        fake_highlights = [SimpleNamespace(duration=d) for d in durations]
+
+        def _export():
+            exporter = HighlightExporter(output_dir="./storage/clips")
+            return exporter.export_highlight_reel(
+                video_id=reel_id,
+                highlights=fake_highlights,
+                clip_paths=clip_paths,
+                reel_id=reel_id,
+                output_filename=f"reel_{reel_id}.mp4",
+                config=export_config,
+            )
+
+        reel_meta = await asyncio.to_thread(_export)
+
+        with get_db() as db:
+            reel_row = db.query(ClipModel).filter(ClipModel.external_id == reel_id).first()
+            reel_row.file_path = reel_meta.output_path
+            reel_row.file_size = reel_meta.file_size_bytes
+            reel_row.status = ClipStatus.COMPLETED
+            reel_row.completed_at = datetime.now()
+
+        logger.info(f"Highlight reel {reel_id} created successfully: {reel_meta.output_path}")
 
     except Exception as e:
-        logger.error(f"Reel creation failed: {e}")
+        logger.error(f"Reel creation failed: {e}", exc_info=True)
+        with get_db() as db:
+            reel_row = db.query(ClipModel).filter(ClipModel.external_id == reel_id).first()
+            if reel_row:
+                reel_row.status = ClipStatus.FAILED
+                reel_row.error_message = str(e)
