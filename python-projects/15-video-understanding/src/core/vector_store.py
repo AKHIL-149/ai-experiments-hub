@@ -111,16 +111,21 @@ class VectorStore:
             self.config.distance_metric, "cosine"
         )
 
+        # "hnsw:space" is the key ChromaDB actually reads to configure the
+        # index's distance function - "distance_metric" alone is inert
+        collection_metadata = dict(metadata or {"distance_metric": distance_fn})
+        collection_metadata.setdefault("hnsw:space", distance_fn)
+
         if get_or_create:
             self.collection = self.client.get_or_create_collection(
                 name=name,
-                metadata=metadata or {"distance_metric": distance_fn},
+                metadata=collection_metadata,
             )
             logger.info(f"Got or created collection: {name}")
         else:
             self.collection = self.client.create_collection(
                 name=name,
-                metadata=metadata or {"distance_metric": distance_fn},
+                metadata=collection_metadata,
             )
             logger.info(f"Created collection: {name}")
 
@@ -448,13 +453,22 @@ class VideoVectorStore(VectorStore):
         self.scenes_collection = None
 
     def initialize_collections(self):
-        """Initialize all video-related collections"""
+        """Initialize all video-related collections
+
+        "hnsw:space": "cosine" is the actual ChromaDB config key that
+        controls the index's distance function - "distance_metric" (used
+        here previously) is just an arbitrary descriptive key ChromaDB
+        ignores, so every collection was silently using the default L2
+        distance. similarity = 1 - distance throughout this codebase is
+        only mathematically valid for true cosine distance.
+        """
         # Frames collection
         self.frames_collection = self.client.get_or_create_collection(
             name="video_frames",
             metadata={
                 "description": "CLIP embeddings for video frames",
                 "distance_metric": "cosine",
+                "hnsw:space": "cosine",
             }
         )
 
@@ -464,6 +478,7 @@ class VideoVectorStore(VectorStore):
             metadata={
                 "description": "Text embeddings for transcript segments",
                 "distance_metric": "cosine",
+                "hnsw:space": "cosine",
             }
         )
 
@@ -473,6 +488,7 @@ class VideoVectorStore(VectorStore):
             metadata={
                 "description": "Multi-modal embeddings for video scenes",
                 "distance_metric": "cosine",
+                "hnsw:space": "cosine",
             }
         )
 
