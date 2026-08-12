@@ -446,11 +446,29 @@ class TestProcessVideoEndpoint:
         pass
 
     @pytest.mark.asyncio
-    @patch('src.api.processing.process_video_pipeline')
-    async def test_process_video_background_task(self, mock_pipeline):
-        """Test that processing runs as background task"""
-        # TODO: Verify background task is scheduled
-        pass
+    async def test_process_video_background_task(self):
+        """/process schedules the real process_video_background pipeline
+        (process_video_pipeline was a dead stub, deleted in AKHIL-414)"""
+        from fastapi import BackgroundTasks
+        from src.api.processing import process_video
+        from src.models import VideoStatus
+
+        mock_video = Mock(file_path="./data/uploads/vid-1.mp4", processing_status=None)
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+        background_tasks = BackgroundTasks()
+
+        with patch("src.core.database.get_db", _mock_get_db(mock_db)), \
+             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_pipeline:
+            response = await process_video(video_id="vid-1", background_tasks=background_tasks, request=None)
+
+        assert response.status == "processing"
+        assert mock_video.processing_status == VideoStatus.PROCESSING
+        assert len(background_tasks.tasks) == 1
+        # process_video imports process_video_background locally, so the
+        # scheduled callable should be this exact patched mock
+        assert background_tasks.tasks[0].func is mock_pipeline
+        assert background_tasks.tasks[0].args == ("vid-1",)
 
 
 class TestReprocessVideoEndpoint:
@@ -567,11 +585,20 @@ class TestBackgroundTasks:
     """Tests for background task functions"""
 
     @pytest.mark.asyncio
-    @patch('src.api.videos.subprocess.run')
-    async def test_get_video_duration(self, mock_subprocess):
-        """Test video duration extraction"""
-        # TODO: Test ffprobe duration extraction
-        pass
+    async def test_get_video_duration(self):
+        """ffprobe output is parsed into a real float duration.
+        (subprocess is imported locally inside get_video_duration, so the
+        patch target is the shared `subprocess` module, not
+        src.api.videos.subprocess - that attribute doesn't exist)"""
+        import json
+        from src.api.videos import get_video_duration
+
+        fake_result = Mock(stdout=json.dumps({"format": {"duration": "213.061"}}))
+
+        with patch("subprocess.run", return_value=fake_result):
+            duration = await get_video_duration("./data/uploads/some_video.mp4")
+
+        assert duration == 213.061
 
     @pytest.mark.asyncio
     @patch('src.core.video_processor.VideoProcessor')
