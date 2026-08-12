@@ -260,23 +260,82 @@ async def search_frames(request: FrameSearchRequest):
     - **min_similarity**: Minimum CLIP similarity threshold
     - **keyframes_only**: Search only keyframes
 
-    Uses CLIP embeddings for visual similarity search
+    Uses real CLIP embeddings for visual similarity search. Only scene
+    keyframes are embedded during processing (not every sampled raw
+    frame), so keyframes_only has no effect - every indexed frame
+    already is one.
     """
     try:
         logger.info(f"Frame search: '{request.query}' (top_k={request.top_k})")
 
         start_time = datetime.now()
 
-        # TODO: Implement frame search
-        # 1. Generate CLIP text embedding for query
-        # 2. Query frame vector store in ChromaDB
-        # 3. Apply filters (video_ids, keyframes_only, min_similarity)
-        # 4. Retrieve frame metadata from database
-        # 5. Load descriptions and detected objects
-        # 6. Return top_k frames with thumbnails
+        from pathlib import Path
+        from src.core.config import settings
+        from src.core.database import get_db
+        from src.models import Video, Frame
+        from src.core.vector_store import VideoVectorStore
+        from src.api.videos import _get_clip_model
 
-        # Mock response
-        results = []
+        clip_model = _get_clip_model()
+        query_vector = clip_model.encode_text(request.query)
+
+        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store.initialize_collections()
+
+        video_id_filter = request.video_ids[0] if request.video_ids and len(request.video_ids) == 1 else None
+        hits = store.search_frames(query_vector, n_results=request.top_k * 3 + 10, video_id=video_id_filter)
+
+        raw_hits = []
+        for i in range(len(hits.ids)):
+            meta = hits.metadatas[i]
+            similarity = 1.0 - hits.distances[i]
+            raw_hits.append({
+                "video_id": meta.get("video_id"),
+                "frame_number": meta.get("frame_number", 0),
+                "timestamp": meta.get("timestamp", 0.0),
+                "frame_path": meta.get("frame_path", ""),
+                "scene_id": meta.get("scene_id"),
+                "description": meta.get("description", ""),
+                "frame_db_id": meta.get("frame_db_id"),
+                "similarity": similarity,
+            })
+
+        if request.video_ids and len(request.video_ids) > 1:
+            raw_hits = [h for h in raw_hits if h["video_id"] in request.video_ids]
+        raw_hits = [h for h in raw_hits if h["similarity"] >= request.min_similarity]
+        raw_hits.sort(key=lambda h: h["similarity"], reverse=True)
+        raw_hits = raw_hits[:request.top_k]
+
+        with get_db() as db:
+            video_titles = {}
+            objects_by_frame = {}
+            frame_ids = {h["frame_db_id"] for h in raw_hits if h["frame_db_id"] is not None}
+            if frame_ids:
+                for f in db.query(Frame).filter(Frame.id.in_(frame_ids)).all():
+                    objects_by_frame[f.id] = f.objects_detected or []
+            ext_ids = {h["video_id"] for h in raw_hits if h["video_id"]}
+            if ext_ids:
+                video_titles = {
+                    v.external_id: v.title
+                    for v in db.query(Video).filter(Video.external_id.in_(ext_ids)).all()
+                }
+
+        results = [
+            FrameSearchResult(
+                frame_id=str(h["frame_db_id"]) if h["frame_db_id"] is not None else f"frame_{i}",
+                video_id=h["video_id"] or "",
+                video_title=video_titles.get(h["video_id"], "Unknown"),
+                timestamp=h["timestamp"],
+                frame_number=h["frame_number"],
+                similarity_score=h["similarity"],
+                frame_path=h["frame_path"],
+                description=h["description"],
+                scene_id=h["scene_id"],
+                objects_detected=objects_by_frame.get(h["frame_db_id"]),
+            )
+            for i, h in enumerate(raw_hits)
+        ]
 
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds() * 1000
