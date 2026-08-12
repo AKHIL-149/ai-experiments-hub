@@ -10,6 +10,7 @@ from src.models.summary import Summary, SummaryType
 from src.models.highlight import Highlight, HighlightType
 from src.models.embedding import VideoEmbedding, EmbeddingType
 from src.models.chapter import Chapter
+from src.models.clip import Clip, ClipStatus
 
 __all__ = [
     "Video",
@@ -28,4 +29,6 @@ __all__ = [
     "VideoEmbedding",
     "EmbeddingType",
     "Chapter",
+    "Clip",
+    "ClipStatus",
 ]

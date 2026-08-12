@@ -105,6 +105,7 @@ class Video(Base):
     highlights = relationship("Highlight", back_populates="video", cascade="all, delete-orphan")
     embeddings = relationship("VideoEmbedding", back_populates="video", cascade="all, delete-orphan")
     chapters = relationship("Chapter", back_populates="video", cascade="all, delete-orphan")
+    clips = relationship("Clip", back_populates="video", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Video(id={self.id}, title='{self.title}', status={self.processing_status.value})>"
