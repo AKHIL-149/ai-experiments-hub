@@ -12,7 +12,7 @@ from src.services.workflow_engine import WorkflowEngine, WorkflowStatus, StepSta
 from src.core.logging import logger
 
 
-router = APIRouter()
+router = APIRouter(prefix="/workflows")
 
 
 # Pydantic Models
@@ -307,6 +307,11 @@ async def list_workflows(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: Session = Depends(get_db_session)
 ) -> Dict[str, Any]:
+    # `status` (the query param above) shadows the fastapi `status` module
+    # imported at the top of this file within this function's scope - any
+    # exception handler below referencing status.HTTP_* would crash with
+    # AttributeError instead of returning a proper error response.
+    from fastapi import status as http_status
     """
     List workflows with optional filtering.
 
@@ -339,7 +344,7 @@ async def list_workflows(
 
     except Exception as e:
         logger.error(f"Failed to list workflows: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.delete("/{workflow_id}")

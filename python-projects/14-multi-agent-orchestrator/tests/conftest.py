@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
-from src.models.base import Base
+from src.core.database import Base
 from src.models.task import Task, TaskStatus
 from src.models.agent import Agent, AgentRole, AgentStatus
 from src.core.config import settings
