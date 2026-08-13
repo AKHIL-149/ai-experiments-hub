@@ -932,10 +932,60 @@
             if (output.content) return output.content;
             if (output.summary) return output.summary;
             if (output.full_plan) return output.full_plan;
-            if (output.explanation) {
-                return output.code ? `${output.explanation}\n\n\`\`\`${output.language || ''}\n${output.code}\n\`\`\`` : output.explanation;
-            }
+            // code_agent's "explanation" is response.content - the LLM's
+            // full raw markdown reply, which already contains the code
+            // block(s) inline. "code" is the same code extracted back out
+            // separately for programmatic use. Showing both appended each
+            // other duplicated the entire code block. Prefer the
+            // already-complete explanation; only fall back to a bare code
+            // block if there's no explanation at all.
+            if (output.explanation) return output.explanation;
+            if (output.code) return `\`\`\`${output.language || ''}\n${output.code}\n\`\`\``;
             return JSON.stringify(output, null, 2);
+        }
+
+        // Minimal, dependency-free markdown-ish renderer for the LLM
+        // responses this dashboard displays (headers, **bold**, fenced
+        // code blocks, numbered/bulleted lists, paragraphs) - real agent
+        // output arrives as markdown, and showing it as literal
+        // pre-wrapped text left every "**heading**" and ``` fence showing
+        // as raw asterisks/backticks instead of formatted content.
+        function renderMarkdownLite(text) {
+            if (!text) return '';
+            const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            const codeBlocks = [];
+            let working = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+                const idx = codeBlocks.length;
+                codeBlocks.push(
+                    `<pre style="background:#2d2d2d; color:#f1f1f1; padding:12px 14px; border-radius:6px; overflow-x:auto; font-size:13px; line-height:1.5; margin:10px 0;"><code>${escapeHtml(code.trim())}</code></pre>`
+                );
+                return ` CODEBLOCK${idx} `;
+            });
+
+            working = escapeHtml(working);
+
+            working = working.replace(/^### (.*)$/gm, '<h4 style="margin:14px 0 6px;">$1</h4>');
+            working = working.replace(/^## (.*)$/gm, '<h3 style="margin:16px 0 8px;">$1</h3>');
+            working = working.replace(/^# (.*)$/gm, '<h2 style="margin:18px 0 10px;">$1</h2>');
+
+            working = working.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            working = working.replace(/(?<![*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g, '<em>$1</em>');
+            working = working.replace(/`([^`\n]+)`/g, '<code style="background:#f1f1f1; padding:1px 5px; border-radius:3px; font-size:0.92em;">$1</code>');
+
+            working = working.replace(/^(?:\d+)\.\s+(.*)$/gm, '<li>$1</li>');
+            working = working.replace(/^[*-]\s+(.*)$/gm, '<li>$1</li>');
+            working = working.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, (m) => `<ul style="margin:8px 0; padding-left:22px;">${m}</ul>`);
+
+            working = working.split(/\n{2,}/).map(block => {
+                if (/^\s*<(h2|h3|h4|ul)/.test(block)) return block;
+                if (/^ CODEBLOCK\d+ \s*$/.test(block)) return block;
+                return `<p style="margin:8px 0; line-height:1.55;">${block.replace(/\n/g, '<br>')}</p>`;
+            }).join('');
+
+            working = working.replace(/ CODEBLOCK(\d+) /g, (m, idx) => codeBlocks[idx]);
+
+            return working;
         }
 
         // Statuses a task can still be stopped from - anything not
@@ -967,7 +1017,7 @@
                     ${outputText ? `
                         <div class="form-group">
                             <label>Result</label>
-                            <div style="padding: 10px; background: #f8f9fa; border-radius: 6px; white-space: pre-wrap; max-height: 350px; overflow-y: auto;">${outputText}</div>
+                            <div style="padding: 4px 14px; background: #f8f9fa; border-radius: 6px; max-height: 400px; overflow-y: auto;">${renderMarkdownLite(outputText)}</div>
                         </div>
                     ` : task.status === 'completed' ? '<div>No output recorded.</div>' : `<div style="color:#95a5a6;">Still ${task.status} - reopen this task in a moment.</div>`}
                     ${task.error_message ? `<div class="form-group"><label>Error</label><div style="padding: 10px; background: #fdecea; color: #c0392b; border-radius: 6px;">${task.error_message}</div></div>` : ''}
@@ -1372,15 +1422,23 @@
                 resultDiv.innerHTML = `
                     <div style="margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 15px;">
                         <strong>Execution Progress</strong>
-                        ${stepsWithTasks.map(s => `
+                        ${stepsWithTasks.map(s => {
+                            // extractTaskOutputText handles every agent's
+                            // output shape (content/summary/full_plan/
+                            // explanation) - checking .content alone meant
+                            // code/research/planner steps showed nothing.
+                            const stepText = extractTaskOutputText(s.output);
+                            const truncated = stepText && stepText.length > 600 ? stepText.substring(0, 600) + '...' : stepText;
+                            return `
                             <div style="margin-top: 10px; padding: 10px; border-radius: 6px; background: ${
                                 s.taskStatus === 'completed' ? '#e8f8ee' : s.taskStatus === 'failed' ? '#fdecea' : '#f5f5f5'
                             };">
                                 <div><strong>${s.name}</strong> - ${s.taskStatus}</div>
-                                ${s.output && s.output.content ? `<div style="margin-top: 6px; white-space: pre-wrap; font-size: 0.9em;">${s.output.content.substring(0, 500)}${s.output.content.length > 500 ? '...' : ''}</div>` : ''}
+                                ${truncated ? `<div style="margin-top: 6px; font-size: 0.9em;">${renderMarkdownLite(truncated)}</div>` : ''}
                                 ${s.error ? `<div style="margin-top: 6px; color: #c0392b; font-size: 0.9em;">${s.error}</div>` : ''}
                             </div>
-                        `).join('')}
+                        `;
+                        }).join('')}
                     </div>
                 `;
 
