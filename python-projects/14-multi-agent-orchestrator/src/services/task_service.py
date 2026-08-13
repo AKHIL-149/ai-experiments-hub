@@ -354,6 +354,14 @@ class TaskService:
                 "code": AgentRole.CODER,
                 "data_analyst": AgentRole.RESEARCHER,
                 "planner": AgentRole.COORDINATOR,
+                # A third vocabulary: the dashboard's own "Create Task"
+                # dropdown values (templates/dashboard.html) - confirmed
+                # live, picking "Data Analysis" from that dropdown created
+                # a task_type of "data_analysis" (not "data_analyst" or
+                # "research"), which fell through to COORDINATOR (no
+                # seeded agent) and failed every time.
+                "code_review": AgentRole.REVIEWER,
+                "data_analysis": AgentRole.RESEARCHER,
             }
             required_role = role_mapping.get(task.task_type, AgentRole.COORDINATOR)
 

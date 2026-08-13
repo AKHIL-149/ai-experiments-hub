@@ -499,6 +499,13 @@
             </div>
         </div>
 
+        <div class="section">
+            <h2 class="section-title">📋 Recent Tasks</h2>
+            <div class="agent-list" id="recent-tasks">
+                <div class="loading">Loading recent tasks...</div>
+            </div>
+        </div>
+
         <div class="last-updated" id="last-updated"></div>
     </div>
 
@@ -620,6 +627,19 @@
         </div>
     </div>
 
+    <!-- Task Detail / Result Modal -->
+    <div id="taskDetailModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>📋 Task Result</h2>
+                <span class="close" onclick="closeTaskDetailModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="taskDetailBody">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentTimeRange = '24h';
 
@@ -629,7 +649,8 @@
                 loadSystemHealth(),
                 loadTaskMetrics(currentTimeRange),
                 loadAgentPerformance(),
-                loadWorkflowMetrics()
+                loadWorkflowMetrics(),
+                loadRecentTasks()
             ]);
             updateLastUpdated();
         }
@@ -810,6 +831,93 @@
                 document.getElementById('workflow-metrics').innerHTML =
                     `<div class="error">Failed to load workflow metrics: ${error.message}</div>`;
             }
+        }
+
+        const TASK_STATUS_COLORS = {
+            completed: '#27ae60',
+            failed: '#e74c3c',
+            in_progress: '#667eea',
+            pending: '#95a5a6',
+            queued: '#95a5a6',
+        };
+
+        async function loadRecentTasks() {
+            try {
+                const response = await fetch('/api/tasks/?limit=15');
+                const tasks = await response.json();
+
+                if (!tasks.length) {
+                    document.getElementById('recent-tasks').innerHTML = '<div>No tasks yet.</div>';
+                    return;
+                }
+
+                document.getElementById('recent-tasks').innerHTML = tasks.map(t => `
+                    <div class="agent-item" style="cursor: pointer; border-left-color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};" onclick="openTaskDetail(${t.id})">
+                        <div class="agent-info">
+                            <div class="agent-name">${t.title} <span style="font-weight:400; color:#95a5a6;">#${t.id}</span></div>
+                            <div class="agent-stats">${t.task_type} &middot; ${new Date(t.created_at).toLocaleString()}</div>
+                        </div>
+                        <div style="font-weight: 600; color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">${t.status} ›</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('recent-tasks').innerHTML =
+                    `<div class="error">Failed to load recent tasks: ${error.message}</div>`;
+            }
+        }
+
+        // Different agents put their main output under different keys
+        // (writer: content, research/data_analyst: summary, planner:
+        // full_plan, code: explanation+code) - there's no single
+        // universal field, same reason task_worker.py has to seed all of
+        // them on the way in.
+        function extractTaskOutputText(output) {
+            if (!output) return null;
+            if (typeof output === 'string') return output;
+            if (output.content) return output.content;
+            if (output.summary) return output.summary;
+            if (output.full_plan) return output.full_plan;
+            if (output.explanation) {
+                return output.code ? `${output.explanation}\n\n\`\`\`${output.language || ''}\n${output.code}\n\`\`\`` : output.explanation;
+            }
+            return JSON.stringify(output, null, 2);
+        }
+
+        async function openTaskDetail(taskId) {
+            document.getElementById('taskDetailModal').style.display = 'block';
+            document.getElementById('taskDetailBody').innerHTML = '<div class="loading">Loading...</div>';
+
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`);
+                const task = await response.json();
+                const outputText = extractTaskOutputText(task.output_data);
+
+                document.getElementById('taskDetailBody').innerHTML = `
+                    <h3 style="margin-bottom: 4px;">${task.title}</h3>
+                    <div style="color:#95a5a6; margin-bottom: 15px;">
+                        #${task.id} &middot; ${task.task_type} &middot;
+                        <span style="color:${TASK_STATUS_COLORS[task.status] || '#667eea'}; font-weight:600;">${task.status}</span>
+                        ${task.assigned_agent_id ? ` &middot; agent #${task.assigned_agent_id}` : ''}
+                    </div>
+                    <div class="form-group">
+                        <label>Task description</label>
+                        <div style="padding: 10px; background: #f8f9fa; border-radius: 6px;">${task.description}</div>
+                    </div>
+                    ${outputText ? `
+                        <div class="form-group">
+                            <label>Result</label>
+                            <div style="padding: 10px; background: #f8f9fa; border-radius: 6px; white-space: pre-wrap; max-height: 350px; overflow-y: auto;">${outputText}</div>
+                        </div>
+                    ` : task.status === 'completed' ? '<div>No output recorded.</div>' : `<div style="color:#95a5a6;">Still ${task.status} - reopen this task in a moment.</div>`}
+                    ${task.error_message ? `<div class="form-group"><label>Error</label><div style="padding: 10px; background: #fdecea; color: #c0392b; border-radius: 6px;">${task.error_message}</div></div>` : ''}
+                `;
+            } catch (error) {
+                document.getElementById('taskDetailBody').innerHTML = `<div class="error">Failed to load task: ${error.message}</div>`;
+            }
+        }
+
+        function closeTaskDetailModal() {
+            document.getElementById('taskDetailModal').style.display = 'none';
         }
 
         function setTimeRange(range) {
@@ -1152,6 +1260,10 @@
             const workflowModal = document.getElementById('createWorkflowModal');
             if (event.target === workflowModal) {
                 closeCreateWorkflowModal();
+            }
+            const taskDetailModal = document.getElementById('taskDetailModal');
+            if (event.target === taskDetailModal) {
+                closeTaskDetailModal();
             }
         }
 
