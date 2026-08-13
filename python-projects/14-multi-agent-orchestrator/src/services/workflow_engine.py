@@ -74,16 +74,24 @@ class WorkflowEngine:
         if steps:
             WorkflowEngine._validate_workflow_dag(steps)
 
+        # Workflow.metadata is SQLAlchemy's own reserved attribute (the
+        # MetaData schema registry) - the real column is extra_metadata.
+        # Passing "metadata" here didn't error, it just silently set a
+        # throwaway instance attribute that was never persisted: creation
+        # looked like it worked, but the steps data was actually lost, and
+        # any later operation on a freshly-queried Workflow (start, status,
+        # etc.) crashed hitting the real class-level MetaData object
+        # instead ('MetaData' object does not support item assignment').
         workflow_data = {
             "name": name,
             "description": description,
             "status": WorkflowStatus.PENDING,
-            "metadata": metadata or {}
+            "extra_metadata": metadata or {}
         }
 
         # Store workflow definition in metadata
-        workflow_data["metadata"]["steps"] = steps or []
-        workflow_data["metadata"]["created_at"] = datetime.utcnow().isoformat()
+        workflow_data["extra_metadata"]["steps"] = steps or []
+        workflow_data["extra_metadata"]["created_at"] = datetime.utcnow().isoformat()
 
         workflow = Workflow(**workflow_data)
         session.add(workflow)
@@ -97,7 +105,7 @@ class WorkflowEngine:
             "status": workflow.status,
             "steps": steps or [],
             "created_at": workflow.created_at,
-            "metadata": workflow.metadata
+            "metadata": workflow.extra_metadata
         }
 
     @staticmethod
@@ -167,12 +175,12 @@ class WorkflowEngine:
 
         # Initialize workflow execution state
         workflow.status = WorkflowStatus.RUNNING
-        workflow.metadata["started_at"] = datetime.utcnow().isoformat()
-        workflow.metadata["step_states"] = {}
+        workflow.extra_metadata["started_at"] = datetime.utcnow().isoformat()
+        workflow.extra_metadata["step_states"] = {}
 
-        steps = workflow.metadata.get("steps", [])
+        steps = workflow.extra_metadata.get("steps", [])
         for step in steps:
-            workflow.metadata["step_states"][step["step_id"]] = {
+            workflow.extra_metadata["step_states"][step["step_id"]] = {
                 "status": StepStatus.PENDING,
                 "attempts": 0,
                 "task_id": None,
@@ -181,7 +189,7 @@ class WorkflowEngine:
             }
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
         session.commit()
 
         # Execute ready steps
@@ -193,15 +201,15 @@ class WorkflowEngine:
             "id": workflow.id,
             "name": workflow.name,
             "status": workflow.status,
-            "started_at": workflow.metadata.get("started_at"),
+            "started_at": workflow.extra_metadata.get("started_at"),
             "message": "Workflow execution started"
         }
 
     @staticmethod
     def _execute_ready_steps(session: Session, workflow: Workflow) -> None:
         """Execute all steps that are ready to run"""
-        steps = workflow.metadata.get("steps", [])
-        step_states = workflow.metadata.get("step_states", {})
+        steps = workflow.extra_metadata.get("steps", [])
+        step_states = workflow.extra_metadata.get("step_states", {})
 
         # Find ready steps (dependencies completed, not yet started)
         for step in steps:
@@ -224,7 +232,7 @@ class WorkflowEngine:
                 WorkflowEngine._create_step_task(session, workflow, step)
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
         session.commit()
 
     @staticmethod
@@ -234,12 +242,19 @@ class WorkflowEngine:
         step: Dict[str, Any]
     ) -> None:
         """Create a task for a workflow step"""
+        # Task's real fields are task_type (not type) and context/JSON for
+        # extra data (not metadata - same SQLAlchemy reserved-attribute
+        # collision as Workflow.metadata above, this time on Task, which
+        # doesn't even have a metadata-ish column at all). Confirmed live:
+        # the original code raised "'type' is an invalid keyword argument
+        # for Task" on every single workflow step, immediately after
+        # fixing the Workflow.metadata bug.
         task = Task(
             title=f"{workflow.name} - {step['name']}",
             description=step.get("task_description", ""),
-            type=step.get("agent_type", "general"),
+            task_type=step.get("agent_type", "general"),
             status="pending",
-            metadata={
+            context={
                 "workflow_id": workflow.id,
                 "step_id": step["step_id"],
                 "timeout_minutes": step.get("timeout_minutes", 30),
@@ -249,14 +264,22 @@ class WorkflowEngine:
         session.add(task)
         session.flush()
 
+        # Nothing previously triggered this task's execution at all - same
+        # gap as the original task_worker.execute_task stub, one layer up.
+        try:
+            from src.workers.task_worker import execute_task
+            execute_task.delay(task.id)
+        except Exception as e:
+            logger.warning(f"Could not enqueue execution for step task {task.id}: {e}")
+
         # Update step state
-        step_states = workflow.metadata.get("step_states", {})
+        step_states = workflow.extra_metadata.get("step_states", {})
         step_states[step["step_id"]]["status"] = StepStatus.RUNNING
         step_states[step["step_id"]]["task_id"] = task.id
         step_states[step["step_id"]]["started_at"] = datetime.utcnow().isoformat()
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
 
     @staticmethod
     def update_step_status(
@@ -285,7 +308,7 @@ class WorkflowEngine:
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
 
-        step_states = workflow.metadata.get("step_states", {})
+        step_states = workflow.extra_metadata.get("step_states", {})
         if step_id not in step_states:
             raise ValueError(f"Step {step_id} not found in workflow")
 
@@ -303,7 +326,7 @@ class WorkflowEngine:
             step_states[step_id]["attempts"] += 1
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
         session.commit()
 
         # Check if workflow should continue
@@ -328,7 +351,7 @@ class WorkflowEngine:
     @staticmethod
     def _check_workflow_completion(session: Session, workflow: Workflow) -> None:
         """Check if workflow is complete"""
-        step_states = workflow.metadata.get("step_states", {})
+        step_states = workflow.extra_metadata.get("step_states", {})
 
         all_completed = all(
             state.get("status") == StepStatus.COMPLETED
@@ -337,10 +360,10 @@ class WorkflowEngine:
 
         if all_completed:
             workflow.status = WorkflowStatus.COMPLETED
-            workflow.metadata["completed_at"] = datetime.utcnow().isoformat()
+            workflow.extra_metadata["completed_at"] = datetime.utcnow().isoformat()
 
             from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(workflow, "metadata")
+            flag_modified(workflow, "extra_metadata")
             session.commit()
 
             logger.info(f"Workflow {workflow.id} completed successfully")
@@ -352,8 +375,8 @@ class WorkflowEngine:
         step_id: str
     ) -> None:
         """Handle step failure with retry logic"""
-        steps = workflow.metadata.get("steps", [])
-        step_states = workflow.metadata.get("step_states", {})
+        steps = workflow.extra_metadata.get("steps", [])
+        step_states = workflow.extra_metadata.get("step_states", {})
 
         step = next((s for s in steps if s["step_id"] == step_id), None)
         if not step:
@@ -371,11 +394,11 @@ class WorkflowEngine:
             # Max retries exceeded, fail workflow
             logger.error(f"Step {step_id} failed after {max_retries} attempts, failing workflow")
             workflow.status = WorkflowStatus.FAILED
-            workflow.metadata["failed_at"] = datetime.utcnow().isoformat()
-            workflow.metadata["failure_reason"] = f"Step {step_id} failed after {max_retries} attempts"
+            workflow.extra_metadata["failed_at"] = datetime.utcnow().isoformat()
+            workflow.extra_metadata["failure_reason"] = f"Step {step_id} failed after {max_retries} attempts"
 
             from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(workflow, "metadata")
+            flag_modified(workflow, "extra_metadata")
             session.commit()
 
     @staticmethod
@@ -401,10 +424,10 @@ class WorkflowEngine:
             raise ValueError(f"Cannot pause workflow in status {workflow.status}")
 
         workflow.status = WorkflowStatus.PAUSED
-        workflow.metadata["paused_at"] = datetime.utcnow().isoformat()
+        workflow.extra_metadata["paused_at"] = datetime.utcnow().isoformat()
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
         session.commit()
 
         return {
@@ -436,10 +459,10 @@ class WorkflowEngine:
             raise ValueError(f"Cannot resume workflow in status {workflow.status}")
 
         workflow.status = WorkflowStatus.RUNNING
-        workflow.metadata["resumed_at"] = datetime.utcnow().isoformat()
+        workflow.extra_metadata["resumed_at"] = datetime.utcnow().isoformat()
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
         session.commit()
 
         # Continue execution
@@ -476,12 +499,12 @@ class WorkflowEngine:
             raise ValueError(f"Cannot cancel workflow in status {workflow.status}")
 
         workflow.status = WorkflowStatus.CANCELLED
-        workflow.metadata["cancelled_at"] = datetime.utcnow().isoformat()
+        workflow.extra_metadata["cancelled_at"] = datetime.utcnow().isoformat()
         if reason:
-            workflow.metadata["cancellation_reason"] = reason
+            workflow.extra_metadata["cancellation_reason"] = reason
 
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(workflow, "metadata")
+        flag_modified(workflow, "extra_metadata")
         session.commit()
 
         return {
@@ -509,8 +532,8 @@ class WorkflowEngine:
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
 
-        steps = workflow.metadata.get("steps", [])
-        step_states = workflow.metadata.get("step_states", {})
+        steps = workflow.extra_metadata.get("steps", [])
+        step_states = workflow.extra_metadata.get("step_states", {})
 
         # Calculate progress
         total_steps = len(steps)
@@ -521,8 +544,8 @@ class WorkflowEngine:
         progress_percentage = (completed_steps / total_steps * 100) if total_steps > 0 else 0
 
         # Get execution timeline
-        started_at = workflow.metadata.get("started_at")
-        completed_at = workflow.metadata.get("completed_at")
+        started_at = workflow.extra_metadata.get("started_at")
+        completed_at = workflow.extra_metadata.get("completed_at")
         duration_seconds = None
 
         if started_at:
@@ -600,7 +623,7 @@ class WorkflowEngine:
                     "description": w.description,
                     "status": w.status,
                     "created_at": w.created_at.isoformat(),
-                    "step_count": len(w.metadata.get("steps", []))
+                    "step_count": len(w.extra_metadata.get("steps", []))
                 }
                 for w in workflows
             ]

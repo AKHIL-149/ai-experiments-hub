@@ -343,7 +343,17 @@ class TaskService:
                 "review": AgentRole.REVIEWER,
                 "testing": AgentRole.TESTER,
                 "documentation": AgentRole.WRITER,
-                "general": AgentRole.COORDINATOR
+                "general": AgentRole.COORDINATOR,
+                # WorkflowEngine steps use the agent registry's own type
+                # keys (research/code/data_analyst/writer/planner), a
+                # different vocabulary than the one above - without these,
+                # every workflow step task_type ("writer", "code", ...)
+                # fell through to the default COORDINATOR role, which no
+                # seeded agent has.
+                "writer": AgentRole.WRITER,
+                "code": AgentRole.CODER,
+                "data_analyst": AgentRole.RESEARCHER,
+                "planner": AgentRole.COORDINATOR,
             }
             required_role = role_mapping.get(task.task_type, AgentRole.COORDINATOR)
 
