@@ -361,8 +361,131 @@ class AnthropicProvider(LLMProvider):
         return round(prompt_cost + completion_cost, 6)
 
 
+class OllamaProvider(LLMProvider):
+    """
+    Local Ollama LLM Provider
+
+    Talks to a local Ollama server (default http://localhost:11434) - no
+    API key, no cost, no external network call. This is the default
+    provider for this project; OpenAI/Anthropic remain available as an
+    opt-in for users who'd rather use their own cloud API key.
+    """
+
+    def __init__(
+        self,
+        model: str = "llama3.2",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        **kwargs
+    ):
+        super().__init__(model, api_key, **kwargs)
+
+        self.base_url = (
+            base_url
+            or os.getenv("OLLAMA_BASE_URL")
+            or getattr(settings, "OLLAMA_BASE_URL", None)
+            or "http://localhost:11434"
+        ).rstrip("/")
+
+        try:
+            import httpx
+        except ImportError:
+            raise ImportError("httpx package not installed. Install with: pip install httpx")
+
+    async def generate(
+        self,
+        messages: List[LLMMessage],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> LLMResponse:
+        """Generate completion using a local Ollama model"""
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": msg.role, "content": msg.content} for msg in messages],
+                        "stream": False,
+                        "options": {
+                            "temperature": temperature if temperature is not None else self.temperature,
+                            "num_predict": max_tokens or self.max_tokens,
+                        },
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            prompt_tokens = data.get("prompt_eval_count", 0)
+            completion_tokens = data.get("eval_count", 0)
+
+            return LLMResponse(
+                content=data["message"]["content"],
+                finish_reason="stop" if data.get("done") else None,
+                tokens_used=prompt_tokens + completion_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost=0.0,
+                model=self.model,
+                provider="Ollama"
+            )
+
+        except httpx.ConnectError as e:
+            logger.error(f"Could not reach Ollama at {self.base_url} - is `ollama serve` running? {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Ollama API error: {e}")
+            raise
+
+    async def generate_streaming(
+        self,
+        messages: List[LLMMessage],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ):
+        """Generate completion with streaming from a local Ollama model"""
+        import httpx
+        import json as json_module
+
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": msg.role, "content": msg.content} for msg in messages],
+                        "stream": True,
+                        "options": {
+                            "temperature": temperature if temperature is not None else self.temperature,
+                            "num_predict": max_tokens or self.max_tokens,
+                        },
+                    },
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        chunk = json_module.loads(line)
+                        content = chunk.get("message", {}).get("content", "")
+                        if content:
+                            yield content
+
+        except Exception as e:
+            logger.error(f"Ollama streaming error: {e}")
+            raise
+
+    def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+        """Local inference - always free"""
+        return 0.0
+
+
 def create_llm_provider(
-    provider: str = "openai",
+    provider: str = "ollama",
     model: Optional[str] = None,
     **kwargs
 ) -> LLMProvider:
@@ -370,7 +493,9 @@ def create_llm_provider(
     Factory function to create LLM provider
 
     Args:
-        provider: Provider name ("openai" or "anthropic")
+        provider: Provider name ("ollama", "openai", or "anthropic") - defaults
+            to "ollama" (local, no API key needed). OpenAI/Anthropic are
+            available for users who want to use their own cloud API key.
         model: Model identifier (optional)
         **kwargs: Additional provider arguments
 
@@ -378,6 +503,7 @@ def create_llm_provider(
         LLMProvider: Provider instance
     """
     providers = {
+        "ollama": OllamaProvider,
         "openai": OpenAIProvider,
         "anthropic": AnthropicProvider,
     }
