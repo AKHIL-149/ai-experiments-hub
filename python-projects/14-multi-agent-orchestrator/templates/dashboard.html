@@ -500,8 +500,11 @@
         </div>
 
         <div class="section">
-            <h2 class="section-title">📋 Recent Tasks</h2>
-            <div class="agent-list" id="recent-tasks">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 class="section-title" style="margin-bottom: 0;">📋 Recent Tasks</h2>
+                <button class="refresh-btn" style="padding: 8px 16px; font-size: 13px;" onclick="openAllTasksModal()">View All Tasks</button>
+            </div>
+            <div class="agent-list" id="recent-tasks" style="margin-top: 15px;">
                 <div class="loading">Loading recent tasks...</div>
             </div>
         </div>
@@ -636,6 +639,35 @@
             </div>
             <div class="modal-body" id="taskDetailBody">
                 <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Tasks Modal -->
+    <div id="allTasksModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>📋 All Tasks</h2>
+                <span class="close" onclick="closeAllTasksModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label for="allTasksStatusFilter">Filter by status</label>
+                    <select id="allTasksStatusFilter" onchange="reloadAllTasks()">
+                        <option value="">All statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="queued">Queued</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="waiting_approval">Waiting Approval</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div class="agent-list" id="allTasksList"></div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="btn btn-secondary" id="allTasksLoadMoreBtn" onclick="loadMoreAllTasks()">Load More</button>
+                </div>
             </div>
         </div>
     </div>
@@ -883,14 +915,20 @@
             return JSON.stringify(output, null, 2);
         }
 
+        // Statuses a task can still be stopped from - anything not
+        // already in a terminal state.
+        const CANCELLABLE_STATUSES = ['pending', 'queued', 'in_progress', 'waiting_approval'];
+
         async function openTaskDetail(taskId) {
             document.getElementById('taskDetailModal').style.display = 'block';
             document.getElementById('taskDetailBody').innerHTML = '<div class="loading">Loading...</div>';
 
             try {
                 const response = await fetch(`/api/tasks/${taskId}`);
+                if (!response.ok) throw new Error(`Task not found (${response.status})`);
                 const task = await response.json();
                 const outputText = extractTaskOutputText(task.output_data);
+                const canCancel = CANCELLABLE_STATUSES.includes(task.status);
 
                 document.getElementById('taskDetailBody').innerHTML = `
                     <h3 style="margin-bottom: 4px;">${task.title}</h3>
@@ -910,6 +948,10 @@
                         </div>
                     ` : task.status === 'completed' ? '<div>No output recorded.</div>' : `<div style="color:#95a5a6;">Still ${task.status} - reopen this task in a moment.</div>`}
                     ${task.error_message ? `<div class="form-group"><label>Error</label><div style="padding: 10px; background: #fdecea; color: #c0392b; border-radius: 6px;">${task.error_message}</div></div>` : ''}
+                    <div class="form-actions" style="margin-top: 20px;">
+                        ${canCancel ? `<button type="button" class="btn btn-secondary" onclick="cancelTaskAction(${task.id})">🛑 Stop / Cancel Task</button>` : ''}
+                        <button type="button" class="btn btn-secondary" style="color:#e74c3c; margin-left:auto;" onclick="deleteTaskAction(${task.id}, true)">🗑️ Delete Task</button>
+                    </div>
                 `;
             } catch (error) {
                 document.getElementById('taskDetailBody').innerHTML = `<div class="error">Failed to load task: ${error.message}</div>`;
@@ -918,6 +960,107 @@
 
         function closeTaskDetailModal() {
             document.getElementById('taskDetailModal').style.display = 'none';
+        }
+
+        async function cancelTaskAction(taskId) {
+            if (!confirm(`Stop/cancel task #${taskId}? It won't run (or continue running) after this.`)) return;
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'cancelled' }),
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to cancel task');
+                }
+                showNotification('success', `Task #${taskId} cancelled`);
+                await openTaskDetail(taskId);
+                await loadRecentTasks();
+                if (document.getElementById('allTasksModal').style.display === 'block') reloadAllTasks();
+            } catch (error) {
+                showNotification('error', `Failed to cancel task: ${error.message}`);
+            }
+        }
+
+        async function deleteTaskAction(taskId, closeDetailAfter) {
+            if (!confirm(`Delete task #${taskId}? This can't be undone.`)) return;
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                if (!response.ok && response.status !== 204) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.detail || 'Failed to delete task');
+                }
+                showNotification('success', `Task #${taskId} deleted`);
+                if (closeDetailAfter) closeTaskDetailModal();
+                await loadRecentTasks();
+                await loadAllMetrics();
+                if (document.getElementById('allTasksModal').style.display === 'block') reloadAllTasks();
+            } catch (error) {
+                showNotification('error', `Failed to delete task: ${error.message}`);
+            }
+        }
+
+        // ===== All Tasks Modal =====
+        let allTasksOffset = 0;
+        const ALL_TASKS_PAGE_SIZE = 20;
+
+        function openAllTasksModal() {
+            document.getElementById('allTasksModal').style.display = 'block';
+            reloadAllTasks();
+        }
+
+        function closeAllTasksModal() {
+            document.getElementById('allTasksModal').style.display = 'none';
+        }
+
+        function reloadAllTasks() {
+            allTasksOffset = 0;
+            document.getElementById('allTasksList').innerHTML = '';
+            loadMoreAllTasks();
+        }
+
+        async function loadMoreAllTasks() {
+            const status = document.getElementById('allTasksStatusFilter').value;
+            const btn = document.getElementById('allTasksLoadMoreBtn');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                const params = new URLSearchParams({ limit: ALL_TASKS_PAGE_SIZE, offset: allTasksOffset });
+                if (status) params.set('status', status);
+
+                const response = await fetch(`/api/tasks/?${params.toString()}`);
+                const tasks = await response.json();
+
+                const listDiv = document.getElementById('allTasksList');
+                if (allTasksOffset === 0 && !tasks.length) {
+                    listDiv.innerHTML = '<div>No tasks match this filter.</div>';
+                }
+
+                listDiv.innerHTML += tasks.map(t => `
+                    <div class="agent-item" style="border-left-color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">
+                        <div class="agent-info" style="cursor: pointer;" onclick="openTaskDetail(${t.id})">
+                            <div class="agent-name">${t.title} <span style="font-weight:400; color:#95a5a6;">#${t.id}</span></div>
+                            <div class="agent-stats">${t.task_type} &middot; ${new Date(t.created_at).toLocaleString()}</div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-weight: 600; color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">${t.status}</span>
+                            ${CANCELLABLE_STATUSES.includes(t.status) ? `<button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="cancelTaskAction(${t.id}); event.stopPropagation();">Stop</button>` : ''}
+                            <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:12px; color:#e74c3c;" onclick="deleteTaskAction(${t.id}, false); event.stopPropagation();">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+
+                allTasksOffset += tasks.length;
+                btn.style.display = tasks.length < ALL_TASKS_PAGE_SIZE ? 'none' : 'inline-block';
+                btn.disabled = false;
+                btn.textContent = 'Load More';
+            } catch (error) {
+                document.getElementById('allTasksList').innerHTML += `<div class="error">Failed to load tasks: ${error.message}</div>`;
+                btn.disabled = false;
+                btn.textContent = 'Load More';
+            }
         }
 
         function setTimeRange(range) {
@@ -1264,6 +1407,10 @@
             const taskDetailModal = document.getElementById('taskDetailModal');
             if (event.target === taskDetailModal) {
                 closeTaskDetailModal();
+            }
+            const allTasksModal = document.getElementById('allTasksModal');
+            if (event.target === allTasksModal) {
+                closeAllTasksModal();
             }
         }
 
