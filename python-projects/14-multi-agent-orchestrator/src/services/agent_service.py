@@ -12,6 +12,7 @@ from src.models.agent import Agent, AgentRole, AgentStatus
 from src.models.agent_execution import AgentExecution, ExecutionStatus
 from src.agents import agent_registry, AgentConfig, AgentContext, AgentResult, AgentExecutor
 from src.agents.base.llm_provider import create_llm_provider
+from src.core.config import settings
 from src.core.logging import logger
 from src.core.exceptions import AgentNotFoundError, ValidationException
 
@@ -50,7 +51,7 @@ class AgentService:
         name: str,
         role: AgentRole,
         description: Optional[str] = None,
-        llm_provider: str = "openai",
+        llm_provider: str = "ollama",
         llm_model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
@@ -64,7 +65,8 @@ class AgentService:
             name: Agent name
             role: Agent role
             description: Agent description
-            llm_provider: LLM provider (openai, anthropic)
+            llm_provider: LLM provider (ollama, openai, anthropic) - defaults
+                to local ollama, no API key needed
             llm_model: LLM model name
             system_prompt: Custom system prompt
             temperature: LLM temperature
@@ -84,7 +86,12 @@ class AgentService:
 
             # Set default model based on provider
             if not llm_model:
-                llm_model = "gpt-4-turbo-preview" if llm_provider == "openai" else "claude-3-sonnet-20240229"
+                default_models = {
+                    "openai": "gpt-4-turbo-preview",
+                    "anthropic": "claude-3-sonnet-20240229",
+                    "ollama": settings.OLLAMA_MODEL,
+                }
+                llm_model = default_models.get(llm_provider, settings.OLLAMA_MODEL)
 
             # Create agent
             agent = Agent(
@@ -545,7 +552,13 @@ class AgentService:
             result = await executor.execute(context)
 
             # Update execution with results
-            execution.status = ExecutionStatus.COMPLETED if result.status.value == "completed" else ExecutionStatus.FAILED
+            # AgentResult.status is stored with use_enum_values=True, so
+            # result.status is already the plain string value ("completed"),
+            # not the AgentStatus enum member - .value here would raise
+            # AttributeError on every single execution (confirmed live: this
+            # had never actually run against a real LLM before).
+            status_value = getattr(result.status, "value", result.status)
+            execution.status = ExecutionStatus.COMPLETED if status_value == "completed" else ExecutionStatus.FAILED
             execution.completed_at = datetime.utcnow()
             execution.output_data = result.output
             execution.output_metadata = result.metadata

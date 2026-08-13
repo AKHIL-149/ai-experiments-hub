@@ -8,8 +8,9 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 from src.core.database import get_db_session
+from src.core.logging import logger
 from src.models import Task, TaskStatus
-from src.workers.task_worker import update_task_status
+from src.workers.task_worker import update_task_status, execute_task
 
 router = APIRouter()
 
@@ -23,6 +24,7 @@ class TaskCreate(BaseModel):
     input_data: Optional[Dict[str, Any]] = None
     parent_task_id: Optional[int] = None
     assigned_agent_id: Optional[int] = None
+    auto_execute: bool = True
 
 
 class TaskUpdate(BaseModel):
@@ -150,6 +152,14 @@ async def create_new_task(task: TaskCreate, db: Session = Depends(get_db_session
         db.add(new_task)
         db.commit()
         db.refresh(new_task)
+
+        if task.auto_execute:
+            try:
+                execute_task.delay(new_task.id)
+            except Exception as e:
+                # Task row is already created; execution can be retried
+                # later even if the broker is unreachable right now.
+                logger.warning(f"Could not enqueue execution for task {new_task.id}: {e}")
 
         return {
             "id": new_task.id,
