@@ -10,7 +10,7 @@ from src.core.database import DatabaseManager
 from src.models import Agent, AgentRole, AgentStatus
 
 
-@shared_task(name='agent_worker.create_agent')
+@shared_task(name='src.workers.agent_worker.create_agent')
 def create_agent(
     name: str,
     role: str,
@@ -75,7 +75,7 @@ def create_agent(
         }
 
 
-@shared_task(name='agent_worker.update_agent_status')
+@shared_task(name='src.workers.agent_worker.update_agent_status')
 def update_agent_status(agent_id: int, status: str, current_task_id: int = None) -> Dict[str, Any]:
     """
     Update agent status
@@ -117,7 +117,7 @@ def update_agent_status(agent_id: int, status: str, current_task_id: int = None)
         }
 
 
-@shared_task(name='agent_worker.get_available_agents')
+@shared_task(name='src.workers.agent_worker.get_available_agents')
 def get_available_agents(role: str = None) -> List[Dict[str, Any]]:
     """
     Get list of available agents
@@ -156,7 +156,7 @@ def get_available_agents(role: str = None) -> List[Dict[str, Any]]:
         return []
 
 
-@shared_task(name='agent_worker.assign_task_to_agent')
+@shared_task(name='src.workers.agent_worker.assign_task_to_agent')
 def assign_task_to_agent(agent_id: int, task_id: int) -> Dict[str, Any]:
     """
     Assign a task to an agent

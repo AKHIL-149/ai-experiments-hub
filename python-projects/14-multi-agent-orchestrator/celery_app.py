@@ -10,10 +10,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize Celery app
+#
+# `include` explicitly imports these modules so their @shared_task
+# functions actually register. autodiscover_tasks(['src.workers']) below
+# looks like it should do this, but Celery's autodiscovery convention only
+# imports a submodule literally named `tasks.py` inside each listed
+# package - these files are task_worker.py/agent_worker.py/
+# monitoring_worker.py, so autodiscovery silently found nothing. Confirmed
+# live: a real worker process registered zero of these tasks, and a real
+# backlog of unprocessed task-creation messages had been sitting in Redis
+# for a month as a result.
 celery_app = Celery(
     'multi_agent_orchestrator',
     broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
     backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/1'),
+    include=[
+        'src.workers.task_worker',
+        'src.workers.agent_worker',
+        'src.workers.monitoring_worker',
+    ],
 )
 
 # Celery configuration
@@ -66,7 +81,9 @@ celery_app.conf.update(
     task_retry_jitter=True,  # Add randomness to retry delays
 )
 
-# Auto-discover tasks from workers module
+# Autodiscovery was a no-op here (see `include` above) since none of the
+# worker files are named tasks.py - kept only in case a future worker
+# module does follow that convention.
 celery_app.autodiscover_tasks(['src.workers'])
 
 # Celery Beat schedule for periodic tasks
