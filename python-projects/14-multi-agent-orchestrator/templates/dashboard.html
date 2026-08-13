@@ -463,6 +463,7 @@
 
         <div style="text-align: right; margin-bottom: 20px;">
             <button class="create-task-btn" onclick="openCreateTaskModal()">➕ Create Task</button>
+            <button class="create-task-btn" onclick="openCreateWorkflowModal()">🔄 Create Workflow</button>
             <button class="refresh-btn" onclick="loadAllMetrics()">🔄 Refresh Dashboard</button>
         </div>
 
@@ -577,6 +578,42 @@
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" onclick="closeCreateTaskModal()">Cancel</button>
                         <button type="submit" class="btn btn-primary">Create Task</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Workflow Modal -->
+    <div id="createWorkflowModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>🔄 Create &amp; Run Workflow</h2>
+                <span class="close" onclick="closeCreateWorkflowModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="createWorkflowForm" onsubmit="handleCreateWorkflow(event)">
+                    <div class="form-group">
+                        <label for="workflowName">Workflow Name <span class="required">*</span></label>
+                        <input type="text" id="workflowName" name="name" placeholder="e.g. Write and review a paragraph" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="workflowDescription">Description</label>
+                        <textarea id="workflowDescription" name="description" placeholder="What does this workflow do?"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Steps <span class="required">*</span></label>
+                        <div id="workflowSteps"></div>
+                        <button type="button" class="btn btn-secondary" style="margin-top: 10px;" onclick="addWorkflowStep()">➕ Add Step</button>
+                    </div>
+
+                    <div id="workflowResult"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeCreateWorkflowModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="workflowSubmitBtn">▶️ Create &amp; Start Workflow</button>
                     </div>
                 </form>
             </div>
@@ -882,6 +919,211 @@
             }
         }
 
+        // ===== Workflow Creation & Execution Modal Functions =====
+        // Agent types below match the agent registry (research/code/
+        // data_analyst/writer/planner) - confirmed live as the vocabulary
+        // WorkflowEngine steps actually need for agent assignment to work.
+        const WORKFLOW_AGENT_TYPES = [
+            { value: 'writer', label: 'Writer' },
+            { value: 'code', label: 'Code' },
+            { value: 'research', label: 'Research' },
+            { value: 'data_analyst', label: 'Data Analyst' },
+            { value: 'planner', label: 'Planner' },
+        ];
+        let workflowStepCount = 0;
+
+        function openCreateWorkflowModal() {
+            document.getElementById('createWorkflowModal').style.display = 'block';
+            document.getElementById('workflowSteps').innerHTML = '';
+            document.getElementById('workflowResult').innerHTML = '';
+            workflowStepCount = 0;
+            addWorkflowStep();
+        }
+
+        function closeCreateWorkflowModal() {
+            document.getElementById('createWorkflowModal').style.display = 'none';
+            document.getElementById('createWorkflowForm').reset();
+            document.getElementById('workflowSteps').innerHTML = '';
+            document.getElementById('workflowResult').innerHTML = '';
+            const btn = document.getElementById('workflowSubmitBtn');
+            btn.disabled = false;
+            btn.textContent = '▶️ Create & Start Workflow';
+        }
+
+        function addWorkflowStep() {
+            workflowStepCount += 1;
+            const stepId = `step_${workflowStepCount}`;
+            const container = document.getElementById('workflowSteps');
+            const hasPreviousStep = workflowStepCount > 1;
+
+            const stepDiv = document.createElement('div');
+            stepDiv.id = `workflow-${stepId}`;
+            stepDiv.style.cssText = 'border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 12px; background: #fafafa;';
+            stepDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong>Step ${workflowStepCount} (${stepId})</strong>
+                    ${workflowStepCount > 1 ? `<span style="cursor:pointer; color:#e74c3c;" onclick="document.getElementById('workflow-${stepId}').remove()">✕ Remove</span>` : ''}
+                </div>
+                <div class="form-group">
+                    <label>Step Name</label>
+                    <input type="text" class="wf-step-name" placeholder="e.g. Write paragraph" value="Step ${workflowStepCount}">
+                </div>
+                <div class="form-group">
+                    <label>Agent Type</label>
+                    <select class="wf-step-agent-type">
+                        ${WORKFLOW_AGENT_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Task Description <span class="required">*</span></label>
+                    <textarea class="wf-step-description" placeholder="What should this step do?" required></textarea>
+                </div>
+                ${hasPreviousStep ? `
+                <div class="form-group">
+                    <label><input type="checkbox" class="wf-step-depends" checked style="width:auto;"> Runs after the previous step</label>
+                </div>` : ''}
+            `;
+            container.appendChild(stepDiv);
+        }
+
+        function collectWorkflowSteps() {
+            const stepDivs = Array.from(document.getElementById('workflowSteps').children);
+            let previousStepId = null;
+            return stepDivs.map((div, idx) => {
+                const stepId = div.id.replace('workflow-', '');
+                const dependsCheckbox = div.querySelector('.wf-step-depends');
+                const dependsOn = (dependsCheckbox && dependsCheckbox.checked && previousStepId) ? [previousStepId] : [];
+                const step = {
+                    step_id: stepId,
+                    name: div.querySelector('.wf-step-name').value || `Step ${idx + 1}`,
+                    agent_type: div.querySelector('.wf-step-agent-type').value,
+                    task_description: div.querySelector('.wf-step-description').value,
+                    depends_on: dependsOn,
+                };
+                previousStepId = stepId;
+                return step;
+            });
+        }
+
+        async function handleCreateWorkflow(event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const formData = new FormData(form);
+            const steps = collectWorkflowSteps();
+
+            if (steps.some(s => !s.task_description.trim())) {
+                showNotification('error', 'Every step needs a task description');
+                return;
+            }
+
+            const btn = document.getElementById('workflowSubmitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Starting...';
+            document.getElementById('workflowResult').innerHTML = '';
+
+            try {
+                const createResponse = await fetch('/api/workflow-engine/workflows', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: formData.get('name'),
+                        description: formData.get('description') || null,
+                        steps: steps,
+                    }),
+                });
+
+                if (!createResponse.ok) {
+                    const error = await createResponse.json();
+                    throw new Error(error.detail || 'Failed to create workflow');
+                }
+
+                const created = await createResponse.json();
+                const workflowId = created.workflow.id;
+
+                const startResponse = await fetch(`/api/workflow-engine/workflows/${workflowId}/start`, {
+                    method: 'POST',
+                });
+
+                if (!startResponse.ok) {
+                    const error = await startResponse.json();
+                    throw new Error(error.detail || 'Failed to start workflow');
+                }
+
+                showNotification('success', `Workflow "${created.workflow.name}" started! (ID: ${workflowId})`);
+                btn.textContent = 'Running...';
+                pollWorkflowExecution(workflowId);
+                await loadAllMetrics();
+
+            } catch (error) {
+                showNotification('error', `Workflow failed: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = '▶️ Create & Start Workflow';
+            }
+        }
+
+        // Polls the workflow's steps and, for each one, the real
+        // underlying task directly - the workflow's own status/progress
+        // doesn't update when a step's task completes (a known backend
+        // gap), so polling only workflow status would show "running"
+        // forever even after every step genuinely finished.
+        async function pollWorkflowExecution(workflowId, attempt = 0) {
+            const resultDiv = document.getElementById('workflowResult');
+            const maxAttempts = 30;
+
+            try {
+                const statusResponse = await fetch(`/api/workflow-engine/workflows/${workflowId}/status`);
+                const statusData = await statusResponse.json();
+
+                const stepsWithTasks = await Promise.all(
+                    statusData.steps.map(async (step) => {
+                        if (!step.task_id) return { ...step, taskStatus: 'pending', output: null, error: null };
+                        try {
+                            const taskResponse = await fetch(`/api/tasks/${step.task_id}`);
+                            const task = await taskResponse.json();
+                            return {
+                                ...step,
+                                taskStatus: task.status,
+                                output: task.output_data,
+                                error: task.error_message,
+                            };
+                        } catch {
+                            return { ...step, taskStatus: 'unknown', output: null, error: null };
+                        }
+                    })
+                );
+
+                const allDone = stepsWithTasks.every(s => s.taskStatus === 'completed' || s.taskStatus === 'failed');
+
+                resultDiv.innerHTML = `
+                    <div style="margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 15px;">
+                        <strong>Execution Progress</strong>
+                        ${stepsWithTasks.map(s => `
+                            <div style="margin-top: 10px; padding: 10px; border-radius: 6px; background: ${
+                                s.taskStatus === 'completed' ? '#e8f8ee' : s.taskStatus === 'failed' ? '#fdecea' : '#f5f5f5'
+                            };">
+                                <div><strong>${s.name}</strong> - ${s.taskStatus}</div>
+                                ${s.output && s.output.content ? `<div style="margin-top: 6px; white-space: pre-wrap; font-size: 0.9em;">${s.output.content.substring(0, 500)}${s.output.content.length > 500 ? '...' : ''}</div>` : ''}
+                                ${s.error ? `<div style="margin-top: 6px; color: #c0392b; font-size: 0.9em;">${s.error}</div>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                const btn = document.getElementById('workflowSubmitBtn');
+                if (allDone) {
+                    btn.textContent = '✅ Done';
+                    await loadAllMetrics();
+                } else if (attempt < maxAttempts) {
+                    setTimeout(() => pollWorkflowExecution(workflowId, attempt + 1), 2000);
+                } else {
+                    btn.textContent = '⏱️ Still running (check back later)';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Failed to poll workflow status: ${error.message}</div>`;
+            }
+        }
+
         function showNotification(type, message) {
             // Remove any existing notifications
             const existingNotifications = document.querySelectorAll('.notification');
@@ -906,6 +1148,10 @@
             const modal = document.getElementById('createTaskModal');
             if (event.target === modal) {
                 closeCreateTaskModal();
+            }
+            const workflowModal = document.getElementById('createWorkflowModal');
+            if (event.target === workflowModal) {
+                closeCreateWorkflowModal();
             }
         }
 
