@@ -71,8 +71,16 @@ def execute_task(self, task_id: int) -> Dict[str, Any]:
             # own title/description so whichever agent gets assigned finds
             # something meaningful, then let any explicit input_data the
             # caller provided override those defaults.
+            # "topic" (research/writer agents) is the actual subject to
+            # research/write about - task.description, not task.title.
+            # Using title here made every research/writer task answer a
+            # question about its own short label instead of what was
+            # actually asked - confirmed live: "Summarize REST vs GraphQL"
+            # produced a report titled "Test: DataAnalyst Agent" describing
+            # a hypothetical data analyst, because title was "Test:
+            # DataAnalyst agent".
             agent_input = {
-                "topic": task.title,
+                "topic": task.description,
                 "requirements": task.description,
                 "goal": task.description,
                 "data": {},
