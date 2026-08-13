@@ -306,6 +306,29 @@
             padding: 30px;
         }
 
+        /* All Tasks modal can grow very long (Load More pagination) - cap
+           the whole dialog to the viewport and let just the task list
+           scroll internally, so the filter and header stay put. */
+        #allTasksModal .modal-content {
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #allTasksModal .modal-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #allTasksList {
+            overflow-y: auto;
+            flex: 1;
+            min-height: 100px;
+            max-height: 55vh;
+            padding-right: 4px;
+        }
+
         .form-group {
             margin-bottom: 20px;
         }
