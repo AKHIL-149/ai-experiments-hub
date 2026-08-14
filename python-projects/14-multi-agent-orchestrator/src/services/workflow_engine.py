@@ -212,6 +212,7 @@ class WorkflowEngine:
         step_states = workflow.extra_metadata.get("step_states", {})
 
         # Find ready steps (dependencies completed, not yet started)
+        ready_task_ids = []
         for step in steps:
             step_id = step["step_id"]
             state = step_states.get(step_id, {})
@@ -229,19 +230,39 @@ class WorkflowEngine:
             if dependencies_met:
                 # Mark as ready and create task
                 step_states[step_id]["status"] = StepStatus.READY
-                WorkflowEngine._create_step_task(session, workflow, step)
+                ready_task_ids.append(WorkflowEngine._create_step_task(session, workflow, step))
 
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(workflow, "extra_metadata")
         session.commit()
+
+        # Enqueue only after the commit above, not before. SQLite (this
+        # app's default engine) has no cross-connection visibility into an
+        # uncommitted transaction, and Celery runs each step on a separate
+        # worker process with its own DB connection. Calling .delay() while
+        # the task row was still only flushed (not committed) meant a
+        # different worker process could pick up the message and query for
+        # a task ID that, from its connection's point of view, didn't exist
+        # yet - it silently returned "not found" with no error logged, so
+        # the step just stayed "running" forever. Confirmed live: workflow
+        # step 2's task sat at status=pending/assigned_agent_id=null
+        # indefinitely with zero trace of it in the worker log.
+        for task_id in ready_task_ids:
+            try:
+                from src.workers.task_worker import execute_task
+                execute_task.delay(task_id)
+            except Exception as e:
+                logger.warning(f"Could not enqueue execution for step task {task_id}: {e}")
 
     @staticmethod
     def _create_step_task(
         session: Session,
         workflow: Workflow,
         step: Dict[str, Any]
-    ) -> None:
-        """Create a task for a workflow step"""
+    ) -> int:
+        """Create a task for a workflow step. Returns the new task's id -
+        caller is responsible for enqueuing execution after the session
+        commits (see _execute_ready_steps)."""
         # Task's real fields are task_type (not type) and context/JSON for
         # extra data (not metadata - same SQLAlchemy reserved-attribute
         # collision as Workflow.metadata above, this time on Task, which
@@ -264,14 +285,6 @@ class WorkflowEngine:
         session.add(task)
         session.flush()
 
-        # Nothing previously triggered this task's execution at all - same
-        # gap as the original task_worker.execute_task stub, one layer up.
-        try:
-            from src.workers.task_worker import execute_task
-            execute_task.delay(task.id)
-        except Exception as e:
-            logger.warning(f"Could not enqueue execution for step task {task.id}: {e}")
-
         # Update step state
         step_states = workflow.extra_metadata.get("step_states", {})
         step_states[step["step_id"]]["status"] = StepStatus.RUNNING
@@ -280,6 +293,8 @@ class WorkflowEngine:
 
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(workflow, "extra_metadata")
+
+        return task.id
 
     @staticmethod
     def update_step_status(

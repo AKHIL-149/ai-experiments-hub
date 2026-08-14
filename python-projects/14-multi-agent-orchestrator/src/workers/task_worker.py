@@ -12,6 +12,30 @@ from src.core.logging import logger
 from src.models import Task, TaskStatus
 
 
+def _advance_workflow_if_linked(session, task, status: str, result=None, error=None) -> None:
+    """Report a workflow-linked task's outcome back to WorkflowEngine so the
+    workflow advances to the next ready step (or completes/fails). Tasks
+    created by WorkflowEngine._create_step_task stamp workflow_id/step_id
+    into task.context - plain (non-workflow) tasks have no such context and
+    this is a no-op for them."""
+    ctx = task.context or {}
+    if not (ctx.get("workflow_id") and ctx.get("step_id")):
+        return
+
+    from src.services.workflow_engine import WorkflowEngine
+    try:
+        WorkflowEngine.update_step_status(
+            session=session,
+            workflow_id=ctx["workflow_id"],
+            step_id=ctx["step_id"],
+            status=status,
+            result=result,
+            error=error,
+        )
+    except Exception as e:
+        logger.error(f"Failed to advance workflow {ctx.get('workflow_id')} after task {task.id}: {e}")
+
+
 @shared_task(name='src.workers.task_worker.execute_task', bind=True, max_retries=3)
 def execute_task(self, task_id: int) -> Dict[str, Any]:
     """
@@ -58,6 +82,7 @@ def execute_task(self, task_id: int) -> Dict[str, Any]:
                     task.status = TaskStatus.FAILED
                     task.error_message = str(e)
                     task.completed_at = datetime.utcnow()
+                    _advance_workflow_if_linked(session, task, "failed", error=str(e))
                     return {'success': False, 'error': str(e), 'task_id': task_id}
 
             task.status = TaskStatus.IN_PROGRESS
@@ -107,6 +132,13 @@ def execute_task(self, task_id: int) -> Dict[str, Any]:
             task.actual_cost = execution.cost or 0.0
             if task.started_at:
                 task.actual_duration_seconds = int((task.completed_at - task.started_at).total_seconds())
+
+            _advance_workflow_if_linked(
+                session, task,
+                "completed" if execution.is_successful else "failed",
+                result=execution.output_data if execution.is_successful else None,
+                error=execution.error_message if not execution.is_successful else None,
+            )
 
             return {
                 'success': execution.is_successful,
