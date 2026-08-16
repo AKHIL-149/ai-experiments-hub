@@ -7,6 +7,18 @@ from celery import shared_task
 from datetime import datetime
 from typing import Dict, Any
 
+# @shared_task resolves against whichever Celery app is "current" in the
+# process at call time, not necessarily the one it was decorated under.
+# Without this import, a process that reaches this module via some other
+# import path (never having imported celery_app.py directly) resolves
+# against Celery's own unconfigured default app - amqp://guest@localhost,
+# not our real Redis broker. That's silent and intermittent: it depends on
+# what else happened to import celery_app first. Confirmed live - a
+# standalone script calling execute_task.delay() either crashed with
+# ConnectionRefusedError against port 5672, or (more often, and far more
+# confusingly) silently enqueued to nowhere, depending on import order.
+import celery_app  # noqa: F401
+
 from src.core.database import DatabaseManager
 from src.core.logging import logger
 from src.models import Task, TaskStatus

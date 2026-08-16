@@ -22,6 +22,13 @@ cp .env.example .env
 
 # 4. Start the server
 python3 server.py
+
+# 5. Start the Celery worker (separate terminal) - required for tasks to
+# actually execute, not just get created. The -Q flags matter: task_routes
+# in celery_app.py sends different task types to separate queues, so a
+# worker started without them only consumes the default "celery" queue and
+# silently never picks up anything else - no error, tasks just sit pending.
+PYTHONPATH=. celery -A celery_app worker --loglevel=info -Q celery,tasks,agents,orchestration,monitoring
 ```
 
 Server runs on **http://localhost:8001**

@@ -20,13 +20,40 @@ DATABASE_URL = os.getenv(
 )
 
 # Create SQLAlchemy engine
+#
+# SQLite-specific tuning: this app runs a FastAPI server and a multi-process
+# (prefork) Celery worker pool against the same on-disk SQLite file. SQLite
+# allows only one writer at a time; without a busy_timeout, a second writer
+# that arrives while another connection's write transaction is still open
+# gets "database is locked" immediately instead of waiting. Confirmed live -
+# two Celery worker processes assigning two workflow tasks to the same
+# agent within the same millisecond both crashed with
+# sqlite3.OperationalError: database is locked on their very next
+# UPDATE, leaving the tasks permanently stuck in an intermediate QUEUED
+# state (their own failure-handling UPDATE hit the same lock and failed
+# too). connect_args={"timeout": ...} makes the underlying sqlite3
+# connection wait (and internally retry) for up to that many seconds
+# before raising, which is enough for these sub-second write bursts to
+# clear. WAL mode additionally lets readers proceed without blocking on a
+# writer at all. Neither applies to Postgres, so both are gated on the URL.
+_is_sqlite = DATABASE_URL.startswith("sqlite")
+
 engine = create_engine(
     DATABASE_URL,
     echo=os.getenv("DB_ECHO", "false").lower() == "true",
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    connect_args={"timeout": 30} if _is_sqlite else {},
 )
+
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
 
 # Create SessionLocal class
 SessionLocal = sessionmaker(

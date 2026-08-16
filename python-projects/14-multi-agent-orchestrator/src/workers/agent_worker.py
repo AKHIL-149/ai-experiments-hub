@@ -6,6 +6,9 @@ from celery import shared_task
 from datetime import datetime
 from typing import Dict, Any, List
 
+# See the matching comment in src/workers/task_worker.py.
+import celery_app  # noqa: F401
+
 from src.core.database import DatabaseManager
 from src.models import Agent, AgentRole, AgentStatus
 

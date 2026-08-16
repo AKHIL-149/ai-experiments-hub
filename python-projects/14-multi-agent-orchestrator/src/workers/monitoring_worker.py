@@ -8,6 +8,9 @@ Runs via Celery Beat scheduler.
 from celery import shared_task
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
+
+# See the matching comment in src/workers/task_worker.py.
+import celery_app  # noqa: F401
 import asyncio
 
 from src.core.database import DatabaseManager

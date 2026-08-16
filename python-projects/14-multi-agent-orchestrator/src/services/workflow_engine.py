@@ -11,6 +11,12 @@ from sqlalchemy import and_, or_, desc, func
 from collections import defaultdict, deque
 import json
 
+# See the matching comment in src/workers/task_worker.py - this module
+# calls execute_task.delay() to advance workflow steps, and without this
+# import that call can silently resolve against Celery's unconfigured
+# default app instead of the real Redis-backed one.
+import celery_app  # noqa: F401
+
 from src.models import Workflow, Task, Agent, AgentExecution
 from src.core.logging import logger
 
