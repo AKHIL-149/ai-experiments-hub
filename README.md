@@ -102,12 +102,13 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 
 ### Phase 5: Advanced AI Systems
 
-**14. Multi-Agent Orchestrator** (Full-stack)
-- Swarm intelligence with multiple specialized agents
-- Collaborative task decomposition
-- Agent communication protocols
-- Task queue and result aggregation
-- WebSocket real-time monitoring
+**14. Multi-Agent Orchestrator** (Full-stack) ✅ Working
+- 5 specialized agents (Research, Writer, Coder, Reviewer, Data Analyst), each backed by a local Ollama model - no API key required
+- DAG-based workflows: define steps with dependencies, and completing one step automatically enqueues and starts the next
+- Real Celery + Redis task queue with FastAPI backend and SQLite storage
+- Live dashboard: create tasks/workflows, watch step-by-step progress, view results with rendered markdown, cancel/delete/filter tasks
+- 📖 [Usage Guide](python-projects/14-multi-agent-orchestrator/USAGE_GUIDE.md) - setup, running a workflow end-to-end, and known limitations
+- _Note: task execution, DAG step-advancement, and the dashboard are real and verified live with real local LLM calls. Known limitation: a workflow step's actual output isn't automatically passed into the next step's prompt yet - each step only sees its own static description - see the usage guide for the workaround._
 
 **15. Video Understanding & Summarization Platform** (Python) ✅ Working
 - Multi-modal video analysis with vision + audio fusion
@@ -190,7 +191,7 @@ ai-experiments-hub/
 │   ├── 07-content-analyzer/
 │   ├── 09-meeting-summarizer/
 │   ├── 13-code-review-assistant/  # Full-stack production app
-│   ├── 14-multi-agent-orchestrator/
+│   ├── 14-multi-agent-orchestrator/  # DAG multi-agent workflows ✅ Working
 │   ├── 15-video-understanding/     # Multi-modal video analysis ✅ Working
 │   └── ...
 └── javascript-projects/
@@ -214,7 +215,7 @@ ai-experiments-hub/
 - [ ] Project 11: Research Assistant
 - [ ] Project 12: Content Moderation System
 - [x] Project 13: AI Code Review Assistant ⚠️ (Core complete, needs monitoring)
-- [x] Project 14: Multi-Agent Orchestrator
+- [x] Project 14: Multi-Agent Orchestrator ✅ (Task execution, DAG workflow step-advancement, and dashboard verified end-to-end with real local Ollama calls; cross-step data passing between workflow steps is a known gap - see [usage guide](python-projects/14-multi-agent-orchestrator/USAGE_GUIDE.md))
 - [x] Project 15: Video Understanding Platform ✅ (Ingestion, analysis pipeline, search, highlights, and clip creation working end-to-end; chapters/timeline/similar-videos/highlight-reels are backend-only, no UI yet)
 - [ ] Project 16: Knowledge Graph Builder (Planned)
 
