@@ -2621,7 +2621,7 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
         'reviews': 0
     }
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "user": user,
         "stats": stats,
@@ -2637,7 +2637,7 @@ async def analyze_page(request: Request, user = Depends(get_current_user_optiona
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("analyze.html", {
+    return templates.TemplateResponse(request, "analyze.html", {
         "request": request,
         "user": user
     })
@@ -2649,7 +2649,7 @@ async def notifications_page(request: Request, user = Depends(get_current_user_o
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("notifications.html", {
+    return templates.TemplateResponse(request, "notifications.html", {
         "request": request,
         "user": user
     })
@@ -2661,7 +2661,7 @@ async def notification_preferences_page(request: Request, user = Depends(get_cur
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("notification_preferences.html", {
+    return templates.TemplateResponse(request, "notification_preferences.html", {
         "request": request,
         "user": user
     })
@@ -2673,7 +2673,7 @@ async def settings_page(request: Request, user = Depends(get_current_user_option
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("settings.html", {
+    return templates.TemplateResponse(request, "settings.html", {
         "request": request,
         "user": user
     })
@@ -2685,7 +2685,7 @@ async def github_app_page(request: Request, user = Depends(get_current_user_opti
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("github-app.html", {
+    return templates.TemplateResponse(request, "github-app.html", {
         "request": request,
         "user": user
     })
@@ -2726,7 +2726,7 @@ async def issues_page(request: Request, user = Depends(get_current_user_optional
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("issues.html", {
+    return templates.TemplateResponse(request, "issues.html", {
         "request": request,
         "user": user
     })
@@ -2815,7 +2815,7 @@ async def issue_detail_page(request: Request, issue_id: str, user = Depends(get_
                 'line_number': rel_issue.line_number
             })
 
-        return templates.TemplateResponse("issue_detail.html", {
+        return templates.TemplateResponse(request, "issue_detail.html", {
             "request": request,
             "user": user,
             "issue": issue_dict,
@@ -2829,7 +2829,7 @@ async def diff_viewer_demo_page(request: Request, user = Depends(get_current_use
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("diff_viewer_demo.html", {
+    return templates.TemplateResponse(request, "diff_viewer_demo.html", {
         "request": request,
         "user": user
     })
@@ -2841,7 +2841,7 @@ async def advanced_filters_demo_page(request: Request, user = Depends(get_curren
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("advanced_filters_demo.html", {
+    return templates.TemplateResponse(request, "advanced_filters_demo.html", {
         "request": request,
         "user": user
     })
@@ -2863,7 +2863,7 @@ async def repositories_page(request: Request, user = Depends(get_current_user_op
             'error': sum(1 for r in repos if r.status == RepositoryStatus.ERROR)
         }
 
-    return templates.TemplateResponse("repositories.html", {
+    return templates.TemplateResponse(request, "repositories.html", {
         "request": request,
         "user": user,
         "stats": stats
@@ -2876,7 +2876,7 @@ async def schedules_page(request: Request, user = Depends(get_current_user_optio
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("schedules.html", {
+    return templates.TemplateResponse(request, "schedules.html", {
         "request": request,
         "user": user
     })
@@ -2888,7 +2888,7 @@ async def teams_page(request: Request, user = Depends(get_current_user_optional)
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("team_dashboard.html", {
+    return templates.TemplateResponse(request, "team_dashboard.html", {
         "request": request,
         "user": user
     })
@@ -2900,7 +2900,7 @@ async def repository_add_page(request: Request, user = Depends(get_current_user_
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("repository_add.html", {
+    return templates.TemplateResponse(request, "repository_add.html", {
         "request": request,
         "user": user
     })
@@ -2933,7 +2933,7 @@ async def repository_detail_page(
             'health_score': None
         }
 
-        return templates.TemplateResponse("repository_detail.html", {
+        return templates.TemplateResponse(request, "repository_detail.html", {
             "request": request,
             "user": user,
             "repository": repository,
@@ -2975,7 +2975,7 @@ async def pull_requests_page(request: Request, user = Depends(get_current_user_o
         if not success:
             pull_requests = []
 
-    return templates.TemplateResponse("pull_requests.html", {
+    return templates.TemplateResponse(request, "pull_requests.html", {
         "request": request,
         "user": user,
         "repositories": repositories,
@@ -2998,7 +2998,7 @@ async def pull_request_import_page(request: Request, user = Depends(get_current_
             Repository.status == RepositoryStatus.READY
         ).order_by(Repository.name).all()
 
-    return templates.TemplateResponse("pull_request_import.html", {
+    return templates.TemplateResponse(request, "pull_request_import.html", {
         "request": request,
         "user": user,
         "repositories": repositories
@@ -3046,7 +3046,7 @@ async def pull_request_detail_page(
         # Calculate stats
         total_issues = sum(1 for f in code_files if f.last_analyzed_at)
 
-        return templates.TemplateResponse("pull_request_detail.html", {
+        return templates.TemplateResponse(request, "pull_request_detail.html", {
             "request": request,
             "user": user,
             "pr": pr,
@@ -3060,7 +3060,7 @@ async def pull_request_detail_page(
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Login page"""
-    return templates.TemplateResponse("login.html", {
+    return templates.TemplateResponse(request, "login.html", {
         "request": request
     })
 
@@ -3068,7 +3068,7 @@ async def login_page(request: Request):
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     """Registration page"""
-    return templates.TemplateResponse("register.html", {
+    return templates.TemplateResponse(request, "register.html", {
         "request": request
     })
 
@@ -3076,7 +3076,7 @@ async def register_page(request: Request):
 @app.get("/terms", response_class=HTMLResponse)
 async def terms_page(request: Request):
     """Terms of Service page"""
-    return templates.TemplateResponse("terms.html", {
+    return templates.TemplateResponse(request, "terms.html", {
         "request": request
     })
 
@@ -3084,7 +3084,7 @@ async def terms_page(request: Request):
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy_page(request: Request):
     """Privacy Policy page"""
-    return templates.TemplateResponse("privacy.html", {
+    return templates.TemplateResponse(request, "privacy.html", {
         "request": request
     })
 
@@ -3108,7 +3108,7 @@ async def rule_builder_page(request: Request, user = Depends(get_current_user_op
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("rule_builder.html", {
+    return templates.TemplateResponse(request, "rule_builder.html", {
         "request": request,
         "user": user
     })
@@ -3120,7 +3120,7 @@ async def plugins_page(request: Request, user = Depends(get_current_user_optiona
     if not user:
         return RedirectResponse(url="/login")
 
-    return templates.TemplateResponse("plugins.html", {
+    return templates.TemplateResponse(request, "plugins.html", {
         "request": request,
         "user": user
     })
