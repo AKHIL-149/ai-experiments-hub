@@ -1,14 +1,111 @@
 """Celery worker for code analysis tasks"""
 import os
+import hashlib
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from celery_app import celery_app
 from src.services.code_analyzer_service import CodeAnalyzerService
 
 
-# In-memory cache for storing analysis results (for demo/development)
-# In production, this should use Redis or database
+_EXTENSION_LANGUAGES = {
+    '.py': 'python', '.pyw': 'python',
+    '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+    '.ts': 'typescript', '.tsx': 'typescript',
+    '.java': 'java', '.go': 'go', '.rs': 'rust',
+}
+
+
+def _detect_language(filename: str) -> str:
+    """analyze_code()'s report dict has no language field, so derive it
+    from the extension the same way the rest of the app does (see
+    README's Language Auto-Detection section / parser registry)."""
+    _, ext = os.path.splitext(filename)
+    return _EXTENSION_LANGUAGES.get(ext.lower(), 'python')
+
+
+# In-memory cache for storing analysis results (for demo/development). This
+# only works if the reader and writer are the same OS process - a FastAPI
+# server process and a Celery worker process never share memory, so
+# anything read via this cache from server.py is always empty. It's kept
+# here only as a same-process fallback; _persist_upload_results below is
+# what actually makes results visible to the app (Issues page, analytics).
 _analysis_cache = {}
+
+
+def _get_or_create_upload_repository(session, user_id: str):
+    """Get or create the per-user pseudo-repository that holds ad-hoc
+    single-file uploads. CodeFile requires either a repository_id or a
+    pull_request_id (DB check constraint) - a loose upload has neither on
+    its own, so we attach it to a standing per-user placeholder repository
+    instead of relaxing the schema."""
+    from src.core.database import Repository
+
+    repo = session.query(Repository).filter_by(
+        user_id=user_id,
+        github_url='local://uploads'
+    ).first()
+
+    if not repo:
+        repo = Repository(
+            user_id=user_id,
+            name='Uploaded Files',
+            github_url='local://uploads'
+        )
+        session.add(repo)
+        session.flush()
+
+    return repo
+
+
+def _persist_upload_results(user_id: str, filename: str, language: str, file_content: str, report: Dict[str, Any]) -> Optional[str]:
+    """Save a single-file upload's analysis to the real database (code_files
+    + issues), the same tables the repository/PR analysis paths use, so the
+    result actually shows up in the Issues page and analytics instead of
+    only existing in a Celery result payload no one reads issues from.
+    Returns the created code_file id, or None if user_id wasn't provided
+    (e.g. a caller with no authenticated user - falls back to cache-only)."""
+    if not user_id:
+        return None
+
+    from src.core.database import DatabaseManager, CodeFile, Issue, IssueCategory, IssueSeverity
+
+    db_manager = DatabaseManager()
+    with db_manager.get_session() as session:
+        repository = _get_or_create_upload_repository(session, user_id)
+
+        file_hash = hashlib.sha256(file_content.encode('utf-8')).hexdigest()
+        code_file = CodeFile(
+            repository_id=repository.id,
+            file_path=filename,
+            file_hash=file_hash,
+            language=language,
+            lines_of_code=len(file_content.splitlines()),
+            last_analyzed_at=datetime.utcnow()
+        )
+        session.add(code_file)
+        session.flush()
+
+        for issue_data in report.get('issues', []):
+            fingerprint_data = f"{filename}:{issue_data.get('line_number', 0)}:{issue_data['rule_id']}"
+            fingerprint = hashlib.sha256(fingerprint_data.encode('utf-8')).hexdigest()
+
+            session.add(Issue(
+                code_file_id=code_file.id,
+                category=IssueCategory(issue_data['category']),
+                severity=IssueSeverity(issue_data['severity']),
+                rule_id=issue_data['rule_id'],
+                title=issue_data['title'],
+                description=issue_data['description'],
+                line_number=issue_data.get('line_number'),
+                column_number=issue_data.get('column_number'),
+                code_snippet=issue_data.get('code_snippet'),
+                confidence=issue_data.get('confidence', 1.0),
+                fingerprint=fingerprint,
+                last_seen_at=datetime.utcnow()
+            ))
+
+        session.commit()
+        return code_file.id
 
 
 @celery_app.task(name='src.workers.analysis_worker.analyze_file_task', bind=True)
@@ -16,7 +113,8 @@ def analyze_file_task(
     self,
     file_content: str,
     filename: str,
-    analyzer_ids: Optional[List[str]] = None
+    analyzer_ids: Optional[List[str]] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Async task to analyze a code file.
@@ -25,6 +123,10 @@ def analyze_file_task(
         file_content: Content of the file to analyze
         filename: Name of the file
         analyzer_ids: Optional list of specific analyzers to run
+        user_id: Authenticated user's id, if any - when provided, results
+            are persisted to the database (code_files/issues) so they're
+            visible in the Issues page and analytics, not just this job's
+            own status response.
 
     Returns:
         Analysis results dictionary
@@ -53,7 +155,7 @@ def analyze_file_task(
         )
 
         if result['success']:
-            # Store issues in cache for querying
+            # Store issues in cache for querying (same-process fallback only)
             _analysis_cache[job_id] = {
                 'filename': filename,
                 'issues': result['report']['issues'],
@@ -61,12 +163,27 @@ def analyze_file_task(
                 'analyzed_at': datetime.utcnow().isoformat()
             }
 
+            code_file_id = None
+            try:
+                code_file_id = _persist_upload_results(
+                    user_id=user_id,
+                    filename=filename,
+                    language=_detect_language(filename),
+                    file_content=file_content,
+                    report=result['report']
+                )
+            except Exception as e:
+                # Don't fail the whole analysis if persistence has an issue -
+                # the job result/cache still has the data for this process.
+                print(f"Warning: could not persist analysis results for {filename}: {e}")
+
             self.update_state(
                 state='SUCCESS',
                 meta={
                     'status': 'Analysis complete',
                     'issues_found': result['report']['total_issues'],
-                    'health_score': result['report']['health_score']['overall_score']
+                    'health_score': result['report']['health_score']['overall_score'],
+                    'code_file_id': code_file_id
                 }
             )
 
@@ -106,7 +223,8 @@ def clear_analysis_cache():
 def analyze_uploaded_file_task(
     self,
     file_path: str,
-    analyzer_ids: Optional[List[str]] = None
+    analyzer_ids: Optional[List[str]] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Async task to analyze an uploaded file.
@@ -114,6 +232,7 @@ def analyze_uploaded_file_task(
     Args:
         file_path: Path to the uploaded file
         analyzer_ids: Optional list of specific analyzers to run
+        user_id: Authenticated user's id, if any - see analyze_file_task
 
     Returns:
         Analysis results dictionary
@@ -129,7 +248,7 @@ def analyze_uploaded_file_task(
         filename = os.path.basename(file_path)
 
         # Analyze
-        return analyze_file_task(self, file_content, filename, analyzer_ids)
+        return analyze_file_task(self, file_content, filename, analyzer_ids, user_id)
 
     except Exception as e:
         self.update_state(state='FAILURE', meta={'error': str(e)})

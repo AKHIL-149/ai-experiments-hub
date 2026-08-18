@@ -5,6 +5,7 @@ FastAPI server for AI Code Review Assistant
 import os
 import tempfile
 from dotenv import load_dotenv
+from sqlalchemy import text
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -439,7 +440,7 @@ async def health_check():
     # Database check
     try:
         with db_manager.get_session() as db:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             components["database"] = {"status": "healthy", "latency_ms": 0}
     except Exception as e:
         components["database"] = {"status": "unhealthy", "error": str(e)}
@@ -513,7 +514,7 @@ async def database_health():
     try:
         with db_manager.get_session() as db:
             # Simple query to verify database is accessible
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             return {
                 "status": "healthy",
                 "component": "database",
@@ -3174,7 +3175,8 @@ async def analyze_file(
     task = analyze_file_task.delay(
         file_content=file_content,
         filename=file.filename,
-        analyzer_ids=analyzer_list
+        analyzer_ids=analyzer_list,
+        user_id=user.id
     )
 
     return {
@@ -3626,13 +3628,20 @@ async def get_health_score(user = Depends(get_current_user)):
     if cached_result is not None:
         return JSONResponse(cached_result)
 
-    # Get all cached analyses
-    analyses = get_all_cached_analyses()
-
-    # Collect all issues
-    all_issues = []
-    for analysis in analyses:
-        all_issues.extend(analysis.get('issues', []))
+    # Read from the database, not the in-process analysis cache - that
+    # cache is only ever populated in whichever Celery worker process ran
+    # the analysis, never in this server process, so it was always empty
+    # here and this endpoint always reported a false "perfect" score.
+    with db_manager.get_session() as db:
+        from src.core.database import Issue, CodeFile
+        issues_db = db.query(Issue).join(CodeFile).filter(
+            Issue.resolved == False,
+            Issue.dismissed == False
+        ).all()
+        all_issues = [
+            {'severity': i.severity.value, 'category': i.category.value}
+            for i in issues_db
+        ]
 
     # Calculate health score
     result = analytics_service.calculate_health_score(all_issues)

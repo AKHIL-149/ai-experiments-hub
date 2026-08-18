@@ -15,6 +15,58 @@ from src.services.notification_rules_engine import get_rules_engine
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(name='notification_worker.send_notification')
+def send_notification(
+    notification_type: str,
+    recipient: str,
+    message: str,
+    subject: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Send a single, ad-hoc email or Slack notification. Unlike
+    queue_notification (rules-engine driven, tied to a specific issue and
+    an EmailConfiguration/SlackConfiguration DB row), this is for callers
+    that already have a plain recipient address/webhook URL and a message
+    to send - e.g. schedule_worker's run-completion notifications, which
+    aren't tied to any single configured integration.
+
+    Args:
+        notification_type: 'email' or 'slack'
+        recipient: Email address (for 'email') or webhook URL (for 'slack')
+        message: Notification body
+        subject: Email subject (required for 'email', ignored for 'slack')
+
+    Returns:
+        Result dict with success status
+    """
+    try:
+        if notification_type == 'email':
+            from src.services.email_service import EmailService
+            email_service = EmailService()
+            if not email_service.is_configured():
+                return {'success': False, 'error': 'Email not configured (SMTP_HOST/USERNAME/PASSWORD)'}
+            return email_service.send_email(
+                to_email=recipient,
+                subject=subject or 'Notification',
+                html_body=f"<p>{message}</p>",
+                text_body=message
+            )
+
+        elif notification_type == 'slack':
+            from src.services.slack_service import SlackService
+            slack_service = SlackService(webhook_url=recipient)
+            if not slack_service.is_configured():
+                return {'success': False, 'error': 'Slack webhook not configured'}
+            return slack_service.send_message(text=message)
+
+        else:
+            return {'success': False, 'error': f'Unknown notification_type: {notification_type}'}
+
+    except Exception as e:
+        logger.error(f"Error sending {notification_type} notification to {recipient}: {e}")
+        return {'success': False, 'error': str(e)}
+
+
 @celery_app.task(name='notification_worker.process_batch_notifications')
 def process_batch_notifications(
     notifications: List[Dict[str, Any]],
