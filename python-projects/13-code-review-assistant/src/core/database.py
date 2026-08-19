@@ -11,6 +11,7 @@ import uuid
 
 from sqlalchemy import (
     create_engine,
+    event,
     Column,
     String,
     Integer,
@@ -1376,9 +1377,25 @@ class DatabaseManager:
             # Use NullPool for SQLite to avoid threading issues
             from sqlalchemy.pool import StaticPool
             pool_config['poolclass'] = StaticPool
-            pool_config['connect_args'] = {'check_same_thread': False}
+            # timeout: without this, a second process writing while another
+            # still has a write transaction open gets "database is locked"
+            # immediately instead of waiting. This app runs a FastAPI server
+            # and a separate Celery worker process against the same SQLite
+            # file - confirmed live, a repository analysis job (worker,
+            # writing many issues in a loop) collided with a routine session
+            # last_accessed update (server, on every authenticated request)
+            # and the whole analysis job crashed with exactly this error.
+            pool_config['connect_args'] = {'check_same_thread': False, 'timeout': 30}
 
         self.engine = create_engine(db_url, **pool_config)
+
+        if is_sqlite:
+            @event.listens_for(self.engine, "connect")
+            def _set_sqlite_pragma(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.close()
 
         # Create all tables
         Base.metadata.create_all(self.engine)
