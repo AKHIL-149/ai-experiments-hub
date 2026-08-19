@@ -4,6 +4,30 @@ from .base_analyzer import BaseAnalyzer, CodeIssue
 from .security_analyzer import SecurityAnalyzer
 from .smell_analyzer import SmellAnalyzer
 from .complexity_analyzer import ComplexityAnalyzer
+from .javascript_security_analyzer import JavaScriptSecurityAnalyzer
+from .javascript_smell_analyzer import JavaScriptSmellAnalyzer
+from .java_security_analyzer import JavaSecurityAnalyzer
+from .java_smell_analyzer import JavaSmellAnalyzer
+
+
+# Every analyzer here (except complexity, which is Python-ast-specific and
+# simply doesn't run for other languages) was already fully implemented but
+# never registered, so every non-Python file silently got zero real
+# analysis - see _register_default_analyzers. security/smell/complexity
+# each call ast.parse(source_code) themselves; parsing e.g. real
+# JavaScript as Python raises SyntaxError immediately, which
+# CodeAnalyzerService caught and reported as "0 issues found" rather than
+# an error, indistinguishable from a genuinely clean file. Confirmed live
+# against a real JS file with a demonstrated SQL injection - the analyzer
+# reported 0 issues for the whole repo.
+LANGUAGE_ANALYZER_IDS: Dict[str, List[str]] = {
+    'python': ['security', 'smell', 'complexity'],
+    'javascript': ['javascript-security', 'javascript-smell'],
+    'java': ['java_security', 'java_smell'],
+    # go/rust have parsers (src/parsers/go_parser.py, rust_parser.py) but no
+    # analyzer implementations yet - deliberately no entry here rather than
+    # silently returning zero issues for a language nothing actually checks.
+}
 
 
 class AnalyzerRegistry:
@@ -19,7 +43,19 @@ class AnalyzerRegistry:
         self.register_analyzer(SecurityAnalyzer())
         self.register_analyzer(SmellAnalyzer())
         self.register_analyzer(ComplexityAnalyzer())
-    
+        self.register_analyzer(JavaScriptSecurityAnalyzer())
+        self.register_analyzer(JavaScriptSmellAnalyzer())
+        self.register_analyzer(JavaSecurityAnalyzer())
+        self.register_analyzer(JavaSmellAnalyzer())
+
+    def get_analyzer_ids_for_language(self, language: Optional[str]) -> Optional[List[str]]:
+        """Which registered analyzer_ids apply to a given language, or None
+        if the language is unknown/unsupported (caller decides how to
+        handle that - see CodeAnalyzerService)."""
+        if not language:
+            return None
+        return LANGUAGE_ANALYZER_IDS.get(language)
+
     def register_analyzer(self, analyzer: BaseAnalyzer):
         """
         Register an analyzer.
@@ -59,26 +95,47 @@ class AnalyzerRegistry:
         """
         return [a for a in self._analyzers.values() if a.is_enabled()]
     
-    def analyze(self, parsed_module, source_code: str, analyzer_ids: Optional[List[str]] = None) -> List[CodeIssue]:
+    def analyze(
+        self,
+        parsed_module,
+        source_code: str,
+        analyzer_ids: Optional[List[str]] = None,
+        language: Optional[str] = None
+    ) -> List[CodeIssue]:
         """
         Run analysis with specified or all enabled analyzers.
-        
+
         Args:
             parsed_module: Parsed module from parser
             source_code: Original source code
-            analyzer_ids: Optional list of specific analyzer IDs to run
-            
+            analyzer_ids: Optional list of specific analyzer IDs to run -
+                takes precedence over language if both are given
+            language: Optional language identifier ('python', 'javascript',
+                'java', ...) - restricts to that language's analyzers so a
+                Python-specific rule (which parses source_code as Python
+                internally, regardless of parsed_module) doesn't silently
+                no-op against a different language. If omitted entirely
+                (both analyzer_ids and language are None), falls back to
+                the original 3 Python analyzers (security/smell/complexity)
+                rather than every now-registered analyzer, so existing
+                callers that never passed language - assuming, correctly
+                at the time, that only Python analyzers existed - keep
+                getting exactly the same result set as before.
+
         Returns:
             List of all detected issues
         """
         issues = []
-        
+
         if analyzer_ids:
-            # Run specific analyzers
+            # Explicit selection - run exactly these
             analyzers = [self._analyzers[aid] for aid in analyzer_ids if aid in self._analyzers]
+        elif language:
+            lang_ids = self.get_analyzer_ids_for_language(language)
+            analyzers = [self._analyzers[aid] for aid in (lang_ids or []) if aid in self._analyzers]
         else:
-            # Run all enabled analyzers
-            analyzers = self.get_enabled_analyzers()
+            legacy_ids = LANGUAGE_ANALYZER_IDS['python']
+            analyzers = [self._analyzers[aid] for aid in legacy_ids if aid in self._analyzers]
         
         for analyzer in analyzers:
             try:

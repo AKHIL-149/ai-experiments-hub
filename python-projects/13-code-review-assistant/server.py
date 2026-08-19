@@ -3151,13 +3151,22 @@ async def analyze_file(
     user = Depends(get_current_user)
 ):
     """
-    Upload and analyze a Python file.
+    Upload and analyze a code file (Python, JavaScript/TypeScript, or Java -
+    see the parser registry for the current supported set).
 
     Returns a job ID that can be used to check analysis status.
     """
-    # Validate file type
-    if not file.filename.endswith('.py'):
-        raise HTTPException(status_code=400, detail="Only Python files (.py) are supported")
+    # Validate file type against whatever the parser registry actually
+    # supports, instead of a hardcoded .py-only check - this endpoint used
+    # to reject every other language before analysis could even start,
+    # regardless of what the analyzers underneath could handle.
+    from src.parsers.parser_registry import get_registry as get_parser_registry
+    supported_extensions = get_parser_registry().get_supported_extensions()
+    if not any(file.filename.endswith(ext) for ext in supported_extensions):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Supported extensions: {', '.join(sorted(supported_extensions))}"
+        )
 
     # Read file content
     try:

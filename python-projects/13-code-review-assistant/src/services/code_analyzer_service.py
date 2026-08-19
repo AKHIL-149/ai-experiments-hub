@@ -1,17 +1,24 @@
 """Service for orchestrating code analysis"""
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from src.parsers.python_parser import PythonParser
+from src.parsers.parser_registry import get_registry as get_parser_registry
 from src.analyzers import get_registry
 from src.analyzers.base_analyzer import CodeIssue
 
 
 class CodeAnalyzerService:
-    """Orchestrates parser and analyzers to analyze code files"""
+    """Orchestrates parser and analyzers to analyze code files.
+
+    Used to hardcode a Python-only parser regardless of the file's real
+    language - analyzing a JavaScript/Java/Go/Rust file meant parsing it
+    as Python, which fails immediately with a syntax error, silently
+    caught and reported as "0 issues found" rather than an error. Now
+    detects the language and uses the matching parser (ParserRegistry)
+    and analyzer set (AnalyzerRegistry.LANGUAGE_ANALYZER_IDS) for it."""
 
     def __init__(self):
-        """Initialize service with parser and analyzer registry"""
-        self.parser = PythonParser()
+        """Initialize service with parser and analyzer registries"""
+        self.parser_registry = get_parser_registry()
         self.registry = get_registry()
 
     def analyze_file(
@@ -46,26 +53,44 @@ class CodeAnalyzerService:
         self,
         source_code: str,
         file_path: str = '<string>',
-        analyzer_ids: Optional[List[str]] = None
+        analyzer_ids: Optional[List[str]] = None,
+        language: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Analyze Python source code.
+        Analyze source code in any supported language (Python, JavaScript/
+        TypeScript, Java - see AnalyzerRegistry.LANGUAGE_ANALYZER_IDS for
+        what's currently backed by a real analyzer).
 
         Args:
-            source_code: Python source code to analyze
-            file_path: Path or identifier for the code
-            analyzer_ids: Optional list of specific analyzer IDs to run
+            source_code: Source code to analyze
+            file_path: Path or identifier for the code - also used to
+                detect the language by extension when `language` isn't
+                given explicitly
+            analyzer_ids: Optional list of specific analyzer IDs to run -
+                overrides language-based selection entirely
+            language: Optional explicit language ('python', 'javascript',
+                'java', ...). If omitted, detected from file_path's
+                extension, falling back to content-based detection.
 
         Returns:
             Dictionary with analysis results
         """
         try:
-            # Parse the code
-            parsed = self.parser.parse_code(source_code)
-            parsed.file_path = file_path
+            if not language:
+                language = self.parser_registry.detect_language(file_path, content=source_code)
 
-            # Run analysis
-            issues = self.registry.analyze(parsed, source_code, analyzer_ids)
+            if not language:
+                return {
+                    'success': False,
+                    'error': f'Could not detect a supported language for {file_path}',
+                    'file_path': file_path
+                }
+
+            # Parse the code with the language-appropriate parser
+            parsed = self.parser_registry.parse_code(source_code, language, file_path)
+
+            # Run analysis with the language-appropriate analyzers
+            issues = self.registry.analyze(parsed, source_code, analyzer_ids, language=language)
 
             # Calculate health score
             health_score = self.registry.calculate_health_score(issues)
@@ -75,7 +100,8 @@ class CodeAnalyzerService:
                 file_path=file_path,
                 issues=issues,
                 health_score=health_score,
-                source_code=source_code
+                source_code=source_code,
+                language=language
             )
 
             return {
@@ -97,7 +123,8 @@ class CodeAnalyzerService:
         analyzer_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Analyze multiple Python files.
+        Analyze multiple files (any supported language, auto-detected
+        per-file from its extension).
 
         Args:
             file_paths: List of file paths to analyze
@@ -124,16 +151,24 @@ class CodeAnalyzerService:
 
             # Parse and analyze
             try:
-                parsed = self.parser.parse_code(source_code)
-                parsed.file_path = file_path
+                language = self.parser_registry.detect_language(file_path, content=source_code)
+                if not language:
+                    results.append({
+                        'success': False,
+                        'error': f'Could not detect a supported language for {file_path}',
+                        'file_path': file_path
+                    })
+                    continue
+
+                parsed = self.parser_registry.parse_code(source_code, language, file_path)
 
                 # Get CodeIssue objects for aggregation
-                issues = self.registry.analyze(parsed, source_code, analyzer_ids)
+                issues = self.registry.analyze(parsed, source_code, analyzer_ids, language=language)
                 all_issues.extend(issues)
 
                 # Generate report
                 health_score = self.registry.calculate_health_score(issues)
-                report = self._generate_report(file_path, issues, health_score, source_code)
+                report = self._generate_report(file_path, issues, health_score, source_code, language=language)
 
                 results.append({
                     'success': True,
@@ -165,7 +200,8 @@ class CodeAnalyzerService:
         file_path: str,
         issues: List[CodeIssue],
         health_score: Dict[str, Any],
-        source_code: str
+        source_code: str,
+        language: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate analysis report.
@@ -175,6 +211,7 @@ class CodeAnalyzerService:
             issues: List of detected issues
             health_score: Health score data
             source_code: Original source code
+            language: Detected/specified language, if known
 
         Returns:
             Report dictionary
@@ -214,6 +251,7 @@ class CodeAnalyzerService:
 
         return {
             'file_path': file_path,
+            'language': language,
             'total_issues': len(issues),
             'issues': [issue.to_dict() for issue in issues],
             'by_category': by_category,

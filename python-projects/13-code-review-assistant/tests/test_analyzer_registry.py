@@ -36,12 +36,18 @@ def vulnerable_code_path():
 def test_registry_initialization(registry):
     """Test that registry initializes with default analyzers"""
     analyzers = registry.get_all_analyzers()
-    assert len(analyzers) == 3
+    # python security/smell/complexity, javascript security/smell,
+    # java security/smell
+    assert len(analyzers) == 7
 
     analyzer_ids = {a.analyzer_id for a in analyzers}
     assert 'security' in analyzer_ids
     assert 'smell' in analyzer_ids
     assert 'complexity' in analyzer_ids
+    assert 'javascript-security' in analyzer_ids
+    assert 'javascript-smell' in analyzer_ids
+    assert 'java_security' in analyzer_ids
+    assert 'java_smell' in analyzer_ids
 
 
 def test_get_analyzer_by_id(registry):
@@ -66,8 +72,9 @@ def test_get_analyzer_by_id(registry):
 def test_get_enabled_analyzers(registry):
     """Test getting only enabled analyzers"""
     enabled = registry.get_enabled_analyzers()
-    # All default analyzers should be enabled
-    assert len(enabled) == 3
+    # All default analyzers should be enabled: python security/smell/
+    # complexity, javascript security/smell, java security/smell
+    assert len(enabled) == 7
 
 
 def test_register_custom_analyzer(registry):
@@ -89,8 +96,8 @@ def test_register_custom_analyzer(registry):
     custom = CustomAnalyzer()
     registry.register_analyzer(custom)
 
-    # Should now have 4 analyzers
-    assert len(registry.get_all_analyzers()) == 4
+    # Should now have 8 analyzers (7 default + this custom one)
+    assert len(registry.get_all_analyzers()) == 8
 
     # Should be able to retrieve it
     retrieved = registry.get_analyzer('custom')

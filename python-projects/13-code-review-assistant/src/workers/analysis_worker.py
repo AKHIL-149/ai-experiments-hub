@@ -7,22 +7,6 @@ from celery_app import celery_app
 from src.services.code_analyzer_service import CodeAnalyzerService
 
 
-_EXTENSION_LANGUAGES = {
-    '.py': 'python', '.pyw': 'python',
-    '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
-    '.ts': 'typescript', '.tsx': 'typescript',
-    '.java': 'java', '.go': 'go', '.rs': 'rust',
-}
-
-
-def _detect_language(filename: str) -> str:
-    """analyze_code()'s report dict has no language field, so derive it
-    from the extension the same way the rest of the app does (see
-    README's Language Auto-Detection section / parser registry)."""
-    _, ext = os.path.splitext(filename)
-    return _EXTENSION_LANGUAGES.get(ext.lower(), 'python')
-
-
 # In-memory cache for storing analysis results (for demo/development). This
 # only works if the reader and writer are the same OS process - a FastAPI
 # server process and a Celery worker process never share memory, so
@@ -168,7 +152,7 @@ def analyze_file_task(
                 code_file_id = _persist_upload_results(
                     user_id=user_id,
                     filename=filename,
-                    language=_detect_language(filename),
+                    language=result['report'].get('language') or 'python',
                     file_content=file_content,
                     report=result['report']
                 )
@@ -275,7 +259,6 @@ def analyze_repository_task(
     """
     from pathlib import Path
     from src.core.database import DatabaseManager, Repository, CodeFile, Issue
-    from src.parsers.parser_registry import ParserRegistry
 
     db_manager = DatabaseManager()
 
@@ -293,17 +276,22 @@ def analyze_repository_task(
 
             # Initialize services
             analyzer_service = CodeAnalyzerService()
-            parser_registry = ParserRegistry()
 
             repo_path = Path(repository.clone_path)
 
-            # Find all supported code files
+            # Find all supported code files. Language keys must match
+            # ParserRegistry's own keys (src/parsers/parser_registry.py) -
+            # notably .ts/.tsx are 'javascript' there (one parser handles
+            # JS/JSX/TS/TSX), not a separate 'typescript'. This used to say
+            # 'typescript', which doesn't exist as a registered parser or
+            # analyzer language - every .ts/.tsx file in a repository scan
+            # would fail to parse and be silently skipped.
             supported_extensions = {
                 '.py': 'python',
                 '.js': 'javascript',
                 '.jsx': 'javascript',
-                '.ts': 'typescript',
-                '.tsx': 'typescript',
+                '.ts': 'javascript',
+                '.tsx': 'javascript',
                 '.java': 'java',
                 '.go': 'go',
                 '.rs': 'rust'
@@ -355,7 +343,8 @@ def analyze_repository_task(
                     # Analyze file
                     result = analyzer_service.analyze_code(
                         source_code=code,
-                        file_path=relative_path
+                        file_path=relative_path,
+                        language=language
                     )
 
                     # Save results to database
