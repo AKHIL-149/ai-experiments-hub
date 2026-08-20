@@ -31,13 +31,29 @@ from sqlalchemy.orm import relationship, sessionmaker, Session
 Base = declarative_base()
 
 
-class UserRole(str, enum.Enum):
+class StrEnum(str, enum.Enum):
+    """Base for str-valued enums used across DB models.
+
+    Python 3.11 changed str-mixin Enum's __str__/__format__ back to the
+    qualified "ClassName.MEMBER" form instead of the plain value, which
+    broke every Jinja2 template (`{{ repository.status }}`) and dict
+    literal (`{'severity': issue.severity}`) built from a raw ORM object
+    on this codebase's Python 3.12 runtime - both rendered
+    "RepositoryStatus.READY"/"IssueSeverity.CRITICAL" instead of
+    "ready"/"critical". Overriding __str__ here to return .value fixes
+    every such call site at once, not just the ones already found.
+    """
+    def __str__(self):
+        return self.value
+
+
+class UserRole(StrEnum):
     """User role enumeration for RBAC."""
     USER = 'user'
     ADMIN = 'admin'
 
 
-class RepositoryStatus(str, enum.Enum):
+class RepositoryStatus(StrEnum):
     """Repository status enumeration."""
     PENDING = 'pending'
     CLONING = 'cloning'
@@ -45,7 +61,7 @@ class RepositoryStatus(str, enum.Enum):
     ERROR = 'error'
 
 
-class PRStatus(str, enum.Enum):
+class PRStatus(StrEnum):
     """Pull request status enumeration."""
     OPEN = 'open'
     CLOSED = 'closed'
@@ -54,7 +70,7 @@ class PRStatus(str, enum.Enum):
     REVIEWED = 'reviewed'
 
 
-class JobStatus(str, enum.Enum):
+class JobStatus(StrEnum):
     """Analysis job status enumeration."""
     QUEUED = 'queued'
     PROCESSING = 'processing'
@@ -62,7 +78,7 @@ class JobStatus(str, enum.Enum):
     FAILED = 'failed'
 
 
-class IssueCategory(str, enum.Enum):
+class IssueCategory(StrEnum):
     """Issue category enumeration."""
     SECURITY = 'security'
     SMELL = 'smell'
@@ -71,7 +87,7 @@ class IssueCategory(str, enum.Enum):
     PATTERN = 'pattern'
 
 
-class IssueSeverity(str, enum.Enum):
+class IssueSeverity(StrEnum):
     """Issue severity enumeration."""
     INFO = 'info'
     WARNING = 'warning'
@@ -79,7 +95,7 @@ class IssueSeverity(str, enum.Enum):
     CRITICAL = 'critical'
 
 
-class RefactoringStatus(str, enum.Enum):
+class RefactoringStatus(StrEnum):
     """Refactoring suggestion status enumeration."""
     SUGGESTED = 'suggested'
     ACCEPTED = 'accepted'

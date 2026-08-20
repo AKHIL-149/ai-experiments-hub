@@ -12,6 +12,9 @@ class IssueSeverity(str, Enum):
     ERROR = 'error'
     CRITICAL = 'critical'
 
+    def __str__(self):
+        return self.value
+
 
 class IssueCategory(str, Enum):
     """Categories of code issues"""
@@ -20,6 +23,9 @@ class IssueCategory(str, Enum):
     COMPLEXITY = 'complexity'
     STYLE = 'style'
     PATTERN = 'pattern'
+
+    def __str__(self):
+        return self.value
 
 
 @dataclass
