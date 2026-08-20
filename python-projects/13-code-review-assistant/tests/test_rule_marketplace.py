@@ -12,16 +12,28 @@ from src.services.rule_marketplace_service import RuleMarketplaceService
 
 @pytest.fixture
 def db_manager():
-    """Database manager fixture"""
+    """Database manager fixture.
+
+    This used to call DatabaseManager() with no URL, which defaults to
+    the real ./data/database.db - the same file the actual running app
+    uses. Combined with the teardown below (db.query(User).delete(), which
+    cascades via foreign keys to Repository/CodeFile/Issue), running this
+    test file wiped real, live application data. Confirmed live: a user
+    account created after a pytest run survived; every account and all
+    repository/issue data created before it did not.
+
+    Still calling DatabaseManager() with no URL here deliberately -
+    tests/conftest.py's session-wide autouse fixture now redirects every
+    no-arg DatabaseManager() (this one and the ones RuleMarketplaceService
+    creates internally, below) to the same isolated test database. Passing
+    an explicit sqlite:///:memory: here instead would NOT work: each
+    :memory: connection is its own private database, so this fixture's
+    user wouldn't be visible to RuleMarketplaceService's own internal
+    DatabaseManager() calls.
+    """
     db_manager = DatabaseManager()
     # Tables are created automatically in __init__
     yield db_manager
-    # Cleanup after tests
-    with db_manager.get_session() as db:
-        db.query(RuleRating).delete()
-        db.query(CustomRule).delete()
-        db.query(User).delete()
-        db.commit()
 
 
 @pytest.fixture
@@ -33,12 +45,18 @@ def marketplace_service():
 @pytest.fixture
 def test_user(db_manager):
     """Create a test user"""
-    user_id = f"test_user_{uuid.uuid4().hex[:8]}"
+    # username/email carry the same uuid suffix as user_id: with the
+    # destructive per-test teardown removed (see db_manager fixture above),
+    # the isolated test DB persists across every test in this file, so a
+    # fixed username/email here would collide with UNIQUE constraints
+    # (src/core/database.py) once more than one test creates one.
+    suffix = uuid.uuid4().hex[:8]
+    user_id = f"test_user_{suffix}"
     with db_manager.get_session() as db:
         user = User(
             id=user_id,
-            username="testuser",
-            email="test@example.com",
+            username=f"testuser_{suffix}",
+            email=f"test_{suffix}@example.com",
             password_hash="hash",
             role="user"
         )
@@ -51,12 +69,13 @@ def test_user(db_manager):
 @pytest.fixture
 def test_user2(db_manager):
     """Create a second test user"""
-    user_id = f"test_user2_{uuid.uuid4().hex[:8]}"
+    suffix = uuid.uuid4().hex[:8]
+    user_id = f"test_user2_{suffix}"
     with db_manager.get_session() as db:
         user = User(
             id=user_id,
-            username="testuser2",
-            email="test2@example.com",
+            username=f"testuser2_{suffix}",
+            email=f"test2_{suffix}@example.com",
             password_hash="hash",
             role="user"
         )

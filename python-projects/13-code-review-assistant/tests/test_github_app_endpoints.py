@@ -18,12 +18,16 @@ class TestGitHubAppEndpoints:
         from server import app
         from fastapi.testclient import TestClient
 
-        # Clear database before tests
-        import os
-        db_path = 'data/database.db'
-        if os.path.exists(db_path):
-            os.remove(db_path)
-
+        # This used to unconditionally os.remove('data/database.db') here
+        # to "clear the database before tests" - a raw filesystem delete
+        # of the real, live application database file, bypassing
+        # SQLAlchemy/DatabaseManager entirely (so tests/conftest.py's
+        # isolation patch, which only intercepts DatabaseManager(), could
+        # never have caught it). Confirmed live: running this test file
+        # left data/database.db as a 0-byte file. No longer needed -
+        # tests/conftest.py's session-wide autouse fixture already gives
+        # every DatabaseManager() call (including server.py's own
+        # module-level singleton) an isolated, empty test database.
         return TestClient(app)
 
     @pytest.fixture(scope='class')
