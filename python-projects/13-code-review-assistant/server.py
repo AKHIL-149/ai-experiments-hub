@@ -2599,10 +2599,11 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
     if not user:
         return RedirectResponse(url="/login")
 
-    # Get recent analyses
-    recent_analyses = get_all_cached_analyses()[:5]
-
-    # Get repositories from database
+    # Get repositories and issues from the database, not the in-process
+    # analysis cache - that cache is only ever populated in whichever
+    # Celery worker process ran the analysis, never in this server
+    # process, so "Issues" here always showed 0 regardless of what had
+    # actually been analyzed.
     with db_manager.get_session() as db:
         # Get recent repositories for display
         repositories = db.query(Repository).filter(
@@ -2614,11 +2615,46 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
             Repository.user_id == user.id
         ).count()
 
+        # Recent unresolved issues across the user's own repositories/PRs
+        issue_rows = db.query(Issue, CodeFile.file_path).join(CodeFile).outerjoin(
+            PullRequest, CodeFile.pull_request_id == PullRequest.id
+        ).outerjoin(
+            Repository,
+            (Repository.id == CodeFile.repository_id) | (Repository.id == PullRequest.repository_id)
+        ).filter(
+            Repository.user_id == user.id,
+            Issue.resolved == False,
+            Issue.dismissed == False
+        ).order_by(Issue.created_at.desc()).limit(10).all()
+
+        recent_issues = [
+            {
+                'id': issue.id,
+                'severity': issue.severity.value,
+                'category': issue.category.value,
+                'title': issue.title,
+                'file_path': file_path,
+                'line_number': issue.line_number
+            }
+            for issue, file_path in issue_rows
+        ]
+
+        total_issues = db.query(Issue).join(CodeFile).outerjoin(
+            PullRequest, CodeFile.pull_request_id == PullRequest.id
+        ).outerjoin(
+            Repository,
+            (Repository.id == CodeFile.repository_id) | (Repository.id == PullRequest.repository_id)
+        ).filter(
+            Repository.user_id == user.id,
+            Issue.resolved == False,
+            Issue.dismissed == False
+        ).count()
+
     # Calculate stats
     stats = {
         'repositories': total_repositories,
         'pull_requests': 0,
-        'issues': sum(len(a.get('issues', [])) for a in get_all_cached_analyses()),
+        'issues': total_issues,
         'reviews': 0
     }
 
@@ -2628,7 +2664,7 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
         "stats": stats,
         "repositories": repositories,
         "pull_requests": [],
-        "issues": [issue for a in recent_analyses for issue in a.get('issues', [])][:10]
+        "issues": recent_issues
     })
 
 
@@ -4651,34 +4687,40 @@ async def get_issues_stats(
 
     Returns counts by severity, category, and file.
     """
-    analyses = get_all_cached_analyses()
+    # Read from the database, not the in-process analysis cache - that
+    # cache is only ever populated in whichever Celery worker process ran
+    # the analysis, never in this server process, so this endpoint always
+    # reported zero issues regardless of what analyses had actually run.
+    from src.core.database import Issue, CodeFile
 
     total_issues = 0
     by_severity = {}
     by_category = {}
     by_file = {}
+    files_seen = set()
 
-    for analysis in analyses:
-        issues = analysis.get('issues', [])
-        total_issues += len(issues)
+    with db_manager.get_session() as db:
+        rows = db.query(Issue, CodeFile.file_path).join(CodeFile).filter(
+            Issue.resolved == False,
+            Issue.dismissed == False
+        ).all()
 
-        for issue in issues:
-            # Count by severity
-            sev = issue.get('severity', 'unknown')
+        for issue, file_path in rows:
+            total_issues += 1
+            files_seen.add(file_path)
+
+            sev = issue.severity.value
             by_severity[sev] = by_severity.get(sev, 0) + 1
 
-            # Count by category
-            cat = issue.get('category', 'unknown')
+            cat = issue.category.value
             by_category[cat] = by_category.get(cat, 0) + 1
 
-            # Count by file
-            file = issue.get('file_path', 'unknown')
-            by_file[file] = by_file.get(file, 0) + 1
+            by_file[file_path] = by_file.get(file_path, 0) + 1
 
     return {
         "success": True,
         "total_issues": total_issues,
-        "total_files_analyzed": len(analyses),
+        "total_files_analyzed": len(files_seen),
         "by_severity": by_severity,
         "by_category": by_category,
         "by_file": by_file,
