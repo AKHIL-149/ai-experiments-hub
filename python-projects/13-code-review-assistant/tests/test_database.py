@@ -194,8 +194,17 @@ def test_create_pull_request(db_session):
 
 def test_create_code_file(db_session):
     """Test code file creation"""
+    # user.id/repo.id are SQLAlchemy column defaults applied at flush, not
+    # at construction - reading them before a commit means the FK columns
+    # below get written as None, tripping the NOT NULL constraints.
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -203,7 +212,7 @@ def test_create_code_file(db_session):
         source_branch='feat',
         target_branch='main'
     )
-    db_session.add_all([user, repo, pr])
+    db_session.add(pr)
     db_session.commit()
 
     code_file = CodeFile(
@@ -223,7 +232,13 @@ def test_create_code_file(db_session):
 def test_create_analysis_job(db_session):
     """Test analysis job creation"""
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -231,7 +246,7 @@ def test_create_analysis_job(db_session):
         source_branch='feat',
         target_branch='main'
     )
-    db_session.add_all([user, repo, pr])
+    db_session.add(pr)
     db_session.commit()
 
     job = AnalysisJob(
@@ -249,7 +264,13 @@ def test_create_analysis_job(db_session):
 def test_create_issue(db_session):
     """Test issue creation"""
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -257,12 +278,15 @@ def test_create_issue(db_session):
         source_branch='feat',
         target_branch='main'
     )
+    db_session.add(pr)
+    db_session.commit()
+
     code_file = CodeFile(
         pull_request_id=pr.id,
         file_path='test.py',
         language='python'
     )
-    db_session.add_all([user, repo, pr, code_file])
+    db_session.add(code_file)
     db_session.commit()
 
     issue = Issue(
@@ -286,7 +310,13 @@ def test_create_issue(db_session):
 def test_create_refactoring(db_session):
     """Test refactoring suggestion creation"""
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -294,7 +324,13 @@ def test_create_refactoring(db_session):
         source_branch='feat',
         target_branch='main'
     )
+    db_session.add(pr)
+    db_session.commit()
+
     code_file = CodeFile(pull_request_id=pr.id, file_path='test.py', language='python')
+    db_session.add(code_file)
+    db_session.commit()
+
     issue = Issue(
         code_file_id=code_file.id,
         category=IssueCategory.SMELL,
@@ -303,7 +339,7 @@ def test_create_refactoring(db_session):
         title='Long method',
         description='Method too long'
     )
-    db_session.add_all([user, repo, pr, code_file, issue])
+    db_session.add(issue)
     db_session.commit()
 
     refactoring = Refactoring(
@@ -327,7 +363,13 @@ def test_create_refactoring(db_session):
 def test_create_review(db_session):
     """Test review creation"""
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -335,7 +377,7 @@ def test_create_review(db_session):
         source_branch='feat',
         target_branch='main'
     )
-    db_session.add_all([user, repo, pr])
+    db_session.add(pr)
     db_session.commit()
 
     review = Review(
@@ -357,7 +399,13 @@ def test_create_review(db_session):
 def test_create_review_comment(db_session):
     """Test review comment creation"""
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -365,12 +413,15 @@ def test_create_review_comment(db_session):
         source_branch='feat',
         target_branch='main'
     )
+    db_session.add(pr)
+    db_session.commit()
+
     review = Review(
         pull_request_id=pr.id,
         reviewer_id=user.id,
         overall_score=80
     )
-    db_session.add_all([user, repo, pr, review])
+    db_session.add(review)
     db_session.commit()
 
     comment = ReviewComment(
@@ -391,7 +442,13 @@ def test_create_review_comment(db_session):
 def test_cascade_delete(db_session):
     """Test cascade deletion of related records"""
     user = User(username='testuser', email='test@example.com', password_hash='hash')
+    db_session.add(user)
+    db_session.commit()
+
     repo = Repository(user_id=user.id, name='repo', github_url='url')
+    db_session.add(repo)
+    db_session.commit()
+
     pr = PullRequest(
         repository_id=repo.id,
         pr_number=1,
@@ -399,8 +456,11 @@ def test_cascade_delete(db_session):
         source_branch='feat',
         target_branch='main'
     )
+    db_session.add(pr)
+    db_session.commit()
+
     code_file = CodeFile(pull_request_id=pr.id, file_path='test.py', language='python')
-    db_session.add_all([user, repo, pr, code_file])
+    db_session.add(code_file)
     db_session.commit()
 
     # Delete PR should cascade to code files

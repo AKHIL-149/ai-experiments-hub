@@ -1423,6 +1423,11 @@ class DatabaseManager:
             bind=self.engine
         )
 
+    def init_db(self):
+        """Create all tables. Already run once in __init__ - idempotent,
+        kept for tests/callers that expect an explicit init step."""
+        Base.metadata.create_all(self.engine)
+
     def get_session(self) -> Session:
         """
         Get a new database session.
