@@ -3,6 +3,7 @@ Tests for GitHub App Configuration Endpoints
 """
 
 import pytest
+import uuid
 from unittest.mock import Mock, patch, MagicMock
 import json
 
@@ -36,15 +37,24 @@ class TestGitHubAppEndpoints:
         from src.core.database import DatabaseManager, User, UserRole
         import bcrypt
 
+        # Unique suffix: 'admin_test'/'admin@test.com' fixed literals
+        # collide with identically-named accounts other test files create
+        # in the same full-suite run, sharing the same isolated test DB
+        # (see tests/conftest.py) - either an IntegrityError on insert, or
+        # a silent login failure if another file's account already owns
+        # the name with a different password.
+        suffix = uuid.uuid4().hex[:8]
+        username = f'admin_test_{suffix}'
+        password = 'admin123'
+
         # Create admin user directly in database
         db_manager = DatabaseManager()
 
         with db_manager.get_session() as db:
-            # Create admin user
-            hashed_password = bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt())
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
             admin_user = User(
-                username='admin_test',
-                email='admin@test.com',
+                username=username,
+                email=f'admin_{suffix}@test.com',
                 password_hash=hashed_password.decode('utf-8'),
                 role=UserRole.ADMIN
             )
@@ -53,8 +63,8 @@ class TestGitHubAppEndpoints:
 
         # Login
         response = client.post('/api/auth/login', json={
-            'username': 'admin_test',
-            'password': 'admin123'
+            'username': username,
+            'password': password
         })
 
         return response.cookies.get('session_token')
@@ -62,17 +72,21 @@ class TestGitHubAppEndpoints:
     @pytest.fixture
     def user_session(self, client):
         """Create regular user session"""
-        # Register user
+        # Same collision risk as admin_session above - unique suffix per
+        # fixture call.
+        suffix = uuid.uuid4().hex[:8]
+        username = f'testuser_{suffix}'
+        password = 'password123'
+
         response = client.post('/api/auth/register', json={
-            'username': 'testuser',
-            'email': 'user@test.com',
-            'password': 'password123'
+            'username': username,
+            'email': f'user_{suffix}@test.com',
+            'password': password
         })
 
-        # Login
         response = client.post('/api/auth/login', json={
-            'username': 'testuser',
-            'password': 'password123'
+            'username': username,
+            'password': password
         })
 
         return response.cookies.get('session_token')
@@ -291,6 +305,13 @@ class TestGitHubAppEndpoints:
 
     def test_github_app_page_requires_auth(self, client):
         """Test that GitHub App page requires authentication"""
+        # `client` is class-scoped and shares one cookie jar across every
+        # test in this class - an earlier test's login leaves a valid
+        # session_token cookie sitting on it, so without clearing first
+        # this "requires auth" check silently exercises the *authenticated*
+        # path instead (order-dependent: passes/fails based on which
+        # sibling tests already ran).
+        client.cookies.clear()
         response = client.get('/settings/github-app')
 
         # Should redirect to login
@@ -322,15 +343,19 @@ class TestGitHubAppIntegration:
     @pytest.fixture
     def admin_session(self, client):
         """Create admin session"""
+        # Unique suffix - see TestGitHubAppEndpoints.admin_session above
+        # for why a fixed literal collides across files sharing the
+        # session-wide isolated test DB.
+        username = f'admin_integration_{uuid.uuid4().hex[:8]}'
         response = client.post('/api/auth/register', json={
-            'username': 'admin_integration',
-            'email': 'admin_integration@test.com',
+            'username': username,
+            'email': f'{username}@test.com',
             'password': 'admin123',
             'role': 'admin'
         })
 
         response = client.post('/api/auth/login', json={
-            'username': 'admin_integration',
+            'username': username,
             'password': 'admin123'
         })
 

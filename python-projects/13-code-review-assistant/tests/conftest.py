@@ -72,6 +72,7 @@ import os
 import tempfile
 
 from src.core.database import DatabaseManager
+from src.middleware.rate_limiter import RateLimitMiddleware
 
 # Matches .env's DATABASE_URL and DatabaseManager's own no-arg default
 # (src/core/database.py). Any call that resolves to this - whether by
@@ -95,9 +96,47 @@ def _patched_init(self, db_url=None):
 
 DatabaseManager.__init__ = _patched_init
 
+# Fourth layer, found chasing what looked like username-collision
+# failures across ~15 test files (test_notification_ui.py,
+# test_rule_builder_endpoints.py, test_slack/email/discord_integration.py,
+# etc.): the actual cause was RateLimitMiddleware (src/middleware/
+# rate_limiter.py), which is real and Redis-backed, not mocked out
+# anywhere. /api/auth/register allows 5 requests per 5 minutes and
+# /api/auth/login allows 5 per minute, keyed by client IP - and
+# starlette's TestClient always presents the same fake client host, so
+# every test file's register/login calls in a single `pytest tests/`
+# run share ONE budget in real Redis (confirmed live: `redis-cli keys
+# "ratelimit:*"` showed ratelimit:ip:testclient:/api/auth/register
+# sitting there after a run). Once the first ~5 tests' worth of
+# register/login calls exhaust it, every later test in the session gets
+# a real 429, its login never returns a valid session_token, and it
+# silently lands on the login page instead of the page it meant to
+# test - which reads exactly like a fixture/username bug until you
+# check the actual response body.
+#
+# Fix: patch RateLimitMiddleware.dispatch (the HTTP-level enforcement
+# point) to a no-op passthrough, for the whole test session. Deliberately
+# NOT patching RateLimiter.is_allowed itself - tests/test_production_
+# hardening.py's TestRateLimiter class tests that method directly
+# (test_rate_limit_exceeded, test_rate_limit_memory_fallback expect it to
+# actually return False past the limit) - patching the class would make
+# those assert real logic against a stub that always says yes. Patching
+# the middleware instead disables enforcement for every HTTP request
+# made through TestClient(app) without touching RateLimiter at all, so
+# its own unit tests keep exercising the real implementation.
+_real_dispatch = RateLimitMiddleware.dispatch
+
+
+async def _passthrough_dispatch(self, request, call_next):
+    return await call_next(request)
+
+
+RateLimitMiddleware.dispatch = _passthrough_dispatch
+
 
 def pytest_sessionfinish(session, exitstatus):
     DatabaseManager.__init__ = _real_init
+    RateLimitMiddleware.dispatch = _real_dispatch
     try:
         os.remove(_test_db_path)
     except OSError:
