@@ -3999,32 +3999,6 @@ async def get_notifications(
     return JSONResponse({'notifications': notifications, 'count': len(notifications)})
 
 
-@app.get("/api/notifications/{notification_id}")
-async def get_notification(notification_id: str, user = Depends(get_current_user)):
-    """Get a specific notification by ID"""
-    from src.services.notification_service import notification_service
-
-    notification = notification_service.get_notification(notification_id)
-
-    if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    return JSONResponse(notification)
-
-
-@app.post("/api/notifications/{notification_id}/read")
-async def mark_notification_read(notification_id: str, user = Depends(get_current_user)):
-    """Mark a notification as read"""
-    from src.services.notification_service import notification_service
-
-    success = notification_service.mark_as_read(notification_id)
-
-    if not success:
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    return JSONResponse({'success': True, 'message': 'Notification marked as read'})
-
-
 @app.post("/api/notifications/read-all")
 async def mark_all_notifications_read(
     user_id: Optional[str] = None,
@@ -4036,32 +4010,6 @@ async def mark_all_notifications_read(
     count = notification_service.mark_all_as_read(user_id=user_id)
 
     return JSONResponse({'success': True, 'count': count, 'message': f'Marked {count} notifications as read'})
-
-
-@app.post("/api/notifications/{notification_id}/dismiss")
-async def dismiss_notification(notification_id: str, user = Depends(get_current_user)):
-    """Dismiss a notification"""
-    from src.services.notification_service import notification_service
-
-    success = notification_service.dismiss_notification(notification_id)
-
-    if not success:
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    return JSONResponse({'success': True, 'message': 'Notification dismissed'})
-
-
-@app.delete("/api/notifications/{notification_id}")
-async def delete_notification(notification_id: str, user = Depends(get_current_user)):
-    """Permanently delete a notification"""
-    from src.services.notification_service import notification_service
-
-    success = notification_service.delete_notification(notification_id)
-
-    if not success:
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    return JSONResponse({'success': True, 'message': 'Notification deleted'})
 
 
 @app.delete("/api/notifications/old")
@@ -4105,6 +4053,66 @@ async def get_notification_statistics(user_id: Optional[str] = None, user = Depe
     stats = notification_service.get_statistics(user_id=user_id)
 
     return JSONResponse(stats)
+
+
+# The routes above with literal path segments (read-all, old, preferences,
+# statistics) must be registered before the /{notification_id}... routes
+# below. Starlette matches routes in registration order, so a dynamic
+# path parameter registered first greedily matches any sub-path,
+# including these literal ones - e.g. GET /api/notifications/preferences
+# was being swallowed by GET /api/notifications/{notification_id}
+# (treating "preferences" as the id) and always 404ing as "not found",
+# making three endpoints entirely unreachable.
+@app.get("/api/notifications/{notification_id}")
+async def get_notification(notification_id: str, user = Depends(get_current_user)):
+    """Get a specific notification by ID"""
+    from src.services.notification_service import notification_service
+
+    notification = notification_service.get_notification(notification_id)
+
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse(notification)
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user = Depends(get_current_user)):
+    """Mark a notification as read"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.mark_as_read(notification_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse({'success': True, 'message': 'Notification marked as read'})
+
+
+@app.post("/api/notifications/{notification_id}/dismiss")
+async def dismiss_notification(notification_id: str, user = Depends(get_current_user)):
+    """Dismiss a notification"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.dismiss_notification(notification_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse({'success': True, 'message': 'Notification dismissed'})
+
+
+@app.delete("/api/notifications/{notification_id}")
+async def delete_notification(notification_id: str, user = Depends(get_current_user)):
+    """Permanently delete a notification"""
+    from src.services.notification_service import notification_service
+
+    success = notification_service.delete_notification(notification_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return JSONResponse({'success': True, 'message': 'Notification deleted'})
 
 
 # ============================================================================
