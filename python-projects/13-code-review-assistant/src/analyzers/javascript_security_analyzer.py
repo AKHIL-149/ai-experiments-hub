@@ -107,6 +107,16 @@ class JavaScriptSecurityAnalyzer(BaseAnalyzer):
         issues.extend(self._check_xss_sinks_ast(tree, source_code, file_path))
         issues.extend(self._check_prototype_pollution_ast(tree, source_code, file_path))
 
+        # These two are regex-over-raw-source checks (unsafe regex
+        # literals, hardcoded secret strings), not AST-dependent - they
+        # were only ever wired into _analyze_with_regex (the fallback
+        # used when esprima is missing or AST parsing fails), so
+        # JS-SEC005/JS-SEC006 silently never ran in the normal case
+        # (esprima installed, parse succeeds), regardless of what the
+        # code actually contained.
+        issues.extend(self._check_unsafe_regex(source_code, file_path))
+        issues.extend(self._check_hardcoded_secrets(source_code, file_path))
+
         return issues
 
     def _analyze_with_regex(self, source_code: str, file_path: str) -> List[CodeIssue]:
@@ -148,6 +158,24 @@ class JavaScriptSecurityAnalyzer(BaseAnalyzer):
 
                 # Function constructor (similar to eval)
                 elif isinstance(node.callee, nodes.Identifier) and node.callee.name == 'Function':
+                    line_num = node.loc.start.line if hasattr(node, 'loc') else None
+                    issues.append(self.create_issue(
+                        rule_id='JS-SEC001',
+                        severity=IssueSeverity.CRITICAL,
+                        title='Use of Function constructor detected',
+                        description='Function constructor with string arguments acts like eval() and poses similar security risks.',
+                        file_path=file_path,
+                        line_number=line_num,
+                        code_snippet=self.extract_code_snippet(source_code, line_num) if line_num else None,
+                        suggestion='Use regular function declarations instead of Function constructor.'
+                    ))
+
+            # `new Function(...)` is a NewExpression, not a CallExpression
+            # - the far more common way this constructor is actually
+            # used (`new Function('a','b','return a+b')`), and it was
+            # entirely unmatched by the CallExpression check above.
+            elif isinstance(node, nodes.NewExpression):
+                if isinstance(node.callee, nodes.Identifier) and node.callee.name == 'Function':
                     line_num = node.loc.start.line if hasattr(node, 'loc') else None
                     issues.append(self.create_issue(
                         rule_id='JS-SEC001',

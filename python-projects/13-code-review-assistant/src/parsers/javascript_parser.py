@@ -129,22 +129,30 @@ class JavaScriptParser(BaseParser):
         classes = []
         global_variables = []
 
+        # esprima gives `async function foo() {}` its own node type
+        # (AsyncFunctionDeclaration), distinct from plain
+        # FunctionDeclaration - matching only the latter silently
+        # dropped every async function from the parsed output.
+        function_decl_types = (nodes.FunctionDeclaration, nodes.AsyncFunctionDeclaration)
+
         for node in tree.body:
-            if isinstance(node, nodes.FunctionDeclaration):
+            if isinstance(node, function_decl_types):
                 functions.append(self._parse_function(node))
             elif isinstance(node, nodes.ClassDeclaration):
                 classes.append(self._parse_class(node))
             elif isinstance(node, nodes.VariableDeclaration):
-                global_variables.extend(self._parse_variable_declaration(node))
+                var_functions, var_globals = self._parse_variable_declaration(node)
+                functions.extend(var_functions)
+                global_variables.extend(var_globals)
             elif isinstance(node, nodes.ExportNamedDeclaration):
                 # Handle exported functions/classes
-                if isinstance(node.declaration, nodes.FunctionDeclaration):
+                if isinstance(node.declaration, function_decl_types):
                     functions.append(self._parse_function(node.declaration))
                 elif isinstance(node.declaration, nodes.ClassDeclaration):
                     classes.append(self._parse_class(node.declaration))
             elif isinstance(node, nodes.ExportDefaultDeclaration):
                 # Handle default exports
-                if isinstance(node.declaration, nodes.FunctionDeclaration):
+                if isinstance(node.declaration, function_decl_types):
                     functions.append(self._parse_function(node.declaration))
                 elif isinstance(node.declaration, nodes.ClassDeclaration):
                     classes.append(self._parse_class(node.declaration))
@@ -183,9 +191,18 @@ class JavaScriptParser(BaseParser):
 
         return imports
 
-    def _parse_function(self, node) -> FunctionInfo:
-        """Parse a function declaration or expression"""
-        name = node.id.name if hasattr(node, 'id') and node.id else '<anonymous>'
+    def _parse_function(self, node, name_override: Optional[str] = None) -> FunctionInfo:
+        """Parse a function declaration or expression.
+
+        name_override is used for arrow/function expressions assigned to
+        a variable (`const foo = () => {}`) - the function node itself
+        has no .id (it's anonymous), the name lives on the surrounding
+        variable declarator instead.
+        """
+        if name_override:
+            name = name_override
+        else:
+            name = node.id.name if hasattr(node, 'id') and node.id else '<anonymous>'
         line_number = node.loc.start.line if hasattr(node, 'loc') else 0
 
         # Extract parameters
@@ -199,12 +216,23 @@ class JavaScriptParser(BaseParser):
                     default_value=None
                 ))
 
-        # Check if async
-        is_async = getattr(node, 'async', False)
+        # Check if async. The installed esprima exposes this as
+        # `isAsync` (bool), not `async` - `async` is a reserved keyword
+        # in current Python, so esprima's node attribute is named
+        # differently; `getattr(node, 'async', False)` always silently
+        # returned the default. Invisible before this file's other fix,
+        # since async functions never reached this code at all
+        # previously (dropped by the FunctionDeclaration-only isinstance
+        # check).
+        is_async = getattr(node, 'isAsync', False)
 
-        # Check for decorators (experimental JavaScript feature)
+        # Check for decorators (experimental JavaScript feature).
+        # esprima sets .decorators = None (not absent, not []) on some
+        # node types - e.g. AsyncFunctionDeclaration - so `hasattr`
+        # alone isn't enough; iterating None crashed parsing of any
+        # async function, silently falling back to the regex parser.
         decorators = []
-        if hasattr(node, 'decorators'):
+        if getattr(node, 'decorators', None):
             for decorator in node.decorators:
                 if hasattr(decorator, 'expression'):
                     decorators.append(self._node_to_string(decorator.expression))
@@ -249,9 +277,10 @@ class JavaScriptParser(BaseParser):
                         'default': None
                     })
 
-        # Check for decorators
+        # Check for decorators - see _parse_function's note above on why
+        # getattr(..., None) is used instead of hasattr.
         decorators = []
-        if hasattr(node, 'decorators'):
+        if getattr(node, 'decorators', None):
             for decorator in node.decorators:
                 if hasattr(decorator, 'expression'):
                     decorators.append(self._node_to_string(decorator.expression))
@@ -280,7 +309,8 @@ class JavaScriptParser(BaseParser):
 
         # Check method type
         is_static = node.static if hasattr(node, 'static') else False
-        is_async = getattr(node.value, 'async', False) if hasattr(node, 'value') else False
+        # See _parse_function's note above - esprima uses isAsync, not async.
+        is_async = getattr(node.value, 'isAsync', False) if hasattr(node, 'value') else False
 
         return FunctionInfo(
             name=name,
@@ -291,20 +321,43 @@ class JavaScriptParser(BaseParser):
             is_static=is_static
         )
 
-    def _parse_variable_declaration(self, node) -> List[Dict[str, Any]]:
-        """Parse variable declarations"""
+    def _parse_variable_declaration(self, node):
+        """Parse variable declarations.
+
+        Returns (functions, variables): `const foo = () => {}` /
+        `const bar = function() {}` are function-valued declarators, not
+        plain variables - previously every arrow/function-expression
+        assigned to a variable was reported only as a generic global
+        variable with no function metadata (params, async-ness, etc.),
+        so nothing ever showed up in the parsed module's `functions`.
+        """
+        function_value_types = (
+            nodes.ArrowFunctionExpression,
+            nodes.AsyncArrowFunctionExpression,
+            nodes.FunctionExpression,
+            nodes.AsyncFunctionExpression,
+        )
+
         variables = []
+        functions = []
 
         for declarator in node.declarations:
-            if hasattr(declarator, 'id'):
-                var_name = declarator.id.name if hasattr(declarator.id, 'name') else str(declarator.id)
+            if not hasattr(declarator, 'id'):
+                continue
+
+            var_name = declarator.id.name if hasattr(declarator.id, 'name') else str(declarator.id)
+            init = getattr(declarator, 'init', None)
+
+            if init is not None and isinstance(init, function_value_types):
+                functions.append(self._parse_function(init, name_override=var_name))
+            else:
                 variables.append({
                     'name': var_name,
                     'type': node.kind if hasattr(node, 'kind') else 'var',  # const, let, var
                     'line_number': node.loc.start.line if hasattr(node, 'loc') else 0
                 })
 
-        return variables
+        return functions, variables
 
     def _get_param_name(self, param) -> str:
         """Extract parameter name from various param node types"""

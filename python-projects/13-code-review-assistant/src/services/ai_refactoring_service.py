@@ -82,12 +82,12 @@ Code:
 ```
 
 Issues to fix:
-{json.dumps([{{
+{json.dumps([{
     'severity': i.get('severity'),
     'category': i.get('category'),
     'title': i.get('title'),
     'line': i.get('line_number')
-}} for i in sorted_issues[:10]], indent=2)}
+} for i in sorted_issues[:10]], indent=2)}
 
 Generate a refactoring plan with up to {max_steps} steps. For each step:
 1. Describe what to change and why
@@ -219,7 +219,7 @@ Format as JSON:
 {{
     "fixed_code": "...",
     "explanation": "...",
-    {"test_code": "..."," if generate_test else ""}
+    {('"test_code": "...",' if generate_test else '')}
     "confidence": 0.95
 }}"""
 

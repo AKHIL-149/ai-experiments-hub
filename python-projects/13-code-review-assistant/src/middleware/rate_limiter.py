@@ -29,7 +29,14 @@ class RateLimiter:
             )
             self.redis_client.ping()
             self.enabled = True
-        except (redis.ConnectionError, redis.TimeoutError) as e:
+        except Exception as e:
+            # Was `except (redis.ConnectionError, redis.TimeoutError)` -
+            # too narrow: DNS failures, auth errors, and other
+            # redis-py exceptions weren't caught, so any Redis outage
+            # other than a plain connection/timeout error crashed
+            # RateLimiter.__init__ uncaught, taking the whole app down
+            # with it instead of degrading to the documented in-memory
+            # fallback.
             print(f"Warning: Redis connection failed for rate limiter: {e}")
             print("Rate limiting will use in-memory fallback (not recommended for production)")
             self.redis_client = None

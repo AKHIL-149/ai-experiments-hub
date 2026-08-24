@@ -218,12 +218,23 @@ class TestHistoricalAnalyticsService:
         review1.reviewer_id = 'user_123'
 
         mock_db = Mock()
+        # Order must match the actual per-PR query sequence in
+        # get_developer_contribution_analysis (code_files, then issues
+        # per code file, then reviews - all *inside* the per-PR loop, not
+        # grouped by query type): PRs; pr1's code_files, pr1's issues
+        # (one call per code file - pr1 has 1), pr1's reviews; then pr2's
+        # code_files (empty - no issues call follows since there's no
+        # code file to iterate), pr2's reviews. A mismatched order here
+        # silently fed the wrong mock into the wrong query, and running
+        # out of values a call early raised AttributeError on whatever
+        # mock got reused for the final call.
         mock_db.query().filter().all.side_effect = [
             [pr1, pr2],  # PRs
             [cf1],       # Code files for pr1
-            [],          # Code files for pr2
             [issue1],    # Issues for cf1
-            [review1]    # Reviews for pr1
+            [review1],   # Reviews for pr1
+            [],          # Code files for pr2
+            [],          # Reviews for pr2
         ]
 
         service.db_manager.get_session().__enter__ = Mock(return_value=mock_db)
@@ -391,8 +402,13 @@ class TestHistoricalAnalyticsService:
         buckets = service._create_time_buckets(start, end, 'monthly')
 
         assert len(buckets) == 3
+        # Real calendar months, not a fixed 30-day delta (January is 31
+        # days) - <= 30 days here is mathematically incompatible with
+        # "exactly 3 buckets covering a 91-day range" for any
+        # implementation, calendar-correct or not.
         for bucket_start, bucket_end, label in buckets:
-            assert bucket_end - bucket_start <= timedelta(days=30)
+            assert bucket_end - bucket_start <= timedelta(days=31)
+        assert [label for _, _, label in buckets] == ['2024-01', '2024-02', '2024-03']
 
 
 if __name__ == '__main__':

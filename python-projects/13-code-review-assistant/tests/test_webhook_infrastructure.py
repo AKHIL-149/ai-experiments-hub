@@ -27,11 +27,17 @@ class TestGitHubApp:
         assert app.app_id == '12345'
         assert app.private_key == 'test-key'
 
-    def test_is_configured(self):
+    def test_is_configured(self, monkeypatch):
         """Test configuration check"""
         app = GitHubApp(app_id='12345', private_key='test-key')
         assert app.is_configured() is True
 
+        # GitHubApp.__init__ does `app_id or os.getenv('GITHUB_APP_ID')`
+        # (falls back to env vars by design), and .env sets placeholder
+        # values for both - passing None here isn't enough on its own to
+        # get an unconfigured instance, the env vars need clearing too.
+        monkeypatch.delenv('GITHUB_APP_ID', raising=False)
+        monkeypatch.delenv('GITHUB_PRIVATE_KEY', raising=False)
         app_unconfigured = GitHubApp(app_id=None, private_key=None)
         assert app_unconfigured.is_configured() is False
 
@@ -149,8 +155,13 @@ class TestWebhookHandler:
 
         assert handler.verify_signature(payload, signature) is False
 
-    def test_verify_signature_no_secret(self):
+    def test_verify_signature_no_secret(self, monkeypatch):
         """Test signature verification when no secret configured"""
+        # WebhookHandler.__init__ does `secret or os.getenv(
+        # 'GITHUB_WEBHOOK_SECRET', '')`, and .env sets a placeholder
+        # value - secret='' alone still resolves truthy via the env
+        # fallback, so this needs the env var cleared too.
+        monkeypatch.delenv('GITHUB_WEBHOOK_SECRET', raising=False)
         handler = WebhookHandler(secret='')
         payload = b'{"test": "data"}'
         signature = 'sha256=anything'

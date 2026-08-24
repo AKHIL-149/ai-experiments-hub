@@ -28,7 +28,13 @@ class CacheManager:
             # Test connection
             self.redis_client.ping()
             self.enabled = True
-        except (redis.ConnectionError, redis.TimeoutError) as e:
+        except Exception as e:
+            # Was `except (redis.ConnectionError, redis.TimeoutError)` -
+            # too narrow, same issue as RateLimiter.__init__
+            # (src/middleware/rate_limiter.py): any other redis-py
+            # exception (DNS failure, auth error, etc.) crashed
+            # CacheManager.__init__ uncaught instead of degrading to
+            # disabled/no-cache as documented below.
             print(f"Warning: Redis connection failed: {e}")
             print("Cache will be disabled. Install and start Redis for better performance.")
             self.redis_client = None

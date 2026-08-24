@@ -307,7 +307,9 @@ def long_function(a, b, c, d, e, f):
         assert 'warnings' in result
         assert 'alternatives' in result
         assert result['confidence'] == 0.9
-        assert 'sum()' in result['code']
+        # Mocked response returns sum(item.price for item in items) - a
+        # generator expression, not a literal empty-paren call.
+        assert 'sum(' in result['code']
 
     def test_ai_pair_programming_no_context(self, service):
         """Test AI pair programming without context"""

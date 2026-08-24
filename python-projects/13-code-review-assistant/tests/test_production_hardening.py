@@ -147,12 +147,18 @@ class TestStructuredLogger:
 
     def test_mask_sensitive_string_github_token(self):
         """Test masking GitHub tokens in strings"""
-        text = "Token: ghp_1234567890123456789012345678901234"
+        # Real GitHub PATs are ghp_ + 36 chars, matching
+        # StructuredLogger.SENSITIVE_PATTERNS' r'ghp_[a-zA-Z0-9]{36}'
+        # (logging_middleware.py) - this fixture was 2 chars short, so
+        # the regex never matched and nothing got masked.
+        token = "ghp_" + "1234567890" * 3 + "123456"
+        assert len(token) == 40  # 'ghp_' + 36
+        text = f"Token: {token}"
 
         masked = StructuredLogger.mask_sensitive_data(text)
 
         assert 'ghp_[REDACTED]' in masked
-        assert 'ghp_1234567890123456789012345678901234' not in masked
+        assert token not in masked
 
 
 class TestErrorResponse:

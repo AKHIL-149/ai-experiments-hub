@@ -284,7 +284,7 @@ class HistoricalAnalyticsService:
 
                 # Count files in PR
                 code_files = db.query(CodeFile).filter(
-                    CodeFile.pr_id == pr.id
+                    CodeFile.pull_request_id == pr.id
                 ).all()
                 author_stats[author]['files_modified'] += len(code_files)
 
@@ -301,7 +301,7 @@ class HistoricalAnalyticsService:
 
                 # Get reviews for this PR
                 reviews = db.query(Review).filter(
-                    Review.pr_id == pr.id
+                    Review.pull_request_id == pr.id
                 ).all()
 
                 for review in reviews:
@@ -490,12 +490,29 @@ class HistoricalAnalyticsService:
         """Create time buckets for trend analysis"""
         buckets = []
 
+        if granularity == 'monthly':
+            # A fixed 30-day delta drifts against real calendar months
+            # (28-31 days each) - a 3 calendar-month range like
+            # 2024-01-01 to 2024-04-01 (91 days, leap year) produced 4
+            # buckets instead of 3, with the last one mislabeled by the
+            # month it started in rather than the month it actually
+            # covered. Advance by real calendar months instead.
+            current = start_date
+            while current < end_date:
+                if current.month == 12:
+                    next_month = current.replace(year=current.year + 1, month=1)
+                else:
+                    next_month = current.replace(month=current.month + 1)
+                bucket_end = min(next_month, end_date)
+                label = current.strftime('%Y-%m')
+                buckets.append((current, bucket_end, label))
+                current = bucket_end
+            return buckets
+
         if granularity == 'daily':
             delta = timedelta(days=1)
         elif granularity == 'weekly':
             delta = timedelta(weeks=1)
-        elif granularity == 'monthly':
-            delta = timedelta(days=30)
         else:
             delta = timedelta(days=1)
 

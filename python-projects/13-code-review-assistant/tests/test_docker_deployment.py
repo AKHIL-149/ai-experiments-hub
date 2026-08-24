@@ -65,7 +65,17 @@ class TestDockerfile:
         content = dockerfile_path.read_text()
 
         assert "HEALTHCHECK" in content, "Missing health check"
-        assert "/api/health" in content, "Health check endpoint not configured"
+
+        # The Dockerfile delegates to healthcheck.sh rather than
+        # inlining curl/an endpoint path directly - "/api/health" was
+        # never going to appear literally in the Dockerfile itself, and
+        # /api/health isn't even the endpoint used: healthcheck.sh
+        # defaults to /health (server.py's real, working health route).
+        assert "healthcheck.sh" in content, "Dockerfile doesn't reference the healthcheck script"
+        healthcheck_script = PROJECT_ROOT / "healthcheck.sh"
+        assert healthcheck_script.exists(), "healthcheck.sh referenced by Dockerfile doesn't exist"
+        script_content = healthcheck_script.read_text()
+        assert "/health" in script_content, "Healthcheck script doesn't target a health endpoint"
 
     def test_dockerfile_exposes_port(self):
         """Test Dockerfile exposes correct port"""

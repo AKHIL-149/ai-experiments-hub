@@ -351,6 +351,17 @@ def test_global_notification_service_instance():
     assert notification_service is not None
     assert isinstance(notification_service, NotificationService)
 
+    # notification_service is a process-wide singleton - some other test
+    # in the suite may have disabled NotificationType.INFO via
+    # update_preferences() before this one runs, and that mutation
+    # persists for the rest of the session since it's the same object.
+    # create_notification() silently returns None for a disabled type
+    # (see NotificationService.create_notification), so re-enable it
+    # here rather than assume default state.
+    notification_service.update_preferences({
+        NotificationType.INFO: {'enabled': True}
+    })
+
     # Can create notifications
     notification = notification_service.create_notification(
         NotificationType.INFO,

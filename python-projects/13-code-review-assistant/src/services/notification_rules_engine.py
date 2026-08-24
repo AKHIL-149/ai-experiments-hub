@@ -151,6 +151,16 @@ class NotificationRulesEngine:
         if not quiet_hours:
             return False
 
+        # A config with neither key present isn't a partial config with
+        # defaultable fields (like omitting 'days' to mean "every day")
+        # - it's not a quiet-hours config at all. Without this check,
+        # e.g. {'invalid': 'config'} silently fell through to the
+        # hardcoded '22:00'/'08:00' defaults below, making the result
+        # depend on the wall-clock time the check happened to run at
+        # instead of failing safe.
+        if 'start' not in quiet_hours and 'end' not in quiet_hours:
+            return False
+
         try:
             # Get timezone
             tz_str = quiet_hours.get('timezone', 'UTC')

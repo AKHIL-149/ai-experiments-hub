@@ -406,7 +406,20 @@ class ScheduleService:
         # Calculate duration if completed
         if status in ['completed', 'failed', 'cancelled'] and run.started_at:
             run.completed_at = datetime.now(timezone.utc)
-            run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
+            # started_at is written as tz-aware (datetime.now(timezone.utc)
+            # in schedule_worker.py), but SQLite's DateTime column has no
+            # native timezone support - SQLAlchemy strips tzinfo on
+            # round-trip, so a value re-fetched after a commit (session
+            # identity-map expiry) comes back naive while completed_at,
+            # just created here, is still aware. Normalize both to naive
+            # UTC before subtracting rather than assume either state.
+            started_at = run.started_at
+            completed_at = run.completed_at
+            if started_at.tzinfo is not None:
+                started_at = started_at.replace(tzinfo=None)
+            if completed_at.tzinfo is not None:
+                completed_at = completed_at.replace(tzinfo=None)
+            run.duration_seconds = (completed_at - started_at).total_seconds()
 
         # Update schedule's last run time
         if status in ['completed', 'failed']:

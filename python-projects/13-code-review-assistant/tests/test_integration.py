@@ -277,7 +277,10 @@ def test_clean_code_workflow(sample_clean_code):
 
     # Health score should be high
     assert report['health_score']['overall_score'] >= 85
-    assert report['health_score']['grade'] in ['A', 'B']
+    # 'A+' is a real, better grade than 'A' (see analyzer_registry.py's
+    # grading scale) - genuinely clean code earning it is correct
+    # behavior, not a bug.
+    assert report['health_score']['grade'] in ['A+', 'A', 'B']
 
 
 def test_issue_categorization(sample_vulnerable_code):
