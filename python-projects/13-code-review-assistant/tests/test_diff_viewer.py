@@ -5,9 +5,10 @@ from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -108,7 +109,7 @@ def test_diff_viewer_demo_page_accessible():
     client = TestClient(app)
 
     # Note: This may require authentication, we're just checking the route exists
-    response = client.get("/demo/diff-viewer", allow_redirects=False)
+    response = client.get("/demo/diff-viewer", follow_redirects=False)
 
     # Either it loads (200) or redirects to login (302/307), but shouldn't 404
     assert response.status_code != 404, "Diff viewer demo route should exist (may require adding to server.py)"

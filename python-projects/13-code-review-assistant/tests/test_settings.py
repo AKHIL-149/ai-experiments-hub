@@ -3,11 +3,13 @@ import pytest
 import sys
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user, override_current_user_optional
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -254,9 +256,9 @@ def test_settings_page_route_exists():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user_optional', return_value=mock_user):
+    with override_current_user_optional(mock_user):
         client = TestClient(app)
-        response = client.get("/settings", allow_redirects=False)
+        response = client.get("/settings", follow_redirects=False)
 
         # Should return 200 (page loads) or redirect to login
         assert response.status_code in [200, 302, 307], "Settings page route should exist"
@@ -270,7 +272,7 @@ def test_settings_api_endpoints_exist():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
 
         # Test GET endpoint

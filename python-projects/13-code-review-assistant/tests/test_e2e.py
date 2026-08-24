@@ -5,11 +5,13 @@ import tempfile
 import os
 from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -64,14 +66,17 @@ class TestAuthenticationFlow:
 
         response = client.post("/api/auth/login", json=login_data)
         assert response.status_code == 200
-        login_result = response.json()
-        assert 'session_token' in login_result
+        # server.py sets session_token as a cookie (response.set_cookie),
+        # not in the JSON body - see /api/auth/login in server.py.
+        session_token = response.cookies.get('session_token')
+        assert session_token is not None
 
         # 3. Access protected endpoint with session
-        cookies = {'session_token': login_result['session_token']}
+        cookies = {'session_token': session_token}
         response = client.get("/api/auth/me", cookies=cookies)
         assert response.status_code == 200
-        user_data = response.json()
+        # /api/auth/me wraps the user dict under "user" (server.py).
+        user_data = response.json()['user']
         assert user_data['username'] == "testuser"
 
         # 4. Logout
@@ -90,7 +95,7 @@ class TestFileAnalysisWorkflow:
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Create test Python file
@@ -111,11 +116,13 @@ def long_function(a, b, c, d, e, f):
                 'file': ('test.py', test_code, 'text/x-python')
             }
 
-            response = client.post("/api/analyze", files=files)
+            # The upload endpoint is /api/analyze/file (server.py) - it
+            # returns a Celery job_id, not task_id.
+            response = client.post("/api/analyze/file", files=files)
             assert response.status_code == 200
 
             result = response.json()
-            assert 'task_id' in result or 'issues' in result
+            assert 'job_id' in result
 
 
 class TestRepositoryManagement:
@@ -129,7 +136,7 @@ class TestRepositoryManagement:
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Create repository
@@ -156,25 +163,19 @@ class TestAnalyticsWorkflow:
     def test_get_analytics_suite(self):
         """E2E: Get complete analytics suite"""
         from server import app
-        from src.workers.analysis_worker import cache_analysis_result
 
         mock_user = Mock()
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        # Create sample analysis data
-        sample_analysis = {
-            'filename': 'test.py',
-            'analyzed_at': '2024-01-01T12:00:00',
-            'issues': [
-                {'severity': 'critical', 'category': 'security', 'rule_id': 'sql_injection'},
-                {'severity': 'error', 'category': 'smell', 'rule_id': 'long_method'}
-            ],
-            'metadata': {'lines_of_code': 150}
-        }
-        cache_analysis_result('test-job-1', sample_analysis)
+        # These endpoints now read Issue/CodeFile from the database
+        # directly (see server.py's /api/analytics/* routes) rather than
+        # the old in-process analysis cache, which was never shared
+        # between the FastAPI and Celery worker processes and has since
+        # been removed. Assertions here only check response shape, so no
+        # seed data is needed for an empty-but-valid result.
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Get health score
@@ -223,7 +224,7 @@ class TestNotificationWorkflow:
             user_id="test-user"
         )
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # List notifications
@@ -268,7 +269,7 @@ class TestLoggingWorkflow:
         logging_service.error("Test error log")
         logging_service.warning("Test warning")
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Get all logs
@@ -329,7 +330,7 @@ class TestSettingsManagement:
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Get current settings
@@ -388,25 +389,17 @@ class TestIssueManagement:
     def test_issue_filtering(self):
         """E2E: Filter issues by various criteria"""
         from server import app
-        from src.workers.analysis_worker import cache_analysis_result
 
         mock_user = Mock()
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        # Create sample analysis with issues
-        analysis = {
-            'filename': 'test.py',
-            'analyzed_at': '2024-01-01T12:00:00',
-            'issues': [
-                {'severity': 'critical', 'category': 'security', 'rule_id': 'sql'},
-                {'severity': 'warning', 'category': 'smell', 'rule_id': 'long'},
-                {'severity': 'error', 'category': 'complexity', 'rule_id': 'high_cc'}
-            ]
-        }
-        cache_analysis_result('test-job', analysis)
+        # /api/issues now reads from the database directly rather than
+        # the old in-process analysis cache (removed) - see note in
+        # TestAnalyticsWorkflow.test_get_analytics_suite above. Assertions
+        # here only check status codes, not specific issue content.
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Get all issues
@@ -433,7 +426,7 @@ class TestExportFunctionality:
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Export as JSON
@@ -454,7 +447,7 @@ class TestExportFunctionality:
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # Export logs as JSON
@@ -500,14 +493,14 @@ class TestCompleteWorkflow:
         mock_user.id = 'test-user'
         mock_user.role = UserRole.USER
 
-        with patch('server.get_current_user', return_value=mock_user):
+        with override_current_user(mock_user):
             client = TestClient(app)
 
             # 1. Upload and analyze file
             test_code = "import os\\npassword = 'test123'\\n"
             files = {'file': ('test.py', test_code, 'text/x-python')}
 
-            response = client.post("/api/analyze", files=files)
+            response = client.post("/api/analyze/file", files=files)
             assert response.status_code == 200
 
             # 2. Get analytics

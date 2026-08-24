@@ -5,9 +5,10 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery

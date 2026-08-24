@@ -3,11 +3,13 @@ import pytest
 import sys
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -24,7 +26,7 @@ def test_get_notifications_endpoint():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/notifications")
 
@@ -43,7 +45,7 @@ def test_get_notifications_with_filters():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
 
         # Test unread_only filter
@@ -68,7 +70,7 @@ def test_get_notification_by_id():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         # Create a test notification
         notification = notification_service.create_notification(
             NotificationType.INFO,
@@ -93,7 +95,7 @@ def test_get_notification_not_found():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/notifications/nonexistent")
 
@@ -109,7 +111,7 @@ def test_mark_notification_read():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         # Create a test notification
         notification = notification_service.create_notification(
             NotificationType.INFO,
@@ -138,7 +140,7 @@ def test_mark_all_notifications_read():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         # Create test notifications
         notification_service.create_notification(NotificationType.INFO, "Test 1", "Message 1", user_id="user1")
         notification_service.create_notification(NotificationType.INFO, "Test 2", "Message 2", user_id="user1")
@@ -161,7 +163,7 @@ def test_dismiss_notification():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         # Create a test notification
         notification = notification_service.create_notification(
             NotificationType.INFO,
@@ -186,7 +188,7 @@ def test_delete_notification():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         # Create a test notification
         notification = notification_service.create_notification(
             NotificationType.INFO,
@@ -214,7 +216,7 @@ def test_clear_old_notifications():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.delete("/api/notifications/old?days=30")
 
@@ -232,7 +234,7 @@ def test_get_notification_preferences():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/notifications/preferences")
 
@@ -256,7 +258,7 @@ def test_update_notification_preferences():
         }
     }
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.post("/api/notifications/preferences", json=new_prefs)
 
@@ -273,7 +275,7 @@ def test_get_notification_statistics():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/notifications/statistics")
 
@@ -322,7 +324,7 @@ def test_invalid_notification_type_filter():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/notifications?notification_type=invalid_type")
 

@@ -8,9 +8,10 @@ from unittest.mock import Mock, patch, MagicMock
 from src.core.database import DatabaseManager, Repository, RepositoryStatus, User
 
 # Mock celery_app module before importing worker
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 # Make the task decorator a pass-through
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery_app'] = mock_celery
 
 from src.workers.repository_worker import (

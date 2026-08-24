@@ -3,11 +3,13 @@ import pytest
 import sys
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -41,15 +43,26 @@ def mock_user():
 @pytest.fixture
 def client(mock_user):
     """Create test client with mocked authentication"""
-    with patch('server.get_current_user', return_value=mock_user):
+    # Must yield inside the `with` - returning would exit the context
+    # manager (clearing the override) before any test body runs.
+    with override_current_user(mock_user):
         from server import app
-        return TestClient(app)
+        yield TestClient(app)
 
 
 @pytest.fixture
 def db_manager():
-    """Create test database manager"""
-    return DatabaseManager('sqlite:///:memory:')
+    """Database manager fixture.
+
+    Deliberately bare DatabaseManager() rather than an explicit
+    sqlite:///:memory: - tests/conftest.py's session-wide patch redirects
+    that to the same isolated test database server.py's own db_manager
+    singleton uses. An explicit :memory: here would be invisible to the
+    `client` fixture's requests: each :memory: connection is its own
+    private database, so rows created here would never appear to the
+    running app the test is actually calling into.
+    """
+    return DatabaseManager()
 
 
 @pytest.fixture

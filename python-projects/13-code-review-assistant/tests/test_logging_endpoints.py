@@ -3,11 +3,13 @@ import pytest
 import sys
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -28,7 +30,7 @@ def test_get_logs_endpoint():
     logging_service.info("Test log 1")
     logging_service.error("Test error 1")
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs")
 
@@ -50,7 +52,7 @@ def test_get_logs_with_level_filter():
     logging_service.info("Info log")
     logging_service.error("Error log")
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs?level=ERROR")
 
@@ -71,7 +73,7 @@ def test_get_logs_with_correlation_id_filter():
     with logging_service.correlation_context("test-corr-123"):
         logging_service.info("Correlated log")
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs?correlation_id=test-corr-123")
 
@@ -91,7 +93,7 @@ def test_get_error_logs():
 
     logging_service.error("Test error")
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs/errors")
 
@@ -109,7 +111,7 @@ def test_get_logging_statistics():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs/statistics")
 
@@ -131,7 +133,7 @@ def test_export_logs_json():
 
     logging_service.info("Export test")
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs/export?format=json")
 
@@ -149,7 +151,7 @@ def test_export_logs_csv():
 
     logging_service.info("CSV export test")
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs/export?format=csv")
 
@@ -165,7 +167,7 @@ def test_invalid_log_level():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         client = TestClient(app)
         response = client.get("/api/logs?level=INVALID")
 

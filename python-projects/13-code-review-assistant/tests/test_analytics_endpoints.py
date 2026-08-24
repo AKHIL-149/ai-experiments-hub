@@ -3,12 +3,14 @@ import pytest
 import sys
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user
 from datetime import datetime, timedelta
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -50,7 +52,7 @@ def test_get_health_score_endpoint(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/health-score")
@@ -79,7 +81,7 @@ def test_get_analytics_trends_endpoint(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/trends?days=7&grouping=day")
@@ -109,7 +111,7 @@ def test_get_repository_analytics_endpoint(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/repository")
@@ -143,7 +145,7 @@ def test_get_analytics_insights_endpoint(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/insights")
@@ -171,7 +173,7 @@ def test_compare_periods_endpoint(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/compare?current_days=3&previous_days=3")
@@ -204,7 +206,7 @@ def test_export_analytics_json(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/export?format=json&days=7")
@@ -231,7 +233,7 @@ def test_export_analytics_csv(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/export?format=csv&days=7")
@@ -283,7 +285,7 @@ def test_trends_with_different_groupings(sample_analyses):
 
     groupings = ['day', 'week', 'month']
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
 
@@ -302,7 +304,7 @@ def test_export_with_empty_data():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=[]):
             client = TestClient(app)
             response = client.get("/api/analytics/export?format=json")
@@ -323,7 +325,7 @@ def test_repository_analytics_calculates_averages(sample_analyses):
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.get_all_cached_analyses', return_value=sample_analyses):
             client = TestClient(app)
             response = client.get("/api/analytics/repository")

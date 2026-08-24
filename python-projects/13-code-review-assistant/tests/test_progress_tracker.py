@@ -3,11 +3,13 @@ import pytest
 import sys
 from unittest.mock import Mock, patch, AsyncMock
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -121,7 +123,7 @@ def test_task_status_endpoint_exists():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.AsyncResult') as mock_result:
             # Mock a pending task
             mock_task = Mock()
@@ -146,7 +148,7 @@ def test_task_progress_stream_endpoint_exists():
     mock_user.id = 'test-user'
     mock_user.role = UserRole.USER
 
-    with patch('server.get_current_user', return_value=mock_user):
+    with override_current_user(mock_user):
         with patch('server.AsyncResult') as mock_result:
             # Mock a completed task to end stream quickly
             mock_task = Mock()

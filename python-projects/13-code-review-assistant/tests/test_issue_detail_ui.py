@@ -3,11 +3,13 @@ import pytest
 import sys
 from unittest.mock import Mock
 from fastapi.testclient import TestClient
+from tests._auth_helpers import override_current_user_optional
 
 # Mock celery before imports
+from tests._celery_helpers import mock_task_decorator
 mock_celery = Mock()
 mock_celery.celery_app = Mock()
-mock_celery.celery_app.task = lambda *args, **kwargs: lambda f: f
+mock_celery.celery_app.task = mock_task_decorator
 sys.modules['celery'] = Mock()
 sys.modules['celery.result'] = Mock()
 sys.modules['celery_app'] = mock_celery
@@ -135,7 +137,9 @@ def test_issue_detail_requires_auth():
     """Test that issue detail page requires authentication"""
     from server import app
     client = TestClient(app)
-    response = client.get("/issues/test-issue-id")
+    # TestClient follows redirects by default; without this the 302 gets
+    # auto-followed to a 200 on /login instead of being observed here.
+    response = client.get("/issues/test-issue-id", follow_redirects=False)
 
     # Should redirect to login when not authenticated
     assert response.status_code in [302, 307]
@@ -150,7 +154,7 @@ def test_issue_detail_not_found_returns_404(test_db, mock_user):
 
     try:
         from unittest.mock import patch
-        with patch('server.get_current_user_optional', return_value=mock_user):
+        with override_current_user_optional(mock_user):
             client = TestClient(server.app)
             response = client.get("/issues/nonexistent-id")
             assert response.status_code == 404
@@ -167,7 +171,7 @@ def test_issue_detail_page_renders_successfully(test_db, test_data, mock_user):
 
     try:
         from unittest.mock import patch
-        with patch('server.get_current_user_optional', return_value=mock_user):
+        with override_current_user_optional(mock_user):
             client = TestClient(server.app)
             response = client.get(f"/issues/{test_data['issue_id']}")
 
@@ -185,7 +189,7 @@ def test_issue_detail_shows_code_snippet(test_db, test_data, mock_user):
 
     try:
         from unittest.mock import patch
-        with patch('server.get_current_user_optional', return_value=mock_user):
+        with override_current_user_optional(mock_user):
             client = TestClient(server.app)
             response = client.get(f"/issues/{test_data['issue_id']}")
 
@@ -203,7 +207,7 @@ def test_issue_detail_shows_ai_explanation(test_db, test_data, mock_user):
 
     try:
         from unittest.mock import patch
-        with patch('server.get_current_user_optional', return_value=mock_user):
+        with override_current_user_optional(mock_user):
             client = TestClient(server.app)
             response = client.get(f"/issues/{test_data['issue_id']}")
 
@@ -222,7 +226,7 @@ def test_issue_detail_shows_refactoring_suggestion(test_db, test_data, mock_user
 
     try:
         from unittest.mock import patch
-        with patch('server.get_current_user_optional', return_value=mock_user):
+        with override_current_user_optional(mock_user):
             client = TestClient(server.app)
             response = client.get(f"/issues/{test_data['issue_id']}")
 
