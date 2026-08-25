@@ -22,19 +22,36 @@ from ..core.database import (
 from .ai_analysis_service import AIAnalysisService
 
 
+# Minimum AI confidence required before a refactoring is auto-suggested.
+# Below this, the issue is left as-is rather than proposing a low-quality
+# or speculative rewrite - matches the reviewer behavior of only
+# recommending a change when reasonably sure it's actually correct.
+MIN_AUTO_SUGGEST_CONFIDENCE = 0.7
+
+
 class RefactoringService:
     """Service for managing code refactorings."""
 
-    def __init__(self, db: Session, ai_service: Optional[AIAnalysisService] = None):
+    def __init__(
+        self,
+        db: Session,
+        ai_service: Optional[AIAnalysisService] = None,
+        min_auto_suggest_confidence: float = MIN_AUTO_SUGGEST_CONFIDENCE
+    ):
         """
         Initialize refactoring service.
 
         Args:
             db: Database session
             ai_service: Optional AI analysis service for generating suggestions
+            min_auto_suggest_confidence: Minimum confidence (0.0-1.0) an
+                AI-generated refactoring must meet before it's
+                auto-suggested via generate_refactoring_from_issue().
+                Suggestions below this are skipped, not persisted.
         """
         self.db = db
         self.ai_service = ai_service
+        self.min_auto_suggest_confidence = min_auto_suggest_confidence
 
     def create_refactoring(
         self,
@@ -133,6 +150,20 @@ class RefactoringService:
             )
 
             if refactoring_result.get("refactored_code"):
+                confidence = refactoring_result.get("confidence_score", 0.5)
+
+                if confidence < self.min_auto_suggest_confidence:
+                    # Below the bar: leave the issue as-is rather than
+                    # auto-suggesting a rewrite the AI itself isn't
+                    # confident in. Not persisted as a Refactoring row -
+                    # the issue is still flagged, it just gets no
+                    # proposed fix attached to it.
+                    return False, None, (
+                        f"Refactoring confidence {confidence:.0%} below the "
+                        f"{self.min_auto_suggest_confidence:.0%} threshold for "
+                        f"auto-suggestion; leaving issue as-is"
+                    )
+
                 return self.create_refactoring(
                     issue_id=issue_id,
                     code_file_id=code_file_id,
@@ -143,7 +174,7 @@ class RefactoringService:
                     benefits=self._extract_benefits(
                         refactoring_result.get("refactoring_suggestion", "")
                     ),
-                    confidence=refactoring_result.get("confidence_score", 0.5)
+                    confidence=confidence
                 )
             else:
                 return False, None, "AI failed to generate refactoring"

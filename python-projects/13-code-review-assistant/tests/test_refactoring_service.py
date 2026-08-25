@@ -441,3 +441,57 @@ def test_generate_refactoring_from_issue_with_ai(db_manager, test_issue, test_co
         assert success is True
         assert refactoring is not None
         assert refactoring.confidence == 0.85
+
+
+def test_generate_refactoring_from_issue_below_confidence_threshold(db_manager, test_issue, test_code_file):
+    """A refactoring below the 70% default confidence bar is not auto-suggested"""
+    with db_manager.get_session() as db:
+        mock_ai = Mock()
+        mock_ai.suggest_refactoring.return_value = {
+            "refactored_code": "def foo():\n    return None",
+            "explanation": "Might help",
+            "refactoring_suggestion": "Uncertain improvement.",
+            "confidence_score": 0.65
+        }
+
+        service = RefactoringService(db, ai_service=mock_ai)
+
+        success, refactoring, error = service.generate_refactoring_from_issue(
+            issue_id=test_issue.id,
+            code_file_id=test_code_file.id,
+            code_snippet='def foo(): pass'
+        )
+
+        assert success is False
+        assert refactoring is None
+        assert '65%' in error
+        assert '70%' in error
+
+        # Not persisted - the issue is left as-is, not attached to a
+        # low-confidence Refactoring row.
+        assert db.query(Refactoring).filter(Refactoring.issue_id == test_issue.id).count() == 0
+
+
+def test_generate_refactoring_from_issue_custom_confidence_threshold(db_manager, test_issue, test_code_file):
+    """min_auto_suggest_confidence is configurable per RefactoringService instance"""
+    with db_manager.get_session() as db:
+        mock_ai = Mock()
+        mock_ai.suggest_refactoring.return_value = {
+            "refactored_code": "def foo():\n    return None",
+            "explanation": "Might help",
+            "refactoring_suggestion": "Uncertain improvement.",
+            "confidence_score": 0.65
+        }
+
+        # 0.65 clears a lowered 60% bar even though it fails the default 70%
+        service = RefactoringService(db, ai_service=mock_ai, min_auto_suggest_confidence=0.6)
+
+        success, refactoring, error = service.generate_refactoring_from_issue(
+            issue_id=test_issue.id,
+            code_file_id=test_code_file.id,
+            code_snippet='def foo(): pass'
+        )
+
+        assert success is True
+        assert refactoring is not None
+        assert refactoring.confidence == 0.65
