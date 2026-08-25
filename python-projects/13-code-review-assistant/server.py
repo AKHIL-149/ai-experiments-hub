@@ -2962,12 +2962,42 @@ async def repository_detail_page(
         if not repository:
             raise HTTPException(status_code=404, detail="Repository not found")
 
-        # Get repository statistics (will be implemented in PR phase)
+        from src.core.database import Review
+        from src.services.analytics_service import analytics_service
+
+        pull_requests_count = db.query(PullRequest).filter(
+            PullRequest.repository_id == repository.id
+        ).count()
+
+        # A CodeFile belongs to this repo either directly (repository-level
+        # analysis) or via a PR that belongs to this repo - same dual path
+        # as the dashboard's issue query (server.py's dashboard_page).
+        issues_query = db.query(Issue).join(CodeFile).outerjoin(
+            PullRequest, CodeFile.pull_request_id == PullRequest.id
+        ).filter(
+            (CodeFile.repository_id == repository.id) | (PullRequest.repository_id == repository.id),
+            Issue.resolved == False,
+            Issue.dismissed == False
+        )
+        total_issues = issues_query.count()
+
+        reviews_count = db.query(Review).join(
+            PullRequest, Review.pull_request_id == PullRequest.id
+        ).filter(PullRequest.repository_id == repository.id).count()
+
+        health_score = None
+        if total_issues > 0:
+            all_issues = [
+                {'severity': i.severity.value, 'category': i.category.value}
+                for i in issues_query.all()
+            ]
+            health_score = analytics_service.calculate_health_score(all_issues)['score']
+
         stats = {
-            'pull_requests_count': 0,
-            'total_issues': 0,
-            'reviews_count': 0,
-            'health_score': None
+            'pull_requests_count': pull_requests_count,
+            'total_issues': total_issues,
+            'reviews_count': reviews_count,
+            'health_score': health_score
         }
 
         return templates.TemplateResponse(request, "repository_detail.html", {
