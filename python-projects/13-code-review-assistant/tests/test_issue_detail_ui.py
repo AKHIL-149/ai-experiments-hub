@@ -194,7 +194,14 @@ def test_issue_detail_shows_code_snippet(test_db, test_data, mock_user):
             response = client.get(f"/issues/{test_data['issue_id']}")
 
             assert response.status_code == 200
-            assert b'query = "SELECT * FROM users WHERE id = " + user_id' in response.content
+            # templates/issue_detail.html renders code_snippet through
+            # Jinja2's default autoescape (correct - it's untrusted
+            # content pulled from someone's repo, rendered inside
+            # <pre><code>), so literal `"` comes out as the HTML entity
+            # &#34;, not a raw quote character. Asserting on the escaped
+            # form is what the template is actually, correctly supposed
+            # to produce.
+            assert b'query = &#34;SELECT * FROM users WHERE id = &#34; + user_id' in response.content
     finally:
         server.db_manager = original_db
 

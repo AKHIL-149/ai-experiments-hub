@@ -343,20 +343,36 @@ class TestGitHubAppIntegration:
     @pytest.fixture
     def admin_session(self, client):
         """Create admin session"""
-        # Unique suffix - see TestGitHubAppEndpoints.admin_session above
-        # for why a fixed literal collides across files sharing the
-        # session-wide isolated test DB.
-        username = f'admin_integration_{uuid.uuid4().hex[:8]}'
-        response = client.post('/api/auth/register', json={
-            'username': username,
-            'email': f'{username}@test.com',
-            'password': 'admin123',
-            'role': 'admin'
-        })
+        from src.core.database import DatabaseManager, User, UserRole
+        import bcrypt
+
+        # This used to register via the public API with 'role': 'admin'
+        # in the payload, expecting the server to honor it - it doesn't
+        # (correctly: letting anyone self-elevate to admin by adding a
+        # field to a signup request would be a real vulnerability), so
+        # every request in this workflow that needs admin access 403'd.
+        # Create the admin directly in the database instead, same as
+        # TestGitHubAppEndpoints.admin_session above - unique suffix for
+        # the same cross-file collision reasons documented there.
+        suffix = uuid.uuid4().hex[:8]
+        username = f'admin_integration_{suffix}'
+        password = 'admin123'
+
+        db_manager = DatabaseManager()
+        with db_manager.get_session() as db:
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            admin_user = User(
+                username=username,
+                email=f'{username}@test.com',
+                password_hash=hashed_password.decode('utf-8'),
+                role=UserRole.ADMIN
+            )
+            db.add(admin_user)
+            db.commit()
 
         response = client.post('/api/auth/login', json={
             'username': username,
-            'password': 'admin123'
+            'password': password
         })
 
         return response.cookies.get('session_token')
