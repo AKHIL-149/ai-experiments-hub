@@ -241,6 +241,18 @@ def analyze_pr_task(
                                 except Exception as e:
                                     print(f"Error generating refactoring for issue {issue.id}: {str(e)}")
 
+                            # Commit per issue, not once for the whole
+                            # file - see the identical fix and full
+                            # explanation in analysis_worker.py.
+                            # generate_refactoring_from_issue is a real,
+                            # synchronous LLM call; batching several of
+                            # them into one open transaction routinely
+                            # exceeded SQLite's busy_timeout and made
+                            # every other DB-touching request in the app
+                            # fail with "database is locked" for as long
+                            # as the PR analysis was running.
+                            db.commit()
+
                         db.commit()
 
                     analyzed_files.append({
@@ -692,6 +704,11 @@ def analyze_pr_webhook(
                                         print(f"Warning: Could not generate refactoring for issue {issue.id}: {error}")
                                 except Exception as e:
                                     print(f"Error generating refactoring for issue {issue.id}: {str(e)}")
+
+                            # Commit per issue - see the fix and full
+                            # explanation in analysis_worker.py /
+                            # the sibling call site above in this file.
+                            db.commit()
 
                         db.commit()
 

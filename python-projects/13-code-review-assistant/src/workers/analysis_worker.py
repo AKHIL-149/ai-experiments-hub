@@ -456,6 +456,24 @@ def analyze_repository_task(
                                     except Exception as e:
                                         print(f"Error generating refactoring for issue {issue.id}: {str(e)}")
 
+                            # Commit per issue, not once for the whole file.
+                            # generate_refactoring_from_issue is a real,
+                            # synchronous LLM call (seconds, not
+                            # milliseconds) - a file with several issues
+                            # used to hold one write transaction open for
+                            # all of them combined, well past SQLite's
+                            # 30s busy_timeout (src/core/database.py), so
+                            # any other request touching the DB (even the
+                            # session-last-accessed update on a plain
+                            # page load) reliably hit "database is
+                            # locked" for the whole duration of any
+                            # repository analysis. Confirmed live:
+                            # analyzing a 25-file repo, /api/jobs/{id}
+                            # status checks failed with exactly this
+                            # error, repeatedly, while analysis was
+                            # still running.
+                            session.commit()
+
                         session.commit()
 
                         if issues_data:
