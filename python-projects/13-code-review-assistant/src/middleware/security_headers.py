@@ -66,12 +66,24 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         Restrictive by default, can be customized via environment
         """
         # Default CSP - adjust based on your needs
+        #
+        # script-src/style-src never actually allowed any external host,
+        # even though several templates load real CDN scripts (hljs for
+        # syntax highlighting in issue_detail.html, marked.js/DOMPurify
+        # for rendering AI-generated markdown). Confirmed live: those
+        # requests never even fired (no network activity, `typeof marked
+        # === 'undefined'` in the browser console) - CSP silently
+        # dropped them client-side rather than erroring visibly, so
+        # syntax highlighting had been broken this whole time without
+        # anyone noticing. Only the two hosts templates actually
+        # reference are allowlisted here, not a wildcard.
+        cdn_hosts = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net"
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # Allow inline scripts for now
-            "style-src 'self' 'unsafe-inline'",  # Allow inline styles
+            f"script-src 'self' 'unsafe-inline' 'unsafe-eval' {cdn_hosts}",
+            f"style-src 'self' 'unsafe-inline' {cdn_hosts}",  # hljs's CSS theme also loads from cdnjs
             "img-src 'self' data: https:",
-            "font-src 'self' data:",
+            f"font-src 'self' data: {cdn_hosts}",
             "connect-src 'self'",
             "frame-ancestors 'none'",
             "base-uri 'self'",

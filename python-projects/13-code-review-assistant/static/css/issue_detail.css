@@ -269,6 +269,83 @@ header h1 {
     line-height: 1.6;
 }
 
+/* Rendered markdown (AI explanation / fix suggestion / refactoring
+   explanation - see the marked.js + DOMPurify rendering in
+   issue_detail.html). Without this, headings/lists/code blocks marked.js
+   produces just inherit plain paragraph styling and are hard to tell apart. */
+.markdown-body p {
+    margin: 0 0 12px 0;
+}
+
+.markdown-body p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+    margin: 16px 0 8px 0;
+    color: #1f2937;
+    font-weight: 600;
+}
+
+.markdown-body h1:first-child,
+.markdown-body h2:first-child,
+.markdown-body h3:first-child,
+.markdown-body h4:first-child {
+    margin-top: 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+    margin: 0 0 12px 0;
+    padding-left: 24px;
+}
+
+.markdown-body li {
+    margin-bottom: 4px;
+}
+
+.markdown-body code {
+    background: #eef0f3;
+    color: #b91c1c;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.markdown-body pre {
+    background: #1e293b;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 0 0 12px 0;
+    overflow-x: auto;
+}
+
+.markdown-body pre code {
+    background: none;
+    color: #e2e8f0;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.markdown-body blockquote {
+    margin: 0 0 12px 0;
+    padding: 4px 14px;
+    border-left: 3px solid #d1d5db;
+    color: #6b7280;
+}
+
+.markdown-body strong {
+    color: #1f2937;
+    font-weight: 600;
+}
+
 .confidence-score {
     background: #dbeafe;
     color: #1e40af;

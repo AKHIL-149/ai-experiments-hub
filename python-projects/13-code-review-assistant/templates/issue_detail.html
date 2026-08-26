@@ -57,9 +57,8 @@
                     </h3>
                 </div>
                 <div id="ai-explanation" class="explanation-content expanded">
-                    <div class="explanation-text">
-                        {{ issue.ai_explanation }}
-                    </div>
+                    <div class="explanation-text markdown-body" id="ai-explanation-text"></div>
+                    <script type="application/json" id="ai-explanation-source">{{ issue.ai_explanation | tojson }}</script>
                 </div>
             </div>
             {% endif %}
@@ -75,9 +74,8 @@
                     </h3>
                 </div>
                 <div id="fix-suggestion" class="fix-content expanded">
-                    <div class="fix-description">
-                        {{ issue.fix_suggestion.suggested_fix }}
-                    </div>
+                    <div class="fix-description markdown-body" id="fix-suggestion-text"></div>
+                    <script type="application/json" id="fix-suggestion-source">{{ issue.fix_suggestion.suggested_fix | tojson }}</script>
                     {% if issue.fix_suggestion.can_auto_apply %}
                     <button class="apply-fix-btn" onclick="applyFix('{{ issue.id }}')">
                         ✓ Apply This Fix
@@ -101,7 +99,8 @@
                     <!-- Explanation -->
                     <div class="refactoring-explanation">
                         <h4>What This Does</h4>
-                        <p>{{ issue.refactoring.explanation }}</p>
+                        <div class="markdown-body" id="refactoring-explanation-text"></div>
+                        <script type="application/json" id="refactoring-explanation-source">{{ issue.refactoring.explanation | tojson }}</script>
                     </div>
 
                     <!-- Diff Preview -->
@@ -179,9 +178,64 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
     <script src="/static/js/issue_detail.js"></script>
     <script>
-        // Initialize syntax highlighting
+        // AI-generated explanation/fix/refactoring text is markdown
+        // (**bold**, numbered steps, ```fenced code```), not plain
+        // text or pre-rendered HTML - it used to get dumped straight
+        // into a <p> with none of that parsed, collapsing into one
+        // unreadable run-on line with literal asterisks and backticks.
+        // Render it as markdown here instead, sanitizing the result
+        // since this text is ultimately derived from an LLM call over
+        // externally-sourced code (a cloned repo's own content), not
+        // fully trusted server-authored HTML.
+        // The LLM indents ```fenced code``` blocks to align with
+        // numbered-list continuation text (3 spaces) on the opening
+        // fence, but not consistently on the closing fence - that
+        // mismatch confuses marked.js's list/code-block matching
+        // entirely: it emits an *empty* <pre><code>, then renders the
+        // actual code as a stray paragraph, then misparses the closing
+        // fence and everything after it as a second, unrelated code
+        // block. De-indenting fence-marker lines to column 0 before
+        // parsing sidesteps the mismatch - confirmed live, this is
+        // exactly why refactored-code blocks rendered as an empty black
+        // box with no visible code.
+        function normalizeFences(text) {
+            return text.replace(/^[ \t]+(```.*)$/gm, '$1');
+        }
+
+        function renderMarkdownSections() {
+            document.querySelectorAll('script[id$="-source"][type="application/json"]').forEach(function (sourceEl) {
+                const targetId = sourceEl.id.replace(/-source$/, '-text');
+                const targetEl = document.getElementById(targetId);
+                if (!targetEl) return;
+
+                let raw;
+                try {
+                    raw = JSON.parse(sourceEl.textContent);
+                } catch (e) {
+                    return;
+                }
+                if (!raw) return;
+
+                const html = marked.parse(normalizeFences(raw));
+                targetEl.innerHTML = DOMPurify.sanitize(html, {
+                    ALLOWED_TAGS: [
+                        'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
+                        'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                        'blockquote', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'
+                    ],
+                    ALLOWED_ATTR: ['href', 'class']
+                });
+            });
+        }
+
+        renderMarkdownSections();
+
+        // Initialize syntax highlighting - after markdown rendering, so
+        // fenced code blocks marked.js just produced get highlighted too.
         hljs.highlightAll();
     </script>
 </body>
