@@ -479,6 +479,20 @@ class ContentModerationApp {
             classificationsHtml += '</div>';
         }
 
+        // Appeal is only offered on the user's own "My Content" list
+        // (showClassifications=false), not the moderator review queue
+        // (showClassifications=true) - moderators review other users'
+        // content there, they don't appeal it.
+        const appealHtml = !showClassifications && item.status === 'rejected'
+            ? `
+                <div class="content-actions">
+                    <button class="btn-secondary" onclick="app.appealContent('${item.id}')">
+                        Appeal Rejection
+                    </button>
+                </div>
+            `
+            : '';
+
         return `
             <div class="content-item" data-id="${item.id}">
                 <div class="content-item-header">
@@ -491,6 +505,7 @@ class ContentModerationApp {
                     <span>Priority: ${item.priority}</span>
                     <span>Submitted: ${date}</span>
                 </div>
+                ${appealHtml}
             </div>
         `;
     }
@@ -513,6 +528,34 @@ class ContentModerationApp {
                 </div>
             </div>
         `;
+    }
+
+    // Appeals
+
+    async appealContent(contentId) {
+        const reason = prompt('Why do you believe this content was rejected incorrectly?');
+        if (!reason || !reason.trim()) return;
+
+        try {
+            const response = await fetch('/api/appeals', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ content_id: contentId, reason: reason.trim() })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.detail || 'Failed to submit appeal');
+                return;
+            }
+
+            alert('Appeal submitted. A moderator will review it.');
+            await this.loadMyContent();
+        } catch (error) {
+            alert('Network error submitting appeal');
+        }
     }
 
     // Admin Actions

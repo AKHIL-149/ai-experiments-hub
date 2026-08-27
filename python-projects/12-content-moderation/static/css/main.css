@@ -477,6 +477,10 @@ body {
     color: var(--text-secondary);
 }
 
+.content-actions {
+    margin-top: 12px;
+}
+
 /* Stats Summary */
 .stats-summary {
     display: flex;
