@@ -71,6 +71,9 @@ class ActionType(str, enum.Enum):
     FLAG_REVIEW = 'flag_review'
     MANUAL_APPROVE = 'manual_approve'
     MANUAL_REJECT = 'manual_reject'
+    APPEAL_SUBMITTED = 'appeal_submitted'
+    APPEAL_APPROVED = 'appeal_approved'
+    APPEAL_REJECTED = 'appeal_rejected'
 
 
 class ViolationCategory(str, enum.Enum):
@@ -326,7 +329,7 @@ class Review(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     content_id = Column(String, ForeignKey('content_items.id'), nullable=False, index=True)
-    moderator_id = Column(String, ForeignKey('users.id'), nullable=False, index=True)
+    moderator_id = Column(String, ForeignKey('users.id'), nullable=True, index=True)
 
     # Review decision
     action = Column(Enum(ActionType), nullable=False)

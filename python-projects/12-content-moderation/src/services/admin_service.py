@@ -194,11 +194,10 @@ class AdminService:
                 if content.user_id != user.id:
                     return False, None, "Access denied"
 
-                # Check if content is rejected
-                if content.status != ContentStatus.REJECTED:
-                    return False, None, "Can only appeal rejected content"
-
-                # Check for existing appeal
+                # Check for existing appeal first - creating an appeal
+                # flips content.status to FLAGGED, so on a second attempt
+                # the status check below would always fire first and mask
+                # the more specific "already exists" error.
                 existing_appeal = db.query(Review).filter(
                     Review.content_id == content_id,
                     Review.is_appeal_review == True
@@ -206,6 +205,10 @@ class AdminService:
 
                 if existing_appeal:
                     return False, None, "Appeal already exists"
+
+                # Check if content is rejected
+                if content.status != ContentStatus.REJECTED:
+                    return False, None, "Can only appeal rejected content"
 
                 # Create appeal review record (pending moderator action)
                 appeal = Review(
@@ -422,6 +425,7 @@ class AdminService:
                 # Update audit log with policy ID
                 audit.resource_id = policy.id
                 db.commit()
+                db.refresh(policy)
 
                 logging.info(f"Policy '{name}' created by {admin.username}")
 

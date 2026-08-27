@@ -4,6 +4,7 @@ Integration Tests for Admin API Endpoints (Phase 5)
 
 import pytest
 import sys
+import uuid
 from pathlib import Path
 from fastapi.testclient import TestClient
 
@@ -26,26 +27,33 @@ def client():
 
 @pytest.fixture
 def db_manager():
-    """Create test database"""
-    db = DatabaseManager('sqlite:///:memory:')
+    """Create test database.
+
+    Bare DatabaseManager() (no explicit URL) - conftest.py's process-wide
+    patch redirects this to the same isolated temp-file DB that
+    server.py's own module-level db_manager singleton resolves to.
+    TestClient(app) requests hit routes using that singleton, not this
+    fixture's return value, so both must land on the same physical DB
+    file for a session created here to be visible to those routes -
+    which a locally-scoped sqlite:///:memory: never would be.
+    """
+    db = DatabaseManager()
     db.create_tables()
     return db
 
 
 @pytest.fixture
-def auth_manager(db_manager):
-    """Create auth manager"""
-    return AuthManager(db_manager, 30)
-
-
-@pytest.fixture
-def moderator_session(db_manager, auth_manager):
+def moderator_session(db_manager):
     """Create moderator user and session"""
     with db_manager.get_session() as db:
-        # Create moderator
+        # Create moderator - unique username/email per test since all
+        # tests in the session now share one persistent DB file (see
+        # db_manager fixture docstring), and User.username/email are
+        # unique-constrained.
+        suffix = uuid.uuid4().hex[:8]
         user = User(
-            username='mod_test',
-            email='mod@test.com',
+            username=f'mod_test_{suffix}',
+            email=f'mod_{suffix}@test.com',
             password_hash='hashed',
             role=UserRole.MODERATOR,
             is_active=True
@@ -54,19 +62,23 @@ def moderator_session(db_manager, auth_manager):
         db.commit()
         db.refresh(user)
 
-        # Create session
-        session = auth_manager.create_session(user)
-        return session.id
+        # Create session - AuthManager needs a real Session (it calls
+        # self.db.add/.commit directly), not the DatabaseManager wrapper,
+        # and create_session() returns the token string itself, not an
+        # object with a .id attribute.
+        auth_manager = AuthManager(db, 30)
+        return auth_manager.create_session(user)
 
 
 @pytest.fixture
-def admin_session(db_manager, auth_manager):
+def admin_session(db_manager):
     """Create admin user and session"""
     with db_manager.get_session() as db:
-        # Create admin
+        # Create admin - unique username/email, see moderator_session
+        suffix = uuid.uuid4().hex[:8]
         user = User(
-            username='admin_test',
-            email='admin@test.com',
+            username=f'admin_test_{suffix}',
+            email=f'admin_{suffix}@test.com',
             password_hash='hashed',
             role=UserRole.ADMIN,
             is_active=True
@@ -75,19 +87,19 @@ def admin_session(db_manager, auth_manager):
         db.commit()
         db.refresh(user)
 
-        # Create session
-        session = auth_manager.create_session(user)
-        return session.id
+        auth_manager = AuthManager(db, 30)
+        return auth_manager.create_session(user)
 
 
 @pytest.fixture
-def user_session(db_manager, auth_manager):
+def user_session(db_manager):
     """Create regular user and session"""
     with db_manager.get_session() as db:
-        # Create user
+        # Create user - unique username/email, see moderator_session
+        suffix = uuid.uuid4().hex[:8]
         user = User(
-            username='user_test',
-            email='user@test.com',
+            username=f'user_test_{suffix}',
+            email=f'user_{suffix}@test.com',
             password_hash='hashed',
             role=UserRole.USER,
             is_active=True
@@ -96,9 +108,8 @@ def user_session(db_manager, auth_manager):
         db.commit()
         db.refresh(user)
 
-        # Create session
-        session = auth_manager.create_session(user)
-        return session.id, user.id
+        auth_manager = AuthManager(db, 30)
+        return auth_manager.create_session(user), user.id
 
 
 @pytest.fixture
