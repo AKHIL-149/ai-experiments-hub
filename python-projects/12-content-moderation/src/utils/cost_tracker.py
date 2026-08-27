@@ -82,8 +82,10 @@ class CostTracker:
                 return 0.0
 
             if model not in self.PRICING[provider_lower]:
-                # Try to find a matching model
-                for model_key in self.PRICING[provider_lower].keys():
+                # Try to find a matching model - longest key first, same
+                # reasoning as calculate_image_cost above.
+                sorted_keys = sorted(self.PRICING[provider_lower].keys(), key=len, reverse=True)
+                for model_key in sorted_keys:
                     if model_key in model.lower():
                         model = model_key
                         break
@@ -133,11 +135,14 @@ class CostTracker:
                 logging.warning(f"Unknown provider for images: {provider}")
                 return 0.0
 
-            # Find matching model
+            # Find matching model - longest key first, since e.g.
+            # 'gpt-4o' is itself a substring of 'gpt-4o-mini' and would
+            # otherwise match (and be priced) first.
             cost_per_image = 0.0
-            for model_key, price in self.IMAGE_PRICING[provider_lower].items():
+            sorted_keys = sorted(self.IMAGE_PRICING[provider_lower].keys(), key=len, reverse=True)
+            for model_key in sorted_keys:
                 if model_key in model.lower():
-                    cost_per_image = price
+                    cost_per_image = self.IMAGE_PRICING[provider_lower][model_key]
                     break
 
             if cost_per_image == 0.0 and provider_lower != 'ollama':
