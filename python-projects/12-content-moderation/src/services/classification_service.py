@@ -14,6 +14,61 @@ from .nsfw_detector import get_nsfw_detector
 
 logging.basicConfig(level=logging.INFO)
 
+# Fallback thresholds used when no enabled Policy row exists for a given
+# category - preserves prior behavior for any category an admin hasn't
+# configured yet.
+DEFAULT_THRESHOLDS = {
+    'auto_approve_threshold': 0.95,
+    'auto_reject_threshold': 0.9,
+    'flag_review_threshold': 0.5,
+}
+
+
+def resolve_policy_thresholds(db, category: str) -> Dict[str, float]:
+    """
+    Look up the active moderation thresholds for a classification category.
+
+    Workers previously called apply_moderation_policy() with no arguments,
+    so every submission was judged against the same hardcoded defaults
+    regardless of anything an admin configured via the Policy admin UI -
+    creating/editing a Policy had no effect on real moderation decisions.
+    This looks up the highest-severity *enabled* Policy row for the given
+    category and uses its thresholds instead, falling back to the
+    defaults above when no matching policy exists (so an unconfigured
+    category behaves exactly as it did before).
+
+    Args:
+        db: Active SQLAlchemy session
+        category: Classification category string (e.g. 'spam', 'clean')
+
+    Returns:
+        Dict with auto_approve_threshold / auto_reject_threshold /
+        flag_review_threshold, suitable for **-expanding into
+        apply_moderation_policy().
+    """
+    from ..core.database import Policy
+
+    try:
+        policy_category = ViolationCategory(category)
+    except ValueError:
+        return dict(DEFAULT_THRESHOLDS)
+
+    policy = (
+        db.query(Policy)
+        .filter(Policy.category == policy_category, Policy.enabled == True)  # noqa: E712
+        .order_by(Policy.severity.desc())
+        .first()
+    )
+
+    if not policy:
+        return dict(DEFAULT_THRESHOLDS)
+
+    return {
+        'auto_approve_threshold': policy.auto_approve_threshold if policy.auto_approve_threshold is not None else DEFAULT_THRESHOLDS['auto_approve_threshold'],
+        'auto_reject_threshold': policy.auto_reject_threshold if policy.auto_reject_threshold is not None else DEFAULT_THRESHOLDS['auto_reject_threshold'],
+        'flag_review_threshold': policy.flag_review_threshold if policy.flag_review_threshold is not None else DEFAULT_THRESHOLDS['flag_review_threshold'],
+    }
+
 
 class ClassificationService:
     """Service for classifying content using multiple detection methods."""

@@ -7,7 +7,7 @@ Handles asynchronous video content classification using frame extraction and ana
 import logging
 from celery_app import app
 from .base_worker import BaseClassificationTask
-from ..services.classification_service import get_classification_service
+from ..services.classification_service import get_classification_service, resolve_policy_thresholds
 from ..services.video_processor import get_video_processor
 from ..core.database import DatabaseManager, ContentItem, Classification, ViolationCategory, ContentStatus
 from datetime import datetime
@@ -104,8 +104,10 @@ def classify_video_task(
 
             db.add(classification)
 
-            # Apply moderation policy
-            status = classification_service.apply_moderation_policy(result)
+            # Apply moderation policy - use an admin-configured Policy for
+            # this category if one is enabled, else the built-in defaults.
+            thresholds = resolve_policy_thresholds(db, result['category'])
+            status = classification_service.apply_moderation_policy(result, **thresholds)
             content_item.status = ContentStatus(status)
             content_item.moderated_at = datetime.utcnow()
 
