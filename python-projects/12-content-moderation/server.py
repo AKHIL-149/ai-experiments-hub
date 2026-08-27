@@ -194,13 +194,13 @@ def calculate_file_hash(file_path: Path) -> str:
 @app.get("/")
 async def index(request: Request):
     """Serve main HTML page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
 @app.get("/admin/dashboard")
 async def admin_dashboard(request: Request):
     """Serve admin dashboard page"""
-    return templates.TemplateResponse("admin/dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "admin/dashboard.html", {"request": request})
 
 
 @app.get("/api/health")
@@ -555,7 +555,7 @@ async def list_user_content(
         items = query.limit(limit).offset(offset).all()
 
         return {
-            "content": [item.to_dict() for item in items],
+            "content": [item.to_dict(include_details=True) for item in items],
             "total": total,
             "has_more": offset + limit < total
         }
@@ -719,7 +719,7 @@ async def get_moderation_queue(
         # Include classifications for each item
         results = []
         for item in items:
-            item_dict = item.to_dict()
+            item_dict = item.to_dict(include_details=True)
             classifications = db.query(Classification).filter(
                 Classification.content_id == item.id
             ).all()

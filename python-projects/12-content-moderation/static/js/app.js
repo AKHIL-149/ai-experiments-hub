@@ -586,6 +586,12 @@ class ContentModerationApp {
     }
 
     truncate(text, length) {
+        // Was `text.length` with no guard - a single item missing
+        // text_content (e.g. an API response shape that omits detail
+        // fields) threw here and, since this runs inside a .map() over
+        // the whole content list, silently failed the *entire* list
+        // render, not just that one item.
+        if (!text) return '';
         if (text.length <= length) return text;
         return text.substring(0, length) + '...';
     }
