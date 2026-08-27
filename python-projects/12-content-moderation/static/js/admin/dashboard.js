@@ -743,7 +743,7 @@ function closeAllModals() {
 // Analytics Functions
 
 async function loadAnalytics() {
-    """Load all analytics data"""
+    // Load all analytics data
     await Promise.all([
         loadAnalyticsOverview(),
         loadCategoryBreakdown(),
