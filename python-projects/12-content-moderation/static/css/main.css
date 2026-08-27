@@ -154,6 +154,27 @@ body {
     font-weight: 600;
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 16px 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.auth-divider span {
+    padding: 0 12px;
+}
+
 .error-message,
 .success-message {
     padding: 12px;
@@ -263,6 +284,11 @@ body {
 .role-badge.admin {
     background: #fce7f3;
     color: #9f1239;
+}
+
+.role-badge.guest {
+    background: #e5e7eb;
+    color: #374151;
 }
 
 /* Main Content */

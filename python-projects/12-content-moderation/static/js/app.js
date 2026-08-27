@@ -71,6 +71,9 @@ class ContentModerationApp {
             if (e.key === 'Enter') this.register();
         });
 
+        // Guest login
+        document.getElementById('guest-login').addEventListener('click', () => this.guestLogin());
+
         // Logout
         document.getElementById('logout-btn').addEventListener('click', () => this.logout());
     }
@@ -140,6 +143,28 @@ class ContentModerationApp {
         }
     }
 
+    async guestLogin() {
+        try {
+            const response = await fetch('/api/auth/guest', {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.currentUser = data.user;
+                this.showAppView();
+                this.updateUserInfo();
+                await this.loadView('submit');
+            } else {
+                this.showError('login-error', data.detail || 'Could not create guest session');
+            }
+        } catch (error) {
+            this.showError('login-error', 'Network error. Please try again.');
+        }
+    }
+
     async logout() {
         try {
             await fetch('/api/auth/logout', {
@@ -174,8 +199,8 @@ class ContentModerationApp {
         document.getElementById('current-username').textContent = this.currentUser.username;
 
         const roleBadge = document.getElementById('user-role');
-        roleBadge.textContent = this.currentUser.role;
-        roleBadge.className = `role-badge ${this.currentUser.role}`;
+        roleBadge.textContent = this.currentUser.is_guest ? 'guest' : this.currentUser.role;
+        roleBadge.className = `role-badge ${this.currentUser.is_guest ? 'guest' : this.currentUser.role}`;
 
         // Show/hide role-specific navigation
         if (this.currentUser.role === 'admin' || this.currentUser.role === 'moderator') {

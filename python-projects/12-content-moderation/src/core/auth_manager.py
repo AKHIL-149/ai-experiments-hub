@@ -27,7 +27,8 @@ class AuthManager:
         username: str,
         email: str,
         password: str,
-        role: UserRole = UserRole.USER
+        role: UserRole = UserRole.USER,
+        is_guest: bool = False
     ) -> Tuple[bool, Optional[User], Optional[str]]:
         """
         Register new user
@@ -37,6 +38,9 @@ class AuthManager:
             email: Email address
             password: Password (min 8 characters)
             role: User role (default: USER)
+            is_guest: Whether this is an auto-created guest account
+                (see create_guest_user, which generates username/email/
+                password and calls this with is_guest=True)
 
         Returns:
             Tuple of (success, user, error_message)
@@ -72,7 +76,8 @@ class AuthManager:
             password_hash=password_hash.decode('utf-8'),
             role=role,
             is_active=True,
-            is_verified=False  # Require email verification in production
+            is_verified=False,  # Require email verification in production
+            is_guest=is_guest
         )
 
         self.db.add(user)
@@ -80,6 +85,25 @@ class AuthManager:
         self.db.refresh(user)
 
         return True, user, None
+
+    def create_guest_user(self) -> Tuple[bool, Optional[User], Optional[str]]:
+        """
+        Create a temporary guest account: no signup form, just a
+        randomly-generated username/email/password (the password is
+        never surfaced - a guest has no way to log back in as this
+        account later, it exists only for the current session). Reuses
+        register_user() so guests get the exact same validation and
+        password hashing as a real registration, not a bypassed path.
+
+        Returns:
+            Tuple of (success, user, error_message)
+        """
+        suffix = secrets.token_hex(4)
+        username = f'guest_{suffix}'
+        email = f'guest_{suffix}@guest.local'
+        password = secrets.token_urlsafe(24)
+
+        return self.register_user(username, email, password, is_guest=True)
 
     def authenticate(
         self,

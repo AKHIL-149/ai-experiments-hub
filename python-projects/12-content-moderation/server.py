@@ -290,6 +290,35 @@ async def register(data: RegisterRequest, response: Response, request: Request):
         }
 
 
+@app.post("/api/auth/guest")
+async def guest_login(response: Response, request: Request):
+    """Create a temporary guest account and log in as it - no signup
+    form required. Mirrors /api/auth/register's session/cookie setup."""
+    with db_manager.get_session() as db:
+        auth_manager = AuthManager(db, SESSION_TTL_DAYS)
+        success, user, error = auth_manager.create_guest_user()
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        ip_address = get_client_ip(request)
+        session_token = auth_manager.create_session(user, ip_address)
+
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite='strict',
+            max_age=SESSION_TTL_DAYS * 24 * 60 * 60
+        )
+
+        return {
+            "success": True,
+            "user": user.to_dict()
+        }
+
+
 @app.post("/api/auth/login")
 async def login(data: LoginRequest, response: Response, request: Request):
     """Login user"""

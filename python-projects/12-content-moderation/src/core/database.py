@@ -105,6 +105,7 @@ class User(Base):
     # Account status
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
+    is_guest = Column(Boolean, default=False, nullable=False)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -125,6 +126,7 @@ class User(Base):
             'role': self.role.value,
             'is_active': self.is_active,
             'is_verified': self.is_verified,
+            'is_guest': self.is_guest,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None,
         }
