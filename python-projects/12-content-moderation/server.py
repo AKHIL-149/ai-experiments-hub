@@ -46,6 +46,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting - nothing else in this app enforced any limits on auth
+# endpoints, so a client could hammer /api/auth/register, /api/auth/login,
+# or /api/auth/guest indefinitely (unlimited account creation, unlimited
+# credential-stuffing attempts). Redis-backed with an in-memory fallback
+# if Redis is unreachable.
+from src.middleware.rate_limiter import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
+
 # Database
 db_manager = DatabaseManager(os.getenv('DATABASE_URL'))
 db_manager.create_tables()

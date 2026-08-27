@@ -27,11 +27,28 @@ not a leak. Done at conftest.py's own module level (not inside a
 fixture) so the patch is live before `server` can be imported for the
 first time by anything, including a module-level import during
 collection.
+
+Second: RateLimitMiddleware is real and Redis-backed, not mocked out
+anywhere, and /api/auth/register + /api/auth/guest each allow 5 requests
+per 5 minutes, /api/auth/login allows 5 per minute - keyed by client IP.
+Starlette's TestClient always presents the same fake client host, so
+every test file's register/login/guest calls in a single `pytest tests/`
+run share ONE budget in real Redis. This is the exact same failure mode
+already hit and fixed in project 13's conftest.py - patching proactively
+here rather than waiting to rediscover it the same way.
+
+Fix: patch RateLimitMiddleware.dispatch (the HTTP-level enforcement
+point) to a no-op passthrough, for the whole test session. Deliberately
+NOT patching RateLimiter.is_allowed itself, so any future test that
+wants to exercise the actual rate-limiting logic can still do so
+directly against RateLimiter - only requests made through
+TestClient(app) skip enforcement.
 """
 import os
 import tempfile
 
 from src.core.database import DatabaseManager
+from src.middleware.rate_limiter import RateLimitMiddleware
 
 # Matches .env's DATABASE_URL and DatabaseManager's own no-arg default
 # (src/core/database.py). Any call that resolves to this - whether by
@@ -55,9 +72,19 @@ def _patched_init(self, database_url=None):
 
 DatabaseManager.__init__ = _patched_init
 
+_real_dispatch = RateLimitMiddleware.dispatch
+
+
+async def _passthrough_dispatch(self, request, call_next):
+    return await call_next(request)
+
+
+RateLimitMiddleware.dispatch = _passthrough_dispatch
+
 
 def pytest_sessionfinish(session, exitstatus):
     DatabaseManager.__init__ = _real_init
+    RateLimitMiddleware.dispatch = _real_dispatch
     try:
         os.remove(_test_db_path)
     except OSError:
