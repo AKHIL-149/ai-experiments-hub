@@ -364,6 +364,7 @@ class AdminService:
         name: str,
         category: str,
         auto_reject_threshold: float = 0.9,
+        auto_approve_threshold: float = 0.95,
         flag_review_threshold: float = 0.5,
         severity: int = 5,
         enabled: bool = True
@@ -376,6 +377,8 @@ class AdminService:
             name: Policy name
             category: Violation category
             auto_reject_threshold: Auto-reject threshold
+            auto_approve_threshold: Auto-approve threshold (only applies
+                when category is 'clean' - see apply_moderation_policy)
             flag_review_threshold: Flag for review threshold
             severity: Severity level (1-10)
             enabled: Whether policy is enabled
@@ -396,6 +399,7 @@ class AdminService:
                     name=name,
                     category=ViolationCategory(category),
                     auto_reject_threshold=auto_reject_threshold,
+                    auto_approve_threshold=auto_approve_threshold,
                     flag_review_threshold=flag_review_threshold,
                     enabled=enabled,
                     severity=severity
@@ -440,6 +444,7 @@ class AdminService:
         admin: User,
         policy_id: str,
         auto_reject_threshold: Optional[float] = None,
+        auto_approve_threshold: Optional[float] = None,
         flag_review_threshold: Optional[float] = None,
         severity: Optional[int] = None,
         enabled: Optional[bool] = None
@@ -451,6 +456,7 @@ class AdminService:
             admin: Admin user
             policy_id: Policy ID
             auto_reject_threshold: New auto-reject threshold
+            auto_approve_threshold: New auto-approve threshold
             flag_review_threshold: New flag threshold
             severity: New severity level
             enabled: New enabled status
@@ -474,6 +480,13 @@ class AdminService:
                         'new': auto_reject_threshold
                     }
                     policy.auto_reject_threshold = auto_reject_threshold
+
+                if auto_approve_threshold is not None:
+                    changes['auto_approve_threshold'] = {
+                        'old': policy.auto_approve_threshold,
+                        'new': auto_approve_threshold
+                    }
+                    policy.auto_approve_threshold = auto_approve_threshold
 
                 if flag_review_threshold is not None:
                     changes['flag_review_threshold'] = {

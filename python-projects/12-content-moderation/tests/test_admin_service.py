@@ -479,6 +479,42 @@ def test_create_policy_success(admin_service, admin_user):
     assert policy.severity == 8
 
 
+def test_create_policy_with_auto_approve_threshold(admin_service, admin_user):
+    """auto_approve_threshold should be settable at creation, not just
+    default from the Policy model's column default."""
+    success, policy, error = admin_service.create_policy(
+        admin=admin_user,
+        name='Lenient Clean Policy',
+        category='clean',
+        auto_approve_threshold=0.7,
+        severity=1
+    )
+
+    assert success is True
+    assert policy.auto_approve_threshold == 0.7
+
+
+def test_update_policy_auto_approve_threshold(admin_service, admin_user):
+    """auto_approve_threshold should be independently updatable."""
+    success, policy, error = admin_service.create_policy(
+        admin=admin_user,
+        name='Update Auto Approve Test',
+        category='clean',
+        severity=1
+    )
+    assert success is True
+    policy_id = policy.id
+
+    success, updated, error = admin_service.update_policy(
+        admin=admin_user,
+        policy_id=policy_id,
+        auto_approve_threshold=0.8
+    )
+
+    assert success is True
+    assert updated.auto_approve_threshold == 0.8
+
+
 def test_create_policy_duplicate_name(admin_service, admin_user):
     """Test creating policy with duplicate name"""
     # Create first policy

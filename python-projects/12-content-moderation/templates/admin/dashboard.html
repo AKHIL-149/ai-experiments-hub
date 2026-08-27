@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Content Moderation System</title>
-    <link rel="stylesheet" href="/static/css/main.css">
-    <link rel="stylesheet" href="/static/css/admin.css">
+    <link rel="stylesheet" href="/static/css/main.css?v={{ static_version('css/main.css') }}">
+    <link rel="stylesheet" href="/static/css/admin.css?v={{ static_version('css/admin.css') }}">
 </head>
 <body>
     <div class="app-container">
@@ -241,6 +241,11 @@
                                     <input type="number" id="policy-auto-reject" step="0.01" min="0" max="1" value="0.9">
                                 </div>
                                 <div class="form-group">
+                                    <label for="policy-auto-approve">Auto-Approve Threshold (0.0-1.0):</label>
+                                    <input type="number" id="policy-auto-approve" step="0.01" min="0" max="1" value="0.95">
+                                    <small>Only applies when category is "Clean"</small>
+                                </div>
+                                <div class="form-group">
                                     <label for="policy-flag-threshold">Flag Review Threshold (0.0-1.0):</label>
                                     <input type="number" id="policy-flag-threshold" step="0.01" min="0" max="1" value="0.5">
                                 </div>
@@ -402,6 +407,6 @@
         </div>
     </div>
 
-    <script src="/static/js/admin/dashboard.js"></script>
+    <script src="/static/js/admin/dashboard.js?v={{ static_version('js/admin/dashboard.js') }}"></script>
 </body>
 </html>

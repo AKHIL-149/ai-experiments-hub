@@ -54,6 +54,31 @@ db_manager.create_tables()
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+
+def static_version(rel_path: str) -> str:
+    """
+    Short cache-busting token for a static asset, derived from its mtime.
+
+    StaticFiles serves no explicit Cache-Control header, so browsers fall
+    back to heuristic caching (RFC 7234) off Last-Modified alone - which
+    can and does serve a stale script/stylesheet indefinitely across
+    deploys without ever revalidating. Confirmed live: after editing
+    dashboard.js, a brand new browser tab/profile kept executing the
+    pre-edit function body - `fetch(url, {cache:'no-store'})` got the
+    new content, but the real `<script src>` tag load did not.
+    Appending ?v=<mtime-hash> changes the URL itself whenever the file
+    changes, which bypasses heuristic caching without needing
+    Cache-Control changes to the StaticFiles mount.
+    """
+    try:
+        mtime = os.path.getmtime(Path("static") / rel_path)
+        return hashlib.md5(str(mtime).encode()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
+templates.env.globals["static_version"] = static_version
+
 # Session configuration
 SESSION_TTL_DAYS = int(os.getenv('SESSION_TTL_DAYS', '30'))
 COOKIE_SECURE = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
@@ -109,6 +134,7 @@ class PolicyCreateRequest(BaseModel):
     name: str
     category: str
     auto_reject_threshold: float = 0.9
+    auto_approve_threshold: float = 0.95
     flag_review_threshold: float = 0.5
     severity: int = 5
     enabled: bool = True
@@ -116,6 +142,7 @@ class PolicyCreateRequest(BaseModel):
 
 class PolicyUpdateRequest(BaseModel):
     auto_reject_threshold: Optional[float] = None
+    auto_approve_threshold: Optional[float] = None
     flag_review_threshold: Optional[float] = None
     severity: Optional[int] = None
     enabled: Optional[bool] = None
@@ -905,6 +932,7 @@ async def create_policy(
         name=request.name,
         category=request.category,
         auto_reject_threshold=request.auto_reject_threshold,
+        auto_approve_threshold=request.auto_approve_threshold,
         flag_review_threshold=request.flag_review_threshold,
         severity=request.severity,
         enabled=request.enabled
@@ -933,6 +961,7 @@ async def update_policy(
         admin=admin,
         policy_id=policy_id,
         auto_reject_threshold=request.auto_reject_threshold,
+        auto_approve_threshold=request.auto_approve_threshold,
         flag_review_threshold=request.flag_review_threshold,
         severity=request.severity,
         enabled=request.enabled

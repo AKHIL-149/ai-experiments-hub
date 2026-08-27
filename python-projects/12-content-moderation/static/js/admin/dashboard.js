@@ -605,6 +605,10 @@ function renderPolicies(policies) {
                         <span>${(policy.auto_reject_threshold * 100).toFixed(0)}%</span>
                     </div>
                     <div class="policy-detail-item">
+                        <label>Auto-Approve Threshold</label>
+                        <span>${(policy.auto_approve_threshold * 100).toFixed(0)}%</span>
+                    </div>
+                    <div class="policy-detail-item">
                         <label>Flag Threshold</label>
                         <span>${(policy.flag_review_threshold * 100).toFixed(0)}%</span>
                     </div>
@@ -658,6 +662,7 @@ async function openEditPolicyModal(policyId) {
         document.getElementById('policy-category').value = policy.category;
         document.getElementById('policy-category').disabled = true;
         document.getElementById('policy-auto-reject').value = policy.auto_reject_threshold;
+        document.getElementById('policy-auto-approve').value = policy.auto_approve_threshold;
         document.getElementById('policy-flag-threshold').value = policy.flag_review_threshold;
         document.getElementById('policy-severity').value = policy.severity;
         document.getElementById('policy-enabled').checked = policy.enabled;
@@ -677,6 +682,7 @@ async function savePolicy() {
 
     const data = {
         auto_reject_threshold: parseFloat(document.getElementById('policy-auto-reject').value),
+        auto_approve_threshold: parseFloat(document.getElementById('policy-auto-approve').value),
         flag_review_threshold: parseFloat(document.getElementById('policy-flag-threshold').value),
         severity: parseInt(document.getElementById('policy-severity').value),
         enabled: document.getElementById('policy-enabled').checked
