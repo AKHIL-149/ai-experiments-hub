@@ -200,19 +200,83 @@ Respond with ONLY the JSON object, nothing else."""
             return self._classify_image_openai(image_path, description, temperature)
         elif self.provider == 'anthropic':
             return self._classify_image_anthropic(image_path, description, temperature)
+        elif self.provider == 'ollama':
+            return self._classify_image_ollama(image_path, description, temperature)
         else:
-            # Ollama vision support limited, use text-based classification with description
+            return {
+                'provider': self.provider,
+                'model': self.model,
+                'category': ViolationCategory.CLEAN.value,
+                'confidence': 0.0,
+                'is_violation': False,
+                'reasoning': 'Vision not supported for this provider',
+                'processing_time_ms': 0,
+                'cost': 0.0
+            }
+
+    def _classify_image_ollama(
+        self,
+        image_path: str,
+        description: Optional[str],
+        temperature: float
+    ) -> Dict[str, Any]:
+        """
+        Classify image using a local Ollama vision model (llava by
+        default - free, runs entirely on-device). Was previously a stub
+        that either did text-only classification on the NSFW detector's
+        description (no actual image understanding) or a hardcoded
+        'not supported' result - Ollama's /api/chat endpoint does
+        support vision via an `images` field on the message, this just
+        wasn't wired up. _generate_ollama passes `messages` through to
+        the API verbatim, so putting `images` on the message dict here
+        is enough - no changes needed there.
+        """
+        import base64
+
+        try:
+            with open(image_path, 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode('utf-8')
+
+            prompt_text = "Analyze this image for content moderation. " + self.MODERATION_PROMPT.format(content="[Image]")
+
             if description:
-                return self.classify_text(f"Image detected: {description}", temperature)
-            else:
-                return {
-                    'category': ViolationCategory.CLEAN.value,
-                    'confidence': 0.0,
-                    'is_violation': False,
-                    'reasoning': 'Vision not supported for this provider',
-                    'processing_time_ms': 0,
-                    'cost': 0.0
+                prompt_text = f"NSFW Detector Result: {description}\n\n" + prompt_text
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": prompt_text,
+                    "images": [image_data]
                 }
+            ]
+
+            vision_model = os.getenv('OLLAMA_VISION_MODEL', 'llava')
+            original_model = self.model
+            self.model = vision_model
+
+            result = self._generate(messages, max_tokens=500, temperature=temperature)
+
+            self.model = original_model
+
+            classification = self._parse_classification(result['content'])
+            classification['provider'] = 'ollama'
+            classification['model'] = vision_model
+            classification['processing_time_ms'] = result.get('processing_time_ms', 0)
+            classification['cost'] = 0.0  # Local, free
+            return classification
+
+        except Exception as e:
+            logging.error(f"Ollama vision classification failed: {e}")
+            return {
+                'provider': 'ollama',
+                'model': os.getenv('OLLAMA_VISION_MODEL', 'llava'),
+                'category': ViolationCategory.CLEAN.value,
+                'confidence': 0.0,
+                'is_violation': False,
+                'reasoning': f"Vision classification error: {e}",
+                'processing_time_ms': 0,
+                'cost': 0.0
+            }
 
     def _classify_image_openai(
         self,
@@ -259,6 +323,8 @@ Respond with ONLY the JSON object, nothing else."""
             self.model = original_model
 
             classification = self._parse_classification(result['content'])
+            classification['provider'] = 'openai'
+            classification['model'] = vision_model
             classification['processing_time_ms'] = result.get('processing_time_ms', 0)
             classification['cost'] = result.get('cost', 0.0)
             return classification
@@ -266,6 +332,8 @@ Respond with ONLY the JSON object, nothing else."""
         except Exception as e:
             logging.error(f"OpenAI vision classification failed: {e}")
             return {
+                'provider': 'openai',
+                'model': os.getenv('VISION_MODEL', 'gpt-4o'),
                 'category': ViolationCategory.CLEAN.value,
                 'confidence': 0.0,
                 'is_violation': False,
@@ -341,12 +409,17 @@ Respond with ONLY the JSON object, nothing else."""
             cost = self._estimate_anthropic_cost(input_tokens, output_tokens)
 
             classification = self._parse_classification(content)
+            classification['provider'] = 'anthropic'
+            classification['model'] = self.model
+            classification['processing_time_ms'] = 0
             classification['cost'] = cost
             return classification
 
         except Exception as e:
             logging.error(f"Anthropic vision classification failed: {e}")
             return {
+                'provider': 'anthropic',
+                'model': self.model,
                 'category': ViolationCategory.CLEAN.value,
                 'confidence': 0.0,
                 'is_violation': False,
