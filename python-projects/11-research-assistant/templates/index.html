@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Research Assistant - AI-Powered Multi-Source Research</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v={{ static_version('styles.css') }}">
 </head>
 <body>
     <!-- Auth View -->
@@ -180,6 +180,6 @@
         <div class="spinner"></div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{ static_version('app.js') }}"></script>
 </body>
 </html>

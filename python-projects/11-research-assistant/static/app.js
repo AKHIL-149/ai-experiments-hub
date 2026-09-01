@@ -90,6 +90,10 @@ class ResearchApp {
             return;
         }
 
+        await this.loginWithCredentials(username, password);
+    }
+
+    async loginWithCredentials(username, password) {
         try {
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
@@ -131,8 +135,16 @@ class ResearchApp {
             });
 
             if (response.ok) {
-                // Auto-login after registration
-                await this.handleLogin();
+                // Auto-login after registration. Was calling handleLogin(),
+                // which reads document.getElementById('login-username'/
+                // 'login-password') - the LOGIN form's fields, not this
+                // (register) form's. Since the user just registered, not
+                // logged in, those fields are empty, so handleLogin()
+                // always failed with "Please enter username and password"
+                // right after a successful registration - the account was
+                // created either way, the user just had no way to know
+                // that and had to switch to Login and re-type everything.
+                await this.loginWithCredentials(username, password);
             } else {
                 const error = await response.json();
                 this.showError(error.detail || 'Registration failed');
