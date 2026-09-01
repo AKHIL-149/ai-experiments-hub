@@ -479,6 +479,20 @@ bcrypt.checkpw(password.encode('utf-8'), hash.encode('utf-8'))
 **Problem**: Session expires too quickly
 **Solution**: Increase `SESSION_TTL_DAYS` in `.env`
 
+### PDF/Export Issues
+
+**Problem**: `OSError: cannot load library 'pango-1.0-0'` (PDF export via weasyprint)
+**Solution** (macOS with Homebrew): weasyprint needs the native pango library, and
+Homebrew's install location isn't on the default dynamic linker search path.
+```bash
+brew install pango
+export DYLD_LIBRARY_PATH=/opt/homebrew/lib
+```
+Add the `export` line to your shell profile (or prefix it before `python server.py` /
+`pytest`) so it's set every time. Without it, `get_info()` in
+`src/utils/report_generator.py` fails on `import weasyprint` - which also breaks
+the availability check for every other export format (Markdown/HTML/JSON), not just PDF.
+
 ## Production Readiness
 
 ### What Works Well ✅
