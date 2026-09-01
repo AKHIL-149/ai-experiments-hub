@@ -39,6 +39,7 @@ class ArXivPaper:
     categories: List[str]
     content: Optional[str] = None
     pdf_path: Optional[Path] = None
+    citation_count: Optional[int] = None
 
 
 class ArXivClient:

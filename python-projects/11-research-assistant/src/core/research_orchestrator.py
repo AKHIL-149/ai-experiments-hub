@@ -201,6 +201,22 @@ class ResearchOrchestrator:
                 'query_id': query_id,
                 'query': query,
                 'summary': summary,
+                # Top-level confidence/avg_confidence, matching
+                # get_research_query()'s shape (used by GET
+                # /api/research/{id}) - this dict is what POST
+                # /api/research returns directly and the frontend
+                # renders immediately after a query completes, without
+                # ever going through get_research_query(). It was only
+                # nested under stats.avg_confidence below, so
+                # `this.currentResearch.confidence || this.currentResearch.avg_confidence`
+                # in app.js always fell through to 0 and displayed
+                # "Confidence: N/A" right after every research query -
+                # even though the confidence score itself was computed
+                # correctly and saved correctly (a page reload, which
+                # goes through the GET endpoint's correctly-shaped
+                # response, always showed the real value).
+                'confidence': avg_confidence,
+                'avg_confidence': avg_confidence,
                 'findings': [
                     {
                         'text': f.finding_text,
@@ -286,7 +302,7 @@ class ResearchOrchestrator:
                         'id': paper.arxiv_id,
                         'source_type': 'arxiv',
                         'title': paper.title,
-                        'content': paper.summary + '\n\n' + (paper.full_text or '')[:2000],
+                        'content': paper.summary + '\n\n' + (paper.content or '')[:2000],
                         'url': paper.pdf_url,
                         'relevance_score': 0.8,  # Default high relevance for academic papers
                         'published_date': paper.published,
