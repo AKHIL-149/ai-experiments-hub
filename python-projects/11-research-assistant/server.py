@@ -11,6 +11,7 @@ FastAPI server with:
 
 import os
 import sys
+import hashlib
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -67,6 +68,31 @@ app.add_middleware(
 # Static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+
+def static_version(rel_path: str) -> str:
+    """
+    Short cache-busting token for a static asset, derived from its mtime.
+
+    StaticFiles serves no explicit Cache-Control header, so browsers fall
+    back to heuristic caching (RFC 7234) off Last-Modified alone - which
+    can and does serve a stale script/stylesheet indefinitely across
+    edits without ever revalidating. Confirmed live here: after fixing a
+    real bug in app.js, a brand new browser tab kept executing the
+    pre-fix function body - fetch(url, {cache:'no-store'}) got the new
+    content, but the real <script src> tag load did not. Appending
+    ?v=<mtime-hash> changes the URL itself whenever the file changes,
+    bypassing heuristic caching without touching the StaticFiles mount.
+    Same fix already applied in project 12 (AKHIL-238).
+    """
+    try:
+        mtime = os.path.getmtime(Path("static") / rel_path)
+        return hashlib.md5(str(mtime).encode()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
+templates.env.globals["static_version"] = static_version
 
 # Initialize managers
 database_url = os.getenv('DATABASE_URL', 'sqlite:///./data/database.db')
@@ -188,7 +214,7 @@ def create_research_orchestrator(
 @app.get("/")
 async def index(request: Request):
     """Serve main page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
 @app.get("/api/health")
