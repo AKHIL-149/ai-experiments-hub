@@ -250,8 +250,21 @@ class SourceRanker:
                 source.recency_score = 0.5
                 continue
 
+            # ArXiv's API returns timezone-aware datetimes (UTC); `now`
+            # here is naive. Subtracting a naive and an aware datetime
+            # raises TypeError - confirmed live, this crashed every
+            # research query that actually found an ArXiv source (i.e.
+            # the moment ArXiv search started working at all). Web
+            # sources have no published_date (handled above), so ArXiv
+            # is the only source of aware datetimes reaching here; strip
+            # tzinfo rather than making `now` aware, since ArXiv's
+            # datetimes are already UTC.
+            published_date = source.published_date
+            if published_date.tzinfo is not None:
+                published_date = published_date.replace(tzinfo=None)
+
             # Calculate days since publication
-            days_old = (now - source.published_date).days
+            days_old = (now - published_date).days
 
             if days_old < 0:
                 # Future date (error): treat as very recent
