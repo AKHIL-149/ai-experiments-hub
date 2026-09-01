@@ -96,7 +96,7 @@ class TestCitationManager:
         citation = manager.generate_citation(
             source_type='arxiv',
             title='Attention Is All You Need',
-            authors=['Vaswani, Ashish', 'Shazeer, Noam'],
+            authors=['Ashish Vaswani', 'Noam Shazeer'],
             published_date=datetime(2017, 6, 12),
             arxiv_id='1706.03762'
         )
@@ -111,7 +111,7 @@ class TestCitationManager:
         citation = manager.generate_citation(
             source_type='arxiv',
             title='Attention Is All You Need',
-            authors=['Vaswani, Ashish', 'Shazeer, Noam'],
+            authors=['Ashish Vaswani', 'Noam Shazeer'],
             published_date=datetime(2017, 6, 12),
             arxiv_id='1706.03762',
             style='MLA'
