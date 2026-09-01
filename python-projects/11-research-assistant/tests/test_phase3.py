@@ -151,6 +151,41 @@ class TestSourceRanker:
         arxiv_source = [s for s in ranked if s.source_type == 'arxiv'][0]
         assert arxiv_source.authority_score == 1.0
 
+    def test_rank_sources_preserves_authors(self):
+        """RankedSource previously had no `authors` field at all, so it
+        was silently dropped between the raw ArXiv source dict (which
+        does carry real author names) and the RankedSource objects
+        _generate_citations() builds citations from -
+        getattr(source, 'authors', None) always fell through to None,
+        and every ArXiv reference showed "Unknown Author" regardless of
+        the paper's real authors. Confirmed live: fixed, real author
+        names now appear in generated references."""
+        ranker = SourceRanker()
+
+        sources = [
+            {
+                'id': '1',
+                'source_type': 'arxiv',
+                'title': 'A Paper With Real Authors',
+                'content': 'Some academic content.',
+                'url': 'https://arxiv.org/abs/1234.5678',
+                'authors': ['Jane Smith', 'John Doe']
+            },
+            {
+                'id': '2',
+                'source_type': 'web',
+                'title': 'A Web Page With No Authors',
+                'content': 'Some web content.',
+                'url': 'https://example.com/page'
+            }
+        ]
+
+        ranked = ranker.rank_sources(sources, query='test query')
+        by_id = {s.id: s for s in ranked}
+
+        assert by_id['1'].authors == ['Jane Smith', 'John Doe']
+        assert by_id['2'].authors is None
+
     def test_authority_scores(self):
         """Test authority scoring by source type and domain."""
         ranker = SourceRanker()

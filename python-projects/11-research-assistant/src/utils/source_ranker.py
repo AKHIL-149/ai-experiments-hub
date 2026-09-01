@@ -36,6 +36,7 @@ class RankedSource:
     published_date: Optional[datetime] = None
     citation_count: Optional[int] = None
     domain: Optional[str] = None
+    authors: Optional[List[str]] = None
 
 
 class SourceRanker:
@@ -120,7 +121,8 @@ class SourceRanker:
                 content=source.get('content', ''),
                 url=source.get('url'),
                 published_date=source.get('published_date'),
-                citation_count=source.get('citation_count')
+                citation_count=source.get('citation_count'),
+                authors=source.get('authors')
             )
 
             # Calculate domain from URL
