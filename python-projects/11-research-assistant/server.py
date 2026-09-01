@@ -214,7 +214,7 @@ def create_research_orchestrator(
 @app.get("/")
 async def index(request: Request):
     """Serve main page."""
-    return templates.TemplateResponse(request, "index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/api/health")

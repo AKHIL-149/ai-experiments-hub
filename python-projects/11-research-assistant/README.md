@@ -457,6 +457,26 @@ arXiv preprint arXiv:2401.12345 (2024).
 
 ## Troubleshooting
 
+### Web Search Issues
+
+**Problem**: Every research query returns "No sources found", and the server log
+shows `DuckDuckGo search failed: Client.__init__() got an unexpected keyword
+argument 'proxy'`
+**Solution**: This is a dependency conflict, not a code bug - some `ddgs`
+versions require `httpx>=0.28.1` internally, which is incompatible with
+`starlette==0.27.0` (pinned via `fastapi==0.104.1`)'s TestClient. `ddgs` is
+pinned to `9.0.0` in requirements.txt specifically to avoid this (it's the
+last version that talks to search backends via `primp` directly instead of
+`httpx`). **Always install this project into its own virtualenv**
+(`python -m venv venv && source venv/bin/activate && pip install -r
+requirements.txt`) rather than a shared/system Python - a shared environment
+that already has a newer `ddgs` or `httpx` installed for an unrelated project
+will silently break web search here, and forcing a shared upgrade to satisfy
+`ddgs` can just as easily break `fastapi`'s TestClient (or any other project
+sharing that environment) instead. Confirmed live: this exact crash happened
+when running against a shared Anaconda environment; a dedicated venv resolved
+it immediately with no code changes needed.
+
 ### Database Issues
 
 **Problem**: `sqlite3.OperationalError: no such table`

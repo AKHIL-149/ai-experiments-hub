@@ -22,7 +22,13 @@ sentence-transformers==2.2.2
 chromadb==0.4.18
 
 # Web Search
-ddgs>=1.0.0
+# Pinned, not >=: ddgs versions after 9.0.0 require httpx>=0.28.1
+# internally, which is incompatible with starlette==0.27.0's TestClient
+# (pinned via fastapi==0.104.1 above) - TypeError: Client.__init__() got
+# an unexpected keyword argument 'app'/'proxy' either way you resolve
+# the conflict. ddgs==9.0.0 is the last version using primp directly
+# instead of httpx, sidestepping the conflict entirely.
+ddgs==9.0.0
 
 # ArXiv
 arxiv==2.1.0
