@@ -31,7 +31,8 @@ class AuthManager:
         db_session: Session,
         username: str,
         email: str,
-        password: str
+        password: str,
+        is_guest: bool = False
     ) -> Tuple[bool, Optional[User], Optional[str]]:
         """
         Register a new user.
@@ -41,6 +42,9 @@ class AuthManager:
             username: Username (3-50 characters, alphanumeric + underscore)
             email: Email address
             password: Password (minimum 8 characters)
+            is_guest: Whether this is an auto-created guest account (see
+                create_guest_user, which generates username/email/
+                password and calls this with is_guest=True)
 
         Returns:
             Tuple of (success, user, error_message)
@@ -77,7 +81,8 @@ class AuthManager:
         user = User(
             username=username,
             email=email,
-            password_hash=password_hash.decode('utf-8')
+            password_hash=password_hash.decode('utf-8'),
+            is_guest=is_guest
         )
 
         try:
@@ -88,6 +93,28 @@ class AuthManager:
         except Exception as e:
             db_session.rollback()
             return False, None, f"Failed to create user: {str(e)}"
+
+    def create_guest_user(self, db_session: Session) -> Tuple[bool, Optional[User], Optional[str]]:
+        """
+        Create a temporary guest account: no signup form, just a
+        randomly-generated username/email/password (the password is
+        never surfaced - a guest has no way to log back in as this
+        account later, it exists only for the current session). Reuses
+        register_user() so guests get the exact same validation and
+        password hashing as a real registration, not a bypassed path.
+
+        Args:
+            db_session: Database session
+
+        Returns:
+            Tuple of (success, user, error_message)
+        """
+        suffix = secrets.token_hex(4)
+        username = f'guest_{suffix}'
+        email = f'guest_{suffix}@guest.local'
+        password = secrets.token_urlsafe(24)
+
+        return self.register_user(db_session, username, email, password, is_guest=True)
 
     def authenticate(
         self,

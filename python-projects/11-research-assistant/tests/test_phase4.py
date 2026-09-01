@@ -164,6 +164,38 @@ class TestAuthenticationEndpoints:
         assert response.json()['success'] is True
 
 
+class TestGuestLoginEndpoint:
+    """Test guest account login endpoint."""
+
+    def test_guest_login_creates_session(self):
+        response = client.post("/api/auth/guest")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['is_guest'] is True
+        assert data['username'].startswith('guest_')
+        assert 'session_token' in response.cookies
+
+    def test_guest_login_logs_in_immediately(self):
+        guest_response = client.post("/api/auth/guest")
+        cookies = guest_response.cookies
+
+        me_response = client.get("/api/auth/me", cookies=cookies)
+
+        assert me_response.status_code == 200
+        assert me_response.json()['is_guest'] is True
+
+    def test_guest_can_list_research(self):
+        """A guest should be a fully-functional user for research
+        endpoints, not a restricted/read-only account."""
+        guest_response = client.post("/api/auth/guest")
+        cookies = guest_response.cookies
+
+        response = client.get("/api/research", cookies=cookies)
+
+        assert response.status_code == 200
+
+
 class TestResearchEndpoints:
     """Test research API endpoints."""
 

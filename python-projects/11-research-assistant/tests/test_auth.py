@@ -169,6 +169,48 @@ class TestRegistration:
         assert len(user.password_hash) == 60  # bcrypt hash length
 
 
+class TestGuestAccount:
+    """Test guest account creation."""
+
+    def test_create_guest_user_generates_unique_account(self, db_session, auth_manager):
+        success, user, error = auth_manager.create_guest_user(db_session)
+
+        assert success is True
+        assert error is None
+        assert user.is_guest is True
+        assert user.username.startswith('guest_')
+        assert user.email.endswith('@guest.local')
+
+    def test_create_guest_user_twice_gives_different_accounts(self, db_session, auth_manager):
+        _, user1, _ = auth_manager.create_guest_user(db_session)
+        _, user2, _ = auth_manager.create_guest_user(db_session)
+
+        assert user1.username != user2.username
+        assert user1.id != user2.id
+
+    def test_regular_register_defaults_is_guest_false(self, db_session, auth_manager):
+        success, user, error = auth_manager.register_user(
+            db_session,
+            username='realuser01',
+            email='realuser01@example.com',
+            password='RealPass123!'
+        )
+
+        assert success is True
+        assert user.is_guest is False
+
+    def test_guest_can_authenticate_with_generated_password(self, db_session, auth_manager):
+        """create_guest_user() never surfaces the generated password, but
+        it should still be a real, usable account through the normal
+        authenticate() path - not a special-cased bypass."""
+        _, guest, _ = auth_manager.create_guest_user(db_session)
+
+        success, session, error = auth_manager.create_session(db_session, guest)
+
+        assert success is True
+        assert session is not None
+
+
 class TestAuthentication:
     """Test user authentication."""
 

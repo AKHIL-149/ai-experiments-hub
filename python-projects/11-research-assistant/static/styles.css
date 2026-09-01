@@ -91,6 +91,36 @@ body {
     text-decoration: underline;
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 16px 0;
+    color: #7f8c8d;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #ddd;
+}
+
+.auth-divider span {
+    padding: 0 12px;
+}
+
+.auth-form button.secondary-btn {
+    background: #ecf0f1;
+    color: #34495e;
+}
+
+.auth-form button.secondary-btn:hover {
+    background: #dfe6e9;
+}
+
 .error {
     padding: 12px;
     background: #e74c3c;

@@ -30,6 +30,7 @@ class ResearchApp {
         // Auth events
         document.getElementById('login-btn').addEventListener('click', () => this.handleLogin());
         document.getElementById('register-btn').addEventListener('click', () => this.handleRegister());
+        document.getElementById('guest-login-btn').addEventListener('click', () => this.handleGuestLogin());
         document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
 
         document.getElementById('show-register').addEventListener('click', (e) => {
@@ -152,6 +153,28 @@ class ResearchApp {
         } catch (error) {
             console.error('Registration error:', error);
             this.showError('Registration failed. Please try again.');
+        }
+    }
+
+    async handleGuestLogin() {
+        try {
+            const response = await fetch('/api/auth/guest', {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                const user = await response.json();
+                this.currentUser = user;
+                this.showMainView();
+                await this.loadResearchList();
+            } else {
+                const error = await response.json();
+                this.showError(error.detail || 'Could not create guest session');
+            }
+        } catch (error) {
+            console.error('Guest login error:', error);
+            this.showError('Guest login failed. Please try again.');
         }
     }
 
@@ -441,7 +464,8 @@ class ResearchApp {
     showMainView() {
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('main-view').style.display = 'block';
-        document.getElementById('username-display').textContent = this.currentUser.username;
+        const label = this.currentUser.username + (this.currentUser.is_guest ? ' (Guest)' : '');
+        document.getElementById('username-display').textContent = label;
         this.showView('empty-view');
     }
 

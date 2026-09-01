@@ -247,7 +247,8 @@ async def register(req: RegisterRequest):
         return {
             "user_id": user.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "is_guest": user.is_guest
         }
 
 
@@ -285,7 +286,41 @@ async def login(req: LoginRequest, response: Response):
         return {
             "user_id": user.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "is_guest": user.is_guest
+        }
+
+
+@app.post("/api/auth/guest")
+async def guest_login(response: Response):
+    """Create a temporary guest account and log in as it - no signup
+    form required. Mirrors /api/auth/login's session/cookie setup."""
+    with db_manager.get_session() as db_session:
+        success, user, error = auth_manager.create_guest_user(db_session)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        success, session, error = auth_manager.create_session(db_session, user)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to create session")
+
+        cookie_secure = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
+        response.set_cookie(
+            key="session_token",
+            value=session.id,
+            httponly=True,
+            secure=cookie_secure,
+            samesite="strict",
+            max_age=session_ttl * 24 * 60 * 60
+        )
+
+        return {
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_guest": user.is_guest
         }
 
 
@@ -314,6 +349,7 @@ async def get_current_user_info(session_token: Optional[str] = Cookie(None)):
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
+        "is_guest": user.is_guest,
         "created_at": user.created_at.isoformat()
     }
 
