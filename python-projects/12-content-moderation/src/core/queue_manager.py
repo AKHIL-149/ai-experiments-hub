@@ -132,7 +132,7 @@ class QueueManager:
         content_id: str,
         file_path: str,
         max_frames: int = 10,
-        use_vision: bool = False,
+        use_vision: bool = True,
         priority: int = 0,
         queue_name: Optional[str] = None
     ) -> ModerationJob:

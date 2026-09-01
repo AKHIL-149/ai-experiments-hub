@@ -21,7 +21,7 @@ def classify_video_task(
     content_id: str,
     file_path: str,
     max_frames: int = 10,
-    use_vision: bool = False,  # Default False for faster processing
+    use_vision: bool = True,
     priority: int = 0
 ):
     """
@@ -32,7 +32,14 @@ def classify_video_task(
         content_id: Content item ID
         file_path: Path to video file
         max_frames: Maximum frames to analyze
-        use_vision: Whether to use vision models (slower, more expensive)
+        use_vision: Whether to use vision models. Defaults True - without
+            it, video moderation is limited to a binary NSFW/nudity check
+            per frame (via NudeNet) and never actually looks at the
+            content for anything else (spam, hate speech, violence,
+            misinformation, etc). That tradeoff made sense when vision
+            meant a slow, billed per-call API request; with the local
+            Ollama vision path (see llm_client.py) it's free, so there's
+            no longer a good reason to default it off.
         priority: Priority level
 
     Returns:

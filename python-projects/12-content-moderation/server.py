@@ -519,7 +519,7 @@ async def submit_content(
                     content_id=content_item.id,
                     file_path=file_path,
                     max_frames=10,
-                    use_vision=False,  # Faster processing
+                    use_vision=True,
                     priority=priority or 0
                 )
             else:
