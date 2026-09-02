@@ -11,13 +11,14 @@ FastAPI server with:
 
 import os
 import sys
+import uuid
 import hashlib
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Cookie, Response, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, HTTPException, Cookie, Response, WebSocket, WebSocketDisconnect, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,13 +29,16 @@ from dotenv import load_dotenv
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.core.database import DatabaseManager
+from src.core.database import DatabaseManager, Document
 from src.core.auth_manager import AuthManager
 from src.core.web_search_client import WebSearchClient
 from src.core.arxiv_client import ArXivClient
 from src.core.llm_client import LLMClient
 from src.core.research_orchestrator import ResearchOrchestrator
 from src.services.cache_manager import CacheManager
+from src.services.document_processor import extract_text, chunk_text, DocumentProcessingError, SUPPORTED_TYPES
+from src.services.vector_store import get_vector_store
+from src.services.embedding_service import get_embedding_service
 from src.utils.report_generator import ReportGenerator
 from src.utils.usage_analytics import UsageAnalytics
 from src.utils.cost_tracker import CostTracker
@@ -112,6 +116,30 @@ output_dir = os.getenv('OUTPUT_DIR', './data/output')
 # Global research orchestrator (will be initialized per request with user-specific settings)
 llm_provider = os.getenv('LLM_PROVIDER', 'ollama').lower()
 llm_model = os.getenv('LLM_MODEL')
+
+# My Documents (RAG) - vector store and embedding model are process-wide
+# singletons, not created per-request like create_research_orchestrator()
+# does for its other clients. Both are expensive to construct
+# (SentenceTransformer loads model weights; PersistentClient opens the
+# on-disk index) and, unlike the web/arxiv/llm clients, have no reason
+# to vary per-request or per-user - loading them fresh on every request
+# would make every research query and every upload noticeably slower
+# for no benefit.
+documents_dir = Path(os.getenv('DOCUMENTS_DIR', './data/documents'))
+documents_dir.mkdir(parents=True, exist_ok=True)
+chroma_dir = os.getenv('CHROMA_DIR', './data/chroma')
+max_upload_bytes = int(os.getenv('MAX_UPLOAD_MB', '20')) * 1024 * 1024
+
+vector_store = None
+embedding_service = None
+try:
+    vector_store = get_vector_store(persist_dir=chroma_dir)
+    embedding_service = get_embedding_service()
+except Exception as e:
+    # Document upload/search degrades to "unavailable" rather than
+    # taking the whole server down - the rest of the app (web/arxiv
+    # research) doesn't depend on this.
+    logging.warning(f"Document RAG unavailable (vector_store/embedding_service failed to init): {e}")
 
 # Initialize analytics and cost tracking (Phase 5)
 usage_analytics = UsageAnalytics(db_manager)
@@ -203,7 +231,9 @@ def create_research_orchestrator(
         arxiv_client=arxiv_client,
         llm_client=llm_client,
         embedding_model=embedding_model,
-        cache_manager=cache_manager
+        cache_manager=cache_manager,
+        vector_store=vector_store,
+        embedding_service=embedding_service
     )
 
     return orchestrator
@@ -352,6 +382,155 @@ async def get_current_user_info(session_token: Optional[str] = Cookie(None)):
         "is_guest": user.is_guest,
         "created_at": user.created_at.isoformat()
     }
+
+
+# Document endpoints (My Documents / RAG)
+
+@app.post("/api/documents")
+async def upload_document(
+    file: UploadFile = File(...),
+    session_token: Optional[str] = Cookie(None)
+):
+    """
+    Upload a document for 'My Documents' research search.
+
+    Synchronous, like /api/research: extracts text, chunks it, embeds
+    each chunk, and stores the embeddings before responding - by the
+    time this returns 200, the document is already searchable. No
+    background job/polling, matching how the rest of this app works.
+    """
+    user = get_current_user(session_token)
+
+    if not vector_store or not embedding_service:
+        raise HTTPException(
+            status_code=503,
+            detail="Document upload is unavailable (embedding/vector store failed to initialize)"
+        )
+
+    filename = file.filename or "upload"
+    file_type = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if file_type not in SUPPORTED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{file_type}'. Supported: {', '.join(sorted(SUPPORTED_TYPES))}"
+        )
+
+    content = await file.read()
+    if len(content) > max_upload_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large ({len(content) / 1024 / 1024:.1f}MB). Max is {max_upload_bytes / 1024 / 1024:.0f}MB"
+        )
+    if not content:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    document_id = str(uuid.uuid4())
+    user_dir = documents_dir / user.id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = user_dir / f"{document_id}.{file_type}"
+    dest_path.write_bytes(content)
+
+    with db_manager.get_session() as db_session:
+        doc = Document(
+            id=document_id,
+            user_id=user.id,
+            filename=filename,
+            file_type=file_type,
+            file_size_bytes=len(content),
+            file_path=str(dest_path),
+            status='processing'
+        )
+        db_session.add(doc)
+        db_session.commit()
+
+    try:
+        text = extract_text(str(dest_path), file_type)
+        chunks = chunk_text(text)
+
+        if not chunks:
+            raise DocumentProcessingError("Document produced no usable text chunks")
+
+        embeddings = embedding_service.embed_texts(chunks)
+        chunk_count = vector_store.add_chunks(
+            document_id=document_id,
+            user_id=user.id,
+            chunks=chunks,
+            embeddings=embeddings,
+            filename=filename
+        )
+
+        with db_manager.get_session() as db_session:
+            doc = db_session.query(Document).filter_by(id=document_id).first()
+            doc.status = 'ready'
+            doc.chunk_count = chunk_count
+            doc.processed_at = datetime.utcnow()
+            db_session.commit()
+            result = doc.to_dict()
+
+        return result
+
+    except Exception as e:
+        logging.error(f"Document processing failed for {document_id}: {e}", exc_info=True)
+        with db_manager.get_session() as db_session:
+            doc = db_session.query(Document).filter_by(id=document_id).first()
+            if doc:
+                doc.status = 'failed'
+                doc.error_message = str(e)
+                db_session.commit()
+        # 200, not 500 - the upload itself succeeded and is now tracked
+        # (visible in GET /api/documents as status='failed'); only text
+        # extraction/embedding failed, e.g. a scanned/image-only PDF.
+        return JSONResponse(status_code=200, content={
+            "id": document_id,
+            "filename": filename,
+            "status": "failed",
+            "error_message": str(e)
+        })
+
+
+@app.get("/api/documents")
+async def list_documents(session_token: Optional[str] = Cookie(None)):
+    """List the current user's uploaded documents."""
+    user = get_current_user(session_token)
+
+    with db_manager.get_session() as db_session:
+        docs = (
+            db_session.query(Document)
+            .filter_by(user_id=user.id)
+            .order_by(Document.uploaded_at.desc())
+            .all()
+        )
+        return {"documents": [d.to_dict() for d in docs]}
+
+
+@app.delete("/api/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Delete an uploaded document (DB row, file on disk, and vector chunks)."""
+    user = get_current_user(session_token)
+
+    with db_manager.get_session() as db_session:
+        doc = db_session.query(Document).filter_by(id=document_id, user_id=user.id).first()
+
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        file_path = Path(doc.file_path)
+
+        db_session.delete(doc)
+        db_session.commit()
+
+    if vector_store:
+        vector_store.delete_document(document_id)
+
+    try:
+        file_path.unlink(missing_ok=True)
+    except OSError as e:
+        logging.warning(f"Failed to delete file for document {document_id}: {e}")
+
+    return {"success": True}
 
 
 # Research endpoints

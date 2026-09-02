@@ -59,6 +59,7 @@
             <aside class="sidebar">
                 <h2>Research History</h2>
                 <button id="new-research-btn" class="primary-btn">+ New Research</button>
+                <button id="manage-documents-btn" class="secondary-btn">📄 My Documents</button>
                 <div id="research-list" class="research-list">
                     <!-- Research queries will be loaded here -->
                 </div>
@@ -93,6 +94,7 @@
                                         <input type="checkbox" id="source-documents">
                                         My Documents
                                     </label>
+                                    <span id="source-documents-hint" class="field-hint"></span>
                                 </div>
                             </div>
 
@@ -172,6 +174,26 @@
                     <h2>Welcome to Research Assistant</h2>
                     <p>Start a new research query to synthesize information from multiple sources.</p>
                     <button id="new-research-empty-btn" class="primary-btn">+ New Research</button>
+                </div>
+
+                <!-- My Documents View -->
+                <div id="documents-view" class="content-view" style="display: none;">
+                    <h2>My Documents</h2>
+                    <p class="subtitle">
+                        Upload PDF, DOCX, TXT, or Markdown files here to search them
+                        alongside web and ArXiv results (check "My Documents" when
+                        starting a research query).
+                    </p>
+
+                    <div class="document-upload">
+                        <input type="file" id="document-file-input" accept=".pdf,.docx,.txt,.md" style="display: none;">
+                        <button id="document-upload-btn" class="primary-btn">+ Upload Document</button>
+                        <span id="document-upload-status"></span>
+                    </div>
+
+                    <div id="documents-list" class="documents-list">
+                        <!-- Uploaded documents will be loaded here -->
+                    </div>
                 </div>
             </main>
         </div>

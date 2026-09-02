@@ -49,6 +49,7 @@ class User(Base):
     # Relationships
     sessions = relationship('UserSession', back_populates='user', cascade='all, delete-orphan')
     research_queries = relationship('ResearchQuery', back_populates='user', cascade='all, delete-orphan')
+    documents = relationship('Document', back_populates='user', cascade='all, delete-orphan')
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert user to dictionary (exclude password_hash)."""
@@ -88,6 +89,52 @@ class UserSession(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'last_accessed': self.last_accessed.isoformat() if self.last_accessed else None,
+        }
+
+
+class Document(Base):
+    """Uploaded document model, for 'My Documents' RAG search.
+
+    The file itself lives on disk (data/documents/<user_id>/<id>.<ext>);
+    this row tracks metadata and processing status. The actual chunk
+    text + embeddings live in ChromaDB (see src/services/vector_store.py),
+    keyed by this row's id - deleting a Document should also delete its
+    ChromaDB entries (handled at the service layer, not via a DB
+    cascade, since ChromaDB isn't a SQL foreign-key relationship).
+    """
+
+    __tablename__ = 'documents'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id'), nullable=False, index=True)
+
+    filename = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=False)  # pdf, txt, md, docx
+    file_size_bytes = Column(Integer, nullable=False)
+    file_path = Column(String(500), nullable=False)
+
+    status = Column(String(20), default='processing', nullable=False)  # processing, ready, failed
+    error_message = Column(Text, nullable=True)
+    chunk_count = Column(Integer, default=0)
+
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    user = relationship('User', back_populates='documents')
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert document to dictionary."""
+        return {
+            'id': self.id,
+            'filename': self.filename,
+            'file_type': self.file_type,
+            'file_size_bytes': self.file_size_bytes,
+            'status': self.status,
+            'error_message': self.error_message,
+            'chunk_count': self.chunk_count,
+            'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
+            'processed_at': self.processed_at.isoformat() if self.processed_at else None,
         }
 
 

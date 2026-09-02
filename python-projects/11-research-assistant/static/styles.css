@@ -630,3 +630,96 @@ header h1 {
     border-radius: 3px;
     white-space: nowrap;
 }
+
+/* My Documents */
+
+#manage-documents-btn {
+    width: 100%;
+    padding: 10px;
+    background: white;
+    color: #3498db;
+    border: 1px solid #3498db;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-bottom: 20px;
+}
+
+#manage-documents-btn:hover {
+    background: #ecf6fd;
+}
+
+.field-hint {
+    font-size: 12px;
+    color: #7f8c8d;
+    margin-left: 4px;
+}
+
+.document-upload {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 24px 0;
+}
+
+.document-upload .primary-btn {
+    width: auto;
+    margin-bottom: 0;
+    padding: 10px 20px;
+}
+
+#document-upload-status {
+    font-size: 13px;
+    color: #555;
+}
+
+.documents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.empty-hint {
+    color: #7f8c8d;
+    font-style: italic;
+}
+
+.document-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 4px solid #bdc3c7;
+}
+
+.document-item.document-status-ready {
+    border-left-color: #2ecc71;
+}
+
+.document-item.document-status-processing {
+    border-left-color: #f39c12;
+}
+
+.document-item.document-status-failed {
+    border-left-color: #e74c3c;
+}
+
+.document-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.document-filename {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.document-meta {
+    font-size: 12px;
+    color: #7f8c8d;
+}

@@ -35,7 +35,9 @@ class ResearchOrchestrator:
         llm_client=None,
         citation_manager: Optional[CitationManager] = None,
         embedding_model=None,
-        cache_manager=None
+        cache_manager=None,
+        vector_store=None,
+        embedding_service=None
     ):
         """
         Initialize research orchestrator.
@@ -47,7 +49,18 @@ class ResearchOrchestrator:
             llm_client: LLMClient instance for synthesis
             citation_manager: CitationManager instance
             embedding_model: Embedding model for semantic similarity
+                (used for dedup/ranking, unrelated to document RAG)
             cache_manager: CacheManager instance
+            vector_store: VectorStore instance (src/services/vector_store.py)
+                for 'My Documents' RAG search. None disables it even if
+                search_documents=True is requested.
+            embedding_service: EmbeddingService instance (src/services/
+                embedding_service.py) used to embed the query text for
+                document search. Deliberately separate from
+                embedding_model above - that one is the (optional, often
+                None) model used for dedup/ranking similarity, while this
+                one must always match whatever model the documents were
+                embedded with at upload time.
         """
         self.db_manager = DatabaseManager(db_path)
         self.web_search_client = web_search_client
@@ -55,6 +68,8 @@ class ResearchOrchestrator:
         self.llm_client = llm_client
         self.embedding_model = embedding_model
         self.cache_manager = cache_manager
+        self.vector_store = vector_store
+        self.embedding_service = embedding_service
 
         # Initialize sub-components
         self.citation_manager = citation_manager or CitationManager()
@@ -141,7 +156,8 @@ class ResearchOrchestrator:
                 search_web,
                 search_arxiv,
                 search_documents,
-                max_sources
+                max_sources,
+                user_id
             )
 
             if not all_sources:
@@ -257,7 +273,8 @@ class ResearchOrchestrator:
         search_web: bool,
         search_arxiv: bool,
         search_documents: bool,
-        max_sources: int
+        max_sources: int,
+        user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Search all enabled sources."""
         all_sources = []
@@ -315,9 +332,47 @@ class ResearchOrchestrator:
             except Exception as e:
                 logging.error(f"ArXiv search failed: {e}")
 
-        # Document search (RAG) - not implemented in Phase 3
+        # Document search (RAG) - searches the user's own uploaded
+        # documents (My Documents), scoped by user_id so one user's
+        # uploads never surface in another user's research.
         if search_documents:
-            logging.warning("Document search not implemented in Phase 3")
+            if not self.vector_store or not self.embedding_service:
+                logging.warning(
+                    "Document search requested but vector_store/embedding_service "
+                    "not configured on this orchestrator - skipping"
+                )
+            elif not user_id:
+                logging.warning("Document search requested but no user_id provided - skipping")
+            else:
+                try:
+                    logging.info("Searching user documents")
+                    query_embedding = self.embedding_service.embed_query(query)
+                    doc_results = self.vector_store.search(
+                        query_embedding,
+                        user_id=user_id,
+                        top_k=max(1, max_sources // 4)  # Smaller slice than web/arxiv
+                    )
+
+                    for chunk in doc_results:
+                        all_sources.append({
+                            # document_id + chunk_index keeps chunks from
+                            # the same document distinct - dedup/citation
+                            # both key off 'id', and different chunks of
+                            # one document are legitimately different
+                            # evidence, not duplicates.
+                            'id': f"doc:{chunk['document_id']}:{chunk['chunk_index']}",
+                            'source_type': 'document',
+                            'title': chunk['filename'],
+                            'content': chunk['chunk_text'],
+                            'url': None,
+                            'relevance_score': chunk['similarity'],
+                            'published_date': None
+                        })
+
+                    logging.info(f"Found {len(doc_results)} document chunks")
+
+                except Exception as e:
+                    logging.error(f"Document search failed: {e}")
 
         return all_sources
 

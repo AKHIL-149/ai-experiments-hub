@@ -19,6 +19,7 @@ class ResearchApp {
             this.currentUser = user;
             this.showMainView();
             await this.loadResearchList();
+            this.loadDocuments();
         } else {
             this.showAuthView();
         }
@@ -47,6 +48,15 @@ class ResearchApp {
         document.getElementById('new-research-btn').addEventListener('click', () => this.showNewResearch());
         document.getElementById('new-research-empty-btn').addEventListener('click', () => this.showNewResearch());
         document.getElementById('start-research-btn').addEventListener('click', () => this.handleStartResearch());
+
+        // Document events
+        document.getElementById('manage-documents-btn').addEventListener('click', () => this.showDocumentsView());
+        document.getElementById('document-upload-btn').addEventListener('click', () => {
+            document.getElementById('document-file-input').click();
+        });
+        document.getElementById('document-file-input').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) this.handleDocumentUpload(e.target.files[0]);
+        });
 
         // Download events
         document.getElementById('download-markdown-btn').addEventListener('click', () => this.downloadReport('markdown'));
@@ -494,10 +504,119 @@ class ResearchApp {
     }
 
     showView(viewId) {
-        const views = ['new-research-view', 'results-view', 'empty-view'];
+        const views = ['new-research-view', 'results-view', 'empty-view', 'documents-view'];
         views.forEach(id => {
             document.getElementById(id).style.display = id === viewId ? 'block' : 'none';
         });
+    }
+
+    // Document Methods (My Documents / RAG)
+
+    showDocumentsView() {
+        this.showView('documents-view');
+        this.loadDocuments();
+    }
+
+    async loadDocuments() {
+        try {
+            const response = await fetch('/api/documents', { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load documents');
+            const data = await response.json();
+            this.renderDocuments(data.documents);
+            this.updateDocumentsHint(data.documents);
+        } catch (error) {
+            console.error('Failed to load documents:', error);
+        }
+    }
+
+    updateDocumentsHint(documents) {
+        const hint = document.getElementById('source-documents-hint');
+        const readyCount = documents.filter(d => d.status === 'ready').length;
+        hint.textContent = readyCount > 0 ? `(${readyCount} ready)` : '';
+    }
+
+    renderDocuments(documents) {
+        const container = document.getElementById('documents-list');
+
+        if (documents.length === 0) {
+            container.innerHTML = '<p class="empty-hint">No documents uploaded yet.</p>';
+            return;
+        }
+
+        container.innerHTML = documents.map(doc => {
+            const sizeKb = (doc.file_size_bytes / 1024).toFixed(1);
+            let statusLabel = doc.status;
+            if (doc.status === 'ready') statusLabel = `ready · ${doc.chunk_count} chunks`;
+            if (doc.status === 'failed') statusLabel = `failed${doc.error_message ? ': ' + doc.error_message : ''}`;
+
+            return `
+                <div class="document-item document-status-${doc.status}">
+                    <div class="document-info">
+                        <span class="document-filename">${this.escapeHtml(doc.filename)}</span>
+                        <span class="document-meta">${sizeKb} KB · ${statusLabel} · ${this.formatDate(doc.uploaded_at)}</span>
+                    </div>
+                    <button class="action-btn document-delete-btn" data-id="${doc.id}">Delete</button>
+                </div>
+            `;
+        }).join('');
+
+        container.querySelectorAll('.document-delete-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.handleDeleteDocument(btn.dataset.id));
+        });
+    }
+
+    async handleDocumentUpload(file) {
+        const statusEl = document.getElementById('document-upload-status');
+        statusEl.textContent = `Uploading ${file.name}...`;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/api/documents', {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                statusEl.textContent = `Upload failed: ${data.detail || 'Unknown error'}`;
+                return;
+            }
+
+            statusEl.textContent = data.status === 'ready'
+                ? `${file.name} uploaded and ready to search.`
+                : `${file.name} uploaded, but processing failed: ${data.error_message || ''}`;
+
+            await this.loadDocuments();
+        } catch (error) {
+            statusEl.textContent = `Upload failed: ${error.message}`;
+        } finally {
+            document.getElementById('document-file-input').value = '';
+        }
+    }
+
+    async handleDeleteDocument(documentId) {
+        if (!confirm('Delete this document? This cannot be undone.')) return;
+
+        try {
+            const response = await fetch(`/api/documents/${documentId}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            if (!response.ok) throw new Error('Failed to delete document');
+            await this.loadDocuments();
+        } catch (error) {
+            alert(`Failed to delete document: ${error.message}`);
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     showLoading(show) {
