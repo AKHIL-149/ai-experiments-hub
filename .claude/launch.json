@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chat-application",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/10-chat-application && exec venv/bin/python3 server.py"
+      ],
+      "port": 8000
+    }
+  ]
+}
