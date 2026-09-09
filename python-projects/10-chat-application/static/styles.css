@@ -75,6 +75,32 @@ body {
     transform: translateY(-2px);
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    margin: 16px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.auth-divider span {
+    padding: 0 10px;
+}
+
+#login-form .btn-secondary {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+}
+
 .auth-switch {
     text-align: center;
     margin-top: 20px;

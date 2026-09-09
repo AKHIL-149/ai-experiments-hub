@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat Application</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v={{ static_version('styles.css') }}">
     <!-- Markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 </head>
@@ -20,6 +20,8 @@
                 <input type="text" id="login-username" placeholder="Username" autocomplete="username">
                 <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
                 <button id="login-submit" class="btn-primary">Login</button>
+                <div class="auth-divider"><span>or</span></div>
+                <button id="guest-login-btn" class="btn-secondary">Continue as Guest</button>
                 <p class="auth-switch">
                     Don't have an account?
                     <a href="#" id="show-register">Register</a>
@@ -142,9 +144,9 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
-    <script src="/static/phase4-enhancements.js"></script>
-    <script src="/static/text-display-enhancements.js"></script>
-    <script src="/static/voice-and-image-features.js"></script>
+    <script src="/static/app.js?v={{ static_version('app.js') }}"></script>
+    <script src="/static/phase4-enhancements.js?v={{ static_version('phase4-enhancements.js') }}"></script>
+    <script src="/static/text-display-enhancements.js?v={{ static_version('text-display-enhancements.js') }}"></script>
+    <script src="/static/voice-and-image-features.js?v={{ static_version('voice-and-image-features.js') }}"></script>
 </body>
 </html>

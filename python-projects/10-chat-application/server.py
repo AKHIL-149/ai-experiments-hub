@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 import uvicorn
 import os
+import hashlib
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -40,6 +41,31 @@ llm_client = LLMClient()
 # Templates and static files
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def static_version(rel_path: str) -> str:
+    """
+    Short cache-busting token for a static asset, derived from its mtime.
+
+    StaticFiles serves no explicit Cache-Control header, so browsers
+    fall back to heuristic caching (RFC 7234) off Last-Modified alone -
+    which can and does serve a stale script/stylesheet indefinitely
+    across edits without ever revalidating. Confirmed live here: after
+    editing styles.css, a plain reload (and even a fresh navigation)
+    kept rendering the pre-edit CSS - a direct fetch() of the same URL
+    got the new content, but the real <link>/<script> tag load did
+    not. Appending ?v=<mtime-hash> changes the URL itself whenever the
+    file changes, bypassing heuristic caching without touching the
+    StaticFiles mount. Same fix already applied in projects 11 and 12.
+    """
+    try:
+        mtime = os.path.getmtime(Path("static") / rel_path)
+        return hashlib.md5(str(mtime).encode()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
+templates.env.globals["static_version"] = static_version
 
 # WebSocket connection registry
 active_connections: Dict[str, List[WebSocket]] = {}
@@ -153,6 +179,31 @@ async def login(data: LoginRequest, response: Response):
         session_token = auth_manager.create_session(user)
 
         # Set HTTPOnly cookie
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=os.getenv('COOKIE_SECURE', 'false').lower() == 'true',
+            samesite='strict',
+            max_age=30 * 24 * 60 * 60
+        )
+
+        return user.to_dict()
+
+
+@app.post("/api/auth/guest")
+async def guest_login(response: Response):
+    """Create a temporary guest account and log in as it - no signup
+    form required. Mirrors /api/auth/login's session/cookie setup."""
+    with db_manager.get_session() as db:
+        auth_manager = AuthManager(db)
+        success, user, error = auth_manager.create_guest_user()
+
+        if not success:
+            raise HTTPException(status_code=500, detail=error)
+
+        session_token = auth_manager.create_session(user)
+
         response.set_cookie(
             key="session_token",
             value=session_token,

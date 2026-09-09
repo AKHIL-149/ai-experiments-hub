@@ -1,6 +1,6 @@
 """Database models and manager for Chat Application"""
 
-from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime, JSON, ForeignKey, Boolean, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timedelta
@@ -19,6 +19,7 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    is_guest = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -32,6 +33,7 @@ class User(Base):
             'id': self.id,
             'username': self.username,
             'email': self.email,
+            'is_guest': self.is_guest,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -134,7 +136,31 @@ class DatabaseManager:
 
         self.engine = create_engine(db_url, echo=False)
         Base.metadata.create_all(self.engine)
+        self._migrate_schema()
         self.SessionLocal = sessionmaker(bind=self.engine)
+
+    def _migrate_schema(self):
+        """
+        Add columns that create_all() can't add on its own.
+
+        create_all() only creates missing TABLES - it never alters an
+        existing table's columns. is_guest was added to the User model
+        after this app already had a live users table (and a live
+        database.db) without it, so on an existing DB this fills the
+        gap with a plain ALTER TABLE. A no-op on a brand new DB, since
+        create_all() above already created the column there.
+        """
+        inspector = inspect(self.engine)
+        if 'users' not in inspector.get_table_names():
+            return
+
+        columns = {col['name'] for col in inspector.get_columns('users')}
+        if 'is_guest' not in columns:
+            with self.engine.connect() as conn:
+                conn.execute(text(
+                    "ALTER TABLE users ADD COLUMN is_guest BOOLEAN NOT NULL DEFAULT 0"
+                ))
+                conn.commit()
 
     def get_session(self):
         """

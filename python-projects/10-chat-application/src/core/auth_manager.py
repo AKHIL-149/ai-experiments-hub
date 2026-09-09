@@ -8,6 +8,15 @@ from sqlalchemy.orm import Session
 from .database import User, Session as SessionModel
 
 
+def _generate_guest_credentials() -> Tuple[str, str, str]:
+    """Random username/email/password for a temporary guest account."""
+    suffix = secrets.token_hex(6)
+    username = f"guest_{suffix}"
+    email = f"{username}@guest.local"
+    password = secrets.token_urlsafe(24)
+    return username, email, password
+
+
 class AuthManager:
     """Handle user authentication and session management"""
 
@@ -26,7 +35,8 @@ class AuthManager:
         self,
         username: str,
         email: str,
-        password: str
+        password: str,
+        is_guest: bool = False
     ) -> Tuple[bool, Optional[User], Optional[str]]:
         """
         Register new user
@@ -35,6 +45,7 @@ class AuthManager:
             username: Username (3-50 characters)
             email: Email address
             password: Password (min 8 characters)
+            is_guest: Mark this account as a temporary guest account
 
         Returns:
             Tuple of (success, user, error_message)
@@ -67,7 +78,8 @@ class AuthManager:
         user = User(
             username=username,
             email=email,
-            password_hash=password_hash.decode('utf-8')
+            password_hash=password_hash.decode('utf-8'),
+            is_guest=is_guest
         )
 
         self.db.add(user)
@@ -75,6 +87,27 @@ class AuthManager:
         self.db.refresh(user)
 
         return True, user, None
+
+    def create_guest_user(self) -> Tuple[bool, Optional[User], Optional[str]]:
+        """
+        Create and register a temporary guest account - no signup form
+        required. Uses a random username/email/password (the password
+        is never given back to the caller; the guest is logged in via
+        create_session() the same way a normal login would be).
+
+        Returns:
+            Tuple of (success, user, error_message)
+        """
+        # Vanishingly unlikely, but register_user() rejects a
+        # username/email collision rather than retrying - collide once
+        # against secrets.token_hex(6) and try again with a fresh one.
+        for _ in range(3):
+            username, email, password = _generate_guest_credentials()
+            success, user, error = self.register_user(username, email, password, is_guest=True)
+            if success:
+                return True, user, None
+
+        return False, None, "Failed to create guest account"
 
     def authenticate(self, username: str, password: str) -> Optional[User]:
         """

@@ -47,7 +47,8 @@ class ChatApp {
         document.getElementById('chat-view').style.display = 'flex';
 
         // Update user info
-        document.getElementById('current-username').textContent = this.currentUser.username;
+        const label = this.currentUser.username + (this.currentUser.is_guest ? ' (Guest)' : '');
+        document.getElementById('current-username').textContent = label;
     }
 
     async logout() {
@@ -103,6 +104,22 @@ class AuthManager {
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Login failed');
+        }
+
+        this.app.currentUser = await response.json();
+        this.app.showChatInterface();
+        await this.app.conversationManager.loadConversations();
+    }
+
+    async guestLogin() {
+        const response = await fetch('/api/auth/guest', {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Guest login failed');
         }
 
         this.app.currentUser = await response.json();
@@ -418,6 +435,15 @@ class AuthView {
 
             try {
                 await this.app.authManager.login(username, password);
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+
+        // Guest login
+        document.getElementById('guest-login-btn').addEventListener('click', async () => {
+            try {
+                await this.app.authManager.guestLogin();
             } catch (error) {
                 alert(error.message);
             }
