@@ -16,12 +16,23 @@ class LLMClient:
         self.openai_client = None
         self.anthropic_client = None
 
-        # Initialize clients if API keys present
-        if os.getenv('OPENAI_API_KEY'):
-            self.openai_client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        # Initialize clients if API keys present. Reject the literal
+        # placeholder values shipped in .env.example ("your_openai_key_here"
+        # / "your_anthropic_key_here") - a user who follows the README's
+        # own setup steps (`cp .env.example .env`) without editing those
+        # two lines ends up with that exact string in the env var, which
+        # is truthy/non-empty, so a plain "if os.getenv(...)" check
+        # reports the provider as configured/available. Confirmed live:
+        # /api/health returned {"openai": true, "anthropic": true} with
+        # the untouched placeholder .env, and actually sending a message
+        # on that provider failed with a raw 401 from the SDK.
+        openai_key = os.getenv('OPENAI_API_KEY')
+        if openai_key and not openai_key.startswith('your_'):
+            self.openai_client = AsyncOpenAI(api_key=openai_key)
 
-        if os.getenv('ANTHROPIC_API_KEY'):
-            self.anthropic_client = AsyncAnthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+        if anthropic_key and not anthropic_key.startswith('your_'):
+            self.anthropic_client = AsyncAnthropic(api_key=anthropic_key)
 
     async def stream_completion(
         self,

@@ -563,14 +563,21 @@ async def generate_image(
 
             elif request.provider == 'dall-e':
                 # Use OpenAI DALL-E
-                if not os.getenv('OPENAI_API_KEY'):
+                # Same placeholder-key check as LLMClient (src/core/llm_client.py) -
+                # "if not os.getenv(...)" alone treats the untouched
+                # .env.example value "your_openai_key_here" as a real,
+                # configured key (it's a non-empty string), so this would
+                # otherwise call OpenAI with it and surface a raw 401
+                # instead of this clear "not configured" message.
+                openai_key = os.getenv('OPENAI_API_KEY')
+                if not openai_key or openai_key.startswith('your_'):
                     raise HTTPException(
                         status_code=400,
                         detail="OpenAI API key not configured"
                     )
 
                 from openai import OpenAI
-                client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+                client = OpenAI(api_key=openai_key)
 
                 response = client.images.generate(
                     model="dall-e-3",
