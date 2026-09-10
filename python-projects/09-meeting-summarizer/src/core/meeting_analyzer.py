@@ -13,6 +13,11 @@ from .llm_client import LLMClient
 from .summarizer import Summarizer
 from .action_extractor import ActionExtractor
 
+try:  # entry points put src/ on sys.path (import "utils.x"); support both
+    from utils.summary_templates import SummaryTemplateManager
+except ImportError:  # pragma: no cover
+    from ..utils.summary_templates import SummaryTemplateManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +34,8 @@ class MeetingAnalyzer:
         transcription_service: TranscriptionService,
         llm_client: LLMClient,
         cache_manager: Optional[CacheManager] = None,
-        audio_processor: Optional[AudioProcessor] = None
+        audio_processor: Optional[AudioProcessor] = None,
+        template_manager: Optional[SummaryTemplateManager] = None
     ):
         """
         Initialize Meeting Analyzer
@@ -39,11 +45,17 @@ class MeetingAnalyzer:
             llm_client: LLM client for summarization/extraction
             cache_manager: Optional cache manager
             audio_processor: Optional audio processor
+            template_manager: Optional SummaryTemplateManager for
+                --template report rendering (defaults to one that also
+                picks up ./templates/custom/*.md)
         """
         self.transcription_service = transcription_service
         self.llm_client = llm_client
         self.cache_manager = cache_manager
         self.audio_processor = audio_processor or AudioProcessor()
+        self.template_manager = template_manager or SummaryTemplateManager(
+            custom_templates_dir='./templates/custom'
+        )
 
         # Initialize AI components
         self.summarizer = Summarizer(llm_client)
@@ -87,6 +99,9 @@ class MeetingAnalyzer:
             "total_cost_usd": 0.0,
             "cache_hits": 0,
             "cache_misses": 0,
+            "transcription_backend": getattr(self.transcription_service, "backend", "unknown"),
+            "llm_provider": getattr(self.llm_client, "backend", "unknown"),
+            "llm_model": getattr(self.llm_client, "model", "unknown"),
             "processing_time_seconds": 0
         }
 
@@ -211,7 +226,8 @@ class MeetingAnalyzer:
         self,
         analysis_result: Dict,
         format: str = "markdown",
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        template: Optional[str] = None
     ) -> str:
         """
         Generate formatted report from analysis
@@ -220,19 +236,29 @@ class MeetingAnalyzer:
             analysis_result: Result from analyze_meeting()
             format: Output format ("markdown", "json", "html", "txt")
             output_path: Optional path to save report
+            template: Optional named summary template (executive, detailed,
+                brief, meeting_minutes, technical, or a custom
+                templates/custom/<name>.md). When set, the report is
+                rendered from that Jinja2 template and `format` is ignored
+                (templates always produce Markdown).
 
         Returns:
             Formatted report string
         """
-        logger.info(f"Generating {format} report")
-
-        if format == "json":
+        if template:
+            logger.info(f"Generating report from template: {template}")
+            report = self.template_manager.render_summary(template, analysis_result)
+        elif format == "json":
+            logger.info("Generating json report")
             report = self._generate_json_report(analysis_result)
         elif format == "html":
+            logger.info("Generating html report")
             report = self._generate_html_report(analysis_result)
         elif format == "txt":
+            logger.info("Generating txt report")
             report = self._generate_text_report(analysis_result)
         else:  # markdown (default)
+            logger.info("Generating markdown report")
             report = self._generate_markdown_report(analysis_result)
 
         # Save to file if path provided

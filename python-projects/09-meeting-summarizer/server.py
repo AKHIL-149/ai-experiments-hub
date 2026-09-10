@@ -283,14 +283,16 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         # Generate report
         progress_tracker.update_stage(ProcessingStage.REPORT_GENERATION, 90, "Generating report")
 
-        output_format = options.get('output_format', 'markdown')
+        template = options.get('template')
+        output_format = 'md' if template else options.get('output_format', 'markdown')
         output_file = Path(config['output_dir']) / f"{job_id}_analysis.{output_format}"
 
         await asyncio.to_thread(
             meeting_analyzer.generate_report,
             result,
             format=output_format,
-            output_path=str(output_file)
+            output_path=str(output_file),
+            template=template
         )
 
         progress_tracker.complete_stage(ProcessingStage.REPORT_GENERATION)
@@ -386,7 +388,8 @@ async def start_analysis(
     extract_actions: bool = True,
     extract_topics: bool = True,
     output_format: str = 'markdown',
-    language: Optional[str] = None
+    language: Optional[str] = None,
+    template: Optional[str] = None
 ):
     """Start meeting analysis job"""
     try:
@@ -413,7 +416,8 @@ async def start_analysis(
             'extract_actions': extract_actions,
             'extract_topics': extract_topics,
             'output_format': output_format,
-            'language': language
+            'language': language,
+            'template': template or None
         }
 
         background_tasks.add_task(process_meeting_async, job_id, audio_path, options)

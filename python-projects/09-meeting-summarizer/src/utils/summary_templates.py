@@ -290,8 +290,10 @@ topics = [
         stats = analysis_result.get('statistics', {})
 
         context = {
-            # Metadata
-            'filename': metadata.get('filename', 'Unknown'),
+            # Metadata - analyze_meeting() stores the name under
+            # "audio_file"; keep "filename" as a fallback for callers
+            # that pass it directly.
+            'filename': metadata.get('filename') or metadata.get('audio_file', 'Unknown'),
             'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'timestamp': datetime.now().isoformat(),
             'duration_seconds': metadata.get('duration_seconds', 0),

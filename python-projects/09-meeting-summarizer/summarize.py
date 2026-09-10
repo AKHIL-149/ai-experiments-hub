@@ -478,14 +478,20 @@ def cmd_analyze(args, config):
         output_dir = Path(config['output_dir'])
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        output_format = args.format or config['default_output_format']
+        template = getattr(args, 'template', None)
+        if template:
+            output_format = 'md'  # templates always render Markdown
+        else:
+            output_format = args.format or config['default_output_format']
         output_file = output_dir / f"{Path(audio_path).stem}_analysis.{output_format}"
 
-        print_info(f"Generating {output_format} report...")
+        label = f"'{template}' template" if template else f"{output_format} report"
+        print_info(f"Generating {label}...")
         report = meeting_analyzer.generate_report(
             result,
             format=output_format,
-            output_path=str(output_file)
+            output_path=str(output_file),
+            template=template
         )
 
         print_success(f"Report saved to: {output_file}")
@@ -592,7 +598,8 @@ def cmd_batch(args, config):
         # Save individual reports
         if args.save_individual:
             print_info("Saving individual reports...")
-            output_format = args.format or config['default_output_format']
+            template = getattr(args, 'template', None)
+            output_format = 'md' if template else (args.format or config['default_output_format'])
 
             for result_item in batch_result['results']:
                 if result_item['status'] == 'success':
@@ -605,7 +612,8 @@ def cmd_batch(args, config):
                     meeting_analyzer.generate_report(
                         result,
                         format=output_format,
-                        output_path=str(output_file)
+                        output_path=str(output_file),
+                        template=template
                     )
 
             print_success(f"Saved {batch_result['successful']} individual reports")
@@ -708,6 +716,13 @@ def main():
         action='store_true',
         help='Skip topic extraction'
     )
+    analyze_parser.add_argument(
+        '--template',
+        default=None,
+        help='Render the report from a named summary template '
+             '(executive, detailed, brief, meeting_minutes, technical, '
+             'or a custom templates/custom/<name>.md). Overrides --format.'
+    )
 
     # Batch command (Phase 3)
     batch_parser = subparsers.add_parser(
@@ -748,6 +763,13 @@ def main():
         '--no-topics',
         action='store_true',
         help='Skip topic extraction'
+    )
+    batch_parser.add_argument(
+        '--template',
+        default=None,
+        help='Render each individual report from a named summary template '
+             '(executive, detailed, brief, meeting_minutes, technical, or a '
+             'custom templates/custom/<name>.md). Overrides --format.'
     )
     batch_parser.add_argument(
         '--workers',

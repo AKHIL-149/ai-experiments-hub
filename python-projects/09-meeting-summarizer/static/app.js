@@ -26,6 +26,7 @@ class MeetingSummarizer {
         // Options
         this.summaryLevel = document.getElementById('summaryLevel');
         this.outputFormat = document.getElementById('outputFormat');
+        this.summaryTemplate = document.getElementById('summaryTemplate');
         this.language = document.getElementById('language');
         this.extractActions = document.getElementById('extractActions');
         this.extractTopics = document.getElementById('extractTopics');
@@ -151,7 +152,8 @@ class MeetingSummarizer {
                 extract_actions: this.extractActions.checked,
                 extract_topics: this.extractTopics.checked,
                 output_format: this.outputFormat.value,
-                language: this.language.value || null
+                language: this.language.value || null,
+                template: this.summaryTemplate.value || null
             };
 
             const analyzeUrl = `/api/analyze/${this.currentJobId}?` + new URLSearchParams(
