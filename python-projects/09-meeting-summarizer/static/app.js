@@ -321,21 +321,117 @@ class MeetingSummarizer {
                 this.estimatedCost.textContent = `$${(stats.total_cost_usd || 0).toFixed(4)}`;
                 this.cacheHits.textContent = stats.cache_hits || 0;
 
-                // Update summary
-                this.summaryPreview.textContent = data.result.summary || 'No summary available';
+                // Update summary - the LLM returns Markdown (## headings,
+                // **bold**, numbered/bulleted lists), so render it rather
+                // than dumping the raw text with literal ** and # visible.
+                this.summaryPreview.innerHTML = data.result.summary
+                    ? this.renderMarkdown(data.result.summary)
+                    : '<p>No summary available</p>';
 
-                // Update topics
+                // Update topics - strip any leading list marker the model
+                // left on the line ("1. ", "- ", "* ", "#") and stray
+                // **bold** wrappers before showing each topic.
                 const topics = data.result.topics || [];
-                this.topicsList.innerHTML = topics.map(topic => `<li>${topic}</li>`).join('');
+                this.topicsList.innerHTML = topics
+                    .map(t => this.cleanTopic(t))
+                    .filter(Boolean)
+                    .map(t => `<li>${this.escapeHtml(t)}</li>`)
+                    .join('');
 
                 // Update actions
                 const actionCount = data.result.action_items_count || 0;
-                this.actionsCount.textContent = `${actionCount} action items extracted`;
+                this.actionsCount.textContent =
+                    `${actionCount} action ${actionCount === 1 ? 'item' : 'items'} extracted`;
             }
         } catch (error) {
             console.error('Failed to load results:', error);
             this.showError('Failed to load results');
         }
+    }
+
+    escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str == null ? '' : String(str);
+        return div.innerHTML;
+    }
+
+    cleanTopic(topic) {
+        return String(topic || '')
+            .replace(/^\s*(?:[-*#]+|\d+[.)])\s*/, '')  // leading "-", "*", "#", "1.", "2)"
+            .replace(/\*\*(.+?)\*\*/g, '$1')           // unwrap **bold**
+            .replace(/^["'\s]+|["'\s]+$/g, '')
+            .trim();
+    }
+
+    /**
+     * Minimal Markdown -> HTML for the summary preview. Handles the
+     * subset the summarizer prompt actually produces: ATX headings,
+     * **bold** / *italic* / `code`, "-"/"*" bullet lists, "1."/"1)"
+     * numbered lists, and blank-line-separated paragraphs. Everything
+     * is HTML-escaped first, so raw model output can't inject markup.
+     * Deliberately dependency-free - this tool is meant to run offline.
+     */
+    renderMarkdown(md) {
+        const esc = (s) => this.escapeHtml(s);
+        const inline = (s) => esc(s)
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, '$1<em>$2</em>')
+            .replace(/`([^`]+?)`/g, '<code>$1</code>');
+
+        const lines = String(md).replace(/\r\n/g, '\n').split('\n');
+        const html = [];
+        let listType = null;      // 'ul' | 'ol' | null
+        let paragraph = [];
+
+        const flushParagraph = () => {
+            if (paragraph.length) {
+                html.push(`<p>${inline(paragraph.join(' '))}</p>`);
+                paragraph = [];
+            }
+        };
+        const closeList = () => {
+            if (listType) { html.push(`</${listType}>`); listType = null; }
+        };
+
+        for (const raw of lines) {
+            const line = raw.trim();
+
+            if (!line) { flushParagraph(); closeList(); continue; }
+
+            const heading = line.match(/^(#{1,6})\s+(.*)$/);
+            if (heading) {
+                flushParagraph(); closeList();
+                const level = Math.min(heading[1].length + 2, 6); // #->h3, ##->h4...
+                html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+                continue;
+            }
+
+            // A line that is entirely **bold** - the summarizer uses this
+            // for section titles far more often than real "## " headings.
+            const boldHeading = line.match(/^\*\*(.+?)\*\*:?$/);
+            if (boldHeading) {
+                flushParagraph(); closeList();
+                html.push(`<h4>${inline(boldHeading[1])}</h4>`);
+                continue;
+            }
+
+            const bullet = line.match(/^[-*]\s+(.*)$/);
+            const numbered = line.match(/^\d+[.)]\s+(.*)$/);
+            if (bullet || numbered) {
+                flushParagraph();
+                const want = bullet ? 'ul' : 'ol';
+                if (listType !== want) { closeList(); html.push(`<${want}>`); listType = want; }
+                html.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+                continue;
+            }
+
+            closeList();
+            paragraph.push(line);
+        }
+        flushParagraph();
+        closeList();
+
+        return html.join('\n');
     }
 
     showError(message) {

@@ -14,6 +14,7 @@ import os
 import sys
 import asyncio
 import uuid
+import hashlib
 from pathlib import Path
 from typing import Dict, Optional, List
 from datetime import datetime
@@ -76,6 +77,25 @@ templates_dir.mkdir(exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 templates = Jinja2Templates(directory=str(templates_dir))
+
+
+def static_version(rel_path: str) -> str:
+    """
+    Short cache-busting token for a static asset, from its mtime.
+
+    StaticFiles sends no Cache-Control header, so browsers fall back to
+    heuristic caching and can serve a stale app.js/styles.css for a long
+    time after an edit. Appending ?v=<mtime-hash> changes the URL
+    whenever the file changes so the new version is always fetched.
+    """
+    try:
+        mtime = os.path.getmtime(static_dir / rel_path)
+        return hashlib.md5(str(mtime).encode()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
+templates.env.globals["static_version"] = static_version
 
 # Phase 5: Database persistence
 db_url = os.getenv('DATABASE_URL', None)  # Default: SQLite in data/database.db
