@@ -15,8 +15,10 @@ from .action_extractor import ActionExtractor
 
 try:  # entry points put src/ on sys.path (import "utils.x"); support both
     from utils.summary_templates import SummaryTemplateManager
+    from utils.video_processor import VideoProcessor
 except ImportError:  # pragma: no cover
     from ..utils.summary_templates import SummaryTemplateManager
+    from ..utils.video_processor import VideoProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,8 @@ class MeetingAnalyzer:
         llm_client: LLMClient,
         cache_manager: Optional[CacheManager] = None,
         audio_processor: Optional[AudioProcessor] = None,
-        template_manager: Optional[SummaryTemplateManager] = None
+        template_manager: Optional[SummaryTemplateManager] = None,
+        video_processor: Optional[VideoProcessor] = None
     ):
         """
         Initialize Meeting Analyzer
@@ -56,6 +59,7 @@ class MeetingAnalyzer:
         self.template_manager = template_manager or SummaryTemplateManager(
             custom_templates_dir='./templates/custom'
         )
+        self.video_processor = video_processor or VideoProcessor()
 
         # Initialize AI components
         self.summarizer = Summarizer(llm_client)
@@ -94,6 +98,16 @@ class MeetingAnalyzer:
         """
         logger.info(f"Starting meeting analysis: {audio_path}")
 
+        # Step 0: if given a video file, pull the audio track out first.
+        # Idempotent - is_video_file() is False for plain audio.
+        source_file = Path(audio_path).name
+        extracted_audio = None
+        if self.video_processor.is_video_file(audio_path):
+            logger.info(f"Detected video file: {source_file} - extracting audio track")
+            audio_path = self.video_processor.extract_audio(audio_path)
+            extracted_audio = audio_path
+            logger.info(f"Extracted audio to: {audio_path}")
+
         start_time = datetime.now()
         statistics = {
             "total_cost_usd": 0.0,
@@ -115,6 +129,17 @@ class MeetingAnalyzer:
             audio_path,
             language=language
         )
+
+        # Transcription is the last step that touches the audio file, so
+        # a temp track extracted from a video can go now. (The transcript
+        # itself is cached by content hash, so a re-run re-extracts to an
+        # identical file and still hits the cache.)
+        if extracted_audio:
+            try:
+                Path(extracted_audio).unlink(missing_ok=True)
+                logger.info(f"Removed temporary extracted audio: {extracted_audio}")
+            except OSError as e:
+                logger.warning(f"Could not remove temp audio {extracted_audio}: {e}")
 
         if transcript_result.get("cached"):
             statistics["cache_hits"] += 1
@@ -161,6 +186,7 @@ class MeetingAnalyzer:
         result = {
             "metadata": {
                 "audio_file": Path(audio_path).name,
+                "source_file": source_file,
                 "analyzed_at": datetime.now().isoformat(),
                 **metadata
             },
@@ -276,7 +302,7 @@ class MeetingAnalyzer:
 
         # Header
         report.append(f"# Meeting Analysis Report")
-        report.append(f"\n**File:** {result['metadata']['audio_file']}")
+        report.append(f"\n**File:** {(result['metadata'].get('source_file') or result['metadata']['audio_file'])}")
         report.append(f"**Analyzed:** {result['metadata']['analyzed_at']}")
         report.append(f"**Duration:** {result['metadata']['duration_seconds']:.1f}s")
         report.append("")
@@ -333,7 +359,7 @@ class MeetingAnalyzer:
         report.append("MEETING ANALYSIS REPORT")
         report.append("="*60)
         report.append("")
-        report.append(f"File: {result['metadata']['audio_file']}")
+        report.append(f"File: {(result['metadata'].get('source_file') or result['metadata']['audio_file'])}")
         report.append(f"Analyzed: {result['metadata']['analyzed_at']}")
         report.append(f"Duration: {result['metadata']['duration_seconds']:.1f}s")
         report.append("")
@@ -389,7 +415,7 @@ class MeetingAnalyzer:
     <h1>Meeting Analysis Report</h1>
 
     <div class="metadata">
-        <p><strong>File:</strong> {result['metadata']['audio_file']}</p>
+        <p><strong>File:</strong> {(result['metadata'].get('source_file') or result['metadata']['audio_file'])}</p>
         <p><strong>Analyzed:</strong> {result['metadata']['analyzed_at']}</p>
         <p><strong>Duration:</strong> {result['metadata']['duration_seconds']:.1f}s</p>
     </div>

@@ -215,6 +215,7 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
     # asyncio.to_thread, so we grab the loop up front to marshal progress
     # callbacks (fired from that thread) back onto it.
     loop = asyncio.get_running_loop()
+    extracted_audio = None  # set if the upload was a video we transcoded
 
     try:
         # Update job status
@@ -244,6 +245,18 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
 
         # Create meeting analyzer
         meeting_analyzer, audio_processor = create_meeting_analyzer()
+
+        # If the upload is a video file, extract its audio track before
+        # validating (audio_processor.validate_audio only understands
+        # audio containers). Done here rather than inside analyze_meeting
+        # so the validation step below sees a real audio file.
+        if video_processor.is_video_file(audio_path):
+            progress_tracker.update_stage(
+                ProcessingStage.VALIDATION, 5, "Extracting audio from video"
+            )
+            audio_path = await asyncio.to_thread(video_processor.extract_audio, audio_path)
+            extracted_audio = audio_path
+            logger.info(f"Job {job_id}: extracted audio -> {audio_path}")
 
         # Validation stage
         progress_tracker.update_stage(ProcessingStage.VALIDATION, 10, "Validating audio file")
@@ -313,6 +326,15 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         active_jobs[job_id]['error'] = str(e)
         active_jobs[job_id]['completed_at'] = datetime.now().isoformat()
 
+    finally:
+        # Drop the audio track we pulled out of an uploaded video - the
+        # transcript is cached by content hash, not by this temp path.
+        if extracted_audio:
+            try:
+                Path(extracted_audio).unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning(f"Job {job_id}: could not remove temp audio: {e}")
+
 
 # Routes
 
@@ -345,8 +367,12 @@ async def health_check():
 async def upload_file(file: UploadFile = File(...)):
     """Upload audio file"""
     try:
-        # Validate file extension
-        allowed_extensions = ['.mp3', '.wav', '.webm', '.m4a', '.ogg', '.flac']
+        # Validate file extension - audio, or a video container we can
+        # pull the audio track out of (see VideoProcessor).
+        audio_extensions = ['.mp3', '.wav', '.webm', '.m4a', '.ogg', '.flac']
+        allowed_extensions = audio_extensions + [
+            e for e in video_processor.SUPPORTED_VIDEO_FORMATS if e not in audio_extensions
+        ]
         file_ext = Path(file.filename).suffix.lower()
 
         if file_ext not in allowed_extensions:

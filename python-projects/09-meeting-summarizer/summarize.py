@@ -413,20 +413,29 @@ def cmd_analyze(args, config):
         print_info("Initializing analysis pipeline...")
         meeting_analyzer, audio_processor = _create_meeting_analyzer(config)
 
-        # Validate audio
-        print_info(f"Validating audio file: {audio_path}")
-        validation = audio_processor.validate_audio(audio_path)
+        is_video = meeting_analyzer.video_processor.is_video_file(audio_path)
 
-        if not validation['valid']:
-            print_error("Audio validation failed:")
-            for error in validation['errors']:
-                print(f"  - {error}")
-            return 1
+        if is_video:
+            # analyze_meeting() extracts the audio track itself; the
+            # audio-only validation/metadata below don't apply to a
+            # video container.
+            print_info(f"Detected video file: {Path(audio_path).name}")
+            print_info("Audio will be extracted from the video before analysis")
+        else:
+            # Validate audio
+            print_info(f"Validating audio file: {audio_path}")
+            validation = audio_processor.validate_audio(audio_path)
 
-        # Show file info
-        metadata = audio_processor.get_metadata(audio_path)
-        print_info(f"Duration: {metadata['duration_seconds']:.1f}s ({metadata['duration_seconds']/60:.1f} min)")
-        print_info(f"Format: {metadata['format']}")
+            if not validation['valid']:
+                print_error("Audio validation failed:")
+                for error in validation['errors']:
+                    print(f"  - {error}")
+                return 1
+
+            # Show file info
+            metadata = audio_processor.get_metadata(audio_path)
+            print_info(f"Duration: {metadata['duration_seconds']:.1f}s ({metadata['duration_seconds']/60:.1f} min)")
+            print_info(f"Format: {metadata['format']}")
 
         # Run analysis
         print_info("Starting full meeting analysis...")

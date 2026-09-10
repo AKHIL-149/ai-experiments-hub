@@ -95,7 +95,9 @@ class MeetingSummarizer {
 
     handleFile(file) {
         // Validate file type
-        const allowedExtensions = ['.mp3', '.wav', '.webm', '.m4a', '.ogg', '.flac'];
+        const audioExtensions = ['.mp3', '.wav', '.webm', '.m4a', '.ogg', '.flac'];
+        const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.m4v', '.3gp'];
+        const allowedExtensions = [...audioExtensions, ...videoExtensions];
         const fileExt = '.' + file.name.split('.').pop().toLowerCase();
 
         if (!allowedExtensions.includes(fileExt)) {
