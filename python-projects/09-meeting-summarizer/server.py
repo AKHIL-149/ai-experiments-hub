@@ -186,6 +186,16 @@ async def broadcast_progress(job_id: str, progress_state: Dict):
 
 async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
     """Process meeting in background with progress tracking"""
+    # The heavy work (analyze_meeting / generate_report) is fully
+    # synchronous and CPU/subprocess-bound - whisper.cpp, Ollama, ffmpeg.
+    # It used to run inline on the event loop here, which froze the whole
+    # server for the duration of every job (confirmed live: a concurrent
+    # /api/health took 16s, and the WebSocket could deliver no progress
+    # until the job finished). It now runs in a worker thread via
+    # asyncio.to_thread, so we grab the loop up front to marshal progress
+    # callbacks (fired from that thread) back onto it.
+    loop = asyncio.get_running_loop()
+
     try:
         # Update job status
         active_jobs[job_id]['status'] = 'processing'
@@ -198,10 +208,13 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             enable_persistence=True
         )
 
-        # Progress callback
+        # Progress callback - may be invoked from the worker thread, so
+        # schedule the async broadcast on the event loop thread-safely
+        # rather than calling asyncio.create_task (which needs a running
+        # loop in the current thread).
         def on_progress(state):
             active_jobs[job_id]['progress'] = state
-            asyncio.create_task(broadcast_progress(job_id, state))
+            asyncio.run_coroutine_threadsafe(broadcast_progress(job_id, state), loop)
 
         progress_tracker.add_callback(on_progress)
         progress_tracker.start(metadata={
@@ -230,8 +243,10 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         # Transcription stage
         progress_tracker.update_stage(ProcessingStage.TRANSCRIPTION, 30, "Transcribing audio")
 
-        # Run analysis
-        result = meeting_analyzer.analyze_meeting(
+        # Run analysis in a worker thread so the event loop stays free
+        # to serve other requests and flush WebSocket progress messages.
+        result = await asyncio.to_thread(
+            meeting_analyzer.analyze_meeting,
             audio_path,
             summary_level=options.get('summary_level', 'standard'),
             extract_actions=options.get('extract_actions', True),
@@ -251,7 +266,8 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         output_format = options.get('output_format', 'markdown')
         output_file = Path(config['output_dir']) / f"{job_id}_analysis.{output_format}"
 
-        meeting_analyzer.generate_report(
+        await asyncio.to_thread(
+            meeting_analyzer.generate_report,
             result,
             format=output_format,
             output_path=str(output_file)
@@ -281,7 +297,12 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serve the main web UI"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    # New-style signature (request first). The old
+    # TemplateResponse("index.html", {"request": request}) form raises
+    # "TypeError: unhashable type: 'dict'" on the Starlette version this
+    # project resolves to (fastapi/starlette are unpinned in
+    # requirements.txt) - confirmed live, every homepage load 500'd.
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.get("/api/health")
