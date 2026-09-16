@@ -221,6 +221,7 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         # Update job status
         active_jobs[job_id]['status'] = 'processing'
         active_jobs[job_id]['started_at'] = datetime.now().isoformat()
+        db_manager.mark_job_processing(job_id)
 
         # Create progress tracker
         progress_tracker = ProgressTracker(
@@ -236,6 +237,14 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         def on_progress(state):
             active_jobs[job_id]['progress'] = state
             asyncio.run_coroutine_threadsafe(broadcast_progress(job_id, state), loop)
+            try:
+                db_manager.update_job_progress(
+                    job_id,
+                    progress_percent=state.get('progress_percent', 0),
+                    current_stage=state.get('current_stage')
+                )
+            except Exception as e:  # never let a DB hiccup kill the job
+                logger.warning(f"Job {job_id}: progress DB update failed: {e}")
 
         progress_tracker.add_callback(on_progress)
         progress_tracker.start(metadata={
@@ -263,12 +272,11 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         validation = audio_processor.validate_audio(audio_path)
 
         if not validation['valid']:
-            progress_tracker.fail(
-                f"Audio validation failed: {', '.join(validation['errors'])}",
-                ProcessingStage.VALIDATION
-            )
+            err = f"Audio validation failed: {', '.join(validation['errors'])}"
+            progress_tracker.fail(err, ProcessingStage.VALIDATION)
             active_jobs[job_id]['status'] = 'failed'
             active_jobs[job_id]['error'] = validation['errors']
+            db_manager.mark_job_failed(job_id, err)
             return
 
         progress_tracker.complete_stage(ProcessingStage.VALIDATION)
@@ -318,6 +326,18 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         active_jobs[job_id]['output_file'] = str(output_file)
         active_jobs[job_id]['completed_at'] = datetime.now().isoformat()
 
+        stats = result.get('statistics', {})
+        db_manager.mark_job_completed(
+            job_id,
+            output_file_path=str(output_file),
+            summary_text=result.get('summary', {}).get('text'),
+            topics=result.get('topics') or [],
+            action_items_count=(result.get('actions') or {}).get('total_actions', 0),
+            processing_time_seconds=stats.get('processing_time_seconds'),
+            estimated_cost_usd=stats.get('total_cost_usd'),
+            cache_hits=stats.get('cache_hits', 0),
+        )
+
         logger.info(f"Job {job_id} completed successfully")
 
     except Exception as e:
@@ -325,6 +345,10 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         active_jobs[job_id]['status'] = 'failed'
         active_jobs[job_id]['error'] = str(e)
         active_jobs[job_id]['completed_at'] = datetime.now().isoformat()
+        try:
+            db_manager.mark_job_failed(job_id, str(e))
+        except Exception:
+            logger.exception(f"Job {job_id}: failed to record failure in DB")
 
     finally:
         # Drop the audio track we pulled out of an uploaded video - the
@@ -334,6 +358,22 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
                 Path(extracted_audio).unlink(missing_ok=True)
             except OSError as e:
                 logger.warning(f"Job {job_id}: could not remove temp audio: {e}")
+
+
+@app.on_event("startup")
+async def _reconcile_interrupted_jobs():
+    """A job left 'processing' in the DB was running when a previous
+    server instance died - mark it failed so it doesn't show as
+    forever-in-progress. ('queued' jobs are left alone: their upload is
+    still on disk and analysis can still be started.)"""
+    try:
+        stale = db_manager.list_jobs(limit=1000, status='processing')
+        for j in stale:
+            db_manager.mark_job_failed(j.id, "Interrupted by server restart")
+        if stale:
+            logger.info(f"Marked {len(stale)} interrupted job(s) as failed on startup")
+    except Exception:
+        logger.exception("Startup job reconciliation failed")
 
 
 # Routes
@@ -392,6 +432,15 @@ async def upload_file(file: UploadFile = File(...)):
 
         logger.info(f"File uploaded: {file.filename} -> {upload_path}")
 
+        # Persist the job now so its original filename is recorded and it
+        # shows up in /api/jobs even before analysis starts / after a
+        # server restart.
+        db_manager.create_job(
+            job_id=job_id,
+            filename=file.filename,
+            file_path=str(upload_path)
+        )
+
         return {
             "job_id": job_id,
             "filename": file.filename,
@@ -436,6 +485,17 @@ async def start_analysis(
             'progress': {}
         }
 
+        # Persist the chosen options (row was created at upload time).
+        db_manager.update_job(
+            job_id,
+            summary_level=summary_level,
+            extract_actions=extract_actions,
+            extract_topics=extract_topics,
+            output_format=('md' if template else output_format),
+            language=language,
+            status='queued',
+        )
+
         # Start background processing
         options = {
             'summary_level': summary_level,
@@ -465,48 +525,89 @@ async def start_analysis(
 
 @app.get("/api/jobs/{job_id}")
 async def get_job_status(job_id: str):
-    """Get job status and results"""
-    if job_id not in active_jobs:
+    """Get job status and results.
+
+    Serves an in-flight job from the in-memory registry (has live
+    progress + the full result object); falls back to the database for
+    jobs that finished before a restart.
+    """
+    if job_id in active_jobs:
+        job = active_jobs[job_id]
+
+        response = {
+            "job_id": job_id,
+            "status": job['status'],
+            "created_at": job.get('created_at'),
+            "started_at": job.get('started_at'),
+            "completed_at": job.get('completed_at'),
+            "progress": job.get('progress', {})
+        }
+
+        if job['status'] == 'completed':
+            response['result'] = {
+                'summary': job['result'].get('summary', {}).get('text', ''),
+                'topics': job['result'].get('topics', []),
+                'action_items_count': job['result'].get('actions', {}).get('total_actions', 0),
+                'statistics': job['result'].get('statistics', {})
+            }
+            response['download_url'] = f"/api/jobs/{job_id}/download"
+        elif job['status'] == 'failed':
+            response['error'] = job.get('error')
+
+        return response
+
+    # Not in memory - look it up in the database
+    db_job = db_manager.get_job(job_id)
+    if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job = active_jobs[job_id]
-
+    d = db_job.to_dict()
     response = {
         "job_id": job_id,
-        "status": job['status'],
-        "created_at": job.get('created_at'),
-        "started_at": job.get('started_at'),
-        "completed_at": job.get('completed_at'),
-        "progress": job.get('progress', {})
+        "status": d['status'],
+        "created_at": d['created_at'],
+        "started_at": d['started_at'],
+        "completed_at": d['completed_at'],
+        "progress": {
+            "progress_percent": d['progress_percent'],
+            "current_stage": d['current_stage'],
+        },
     }
-
-    if job['status'] == 'completed':
+    if d['status'] == 'completed':
         response['result'] = {
-            'summary': job['result'].get('summary', {}).get('text', ''),
-            'topics': job['result'].get('topics', []),
-            'action_items_count': job['result'].get('actions', {}).get('total_actions', 0),
-            'statistics': job['result'].get('statistics', {})
+            'summary': d['summary_text'] or '',
+            'topics': d['topics'] or [],
+            'action_items_count': d['action_items_count'] or 0,
+            'statistics': {
+                'processing_time_seconds': d['processing_time_seconds'],
+                'total_cost_usd': d['estimated_cost_usd'],
+                'cache_hits': d['cache_hits'],
+            },
         }
         response['download_url'] = f"/api/jobs/{job_id}/download"
-
-    elif job['status'] == 'failed':
-        response['error'] = job.get('error')
+    elif d['status'] == 'failed':
+        response['error'] = d['error_message']
 
     return response
 
 
 @app.get("/api/jobs/{job_id}/download")
 async def download_report(job_id: str):
-    """Download analysis report"""
-    if job_id not in active_jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+    """Download analysis report (in-memory job or, after a restart, DB)"""
+    output_file = None
 
-    job = active_jobs[job_id]
-
-    if job['status'] != 'completed':
-        raise HTTPException(status_code=400, detail="Job not completed")
-
-    output_file = job.get('output_file')
+    if job_id in active_jobs:
+        job = active_jobs[job_id]
+        if job['status'] != 'completed':
+            raise HTTPException(status_code=400, detail="Job not completed")
+        output_file = job.get('output_file')
+    else:
+        db_job = db_manager.get_job(job_id)
+        if not db_job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if db_job.status != 'completed':
+            raise HTTPException(status_code=400, detail="Job not completed")
+        output_file = db_job.output_file_path
 
     if not output_file or not Path(output_file).exists():
         raise HTTPException(status_code=404, detail="Report file not found")
@@ -553,46 +654,51 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
 
 
 @app.get("/api/jobs")
-async def list_jobs(limit: int = 50):
-    """List all jobs"""
-    jobs = sorted(
-        active_jobs.values(),
-        key=lambda x: x.get('created_at', ''),
-        reverse=True
-    )[:limit]
+async def list_jobs(limit: int = 50, offset: int = 0, status: Optional[str] = None):
+    """List jobs from the database (survives restarts). Live status for
+    any still-in-flight job is overlaid from the in-memory registry."""
+    db_jobs = db_manager.list_jobs(limit=limit, offset=offset, status=status)
+
+    jobs = []
+    for j in db_jobs:
+        d = j.to_dict()
+        live = active_jobs.get(j.id)
+        jobs.append({
+            "job_id": d['job_id'],
+            "filename": d['filename'],
+            "status": (live['status'] if live else d['status']),
+            "created_at": d['created_at'],
+            "completed_at": d['completed_at'],
+            "progress_percent": (
+                live.get('progress', {}).get('progress_percent', d['progress_percent'])
+                if live else d['progress_percent']
+            ),
+        })
 
     return {
-        "total": len(active_jobs),
-        "jobs": [
-            {
-                "job_id": job['job_id'],
-                "status": job['status'],
-                "created_at": job.get('created_at'),
-                "completed_at": job.get('completed_at')
-            }
-            for job in jobs
-        ]
+        "total": db_manager.get_statistics().get('total_jobs', len(jobs)),
+        "jobs": jobs,
     }
 
 
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: str):
-    """Delete job and associated files"""
-    if job_id not in active_jobs:
+    """Delete a job (DB row, uploaded file, and report)"""
+    # db_manager.delete_job also unlinks the upload + output files
+    deleted = db_manager.delete_job(job_id)
+    in_memory = active_jobs.pop(job_id, None)
+
+    if in_memory:
+        for key in ('audio_path', 'output_file'):
+            p = in_memory.get(key)
+            if p and Path(p).exists():
+                try:
+                    Path(p).unlink()
+                except OSError:
+                    pass
+
+    if not deleted and not in_memory:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    job = active_jobs[job_id]
-
-    # Delete uploaded file
-    if 'audio_path' in job and Path(job['audio_path']).exists():
-        Path(job['audio_path']).unlink()
-
-    # Delete output file
-    if 'output_file' in job and Path(job['output_file']).exists():
-        Path(job['output_file']).unlink()
-
-    # Remove from active jobs
-    del active_jobs[job_id]
 
     return {"message": "Job deleted"}
 
