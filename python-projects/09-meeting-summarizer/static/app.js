@@ -36,6 +36,7 @@ class MeetingSummarizer {
         this.downloadBtn = document.getElementById('downloadBtn');
         this.newAnalysisBtn = document.getElementById('newAnalysisBtn');
         this.retryBtn = document.getElementById('retryBtn');
+        this.cancelBtn = document.getElementById('cancelBtn');
 
         // Sections
         this.progressSection = document.getElementById('progressSection');
@@ -86,6 +87,7 @@ class MeetingSummarizer {
         this.downloadBtn.addEventListener('click', () => this.downloadReport());
         this.newAnalysisBtn.addEventListener('click', () => this.resetUI());
         this.retryBtn.addEventListener('click', () => this.resetUI());
+        this.cancelBtn.addEventListener('click', () => this.cancelAnalysis());
     }
 
     handleFileSelect(event) {
@@ -270,7 +272,7 @@ class MeetingSummarizer {
             });
         }
 
-        // Check if completed or failed
+        // Check if completed, failed, or cancelled
         if (status === 'completed') {
             this.updateProgress(100, 'Completed!');
             setTimeout(() => this.showResults(), 1000);
@@ -279,7 +281,38 @@ class MeetingSummarizer {
                 ? state.errors[0].message
                 : 'Processing failed';
             this.showError(error);
+        } else if (status === 'cancelled') {
+            this.showCancelled();
         }
+    }
+
+    async cancelAnalysis() {
+        if (!this.currentJobId) return;
+
+        this.cancelBtn.disabled = true;
+        this.cancelBtn.textContent = 'Cancelling...';
+
+        try {
+            const response = await fetch(`/api/jobs/${this.currentJobId}/cancel`, { method: 'POST' });
+            if (response.ok) {
+                this.showCancelled();
+            }
+        } catch (error) {
+            console.error('Cancel request failed:', error);
+        } finally {
+            this.cancelBtn.disabled = false;
+            this.cancelBtn.textContent = 'Cancel';
+        }
+    }
+
+    showCancelled() {
+        if (this.websocket) this.websocket.close();
+        this.progressSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.errorSection.style.display = 'block';
+        document.getElementById('errorTitle').textContent = 'Cancelled';
+        document.getElementById('errorCard').classList.add('cancelled-card');
+        this.errorMessage.textContent = 'Analysis was cancelled.';
     }
 
     async pollJobStatus(jobId, interval = 2000) {
@@ -294,6 +327,8 @@ class MeetingSummarizer {
                     this.showResults();
                 } else if (data.status === 'failed') {
                     this.showError(data.error || 'Processing failed');
+                } else if (data.status === 'cancelled') {
+                    this.showCancelled();
                 } else if (data.status === 'processing' || data.status === 'queued') {
                     setTimeout(poll, interval);
                 }
@@ -442,6 +477,8 @@ class MeetingSummarizer {
         this.progressSection.style.display = 'none';
         this.resultsSection.style.display = 'none';
         this.errorSection.style.display = 'block';
+        document.getElementById('errorTitle').textContent = 'Error';
+        document.getElementById('errorCard').classList.remove('cancelled-card');
         this.errorMessage.textContent = message;
 
         if (this.websocket) {
@@ -461,6 +498,8 @@ class MeetingSummarizer {
         this.fileInfo.style.display = 'none';
         this.analyzeBtn.disabled = true;
         this.analyzeBtn.textContent = 'Start Analysis';
+        this.cancelBtn.disabled = false;
+        this.cancelBtn.textContent = 'Cancel';
         this.progressSection.style.display = 'none';
         this.resultsSection.style.display = 'none';
         this.errorSection.style.display = 'none';

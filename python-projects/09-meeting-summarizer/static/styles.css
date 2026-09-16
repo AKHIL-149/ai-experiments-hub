@@ -414,6 +414,21 @@ body {
     font-size: 1.1rem;
 }
 
+/* Cancelled is a user action, not a failure - reuses the error card's
+   layout but without alarming red styling. */
+.error-card.cancelled-card {
+    border-left-color: #6b7280;
+}
+
+.error-card.cancelled-card h2,
+.error-card.cancelled-card p {
+    color: #6b7280;
+}
+
+#progressSection #cancelBtn {
+    margin-top: 20px;
+}
+
 /* Footer */
 .footer {
     text-align: center;

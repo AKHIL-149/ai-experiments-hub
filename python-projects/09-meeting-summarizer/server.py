@@ -281,6 +281,16 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
 
         progress_tracker.complete_stage(ProcessingStage.VALIDATION)
 
+        # Cancellation checkpoint. analyze_meeting() below is one
+        # monolithic blocking call (whisper.cpp + Ollama, no internal
+        # checkpoints), so once it starts there's no cooperative way to
+        # stop it short of killing the subprocess - this is the last
+        # point where a cancel request actually prevents work from
+        # happening, rather than just being honored after the fact.
+        if active_jobs[job_id].get('cancel_requested'):
+            logger.info(f"Job {job_id} cancelled before transcription started")
+            return
+
         # Transcription stage
         progress_tracker.update_stage(ProcessingStage.TRANSCRIPTION, 30, "Transcribing audio")
 
@@ -294,6 +304,15 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             extract_topics=options.get('extract_topics', True),
             language=options.get('language')
         )
+
+        # A cancel that arrived while analyze_meeting() was running
+        # couldn't stop it, but it should still keep this job out of
+        # "completed" - the caller asked us to stop caring about the
+        # result, so skip report generation and leave status as
+        # 'cancelled' (already set by /cancel) rather than overwriting it.
+        if active_jobs[job_id].get('cancel_requested'):
+            logger.info(f"Job {job_id} finished analysis after being cancelled - discarding result")
+            return
 
         progress_tracker.complete_stage(ProcessingStage.TRANSCRIPTION)
         progress_tracker.update_stage(ProcessingStage.SUMMARIZATION, 60, "Generating summary")
@@ -521,6 +540,45 @@ async def start_analysis(
     except Exception as e:
         logger.exception("Failed to start analysis")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    """
+    Cancel a queued or in-progress job ("soft" cancel).
+
+    Takes effect immediately: the job stops being tracked as live and its
+    status flips to 'cancelled' right away. analyze_meeting() has no
+    internal checkpoints (it's one blocking call covering transcription,
+    summarization, and extraction), so if the job was already past
+    validation, the underlying whisper.cpp/Ollama work keeps running in
+    its worker thread to completion - but the result is discarded rather
+    than saved, and the job will not flip to 'completed'.
+    """
+    if job_id not in active_jobs:
+        # Not running - maybe queued-but-not-yet-started (rare race) or
+        # already finished/gone. Either way there's nothing live to stop.
+        db_job = db_manager.get_job(job_id)
+        if not db_job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if db_job.status not in ('queued', 'processing'):
+            raise HTTPException(status_code=400, detail=f"Job is already {db_job.status}")
+        db_manager.update_job(job_id, status='cancelled', completed_at=datetime.now())
+        return {"job_id": job_id, "status": "cancelled"}
+
+    job = active_jobs[job_id]
+    if job['status'] not in ('queued', 'processing'):
+        raise HTTPException(status_code=400, detail=f"Job is already {job['status']}")
+
+    job['cancel_requested'] = True
+    job['status'] = 'cancelled'
+    job['completed_at'] = datetime.now().isoformat()
+    db_manager.update_job(job_id, status='cancelled', completed_at=datetime.now())
+
+    await broadcast_progress(job_id, {**job.get('progress', {}), 'status': 'cancelled'})
+
+    logger.info(f"Job {job_id} cancel requested")
+    return {"job_id": job_id, "status": "cancelled"}
 
 
 @app.get("/api/jobs/{job_id}")
