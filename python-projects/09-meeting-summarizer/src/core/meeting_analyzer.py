@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 
 from .audio_processor import AudioProcessor
 from .transcription_service import TranscriptionService
@@ -73,7 +73,8 @@ class MeetingAnalyzer:
         summary_level: str = "standard",
         extract_actions: bool = True,
         extract_topics: bool = True,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        progress_callback: Optional[Callable[[str], None]] = None
     ) -> Dict:
         """
         Perform full meeting analysis
@@ -84,6 +85,16 @@ class MeetingAnalyzer:
             extract_actions: Whether to extract action items
             extract_topics: Whether to extract key topics
             language: Language code (optional)
+            progress_callback: Optional callback invoked with an event
+                name ("transcription_done", "summarization_done") right
+                as each real pipeline step finishes, so a caller (the web
+                server) can report genuine per-stage progress instead of
+                only knowing "the whole thing" finished. May be called
+                from a worker thread if this method itself is invoked via
+                asyncio.to_thread - callers must marshal their own
+                thread-unsafe work (DB/asyncio) accordingly. Best-effort:
+                a raising callback is logged and swallowed rather than
+                failing the analysis.
 
         Returns:
             dict with complete analysis:
@@ -147,6 +158,7 @@ class MeetingAnalyzer:
             statistics["cache_misses"] += 1
 
         transcript_text = transcript_result["text"]
+        self._emit_progress(progress_callback, "transcription_done")
 
         # Step 3: Summarize transcript (with caching)
         logger.info(f"Step 3: Generating {summary_level} summary")
@@ -157,6 +169,8 @@ class MeetingAnalyzer:
         else:
             statistics["cache_misses"] += 1
             statistics["total_cost_usd"] += summary_result.get("estimated_cost", 0.0)
+
+        self._emit_progress(progress_callback, "summarization_done")
 
         # Step 4: Extract action items (if enabled)
         actions_result = None
@@ -213,6 +227,17 @@ class MeetingAnalyzer:
         )
 
         return result
+
+    @staticmethod
+    def _emit_progress(callback: Optional[Callable[[str], None]], event: str):
+        """Best-effort progress_callback invocation - a bad callback
+        shouldn't be able to fail the analysis it's just reporting on."""
+        if not callback:
+            return
+        try:
+            callback(event)
+        except Exception as e:
+            logger.warning(f"progress_callback raised for event '{event}': {e}")
 
     def _summarize_with_cache(self, transcript: str, level: str) -> Dict:
         """

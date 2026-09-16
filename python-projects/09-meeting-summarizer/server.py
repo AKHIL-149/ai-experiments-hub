@@ -230,21 +230,30 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             enable_persistence=True
         )
 
-        # Progress callback - may be invoked from the worker thread, so
-        # schedule the async broadcast on the event loop thread-safely
-        # rather than calling asyncio.create_task (which needs a running
-        # loop in the current thread).
+        # Progress callback - now genuinely invoked from the worker
+        # thread once analyze_meeting() reports real per-stage progress
+        # (see progress_callback below), not just from this function's
+        # own loop-thread calls to progress_tracker. Both the WebSocket
+        # broadcast and the DB write have to be marshalled onto the
+        # event loop thread accordingly: run_coroutine_threadsafe for
+        # the coroutine, call_soon_threadsafe for the plain db_manager
+        # call (SQLite connections aren't safe to touch from a thread
+        # other than the one that opened them).
         def on_progress(state):
             active_jobs[job_id]['progress'] = state
             asyncio.run_coroutine_threadsafe(broadcast_progress(job_id, state), loop)
-            try:
-                db_manager.update_job_progress(
-                    job_id,
-                    progress_percent=state.get('progress_percent', 0),
-                    current_stage=state.get('current_stage')
-                )
-            except Exception as e:  # never let a DB hiccup kill the job
-                logger.warning(f"Job {job_id}: progress DB update failed: {e}")
+
+            def _persist_progress():
+                try:
+                    db_manager.update_job_progress(
+                        job_id,
+                        progress_percent=state.get('progress_percent', 0),
+                        current_stage=state.get('current_stage')
+                    )
+                except Exception as e:  # never let a DB hiccup kill the job
+                    logger.warning(f"Job {job_id}: progress DB update failed: {e}")
+
+            loop.call_soon_threadsafe(_persist_progress)
 
         progress_tracker.add_callback(on_progress)
         progress_tracker.start(metadata={
@@ -294,6 +303,21 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         # Transcription stage
         progress_tracker.update_stage(ProcessingStage.TRANSCRIPTION, 30, "Transcribing audio")
 
+        # analyze_meeting() reports real stage-completion events as it
+        # goes (from the worker thread analyze_meeting itself runs on -
+        # progress_tracker.update_stage()/complete_stage() call the
+        # on_progress callback above, which is already thread-safe).
+        # Without this, the progress bar used to sit at 30% for the
+        # entire transcription+summarization+extraction run and then
+        # jump straight to 100% - cosmetic, not real progress.
+        def on_stage_event(event: str):
+            if event == "transcription_done":
+                progress_tracker.complete_stage(ProcessingStage.TRANSCRIPTION)
+                progress_tracker.update_stage(ProcessingStage.SUMMARIZATION, 60, "Generating summary")
+            elif event == "summarization_done":
+                progress_tracker.complete_stage(ProcessingStage.SUMMARIZATION)
+                progress_tracker.update_stage(ProcessingStage.ACTION_EXTRACTION, 80, "Extracting action items")
+
         # Run analysis in a worker thread so the event loop stays free
         # to serve other requests and flush WebSocket progress messages.
         result = await asyncio.to_thread(
@@ -302,7 +326,8 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             summary_level=options.get('summary_level', 'standard'),
             extract_actions=options.get('extract_actions', True),
             extract_topics=options.get('extract_topics', True),
-            language=options.get('language')
+            language=options.get('language'),
+            progress_callback=on_stage_event
         )
 
         # A cancel that arrived while analyze_meeting() was running
@@ -314,10 +339,11 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             logger.info(f"Job {job_id} finished analysis after being cancelled - discarding result")
             return
 
-        progress_tracker.complete_stage(ProcessingStage.TRANSCRIPTION)
-        progress_tracker.update_stage(ProcessingStage.SUMMARIZATION, 60, "Generating summary")
-        progress_tracker.complete_stage(ProcessingStage.SUMMARIZATION)
-        progress_tracker.update_stage(ProcessingStage.ACTION_EXTRACTION, 80, "Extracting action items")
+        # transcription/summarization stages were already completed by
+        # on_stage_event as they actually finished; action_extraction
+        # (and topic extraction, which shares its window - there's no
+        # separate UI stage for it) are done now that analyze_meeting()
+        # has returned.
         progress_tracker.complete_stage(ProcessingStage.ACTION_EXTRACTION)
 
         # Generate report
