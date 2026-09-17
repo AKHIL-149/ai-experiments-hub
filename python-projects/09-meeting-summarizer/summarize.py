@@ -558,11 +558,23 @@ def cmd_analyze(args, config):
                     speaker_transcript = diarizer.assign_transcript_to_speakers(
                         result['transcript']['text'], segments
                     )
+                    print_info("Extracting each speaker's key points...")
+                    key_points = meeting_analyzer.summarizer.extract_speaker_key_points(
+                        speaker_transcript
+                    )
                     result['speaker_diarization'] = {
                         'segments': segments,
                         'statistics': spk_stats,
-                        'speaker_transcript': speaker_transcript
+                        'speaker_transcript': speaker_transcript,
+                        'key_points': key_points
                     }
+                    if key_points:
+                        print()
+                        print(f"{Fore.YELLOW}Key Points by Speaker:{Style.RESET_ALL}")
+                        for spk, points in key_points.items():
+                            print(f"  {spk}:")
+                            for point in points:
+                                print(f"    - {point}")
                     print()
                     print(f"{Fore.YELLOW}Speaker-Attributed Transcript (approximate):{Style.RESET_ALL}")
                     formatted = diarizer.format_speaker_transcript(speaker_transcript)

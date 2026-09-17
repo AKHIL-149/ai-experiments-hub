@@ -406,12 +406,19 @@ class MeetingSummarizer {
                 const speakersSection = document.getElementById('speakersSection');
                 if (diarization && diarization.statistics) {
                     const speakers = diarization.statistics.speakers || {};
+                    const keyPoints = diarization.key_points || {};
                     document.getElementById('speakersList').innerHTML = Object.entries(speakers)
                         .sort((a, b) => b[1].percentage - a[1].percentage)
                         .map(([name, info]) => {
                             const mins = (info.total_time / 60).toFixed(1);
+                            const points = keyPoints[name];
+                            const pointsHtml = points && points.length
+                                ? '<ul class="key-points-list">' +
+                                  points.map(p => `<li>${this.escapeHtml(p)}</li>`).join('') +
+                                  '</ul>'
+                                : '';
                             return `<li>${this.escapeHtml(name)}: ${info.percentage.toFixed(1)}% ` +
-                                   `(${mins} min, ${info.num_segments} segments)</li>`;
+                                   `(${mins} min, ${info.num_segments} segments)${pointsHtml}</li>`;
                         })
                         .join('');
                     speakersSection.style.display = 'block';

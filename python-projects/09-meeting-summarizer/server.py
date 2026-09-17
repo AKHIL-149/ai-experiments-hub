@@ -413,19 +413,32 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
                     Path(diarize_wav).unlink(missing_ok=True)
 
                 if segments:
+                    speaker_transcript = speaker_diarizer.assign_transcript_to_speakers(
+                        result['transcript']['text'], segments
+                    )
                     result['speaker_diarization'] = {
                         'segments': segments,
                         'statistics': speaker_diarizer.get_speaker_statistics(segments),
                         # Approximate: no real per-word timestamps to work
                         # from (see SpeakerDiarization.assign_transcript_to_speakers).
-                        'speaker_transcript': speaker_diarizer.assign_transcript_to_speakers(
-                            result['transcript']['text'], segments
-                        )
+                        'speaker_transcript': speaker_transcript,
+                        # One LLM call per speaker - best-effort, on top of
+                        # an already best-effort feature, so a failure here
+                        # shouldn't drop the diarization results we already have.
+                        'key_points': {}
                     }
                     logger.info(
                         f"Job {job_id}: identified "
                         f"{result['speaker_diarization']['statistics']['total_speakers']} speaker(s)"
                     )
+
+                    try:
+                        result['speaker_diarization']['key_points'] = await asyncio.to_thread(
+                            meeting_analyzer.summarizer.extract_speaker_key_points,
+                            speaker_transcript
+                        )
+                    except Exception as e:
+                        logger.warning(f"Job {job_id}: speaker key point extraction failed: {e}")
             except Exception as e:
                 # Best-effort - never fail an otherwise-successful
                 # analysis job just because diarization didn't work.

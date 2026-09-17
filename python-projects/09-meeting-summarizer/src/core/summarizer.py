@@ -1,6 +1,7 @@
 """Summarizer - AI-powered meeting summarization with map-reduce for long transcripts"""
 
 import logging
+import re
 from typing import Dict, List, Optional
 from .llm_client import LLMClient
 
@@ -365,3 +366,61 @@ Format: Just the topic name, no numbers or bullets."""
         ]
 
         return topics[:max_topics]
+
+    def extract_speaker_key_points(
+        self, speaker_transcript: List[Dict], max_points: int = 3
+    ) -> Dict[str, List[str]]:
+        """
+        Extract each speaker's key points from their attributed transcript
+        lines (see SpeakerDiarization.assign_transcript_to_speakers) - one
+        LLM call per speaker, since each needs its own prompt/response.
+
+        Args:
+            speaker_transcript: Speaker-attributed segments, each with at
+                least 'speaker' and 'text' keys
+            max_points: Maximum key points to extract per speaker
+
+        Returns:
+            {"Speaker 1": ["point one", "point two", ...], ...} - a speaker
+            with no substantive text is omitted rather than given an empty list
+        """
+        lines_by_speaker: Dict[str, List[str]] = {}
+        for seg in speaker_transcript:
+            lines_by_speaker.setdefault(seg['speaker'], []).append(seg['text'])
+
+        system_prompt = (
+            "You are an expert at distilling what one meeting participant "
+            "said into their key points."
+        )
+
+        key_points: Dict[str, List[str]] = {}
+        for speaker, lines in lines_by_speaker.items():
+            text = " ".join(line.strip() for line in lines if line.strip())
+            if not text:
+                continue
+
+            user_prompt = f"""Below are all the lines spoken by one meeting participant ({speaker}).
+
+{text}
+
+List up to {max_points} of the most important points this person made, one per line.
+Format: just the point itself, no numbering or bullets. If they made fewer than {max_points} substantive points, list only those. If they made no substantive point (e.g. only small talk or a greeting), respond with NONE."""
+
+            response = self.llm_client.generate(
+                prompt=user_prompt,
+                max_tokens=300,
+                temperature=0.3,
+                system_prompt=system_prompt
+            )
+
+            points = [
+                re.sub(r'^[-*\d.)\s]+', '', line).strip()
+                for line in response["text"].split("\n")
+                if line.strip()
+            ]
+            points = [p for p in points if p and p.upper() != 'NONE']
+
+            if points:
+                key_points[speaker] = points[:max_points]
+
+        return key_points
