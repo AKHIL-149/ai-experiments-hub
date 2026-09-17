@@ -37,13 +37,27 @@ class SpeakerDiarization:
             from pyannote.audio import Pipeline
 
             if not self.hf_token:
-                logger.warning("Speaker diarization requires HF_AUTH_TOKEN environment variable")
-                return
+                # Not a hard requirement - pyannote/speaker-diarization-3.1
+                # is documented as a gated model needing a HF account that
+                # accepted its license, but Pipeline.from_pretrained()
+                # itself doesn't require a token to attempt the load (it
+                # just means "no explicit credential, fall back to
+                # anonymous/any locally cached HF login"). Try anyway and
+                # let the except below report the real failure if the
+                # model does turn out to need auth.
+                logger.info(
+                    "No HF_AUTH_TOKEN set - attempting speaker diarization "
+                    "without explicit credentials (may fail if the model requires one)"
+                )
 
-            # Load pretrained pipeline
+            # Load pretrained pipeline. pyannote.audio 4.x renamed the
+            # from_pretrained kwarg from use_auth_token to token
+            # (confirmed live: passing use_auth_token raises
+            # "TypeError: ... got an unexpected keyword argument" on
+            # pyannote-audio==4.0.7, the version a fresh install pulls).
             self.pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
-                use_auth_token=self.hf_token
+                token=self.hf_token
             )
 
             self.is_available = True
@@ -105,18 +119,26 @@ class SpeakerDiarization:
             if max_speakers:
                 params['max_speakers'] = max_speakers
 
-            # Run diarization
-            diarization = self.pipeline(audio_path, **params)
+            # Run diarization. pyannote.audio 4.x returns a DiarizeOutput
+            # dataclass (not the bare Annotation older code/tutorials
+            # show) - confirmed live: calling .itertracks() directly on
+            # it raises "'DiarizeOutput' object has no attribute
+            # 'itertracks'". .serialize()['diarization'] is the
+            # officially supported way to get plain start/end/speaker
+            # dicts back out, regardless of the underlying Annotation
+            # API shifting further in future pyannote versions.
+            output = self.pipeline(audio_path, **params)
+            raw_segments = output.serialize()['diarization']
 
-            # Convert to list of segments
-            segments = []
-            for turn, _, speaker in diarization.itertracks(yield_label=True):
-                segments.append({
-                    'start': turn.start,
-                    'end': turn.end,
-                    'speaker': speaker,
-                    'duration': turn.end - turn.start
-                })
+            segments = [
+                {
+                    'start': seg['start'],
+                    'end': seg['end'],
+                    'speaker': seg['speaker'],
+                    'duration': seg['end'] - seg['start']
+                }
+                for seg in raw_segments
+            ]
 
             logger.info(f"Diarization complete: found {len(set(s['speaker'] for s in segments))} speakers")
 

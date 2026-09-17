@@ -25,9 +25,16 @@ websockets>=12.0
 # Database (Phase 5)
 sqlalchemy>=2.0.0
 
-# Speaker Diarization (Phase 5 - Optional)
-# pyannote.audio>=3.1.0  # Requires HF_AUTH_TOKEN
-# torch>=2.0.0           # Required by pyannote.audio
+# Speaker Diarization (Phase 5 - Optional, heavy: pulls in torch)
+# pip install pyannote.audio torch
+# `pyannote.audio` (confirmed working: 4.0.7) needs its from_pretrained()
+# call using `token=`, not the older `use_auth_token=` - see
+# src/utils/speaker_diarization.py. On macOS/Homebrew you'll also need
+# `export DYLD_LIBRARY_PATH=/opt/homebrew/lib` for its audio backend
+# (torchcodec) to find ffmpeg's shared libraries it can't locate
+# otherwise - see README "Example 3: Speaker Diarization".
+# pyannote.audio
+# torch
 
 # Development
 pytest>=7.4.0

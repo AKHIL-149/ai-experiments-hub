@@ -709,36 +709,55 @@ $ python summarize.py analyze meeting.mp3 --template executive
 ### Example 3: Speaker Diarization
 
 ```bash
+pip install pyannote.audio torch
+
+# pyannote/speaker-diarization-3.1 is documented as a gated model, but
+# loading it doesn't hard-require a token - it's only needed if the
+# model you point at actually enforces the gate. Set one if you hit an
+# auth error:
+export HF_AUTH_TOKEN=your_huggingface_token
+
+# macOS/Homebrew only: pyannote 4.x's audio backend (torchcodec) needs
+# ffmpeg's shared libraries, which Homebrew doesn't put on the default
+# search path:
+export DYLD_LIBRARY_PATH=/opt/homebrew/lib
+
 $ python summarize.py analyze meeting.mp3 --speakers
+```
 
-# Requires: HF_AUTH_TOKEN environment variable
-# Requires: pip install pyannote.audio torch
+CPU-only diarization is slow - budget roughly the audio's own duration
+(a 10-minute meeting took ~7 minutes on an M-series Mac with no GPU).
 
-ℹ Speaker diarization enabled
-ℹ Diarization complete: found 3 speakers
+```
+Speaker Diarization:
+  Found 3 speaker(s)
+    SPEAKER_00: 45.2% (8.3 min, 12 segments)
+    SPEAKER_01: 32.1% (5.9 min, 8 segments)
+    SPEAKER_02: 22.7% (4.2 min, 6 segments)
 
-============================================================
-Speaker-Attributed Transcript
-============================================================
+Speaker-Attributed Transcript (approximate):
 
 SPEAKER_00:
   Good morning everyone. Let's start with the sprint review.
 
 SPEAKER_01:
-  Thanks. I completed the authentication feature yesterday.
-  It's ready for code review.
+  Thanks. I completed the authentication feature yesterday. It's ready for code review.
 
 SPEAKER_02:
   Great work! I'll review it this afternoon.
-
-============================================================
-Speaker Statistics
-============================================================
-
-SPEAKER_00: 45.2% (8.3 min, 12 segments)
-SPEAKER_01: 32.1% (5.9 min, 8 segments)
-SPEAKER_02: 22.7% (4.2 min, 6 segments)
 ```
+
+**"Approximate" is not a hedge - read it literally.** Whisper.cpp's
+plain-text output here carries no per-word or per-segment timestamps, so
+`assign_transcript_to_speakers()` estimates each sentence's position by
+evenly dividing the transcript across the audio's total duration, then
+looks up whichever speaker was talking at that estimated midpoint. On
+a meeting with uneven pacing (long pauses, a few word answers, a
+rambling section) the sentence-to-speaker attribution can drift
+noticeably from the true speaker turns. The percentages and segment
+counts in the statistics table above are exact (they come straight
+from the diarization model); only the transcript text's speaker labels
+are estimated.
 
 ### Example 4: Database-Persisted Jobs via Web UI
 

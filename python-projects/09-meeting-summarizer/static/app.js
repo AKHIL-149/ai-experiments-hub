@@ -31,6 +31,7 @@ class MeetingSummarizer {
         this.extractActions = document.getElementById('extractActions');
         this.extractTopics = document.getElementById('extractTopics');
         this.allLevels = document.getElementById('allLevels');
+        this.identifySpeakers = document.getElementById('identifySpeakers');
 
         // Buttons
         this.analyzeBtn = document.getElementById('analyzeBtn');
@@ -159,7 +160,8 @@ class MeetingSummarizer {
                 output_format: this.outputFormat.value,
                 language: this.language.value || null,
                 template: this.summaryTemplate.value || null,
-                all_levels: this.allLevels.checked
+                all_levels: this.allLevels.checked,
+                identify_speakers: this.identifySpeakers.checked
             };
 
             const analyzeUrl = `/api/analyze/${this.currentJobId}?` + new URLSearchParams(
@@ -397,6 +399,25 @@ class MeetingSummarizer {
                 const actionCount = data.result.action_items_count || 0;
                 this.actionsCount.textContent =
                     `${actionCount} action ${actionCount === 1 ? 'item' : 'items'} extracted`;
+
+                // Speaker diarization (only present if "Identify speakers"
+                // was checked and the server has pyannote.audio installed).
+                const diarization = data.result.speaker_diarization;
+                const speakersSection = document.getElementById('speakersSection');
+                if (diarization && diarization.statistics) {
+                    const speakers = diarization.statistics.speakers || {};
+                    document.getElementById('speakersList').innerHTML = Object.entries(speakers)
+                        .sort((a, b) => b[1].percentage - a[1].percentage)
+                        .map(([name, info]) => {
+                            const mins = (info.total_time / 60).toFixed(1);
+                            return `<li>${this.escapeHtml(name)}: ${info.percentage.toFixed(1)}% ` +
+                                   `(${mins} min, ${info.num_segments} segments)</li>`;
+                        })
+                        .join('');
+                    speakersSection.style.display = 'block';
+                } else {
+                    speakersSection.style.display = 'none';
+                }
             }
         } catch (error) {
             console.error('Failed to load results:', error);

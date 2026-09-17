@@ -104,9 +104,14 @@ db_manager = DatabaseManager(db_url)
 # Phase 5: Video processor
 video_processor = VideoProcessor()
 
-# Phase 5: Speaker diarization (optional)
+# Phase 5: Speaker diarization (optional - needs `pip install
+# pyannote.audio torch`, not installed by default; create_speaker_diarization()
+# degrades to None gracefully if the import fails or the model can't
+# load). HF_AUTH_TOKEN isn't a hard precondition - see
+# SpeakerDiarization._initialize_pipeline - so this always attempts it
+# rather than skipping outright when the env var is unset.
 hf_token = os.getenv('HF_AUTH_TOKEN')
-speaker_diarizer = create_speaker_diarization(hf_token) if hf_token else None
+speaker_diarizer = create_speaker_diarization(hf_token)
 
 # Phase 5: Summary templates
 template_manager = SummaryTemplateManager(custom_templates_dir='./templates/custom')
@@ -347,6 +352,49 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
         # has returned.
         progress_tracker.complete_stage(ProcessingStage.ACTION_EXTRACTION)
 
+        # Speaker diarization (optional, off by default - pyannote.audio
+        # isn't installed unless the operator opted in, and even when
+        # available this is slow: CPU-only inference runs at roughly
+        # real-time, so a 10-minute meeting takes ~10 minutes here. No
+        # dedicated progress stage for it (would mean touching the
+        # ProcessingStage enum and the frontend's stage list for an
+        # optional feature) - it just runs silently between
+        # action_extraction and report_generation.
+        if options.get('identify_speakers') and speaker_diarizer:
+            try:
+                logger.info(f"Job {job_id}: running speaker diarization")
+                # pyannote needs a real WAV - confirmed live that handing
+                # it an mp3 directly fails ("requested chunk [...]
+                # resulted in 439895 samples instead of the expected
+                # 441000 samples"); mp3's frame-based encoding isn't
+                # sample-accurate to seek into.
+                audio_segment = await asyncio.to_thread(audio_processor.load_audio, audio_path)
+                diarize_wav = str(Path(audio_path).with_suffix('')) + '_diarize.wav'
+                await asyncio.to_thread(audio_processor.export_audio, audio_segment, diarize_wav, 'wav')
+                try:
+                    segments = await asyncio.to_thread(speaker_diarizer.diarize, diarize_wav)
+                finally:
+                    Path(diarize_wav).unlink(missing_ok=True)
+
+                if segments:
+                    result['speaker_diarization'] = {
+                        'segments': segments,
+                        'statistics': speaker_diarizer.get_speaker_statistics(segments),
+                        # Approximate: no real per-word timestamps to work
+                        # from (see SpeakerDiarization.assign_transcript_to_speakers).
+                        'speaker_transcript': speaker_diarizer.assign_transcript_to_speakers(
+                            result['transcript']['text'], segments
+                        )
+                    }
+                    logger.info(
+                        f"Job {job_id}: identified "
+                        f"{result['speaker_diarization']['statistics']['total_speakers']} speaker(s)"
+                    )
+            except Exception as e:
+                # Best-effort - never fail an otherwise-successful
+                # analysis job just because diarization didn't work.
+                logger.warning(f"Job {job_id}: speaker diarization failed: {e}")
+
         # Generate report
         progress_tracker.update_stage(ProcessingStage.REPORT_GENERATION, 90, "Generating report")
 
@@ -511,7 +559,8 @@ async def start_analysis(
     output_format: str = 'markdown',
     language: Optional[str] = None,
     template: Optional[str] = None,
-    all_levels: bool = False
+    all_levels: bool = False,
+    identify_speakers: bool = False
 ):
     """Start meeting analysis job"""
     try:
@@ -551,7 +600,8 @@ async def start_analysis(
             'output_format': output_format,
             'language': language,
             'template': template or None,
-            'all_levels': all_levels
+            'all_levels': all_levels,
+            'identify_speakers': identify_speakers
         }
 
         background_tasks.add_task(process_meeting_async, job_id, audio_path, options)
@@ -639,6 +689,8 @@ async def get_job_status(job_id: str):
             }
             if job['result'].get('summary_levels'):
                 response['result']['summary_levels'] = job['result']['summary_levels']
+            if job['result'].get('speaker_diarization'):
+                response['result']['speaker_diarization'] = job['result']['speaker_diarization']
             response['download_url'] = f"/api/jobs/{job_id}/download"
         elif job['status'] == 'failed':
             response['error'] = job.get('error')

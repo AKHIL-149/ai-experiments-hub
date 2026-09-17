@@ -29,6 +29,7 @@ from core.llm_client import LLMClient
 from core.meeting_analyzer import MeetingAnalyzer
 from utils.batch_processor import BatchProcessor
 from utils.progress_tracker import ProgressTracker, ProcessingStage
+from utils.speaker_diarization import create_speaker_diarization
 
 # Initialize colorama
 colorama_init(autoreset=True)
@@ -485,6 +486,73 @@ def cmd_analyze(args, config):
                 print(f"  ... and {actions['total_actions'] - 5} more")
             print()
 
+        if args.speakers:
+            print(f"{Fore.YELLOW}Speaker Diarization:{Style.RESET_ALL}")
+            diarizer = create_speaker_diarization(os.getenv('HF_AUTH_TOKEN'))
+
+            if not diarizer:
+                print_warning(
+                    "Not available - pip install pyannote.audio torch "
+                    "(and set HF_AUTH_TOKEN if the configured model requires it)"
+                )
+            else:
+                # analyze_meeting() already extracted+deleted its own
+                # temp audio track for a video input, so extract again
+                # here if needed - diarization needs a real audio file.
+                diarize_source = audio_path
+                extracted_for_diarization = False
+                if meeting_analyzer.video_processor.is_video_file(audio_path):
+                    diarize_source = meeting_analyzer.video_processor.extract_audio(audio_path)
+                    extracted_for_diarization = True
+
+                # Always hand pyannote a WAV, even for an already-audio
+                # input. Confirmed live: feeding it an mp3 directly raised
+                # "requested chunk [...] resulted in 439895 samples
+                # instead of the expected 441000 samples" - mp3's
+                # frame-based encoding isn't sample-accurate to seek
+                # into, which is exactly what chunked diarization needs.
+                audio_segment = audio_processor.load_audio(diarize_source)
+                diarize_wav = str(Path(diarize_source).with_suffix('')) + '_diarize.wav'
+                audio_processor.export_audio(audio_segment, diarize_wav, format='wav')
+
+                try:
+                    segments = diarizer.diarize(diarize_wav)
+                finally:
+                    if extracted_for_diarization:
+                        Path(diarize_source).unlink(missing_ok=True)
+                    Path(diarize_wav).unlink(missing_ok=True)
+
+                if segments:
+                    spk_stats = diarizer.get_speaker_statistics(segments)
+                    print(f"  Found {spk_stats['total_speakers']} speaker(s)")
+                    for spk, info in spk_stats['speakers'].items():
+                        print(
+                            f"    {spk}: {info['percentage']:.1f}% "
+                            f"({info['total_time']/60:.1f} min, {info['num_segments']} segments)"
+                        )
+
+                    # assign_transcript_to_speakers has no real per-word
+                    # timestamps to work with (whisper.cpp's --output-txt
+                    # here doesn't return them) - it estimates each
+                    # sentence's position by evenly dividing the total
+                    # duration, so the speaker labels below are
+                    # approximate, not word-accurate.
+                    speaker_transcript = diarizer.assign_transcript_to_speakers(
+                        result['transcript']['text'], segments
+                    )
+                    result['speaker_diarization'] = {
+                        'segments': segments,
+                        'statistics': spk_stats,
+                        'speaker_transcript': speaker_transcript
+                    }
+                    print()
+                    print(f"{Fore.YELLOW}Speaker-Attributed Transcript (approximate):{Style.RESET_ALL}")
+                    formatted = diarizer.format_speaker_transcript(speaker_transcript)
+                    print(formatted[:2000] + ('...' if len(formatted) > 2000 else ''))
+                else:
+                    print_warning("Diarization produced no segments")
+            print()
+
         # Statistics
         stats = result['statistics']
         print(f"{Fore.GREEN}Statistics:{Style.RESET_ALL}")
@@ -747,6 +815,13 @@ def main():
         action='store_true',
         help='Generate brief, standard, and detailed summaries in one '
              'pass (each is independently cached) instead of just --level'
+    )
+    analyze_parser.add_argument(
+        '--speakers',
+        action='store_true',
+        help='Identify individual speakers (requires pip install '
+             'pyannote.audio torch; HF_AUTH_TOKEN env var if the '
+             'configured model needs one)'
     )
 
     # Batch command (Phase 3)

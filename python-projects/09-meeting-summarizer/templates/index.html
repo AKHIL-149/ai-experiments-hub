@@ -87,6 +87,10 @@
                         <input type="checkbox" id="allLevels">
                         Generate all summary levels (brief + standard + detailed)
                     </label>
+                    <label>
+                        <input type="checkbox" id="identifySpeakers">
+                        Identify speakers (slow - CPU-only diarization runs at roughly real-time, so a 10-minute recording takes ~10 minutes; requires pyannote.audio installed on the server)
+                    </label>
                 </div>
 
                 <button class="btn btn-success btn-large" id="analyzeBtn" disabled>
@@ -174,6 +178,11 @@
 
                     <h3>Action Items</h3>
                     <div id="actionsCount" class="actions-count"></div>
+
+                    <div id="speakersSection" style="display: none;">
+                        <h3>Speakers</h3>
+                        <ul id="speakersList" class="topics-list"></ul>
+                    </div>
                 </div>
             </div>
         </section>
