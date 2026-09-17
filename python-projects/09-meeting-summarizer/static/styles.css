@@ -385,6 +385,18 @@ body {
     overflow-y: auto;
 }
 
+#transcriptText p {
+    margin: 0 0 12px;
+}
+
+#transcriptText p:last-child {
+    margin-bottom: 0;
+}
+
+#transcriptText p strong {
+    color: var(--primary-color, #6366F1);
+}
+
 #transcriptDetails summary {
     cursor: pointer;
     margin-bottom: 12px;

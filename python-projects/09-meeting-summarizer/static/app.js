@@ -429,8 +429,35 @@ class MeetingSummarizer {
                 // Full transcript - collapsed by default since it can run
                 // to thousands of words, but always available so users
                 // aren't stuck downloading the report just to read it.
+                // When diarization ran, label each line by speaker instead
+                // of showing one undifferentiated wall of text - grouping
+                // consecutive same-speaker lines the way
+                // SpeakerDiarization.format_speaker_transcript() does.
                 const transcriptSection = document.getElementById('transcriptSection');
-                if (data.result.transcript) {
+                const speakerTranscript = diarization && diarization.speaker_transcript;
+                if (speakerTranscript && speakerTranscript.length) {
+                    let html = '';
+                    let currentSpeaker = null;
+                    let currentLines = [];
+                    const flush = () => {
+                        if (currentSpeaker !== null && currentLines.length) {
+                            html += `<p><strong>${this.escapeHtml(currentSpeaker)}:</strong> ` +
+                                    `${this.escapeHtml(currentLines.join(' '))}</p>`;
+                        }
+                    };
+                    for (const seg of speakerTranscript) {
+                        if (seg.speaker !== currentSpeaker) {
+                            flush();
+                            currentSpeaker = seg.speaker;
+                            currentLines = [seg.text];
+                        } else {
+                            currentLines.push(seg.text);
+                        }
+                    }
+                    flush();
+                    document.getElementById('transcriptText').innerHTML = html;
+                    transcriptSection.style.display = 'block';
+                } else if (data.result.transcript) {
                     document.getElementById('transcriptText').textContent = data.result.transcript;
                     transcriptSection.style.display = 'block';
                 } else {
