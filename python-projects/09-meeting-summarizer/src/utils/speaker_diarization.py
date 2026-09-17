@@ -101,12 +101,14 @@ class SpeakerDiarization:
             max_speakers: Maximum number of speakers
 
         Returns:
-            List of speaker segments:
+            List of speaker segments, with pyannote's raw "SPEAKER_00"-
+            style labels already relabelled to "Speaker 1"/"Speaker 2"/...
+            in order of first appearance (see _relabel_speakers):
             [
                 {
                     "start": 0.0,
                     "end": 5.2,
-                    "speaker": "SPEAKER_00",
+                    "speaker": "Speaker 1",
                     "duration": 5.2
                 },
                 ...
@@ -153,6 +155,8 @@ class SpeakerDiarization:
                 for seg in raw_segments
             ]
 
+            segments = self._relabel_speakers(segments)
+
             logger.info(f"Diarization complete: found {len(set(s['speaker'] for s in segments))} speakers")
 
             return segments
@@ -160,6 +164,28 @@ class SpeakerDiarization:
         except Exception as e:
             logger.error(f"Speaker diarization failed: {str(e)}")
             return None
+
+    @staticmethod
+    def _relabel_speakers(segments: List[Dict]) -> List[Dict]:
+        """
+        Replace pyannote's raw "SPEAKER_00"/"SPEAKER_01" labels with
+        "Speaker 1"/"Speaker 2" - the underscored, zero-indexed originals
+        are an internal model detail, not something worth showing a
+        meeting's actual participants.
+
+        Numbered in order of first appearance (whoever's first segment
+        starts earliest is "Speaker 1"), which reads naturally in a
+        transcript - not by talk-time share, which would make "Speaker 1"
+        an arbitrary label unrelated to when they're first heard.
+        """
+        first_seen = {}
+        for seg in segments:
+            first_seen.setdefault(seg['speaker'], seg['start'])
+
+        ordered = sorted(first_seen, key=first_seen.get)
+        label_map = {raw: f"Speaker {i + 1}" for i, raw in enumerate(ordered)}
+
+        return [{**seg, 'speaker': label_map[seg['speaker']]} for seg in segments]
 
     def assign_transcript_to_speakers(
         self,
@@ -179,7 +205,7 @@ class SpeakerDiarization:
             List of speaker-annotated transcript segments:
             [
                 {
-                    "speaker": "SPEAKER_00",
+                    "speaker": "Speaker 1",
                     "text": "Hello everyone...",
                     "start": 0.0,
                     "end": 5.2
@@ -188,7 +214,7 @@ class SpeakerDiarization:
             ]
         """
         if not segments:
-            return [{"speaker": "SPEAKER_00", "text": transcript, "start": 0, "end": 0}]
+            return [{"speaker": "Speaker 1", "text": transcript, "start": 0, "end": 0}]
 
         # If no timestamps, split transcript by sentences
         if not timestamps:
@@ -294,7 +320,7 @@ class SpeakerDiarization:
             closest = min(segments, key=lambda s: abs((s['start'] + s['end'])/2 - timestamp))
             return closest['speaker']
 
-        return "SPEAKER_00"
+        return "Speaker 1"
 
     def _split_into_sentences(self, text: str) -> List[str]:
         """Split text into sentences (simple implementation)"""
