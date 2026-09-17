@@ -356,6 +356,22 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             progress_callback=on_stage_event
         )
 
+        # Reports/templates show metadata.source_file as the "real"
+        # filename. analyze_meeting() can only see whatever path it was
+        # actually called with - /api/upload saves every file to disk as
+        # "<job_id>.<ext>" (not the browser's original filename), and for
+        # a video upload this function passes analyze_meeting the
+        # *already-extracted* temp audio path (needed so the validation
+        # step above sees a real audio file), not the original video
+        # path either way. Confirmed live: without this, a video's
+        # report was titled with its "<job_id>_audio.mp3" temp name, and
+        # even a plain audio upload's report showed "<job_id>.mp3"
+        # instead of what the user actually uploaded. The real name is
+        # only known to the DB row created at upload time.
+        db_job = db_manager.get_job(job_id)
+        if db_job and db_job.filename:
+            result['metadata']['source_file'] = db_job.filename
+
         # A cancel that arrived while analyze_meeting() was running
         # couldn't stop it, but it should still keep this job out of
         # "completed" - the caller asked us to stop caring about the
