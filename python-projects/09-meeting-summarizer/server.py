@@ -737,6 +737,8 @@ async def get_job_status(job_id: str):
                 response['result']['summary_levels'] = job['result']['summary_levels']
             if job['result'].get('speaker_diarization'):
                 response['result']['speaker_diarization'] = job['result']['speaker_diarization']
+            if job['result'].get('transcript', {}).get('text'):
+                response['result']['transcript'] = job['result']['transcript']['text']
             response['download_url'] = f"/api/jobs/{job_id}/download"
         elif job['status'] == 'failed':
             response['error'] = job.get('error')

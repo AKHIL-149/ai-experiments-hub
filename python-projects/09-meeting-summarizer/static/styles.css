@@ -379,6 +379,17 @@ body {
     font-size: 0.9em;
 }
 
+#transcriptText {
+    white-space: pre-wrap;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+#transcriptDetails summary {
+    cursor: pointer;
+    margin-bottom: 12px;
+}
+
 .topics-list {
     list-style-position: inside;
     padding: 20px;

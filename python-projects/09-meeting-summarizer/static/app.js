@@ -418,6 +418,17 @@ class MeetingSummarizer {
                 } else {
                     speakersSection.style.display = 'none';
                 }
+
+                // Full transcript - collapsed by default since it can run
+                // to thousands of words, but always available so users
+                // aren't stuck downloading the report just to read it.
+                const transcriptSection = document.getElementById('transcriptSection');
+                if (data.result.transcript) {
+                    document.getElementById('transcriptText').textContent = data.result.transcript;
+                    transcriptSection.style.display = 'block';
+                } else {
+                    transcriptSection.style.display = 'none';
+                }
             }
         } catch (error) {
             console.error('Failed to load results:', error);
