@@ -10,9 +10,27 @@ Usage:
     python summarize.py cache-stats
 """
 
-import argparse
 import sys
 import os
+
+# macOS/Homebrew: pyannote.audio 4.x's audio backend (torchcodec) needs
+# ffmpeg's shared libraries, which live in /opt/homebrew/lib - not on
+# the default dylib search path. DYLD_LIBRARY_PATH fixes that, but only
+# if it's set *before* the process launches: dyld reads it once at
+# process start, so setting os.environ later does nothing (confirmed
+# live - same "Could not load libtorchcodec" failure either way).
+# Re-exec once, early and cheaply, with the var set correctly, so
+# --speakers works without requiring `export DYLD_LIBRARY_PATH=...`
+# first (no-op on Linux/Windows, or where it's already set/Homebrew
+# isn't at the usual path).
+if sys.platform == 'darwin':
+    _hb_lib = '/opt/homebrew/lib'
+    _dyld = os.environ.get('DYLD_LIBRARY_PATH', '')
+    if os.path.isdir(_hb_lib) and _hb_lib not in _dyld.split(':'):
+        os.environ['DYLD_LIBRARY_PATH'] = f"{_hb_lib}:{_dyld}" if _dyld else _hb_lib
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import argparse
 import json
 from pathlib import Path
 from dotenv import load_dotenv

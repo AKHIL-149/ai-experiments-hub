@@ -12,6 +12,26 @@ Usage:
 
 import os
 import sys
+
+# macOS/Homebrew: pyannote.audio 4.x's audio backend (torchcodec) needs
+# ffmpeg's shared libraries, which live in /opt/homebrew/lib - not on
+# the default dylib search path. DYLD_LIBRARY_PATH fixes that, but only
+# if it's set *before* the process launches: dyld reads it once at
+# process start, so setting os.environ later (e.g. inside
+# speaker_diarization.py, right before importing pyannote) does
+# nothing - confirmed live, the exact same "Could not load
+# libtorchcodec" failure happens either way. Re-exec once, early and
+# cheaply, with the var set correctly, rather than requiring every
+# operator to remember `export DYLD_LIBRARY_PATH=...` before launching
+# (this is a no-op on Linux/Windows, and on a Mac without Homebrew at
+# the usual path, or where the var is already set).
+if sys.platform == 'darwin':
+    _hb_lib = '/opt/homebrew/lib'
+    _dyld = os.environ.get('DYLD_LIBRARY_PATH', '')
+    if os.path.isdir(_hb_lib) and _hb_lib not in _dyld.split(':'):
+        os.environ['DYLD_LIBRARY_PATH'] = f"{_hb_lib}:{_dyld}" if _dyld else _hb_lib
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
 import asyncio
 import uuid
 import hashlib
@@ -394,6 +414,16 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
                 # Best-effort - never fail an otherwise-successful
                 # analysis job just because diarization didn't work.
                 logger.warning(f"Job {job_id}: speaker diarization failed: {e}")
+
+        # Third cancellation checkpoint. Diarization runs for as long as
+        # the audio does (roughly real-time on CPU, seconds on MPS), so
+        # this window matters - without this check, a cancel that
+        # arrived while it was running would be silently overwritten by
+        # the unconditional 'completed' a few lines down, exactly like
+        # the gap this mirrors at the transcription checkpoint above.
+        if active_jobs[job_id].get('cancel_requested'):
+            logger.info(f"Job {job_id} finished diarization after being cancelled - discarding result")
+            return
 
         # Generate report
         progress_tracker.update_stage(ProcessingStage.REPORT_GENERATION, 90, "Generating report")
