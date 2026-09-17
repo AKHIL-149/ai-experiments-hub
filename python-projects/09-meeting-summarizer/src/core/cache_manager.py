@@ -121,18 +121,25 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Failed to cache transcription: {str(e)}")
 
-    def get_summary(self, transcript_hash: str, model: str) -> Optional[Dict]:
+    def get_summary(self, transcript_hash: str, model: str, level: Optional[str] = None) -> Optional[Dict]:
         """
         Get cached summary for transcript
 
         Args:
             transcript_hash: SHA256 hash of transcript text
             model: LLM model name used for summarization
+            level: Summary level ("brief"/"standard"/"detailed"). Part of
+                the cache key - brief/standard/detailed summaries of the
+                same transcript are different results and each needs its
+                own cache slot. Omitting it collapses all levels onto one
+                slot (whichever was cached most recently silently evicts
+                the others) - only left optional for callers that
+                genuinely don't care about level-correctness.
 
         Returns:
             Cached summary dict or None if not found/expired
         """
-        cache_key = f"{transcript_hash}_{self._sanitize_model_name(model)}"
+        cache_key = f"{transcript_hash}_{level or 'summary'}_{self._sanitize_model_name(model)}"
         cache_file = self.summary_cache_dir / f"{cache_key}.json"
 
         if not cache_file.exists():
@@ -163,7 +170,7 @@ class CacheManager:
             self.stats["summary_misses"] += 1
             return None
 
-    def set_summary(self, transcript_hash: str, model: str, summary: Dict) -> None:
+    def set_summary(self, transcript_hash: str, model: str, summary: Dict, level: Optional[str] = None) -> None:
         """
         Cache summary result
 
@@ -171,8 +178,10 @@ class CacheManager:
             transcript_hash: SHA256 hash of transcript text
             model: LLM model name used
             summary: Summary result to cache
+            level: Summary level - see get_summary(); must match what
+                get_summary() will be called with to round-trip.
         """
-        cache_key = f"{transcript_hash}_{self._sanitize_model_name(model)}"
+        cache_key = f"{transcript_hash}_{level or 'summary'}_{self._sanitize_model_name(model)}"
         cache_file = self.summary_cache_dir / f"{cache_key}.json"
 
         # Add metadata

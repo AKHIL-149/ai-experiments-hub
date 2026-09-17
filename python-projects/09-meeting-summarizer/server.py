@@ -327,6 +327,7 @@ async def process_meeting_async(job_id: str, audio_path: str, options: Dict):
             extract_actions=options.get('extract_actions', True),
             extract_topics=options.get('extract_topics', True),
             language=options.get('language'),
+            all_levels=options.get('all_levels', False),
             progress_callback=on_stage_event
         )
 
@@ -509,7 +510,8 @@ async def start_analysis(
     extract_topics: bool = True,
     output_format: str = 'markdown',
     language: Optional[str] = None,
-    template: Optional[str] = None
+    template: Optional[str] = None,
+    all_levels: bool = False
 ):
     """Start meeting analysis job"""
     try:
@@ -548,7 +550,8 @@ async def start_analysis(
             'extract_topics': extract_topics,
             'output_format': output_format,
             'language': language,
-            'template': template or None
+            'template': template or None,
+            'all_levels': all_levels
         }
 
         background_tasks.add_task(process_meeting_async, job_id, audio_path, options)
@@ -634,6 +637,8 @@ async def get_job_status(job_id: str):
                 'action_items_count': job['result'].get('actions', {}).get('total_actions', 0),
                 'statistics': job['result'].get('statistics', {})
             }
+            if job['result'].get('summary_levels'):
+                response['result']['summary_levels'] = job['result']['summary_levels']
             response['download_url'] = f"/api/jobs/{job_id}/download"
         elif job['status'] == 'failed':
             response['error'] = job.get('error')

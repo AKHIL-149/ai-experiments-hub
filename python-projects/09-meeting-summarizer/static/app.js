@@ -30,6 +30,7 @@ class MeetingSummarizer {
         this.language = document.getElementById('language');
         this.extractActions = document.getElementById('extractActions');
         this.extractTopics = document.getElementById('extractTopics');
+        this.allLevels = document.getElementById('allLevels');
 
         // Buttons
         this.analyzeBtn = document.getElementById('analyzeBtn');
@@ -157,7 +158,8 @@ class MeetingSummarizer {
                 extract_topics: this.extractTopics.checked,
                 output_format: this.outputFormat.value,
                 language: this.language.value || null,
-                template: this.summaryTemplate.value || null
+                template: this.summaryTemplate.value || null,
+                all_levels: this.allLevels.checked
             };
 
             const analyzeUrl = `/api/analyze/${this.currentJobId}?` + new URLSearchParams(
@@ -363,9 +365,23 @@ class MeetingSummarizer {
                 // Update summary - the LLM returns Markdown (## headings,
                 // **bold**, numbered/bulleted lists), so render it rather
                 // than dumping the raw text with literal ** and # visible.
-                this.summaryPreview.innerHTML = data.result.summary
-                    ? this.renderMarkdown(data.result.summary)
-                    : '<p>No summary available</p>';
+                // "Generate all summary levels" produces three texts
+                // instead of one - show all three, labelled, rather than
+                // just the primary level.
+                if (data.result.summary_levels) {
+                    const order = ['brief', 'standard', 'detailed'];
+                    this.summaryPreview.innerHTML = order
+                        .filter(lvl => data.result.summary_levels[lvl])
+                        .map(lvl => {
+                            const label = lvl.charAt(0).toUpperCase() + lvl.slice(1);
+                            return `<h4>${label}</h4>` + this.renderMarkdown(data.result.summary_levels[lvl].text);
+                        })
+                        .join('');
+                } else {
+                    this.summaryPreview.innerHTML = data.result.summary
+                        ? this.renderMarkdown(data.result.summary)
+                        : '<p>No summary available</p>';
+                }
 
                 // Update topics - strip any leading list marker the model
                 // left on the line ("1. ", "- ", "* ", "#") and stray

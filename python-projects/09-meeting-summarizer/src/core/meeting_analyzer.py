@@ -74,6 +74,7 @@ class MeetingAnalyzer:
         extract_actions: bool = True,
         extract_topics: bool = True,
         language: Optional[str] = None,
+        all_levels: bool = False,
         progress_callback: Optional[Callable[[str], None]] = None
     ) -> Dict:
         """
@@ -81,10 +82,17 @@ class MeetingAnalyzer:
 
         Args:
             audio_path: Path to audio file
-            summary_level: Summary detail level ("brief", "standard", "detailed")
+            summary_level: Summary detail level ("brief", "standard", "detailed") -
+                also which level result["summary"] is set to when
+                all_levels=True (the other two are still generated, just
+                not the "primary" one every existing caller reads).
             extract_actions: Whether to extract action items
             extract_topics: Whether to extract key topics
             language: Language code (optional)
+            all_levels: Generate brief + standard + detailed summaries in
+                one pass (result["summary_levels"] holds all three; each
+                is independently cached, so re-running with a different
+                summary_level on the same transcript is free).
             progress_callback: Optional callback invoked with an event
                 name ("transcription_done", "summarization_done") right
                 as each real pipeline step finishes, so a caller (the web
@@ -161,14 +169,32 @@ class MeetingAnalyzer:
         self._emit_progress(progress_callback, "transcription_done")
 
         # Step 3: Summarize transcript (with caching)
-        logger.info(f"Step 3: Generating {summary_level} summary")
-        summary_result = self._summarize_with_cache(transcript_text, summary_level)
-
-        if summary_result.get("cached"):
-            statistics["cache_hits"] += 1
+        summary_levels = None
+        if all_levels:
+            logger.info("Step 3: Generating brief + standard + detailed summaries")
+            summary_levels = {}
+            for lvl in ("brief", "standard", "detailed"):
+                lvl_result = self._summarize_with_cache(transcript_text, lvl)
+                summary_levels[lvl] = lvl_result
+                if lvl_result.get("cached"):
+                    statistics["cache_hits"] += 1
+                else:
+                    statistics["cache_misses"] += 1
+                    statistics["total_cost_usd"] += lvl_result.get("estimated_cost", 0.0)
+            # requested summary_level stays the "primary" result - every
+            # existing reader (report generators, templates, the web
+            # result view) keeps working against result["summary"]
+            # unchanged; summary_levels carries the other two.
+            summary_result = summary_levels.get(summary_level, summary_levels["standard"])
         else:
-            statistics["cache_misses"] += 1
-            statistics["total_cost_usd"] += summary_result.get("estimated_cost", 0.0)
+            logger.info(f"Step 3: Generating {summary_level} summary")
+            summary_result = self._summarize_with_cache(transcript_text, summary_level)
+
+            if summary_result.get("cached"):
+                statistics["cache_hits"] += 1
+            else:
+                statistics["cache_misses"] += 1
+                statistics["total_cost_usd"] += summary_result.get("estimated_cost", 0.0)
 
         self._emit_progress(progress_callback, "summarization_done")
 
@@ -221,6 +247,16 @@ class MeetingAnalyzer:
             "statistics": statistics
         }
 
+        if summary_levels:
+            result["summary_levels"] = {
+                lvl: {
+                    "text": lvl_result["summary"],
+                    "word_count": lvl_result.get("word_count", 0),
+                    "cached": lvl_result.get("cached", False)
+                }
+                for lvl, lvl_result in summary_levels.items()
+            }
+
         logger.info(
             f"Analysis complete: {statistics['processing_time_seconds']:.1f}s, "
             f"${statistics['total_cost_usd']:.4f} cost"
@@ -250,15 +286,18 @@ class MeetingAnalyzer:
         Returns:
             Summary result with cache status
         """
-        # Check cache
+        # Check cache. level is part of the cache key (not just a
+        # post-hoc validation check) - brief/standard/detailed summaries
+        # of the same transcript are different results, each with its
+        # own slot, so generating one level doesn't evict another.
         if self.cache_manager:
             transcript_hash = self.cache_manager.hash_text(transcript)
             model = self.llm_client.model
 
-            cached_summary = self.cache_manager.get_summary(transcript_hash, model)
+            cached_summary = self.cache_manager.get_summary(transcript_hash, model, level=level)
 
             if cached_summary and cached_summary.get("level") == level:
-                logger.info("Using cached summary")
+                logger.info(f"Using cached {level} summary")
                 cached_summary["cached"] = True
                 return cached_summary
 
@@ -268,7 +307,7 @@ class MeetingAnalyzer:
         # Cache the result
         if self.cache_manager:
             transcript_hash = self.cache_manager.hash_text(transcript)
-            self.cache_manager.set_summary(transcript_hash, self.llm_client.model, summary_result)
+            self.cache_manager.set_summary(transcript_hash, self.llm_client.model, summary_result, level=level)
 
         summary_result["cached"] = False
         return summary_result
@@ -332,11 +371,22 @@ class MeetingAnalyzer:
         report.append(f"**Duration:** {result['metadata']['duration_seconds']:.1f}s")
         report.append("")
 
-        # Summary
-        report.append("## Summary")
-        report.append("")
-        report.append(result['summary']['text'])
-        report.append("")
+        # Summary - all three levels if all_levels=True was used,
+        # otherwise just the one that was generated.
+        if result.get('summary_levels'):
+            for lvl in ("brief", "standard", "detailed"):
+                lvl_data = result['summary_levels'].get(lvl)
+                if not lvl_data:
+                    continue
+                report.append(f"## Summary ({lvl.capitalize()})")
+                report.append("")
+                report.append(lvl_data['text'])
+                report.append("")
+        else:
+            report.append("## Summary")
+            report.append("")
+            report.append(result['summary']['text'])
+            report.append("")
 
         # Key Topics
         if result.get('topics'):
@@ -389,12 +439,24 @@ class MeetingAnalyzer:
         report.append(f"Duration: {result['metadata']['duration_seconds']:.1f}s")
         report.append("")
 
-        report.append("-"*60)
-        report.append("SUMMARY")
-        report.append("-"*60)
-        report.append("")
-        report.append(result['summary']['text'])
-        report.append("")
+        if result.get('summary_levels'):
+            for lvl in ("brief", "standard", "detailed"):
+                lvl_data = result['summary_levels'].get(lvl)
+                if not lvl_data:
+                    continue
+                report.append("-"*60)
+                report.append(f"SUMMARY ({lvl.upper()})")
+                report.append("-"*60)
+                report.append("")
+                report.append(lvl_data['text'])
+                report.append("")
+        else:
+            report.append("-"*60)
+            report.append("SUMMARY")
+            report.append("-"*60)
+            report.append("")
+            report.append(result['summary']['text'])
+            report.append("")
 
         if result.get('actions') and result['actions']['action_items']:
             report.append("-"*60)
@@ -419,6 +481,15 @@ class MeetingAnalyzer:
 
     def _generate_html_report(self, result: Dict) -> str:
         """Generate HTML report"""
+        if result.get('summary_levels'):
+            summary_html = ''.join(
+                f"<h2>Summary ({lvl.capitalize()})</h2><p>{result['summary_levels'][lvl]['text']}</p>"
+                for lvl in ("brief", "standard", "detailed")
+                if lvl in result['summary_levels']
+            )
+        else:
+            summary_html = f"<h2>Summary</h2><p>{result['summary']['text']}</p>"
+
         html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -445,8 +516,7 @@ class MeetingAnalyzer:
         <p><strong>Duration:</strong> {result['metadata']['duration_seconds']:.1f}s</p>
     </div>
 
-    <h2>Summary</h2>
-    <p>{result['summary']['text']}</p>
+    {summary_html}
 
     {'<h2>Key Topics</h2><ul>' + ''.join(f'<li>{topic}</li>' for topic in result.get('topics', [])) + '</ul>' if result.get('topics') else ''}
 

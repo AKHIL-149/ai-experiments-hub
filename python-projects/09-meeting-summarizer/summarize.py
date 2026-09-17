@@ -446,7 +446,8 @@ def cmd_analyze(args, config):
             summary_level=args.level,
             extract_actions=not args.no_actions,
             extract_topics=not args.no_topics,
-            language=args.language
+            language=args.language,
+            all_levels=args.all_levels
         )
 
         # Display results
@@ -455,9 +456,18 @@ def cmd_analyze(args, config):
         print(f"{'='*60}{Style.RESET_ALL}")
         print()
 
-        print(f"{Fore.YELLOW}Summary:{Style.RESET_ALL}")
-        print(result['summary']['text'])
-        print()
+        if result.get('summary_levels'):
+            for lvl in ('brief', 'standard', 'detailed'):
+                lvl_data = result['summary_levels'].get(lvl)
+                if not lvl_data:
+                    continue
+                print(f"{Fore.YELLOW}Summary ({lvl}):{Style.RESET_ALL}")
+                print(lvl_data['text'])
+                print()
+        else:
+            print(f"{Fore.YELLOW}Summary:{Style.RESET_ALL}")
+            print(result['summary']['text'])
+            print()
 
         if result.get('topics'):
             print(f"{Fore.YELLOW}Key Topics:{Style.RESET_ALL}")
@@ -731,6 +741,12 @@ def main():
         help='Render the report from a named summary template '
              '(executive, detailed, brief, meeting_minutes, technical, '
              'or a custom templates/custom/<name>.md). Overrides --format.'
+    )
+    analyze_parser.add_argument(
+        '--all-levels',
+        action='store_true',
+        help='Generate brief, standard, and detailed summaries in one '
+             'pass (each is independently cached) instead of just --level'
     )
 
     # Batch command (Phase 3)
