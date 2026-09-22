@@ -38,6 +38,33 @@
     "description": "Tells a random joke",
     "category": "entertainment"
   },
+  "weather": {
+    "name": "Get Weather",
+    "patterns": [
+      "what's the weather",
+      "weather",
+      "weather forecast",
+      "how's the weather",
+      "is it raining"
+    ],
+    "handler": "getWeather",
+    "description": "Gets current weather information",
+    "category": "information"
+  },
+  "f1_schedule": {
+    "name": "Next F1 Race",
+    "patterns": [
+      "next f1 race",
+      "formula 1 schedule",
+      "when is the next race",
+      "f1 race this week",
+      "race schedule",
+      "formula one schedule"
+    ],
+    "handler": "getF1Schedule",
+    "description": "Gets the next upcoming Formula 1 race",
+    "category": "information"
+  },
   "calculate": {
     "name": "Calculate Math Expression",
     "patterns": [
@@ -66,19 +93,6 @@
     "handler": "setTimer",
     "description": "Sets a countdown timer",
     "category": "utility"
-  },
-  "weather": {
-    "name": "Get Weather",
-    "patterns": [
-      "what's the weather",
-      "weather",
-      "weather forecast",
-      "how's the weather",
-      "is it raining"
-    ],
-    "handler": "getWeather",
-    "description": "Gets current weather information",
-    "category": "information"
   },
   "help": {
     "name": "Show Help",

@@ -116,7 +116,11 @@ The assistant recognizes these built-in commands (speak naturally - variations a
 - ⏲️ "Set a timer for 5 minutes" - Start countdown timer
 
 **Information:**
-- 🌤️ "What's the weather?" - Get weather info (placeholder - API integration needed)
+- 🌤️ "What's the weather in Austin?" - Real current conditions via OpenWeatherMap (requires `OPENWEATHER_API_KEY`; falls back to `DEFAULT_WEATHER_LOCATION` if no city is named)
+- 🏎️ "When is the next F1 race?" - Next upcoming Formula 1 race via the free Jolpica-F1 API (no key required)
+
+**General Questions:**
+- Anything the local model doesn't know (news, schedules, current events) automatically escalates to a cloud web search (requires `OPENAI_API_KEY` + `TAVILY_API_KEY`) instead of returning a "check the official site" non-answer.
 
 **Entertainment:**
 - 😄 "Tell me a joke" - Random joke
@@ -369,6 +373,11 @@ OPENAI_API_KEY=your_key_here
 WHISPER_MODEL=whisper-1
 TTS_MODEL=tts-1
 TTS_VOICE=alloy
+
+# Web Search + Weather (real API integrations)
+TAVILY_API_KEY=your_tavily_key
+OPENWEATHER_API_KEY=your_openweathermap_key
+DEFAULT_WEATHER_LOCATION=Houston,TX,US
 
 # Audio
 MAX_AUDIO_SIZE_MB=25

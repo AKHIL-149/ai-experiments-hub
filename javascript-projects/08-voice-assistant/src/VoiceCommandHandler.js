@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 /**
  * Voice Command Handler - Pattern matching and command execution
@@ -10,6 +11,7 @@ class VoiceCommandHandler {
     this.commands = this.loadCommands();
     this.timers = new Map(); // Store active timers
     this.llmService = options.llmService || null; // NEW: Inject LLM service
+    this.weatherService = options.weatherService || null;
   }
 
   /**
@@ -38,6 +40,14 @@ class VoiceCommandHandler {
       for (const pattern of commandConfig.patterns) {
         const match = this.matchPattern(normalizedTranscript, pattern);
         if (match.matched) {
+          // "what is {expression}" (and similar) is broad enough to match
+          // almost any "what is ___" question - only accept it as a real
+          // calculation if the captured text actually looks like math,
+          // otherwise keep looking (falls through to the AI fallback).
+          if (match.parameters.expression && !/\d/.test(match.parameters.expression)) {
+            continue;
+          }
+
           return {
             command: commandId,
             handler: commandConfig.handler,
@@ -389,15 +399,76 @@ class VoiceCommandHandler {
   }
 
   /**
-   * Get weather (placeholder - would need API integration)
+   * Get current weather via OpenWeatherMap
    */
   async getWeather(params, context) {
-    // This is a placeholder - in a real app, you'd integrate with a weather API
-    return {
-      success: true,
-      response: "I don't have access to weather data yet, but this feature is coming soon! You'd need to integrate a weather API like OpenWeatherMap.",
-      data: { placeholder: true }
-    };
+    if (!this.weatherService || !this.weatherService.available()) {
+      return {
+        success: true,
+        response: "I don't have access to weather data yet - set OPENWEATHER_API_KEY to enable this.",
+        data: { placeholder: true }
+      };
+    }
+
+    try {
+      const transcript = context.originalTranscript || '';
+      const locationMatch = transcript.match(/weather\s+(?:in|for|of)\s+(.+?)[.?!]?$/i);
+      const location = locationMatch ? locationMatch[1].trim() : null;
+
+      const weather = await this.weatherService.getCurrentWeather(location);
+
+      return {
+        success: true,
+        response: `It's currently ${weather.tempF}°F and ${weather.description} in ${weather.location}, feels like ${weather.feelsLikeF}°F, with ${weather.humidity}% humidity.`,
+        data: weather
+      };
+    } catch (error) {
+      console.error('Weather lookup error:', error.message);
+      return {
+        success: false,
+        response: "I couldn't get the weather right now. Try naming a specific city, like 'weather in Austin'.",
+        data: null
+      };
+    }
+  }
+
+  /**
+   * Get the next upcoming F1 race via the free Jolpica-F1 API (Ergast's successor)
+   */
+  async getF1Schedule(params, context) {
+    try {
+      const response = await axios.get('https://api.jolpi.ca/ergast/f1/current/next.json', {
+        timeout: 8000
+      });
+
+      const races = response.data?.MRData?.RaceTable?.Races || [];
+      if (races.length === 0) {
+        return {
+          success: true,
+          response: "There's no upcoming race scheduled right now - the season may be over.",
+          data: null
+        };
+      }
+
+      const race = races[0];
+      const raceDate = new Date(`${race.date}T${race.time || '00:00:00Z'}`);
+      const dateStr = raceDate.toLocaleDateString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+      });
+
+      return {
+        success: true,
+        response: `The next F1 race is the ${race.raceName} at ${race.Circuit?.circuitName}, on ${dateStr}.`,
+        data: { raceName: race.raceName, circuit: race.Circuit?.circuitName, date: race.date }
+      };
+    } catch (error) {
+      console.error('F1 schedule lookup error:', error.message);
+      return {
+        success: false,
+        response: "I couldn't reach the F1 schedule right now. Try again in a moment.",
+        data: null
+      };
+    }
   }
 
   /**

@@ -59,7 +59,12 @@ try {
     // Phase 5.5: Local LLM config
     llmBaseURL: process.env.LLM_BASE_URL || 'http://localhost:11434',
     llmModel: process.env.LLM_MODEL || 'llama3.2:3b',
-    llmTimeout: parseInt(process.env.LLM_TIMEOUT) || 30000
+    llmTimeout: parseInt(process.env.LLM_TIMEOUT) || 30000,
+
+    // Web search + weather (real API integrations)
+    tavilyApiKey: process.env.TAVILY_API_KEY,
+    openWeatherApiKey: process.env.OPENWEATHER_API_KEY,
+    defaultWeatherLocation: process.env.DEFAULT_WEATHER_LOCATION
   });
 
   audioProcessor = new AudioProcessor(serviceManager, {
@@ -70,7 +75,7 @@ try {
   // Phase 5.5: Pass LLM service to command handler
   commandHandler = new VoiceCommandHandler(
     path.join(__dirname, 'commands/commands.json'),
-    { llmService: serviceManager.localLLMService }
+    { llmService: serviceManager.localLLMService, weatherService: serviceManager.weatherService }
   );
 
   conversationManager = new ConversationManager({
@@ -86,6 +91,33 @@ try {
 } catch (error) {
   console.error('Failed to initialize services:', error.message);
   process.exit(1);
+}
+
+/**
+ * Detect whether an AI-fallback response is a non-answer (the local model
+ * hedging because it doesn't have current/real-world information) rather
+ * than an actual answer. Matches the exact phrasing this app's local
+ * Llama already produces in that situation (e.g. "I don't have access to
+ * weather data", "I'm not aware of real-time schedules") - used to decide
+ * whether to escalate to cloud + web search for a real answer.
+ */
+function looksLikeNonAnswer(text) {
+  const hedgePatterns = [
+    /i don't have access/i,
+    /i'm not aware of/i,
+    /i don't know/i,
+    /as of my (last update|knowledge cutoff|training)/i,
+    /i don't have (real-?time|current|up-to-date)/i,
+    /i can't provide (real-?time|current)/i,
+    /i'm not connected to/i,
+    /i'm unable to (access|browse|provide)/i,
+    /i recommend checking/i,
+    /i (would )?suggest checking/i,
+    /this information (is|may be) outdated/i,
+    /check the official/i,
+    /i'm not able to (browse|access) the internet/i
+  ];
+  return hedgePatterns.some(pattern => pattern.test(text));
 }
 
 // Routes
@@ -261,6 +293,21 @@ app.post('/api/command', async (req, res) => {
 
       const chatResult = await serviceManager.generateResponse(messages);
       responseText = chatResult.response;
+
+      // Escalation: the local model's answer looks like a hedge (no
+      // real-world/current info) - retry with cloud + web search if
+      // available, since only cloud is reliable at deciding when/how to
+      // call a tool. Falls back to the original local answer on any
+      // failure - never worse than what we already had.
+      if (looksLikeNonAnswer(responseText)) {
+        try {
+          console.log('ℹ Local answer looked like a non-answer, escalating to cloud + web search');
+          const toolResult = await serviceManager.generateResponseWithTools(messages);
+          responseText = toolResult.response;
+        } catch (escalationError) {
+          console.warn('Web search escalation unavailable, keeping local answer:', escalationError.message);
+        }
+      }
     }
 
     console.log(`✓ Response: "${responseText.substring(0, 50)}..."`);

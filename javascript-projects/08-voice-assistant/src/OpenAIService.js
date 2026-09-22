@@ -15,6 +15,7 @@ class OpenAIService {
     this.whisperModel = options.whisperModel || 'whisper-1';
     this.ttsModel = options.ttsModel || 'tts-1';
     this.ttsVoice = options.ttsVoice || 'alloy';
+    this.webSearchService = options.webSearchService || null;
   }
 
   /**
@@ -127,6 +128,92 @@ class OpenAIService {
     } catch (error) {
       console.error('Chat completion error:', error.message);
       throw new Error(`Failed to generate response: ${error.message}`);
+    }
+  }
+
+  /**
+   * Generate a chat completion with access to a web_search tool.
+   * Single round-trip tool loop (not a multi-step agent): if the model
+   * requests the tool, run one search, feed the results back, and make
+   * one follow-up call for the final answer.
+   * @param {Array} messages - Chat messages array
+   * @param {Object} options - Completion options
+   * @returns {Promise<Object>} - { response, usage, usedSearch }
+   */
+  async generateResponseWithTools(messages, options = {}) {
+    if (!this.webSearchService || !this.webSearchService.available()) {
+      throw new Error('Web search tool not available (webSearchService not configured)');
+    }
+
+    try {
+      const tools = [{
+        type: 'function',
+        function: {
+          name: 'web_search',
+          description: 'Search the web for current information (news, weather, schedules, prices, or anything that may have changed since training).',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'The search query' }
+            },
+            required: ['query']
+          }
+        }
+      }];
+
+      const model = options.model || 'gpt-4o-mini';
+      const first = await this.openai.chat.completions.create({
+        model,
+        messages,
+        tools,
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 300
+      });
+
+      const choice = first.choices[0];
+      const toolCalls = choice.message.tool_calls;
+
+      if (!toolCalls || toolCalls.length === 0) {
+        return {
+          response: choice.message.content,
+          usage: first.usage,
+          usedSearch: false
+        };
+      }
+
+      // Execute the (first) requested tool call and feed the result back
+      const toolCall = toolCalls[0];
+      const { query } = JSON.parse(toolCall.function.arguments);
+      const results = await this.webSearchService.search(query);
+      const resultsText = results.length
+        ? results.map(r => `${r.title} (${r.url}): ${r.content}`).join('\n\n')
+        : 'No results found.';
+
+      const followUpMessages = [
+        ...messages,
+        choice.message,
+        {
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: resultsText
+        }
+      ];
+
+      const final = await this.openai.chat.completions.create({
+        model,
+        messages: followUpMessages,
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 300
+      });
+
+      return {
+        response: final.choices[0].message.content,
+        usage: final.usage,
+        usedSearch: true
+      };
+    } catch (error) {
+      console.error('Tool-calling completion error:', error.message);
+      throw new Error(`Failed to generate response with tools: ${error.message}`);
     }
   }
 

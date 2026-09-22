@@ -2,6 +2,8 @@ const OpenAIService = require('./OpenAIService');
 const LocalWhisperService = require('./LocalWhisperService');
 const LocalTTSService = require('./LocalTTSService');
 const LocalLLMService = require('./LocalLLMService');
+const WebSearchService = require('./WebSearchService');
+const WeatherService = require('./WeatherService');
 
 /**
  * Service Manager - Handles switching between cloud and local AI services
@@ -17,6 +19,8 @@ class ServiceManager {
     this.localWhisperService = null;
     this.localTTSService = null;
     this.localLLMService = null;
+    this.webSearchService = null;
+    this.weatherService = null;
 
     this.initializeServices(options);
   }
@@ -25,13 +29,36 @@ class ServiceManager {
    * Initialize all available services
    */
   initializeServices(options) {
+    // Web search (used by cloud tool-calling) - built before the cloud
+    // service so it can be handed to OpenAIService directly
+    this.webSearchService = new WebSearchService({
+      apiKey: options.tavilyApiKey
+    });
+    if (this.webSearchService.available()) {
+      console.log('✓ Web search service (Tavily) available');
+    } else {
+      console.warn('⚠️  Web search not configured (set TAVILY_API_KEY to enable)');
+    }
+
+    // Weather (dedicated command, independent of tool-calling)
+    this.weatherService = new WeatherService({
+      apiKey: options.openWeatherApiKey,
+      defaultLocation: options.defaultWeatherLocation
+    });
+    if (this.weatherService.available()) {
+      console.log('✓ Weather service (OpenWeatherMap) available');
+    } else {
+      console.warn('⚠️  Weather service not configured (set OPENWEATHER_API_KEY to enable)');
+    }
+
     // Cloud service (OpenAI)
     if (options.openaiApiKey) {
       try {
         this.cloudService = new OpenAIService(options.openaiApiKey, {
           whisperModel: options.whisperModel || 'whisper-1',
           ttsModel: options.ttsModel || 'tts-1',
-          ttsVoice: options.ttsVoice || 'alloy'
+          ttsVoice: options.ttsVoice || 'alloy',
+          webSearchService: this.webSearchService
         });
         console.log('✓ Cloud service (OpenAI) initialized');
       } catch (error) {
@@ -196,6 +223,28 @@ class ServiceManager {
   }
 
   /**
+   * Generate a chat response with access to a web_search tool. Always
+   * uses cloud - a 3B local model is not reliable at deciding when/how to
+   * call a tool, so this is the "escalate to cloud for tool use" path,
+   * called only when the caller has already decided a tool-augmented
+   * answer is worth the cloud round-trip.
+   * @param {Array} messages - Chat messages
+   * @param {Object} options - Generation options
+   * @returns {Promise<Object>} - { response, usage, usedSearch }
+   */
+  async generateResponseWithTools(messages, options = {}) {
+    if (!this.cloudService) {
+      throw new Error('Cloud service not configured - web search requires OPENAI_API_KEY');
+    }
+    if (!this.webSearchService || !this.webSearchService.available()) {
+      throw new Error('Web search not configured - set TAVILY_API_KEY');
+    }
+
+    console.log('Using cloud (OpenAI) with web search tool');
+    return await this.cloudService.generateResponseWithTools(messages, options);
+  }
+
+  /**
    * Determine if local service should be used
    * @param {string} serviceType - 'stt' or 'tts'
    * @returns {boolean}
@@ -264,6 +313,14 @@ class ServiceManager {
           available: this.localLLMService ? this.localLLMService.available() : false,
           info: this.localLLMService ? this.localLLMService.getInfo() : null
         }
+      },
+      webSearch: {
+        available: this.webSearchService ? this.webSearchService.available() : false,
+        info: this.webSearchService ? this.webSearchService.getInfo() : null
+      },
+      weather: {
+        available: this.weatherService ? this.weatherService.available() : false,
+        info: this.weatherService ? this.weatherService.getInfo() : null
       },
       fallbackEnabled: this.fallbackToCloud
     };
