@@ -19,7 +19,10 @@
       "what's the date",
       "tell me the date",
       "today's date",
-      "what day is it"
+      "what day is it",
+      "what is today",
+      "what's today",
+      "what day is today"
     ],
     "handler": "getDate",
     "description": "Returns the current date",

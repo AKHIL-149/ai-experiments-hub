@@ -4,6 +4,7 @@ const LocalTTSService = require('./LocalTTSService');
 const LocalLLMService = require('./LocalLLMService');
 const WebSearchService = require('./WebSearchService');
 const WeatherService = require('./WeatherService');
+const F1Service = require('./F1Service');
 
 /**
  * Service Manager - Handles switching between cloud and local AI services
@@ -21,6 +22,7 @@ class ServiceManager {
     this.localLLMService = null;
     this.webSearchService = null;
     this.weatherService = null;
+    this.f1Service = null;
 
     this.initializeServices(options);
   }
@@ -51,6 +53,9 @@ class ServiceManager {
       console.warn('⚠️  Weather service not configured (set OPENWEATHER_API_KEY to enable)');
     }
 
+    // F1 schedule - free, no key required, always available
+    this.f1Service = new F1Service();
+
     // Cloud service (OpenAI)
     if (options.openaiApiKey) {
       try {
@@ -58,7 +63,9 @@ class ServiceManager {
           whisperModel: options.whisperModel || 'whisper-1',
           ttsModel: options.ttsModel || 'tts-1',
           ttsVoice: options.ttsVoice || 'alloy',
-          webSearchService: this.webSearchService
+          webSearchService: this.webSearchService,
+          weatherService: this.weatherService,
+          f1Service: this.f1Service
         });
         console.log('✓ Cloud service (OpenAI) initialized');
       } catch (error) {
@@ -223,25 +230,30 @@ class ServiceManager {
   }
 
   /**
-   * Generate a chat response with access to a web_search tool. Always
-   * uses cloud - a 3B local model is not reliable at deciding when/how to
-   * call a tool, so this is the "escalate to cloud for tool use" path,
-   * called only when the caller has already decided a tool-augmented
-   * answer is worth the cloud round-trip.
+   * Generate a chat response with access to real-data tools (web search,
+   * weather, F1 schedule). Always uses cloud - a 3B local model is not
+   * reliable at deciding when/how to call a tool. Individual tools
+   * degrade gracefully if their own service isn't configured (see
+   * OpenAIService._executeTool) - only cloud itself is a hard requirement.
    * @param {Array} messages - Chat messages
    * @param {Object} options - Generation options
-   * @returns {Promise<Object>} - { response, usage, usedSearch }
+   * @returns {Promise<Object>} - { response, usage, usedTools }
    */
   async generateResponseWithTools(messages, options = {}) {
     if (!this.cloudService) {
-      throw new Error('Cloud service not configured - web search requires OPENAI_API_KEY');
-    }
-    if (!this.webSearchService || !this.webSearchService.available()) {
-      throw new Error('Web search not configured - set TAVILY_API_KEY');
+      throw new Error('Cloud service not configured - AI fallback with tools requires OPENAI_API_KEY');
     }
 
-    console.log('Using cloud (OpenAI) with web search tool');
+    console.log('Using cloud (OpenAI) with tools');
     return await this.cloudService.generateResponseWithTools(messages, options);
+  }
+
+  /**
+   * Whether cloud (OpenAI) is configured
+   * @returns {boolean}
+   */
+  isCloudAvailable() {
+    return !!this.cloudService;
   }
 
   /**

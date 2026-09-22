@@ -16,6 +16,8 @@ class OpenAIService {
     this.ttsModel = options.ttsModel || 'tts-1';
     this.ttsVoice = options.ttsVoice || 'alloy';
     this.webSearchService = options.webSearchService || null;
+    this.weatherService = options.weatherService || null;
+    this.f1Service = options.f1Service || null;
   }
 
   /**
@@ -132,36 +134,109 @@ class OpenAIService {
   }
 
   /**
-   * Generate a chat completion with access to a web_search tool.
-   * Single round-trip tool loop (not a multi-step agent): if the model
-   * requests the tool, run one search, feed the results back, and make
-   * one follow-up call for the final answer.
-   * @param {Array} messages - Chat messages array
-   * @param {Object} options - Completion options
-   * @returns {Promise<Object>} - { response, usage, usedSearch }
+   * Build the tool definitions available to generateResponseWithTools,
+   * based on which real-data services were actually configured.
    */
-  async generateResponseWithTools(messages, options = {}) {
-    if (!this.webSearchService || !this.webSearchService.available()) {
-      throw new Error('Web search tool not available (webSearchService not configured)');
-    }
+  _buildToolDefinitions() {
+    const tools = [];
 
-    try {
-      const tools = [{
-        type: 'function',
-        function: {
-          name: 'web_search',
-          description: 'Search the web for current information (news, weather, schedules, prices, or anything that may have changed since training).',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: 'The search query' }
-            },
-            required: ['query']
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'web_search',
+        description: 'Search the web for current information (news, schedules, prices, releases, or anything that may have changed since training). Use this for anything you are not certain is still accurate.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'The search query' }
+          },
+          required: ['query']
+        }
+      }
+    });
+
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get real current weather conditions for a location.',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: { type: 'string', description: 'City name, e.g. "Austin,TX,US". Omit to use the default configured location.' }
           }
         }
-      }];
+      }
+    });
 
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'get_f1_schedule',
+        description: 'Get the real next upcoming Formula 1 race (name, circuit, date). Use this instead of guessing at F1 schedules from memory.',
+        parameters: { type: 'object', properties: {} }
+      }
+    });
+
+    return tools;
+  }
+
+  /**
+   * Execute one tool call by name and return its result as plain text
+   * for feeding back to the model. Never throws - a tool failure becomes
+   * a text result the model can react to (e.g. apologize, try another tool).
+   */
+  async _executeTool(name, args) {
+    try {
+      if (name === 'web_search') {
+        if (!this.webSearchService || !this.webSearchService.available()) {
+          return 'Web search is not configured on this server.';
+        }
+        const results = await this.webSearchService.search(args.query);
+        return results.length
+          ? results.map(r => `${r.title} (${r.url}): ${r.content}`).join('\n\n')
+          : 'No results found.';
+      }
+
+      if (name === 'get_weather') {
+        if (!this.weatherService || !this.weatherService.available()) {
+          return 'Weather service is not configured on this server.';
+        }
+        const weather = await this.weatherService.getCurrentWeather(args.location);
+        return `${weather.tempF}°F and ${weather.description} in ${weather.location}, feels like ${weather.feelsLikeF}°F, ${weather.humidity}% humidity.`;
+      }
+
+      if (name === 'get_f1_schedule') {
+        if (!this.f1Service) {
+          return 'F1 schedule service is not configured on this server.';
+        }
+        const race = await this.f1Service.getNextRace();
+        return race
+          ? `Next F1 race: ${race.raceName} at ${race.circuit} on ${race.dateFormatted}.`
+          : 'No upcoming F1 race scheduled.';
+      }
+
+      return `Unknown tool: ${name}`;
+    } catch (error) {
+      return `Tool "${name}" failed: ${error.message}`;
+    }
+  }
+
+  /**
+   * Generate a chat completion with access to real-data tools (web
+   * search, weather, F1 schedule). Single round-trip tool loop (not a
+   * multi-step agent): if the model requests one or more tools, run
+   * them, feed the results back, and make one follow-up call for the
+   * final answer.
+   * @param {Array} messages - Chat messages array
+   * @param {Object} options - Completion options
+   * @returns {Promise<Object>} - { response, usage, usedTools }
+   */
+  async generateResponseWithTools(messages, options = {}) {
+    try {
+      const tools = this._buildToolDefinitions();
       const model = options.model || 'gpt-4o-mini';
+
       const first = await this.openai.chat.completions.create({
         model,
         messages,
@@ -177,27 +252,23 @@ class OpenAIService {
         return {
           response: choice.message.content,
           usage: first.usage,
-          usedSearch: false
+          usedTools: []
         };
       }
 
-      // Execute the (first) requested tool call and feed the result back
-      const toolCall = toolCalls[0];
-      const { query } = JSON.parse(toolCall.function.arguments);
-      const results = await this.webSearchService.search(query);
-      const resultsText = results.length
-        ? results.map(r => `${r.title} (${r.url}): ${r.content}`).join('\n\n')
-        : 'No results found.';
-
-      const followUpMessages = [
-        ...messages,
-        choice.message,
-        {
+      // Execute every requested tool call, feed all results back
+      const toolMessages = [];
+      for (const toolCall of toolCalls) {
+        const args = JSON.parse(toolCall.function.arguments || '{}');
+        const result = await this._executeTool(toolCall.function.name, args);
+        toolMessages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
-          content: resultsText
-        }
-      ];
+          content: result
+        });
+      }
+
+      const followUpMessages = [...messages, choice.message, ...toolMessages];
 
       const final = await this.openai.chat.completions.create({
         model,
@@ -209,7 +280,7 @@ class OpenAIService {
       return {
         response: final.choices[0].message.content,
         usage: final.usage,
-        usedSearch: true
+        usedTools: toolCalls.map(tc => tc.function.name)
       };
     } catch (error) {
       console.error('Tool-calling completion error:', error.message);

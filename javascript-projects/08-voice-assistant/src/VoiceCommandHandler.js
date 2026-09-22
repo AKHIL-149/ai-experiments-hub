@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 
 /**
  * Voice Command Handler - Pattern matching and command execution
@@ -12,6 +11,7 @@ class VoiceCommandHandler {
     this.timers = new Map(); // Store active timers
     this.llmService = options.llmService || null; // NEW: Inject LLM service
     this.weatherService = options.weatherService || null;
+    this.f1Service = options.f1Service || null;
   }
 
   /**
@@ -35,36 +35,44 @@ class VoiceCommandHandler {
   async parseCommand(transcript) {
     const normalizedTranscript = transcript.toLowerCase().trim();
 
-    // Try to match each command pattern
+    // Evaluate every command/pattern and keep the highest-confidence
+    // match across all of them, rather than returning the first match
+    // found in commands.json's key order. Word-overlap fuzzy matching
+    // means a phrase can legitimately match several commands at once
+    // (e.g. "what day is it" scores 75% against "time"'s pattern purely
+    // from shared stopwords, but 100% against "date"'s own pattern) -
+    // first-match-wins made the result depend on registry ordering
+    // instead of which command actually fits best.
+    let bestMatch = null;
+
     for (const [commandId, commandConfig] of Object.entries(this.commands)) {
       for (const pattern of commandConfig.patterns) {
         const match = this.matchPattern(normalizedTranscript, pattern);
-        if (match.matched) {
-          // "what is {expression}" (and similar) is broad enough to match
-          // almost any "what is ___" question - only accept it as a real
-          // calculation if the captured text actually looks like math,
-          // otherwise keep looking (falls through to the AI fallback).
-          if (match.parameters.expression && !/\d/.test(match.parameters.expression)) {
-            continue;
-          }
+        if (!match.matched) continue;
 
-          return {
-            command: commandId,
-            handler: commandConfig.handler,
-            parameters: match.parameters,
-            confidence: match.confidence,
-            name: commandConfig.name
-          };
+        // "what is {expression}" (and similar) is broad enough to match
+        // almost any "what is ___" question - only accept it as a real
+        // calculation if the captured text actually looks like math.
+        if (match.parameters.expression && !/\d/.test(match.parameters.expression)) {
+          continue;
+        }
+
+        if (!bestMatch || match.confidence > bestMatch.match.confidence) {
+          bestMatch = { commandId, commandConfig, match };
         }
       }
     }
 
-    // No command matched
+    if (!bestMatch) {
+      return { command: null, handler: null, parameters: {}, confidence: 0 };
+    }
+
     return {
-      command: null,
-      handler: null,
-      parameters: {},
-      confidence: 0
+      command: bestMatch.commandId,
+      handler: bestMatch.commandConfig.handler,
+      parameters: bestMatch.match.parameters,
+      confidence: bestMatch.match.confidence,
+      name: bestMatch.commandConfig.name
     };
   }
 
@@ -88,18 +96,38 @@ class VoiceCommandHandler {
       return this.matchParameterizedPattern(transcript, normalizedPattern);
     }
 
-    // Fuzzy match (contains check)
-    if (transcript.includes(normalizedPattern) || normalizedPattern.includes(transcript)) {
+    // Fuzzy match (contains check) - word-boundary aware, so a short
+    // pattern like "hi" only matches the actual word "hi", not a
+    // substring buried inside an unrelated word ("history", "high").
+    const escapedPattern = normalizedPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patternInTranscript = new RegExp(`\\b${escapedPattern}\\b`).test(transcript);
+    const transcriptInPattern = new RegExp(`\\b${transcript.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(normalizedPattern);
+    if (patternInTranscript || transcriptInPattern) {
       return { matched: true, parameters: {}, confidence: 0.8 };
     }
 
-    // Word-level similarity
+    // Word-level similarity. Confidence scales with the actual overlap
+    // ratio (not a flat value) so that when a phrase matches multiple
+    // commands' patterns via shared stopwords (e.g. "what day is it"
+    // overlaps both "date"'s own pattern at 100% and "time"'s pattern at
+    // 75% purely from "what"/"is"/"it"), the more specific/complete match
+    // outranks the coincidental one instead of tying with it.
+    //
+    // Precision alone isn't enough: a short pattern like "what is today"
+    // can hit 100% precision against a much longer, unrelated sentence
+    // that merely happens to contain those words somewhere ("what is the
+    // latest news about the stock market today"). Also require recall -
+    // the matched words must account for a real share of what the user
+    // actually said - so a short pattern can't "find itself" buried
+    // inside an unrelated longer utterance.
     const transcriptWords = transcript.split(/\s+/);
     const patternWords = normalizedPattern.split(/\s+/);
     const matchedWords = patternWords.filter(word => transcriptWords.includes(word));
+    const precision = matchedWords.length / patternWords.length;
+    const recall = matchedWords.length / transcriptWords.length;
 
-    if (matchedWords.length >= Math.ceil(patternWords.length * 0.7)) {
-      return { matched: true, parameters: {}, confidence: 0.7 };
+    if (precision >= 0.7 && recall >= 0.5) {
+      return { matched: true, parameters: {}, confidence: precision };
     }
 
     return { matched: false, parameters: {}, confidence: 0 };
@@ -436,13 +464,17 @@ class VoiceCommandHandler {
    * Get the next upcoming F1 race via the free Jolpica-F1 API (Ergast's successor)
    */
   async getF1Schedule(params, context) {
-    try {
-      const response = await axios.get('https://api.jolpi.ca/ergast/f1/current/next.json', {
-        timeout: 8000
-      });
+    if (!this.f1Service) {
+      return {
+        success: false,
+        response: "I couldn't reach the F1 schedule right now. Try again in a moment.",
+        data: null
+      };
+    }
 
-      const races = response.data?.MRData?.RaceTable?.Races || [];
-      if (races.length === 0) {
+    try {
+      const race = await this.f1Service.getNextRace();
+      if (!race) {
         return {
           success: true,
           response: "There's no upcoming race scheduled right now - the season may be over.",
@@ -450,16 +482,10 @@ class VoiceCommandHandler {
         };
       }
 
-      const race = races[0];
-      const raceDate = new Date(`${race.date}T${race.time || '00:00:00Z'}`);
-      const dateStr = raceDate.toLocaleDateString('en-US', {
-        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
-      });
-
       return {
         success: true,
-        response: `The next F1 race is the ${race.raceName} at ${race.Circuit?.circuitName}, on ${dateStr}.`,
-        data: { raceName: race.raceName, circuit: race.Circuit?.circuitName, date: race.date }
+        response: `The next F1 race is the ${race.raceName} at ${race.circuit}, on ${race.dateFormatted}.`,
+        data: race
       };
     } catch (error) {
       console.error('F1 schedule lookup error:', error.message);

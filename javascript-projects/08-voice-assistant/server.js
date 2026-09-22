@@ -75,7 +75,11 @@ try {
   // Phase 5.5: Pass LLM service to command handler
   commandHandler = new VoiceCommandHandler(
     path.join(__dirname, 'commands/commands.json'),
-    { llmService: serviceManager.localLLMService, weatherService: serviceManager.weatherService }
+    {
+      llmService: serviceManager.localLLMService,
+      weatherService: serviceManager.weatherService,
+      f1Service: serviceManager.f1Service
+    }
   );
 
   conversationManager = new ConversationManager({
@@ -94,30 +98,17 @@ try {
 }
 
 /**
- * Detect whether an AI-fallback response is a non-answer (the local model
- * hedging because it doesn't have current/real-world information) rather
- * than an actual answer. Matches the exact phrasing this app's local
- * Llama already produces in that situation (e.g. "I don't have access to
- * weather data", "I'm not aware of real-time schedules") - used to decide
- * whether to escalate to cloud + web search for a real answer.
+ * Ground the model in the real current date/time - it has no other way
+ * to know this, and guessing at it produces confident wrong answers
+ * ("what is today?" hallucinating a date) that no hedge-detection could
+ * ever catch, since the model isn't hedging - it's just wrong.
  */
-function looksLikeNonAnswer(text) {
-  const hedgePatterns = [
-    /i don't have access/i,
-    /i'm not aware of/i,
-    /i don't know/i,
-    /as of my (last update|knowledge cutoff|training)/i,
-    /i don't have (real-?time|current|up-to-date)/i,
-    /i can't provide (real-?time|current)/i,
-    /i'm not connected to/i,
-    /i'm unable to (access|browse|provide)/i,
-    /i recommend checking/i,
-    /i (would )?suggest checking/i,
-    /this information (is|may be) outdated/i,
-    /check the official/i,
-    /i'm not able to (browse|access) the internet/i
-  ];
-  return hedgePatterns.some(pattern => pattern.test(text));
+function buildDateTimeContext() {
+  const now = new Date();
+  return `Current date and time: ${now.toLocaleString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+  })}.`;
 }
 
 // Routes
@@ -269,13 +260,15 @@ app.post('/api/command', async (req, res) => {
 
       console.log(`✓ Command result: ${result.success ? 'Success' : 'Failed'}`);
     } else {
-      // No command recognized - use AI chat with conversation context
+      // No command recognized - use AI chat with conversation context.
+      // Current date/time is injected so the model never has to guess
+      // at "what is today" style questions.
       console.log('ℹ No command recognized, using AI fallback with context');
 
       const messages = [
         {
           role: 'system',
-          content: 'You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words.'
+          content: `You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words. ${buildDateTimeContext()}`
         }
       ];
 
@@ -291,22 +284,28 @@ app.post('/api/command', async (req, res) => {
         });
       }
 
-      const chatResult = await serviceManager.generateResponse(messages);
-      responseText = chatResult.response;
-
-      // Escalation: the local model's answer looks like a hedge (no
-      // real-world/current info) - retry with cloud + web search if
-      // available, since only cloud is reliable at deciding when/how to
-      // call a tool. Falls back to the original local answer on any
-      // failure - never worse than what we already had.
-      if (looksLikeNonAnswer(responseText)) {
+      // Prefer cloud + tools (web search, weather, F1) for every
+      // fallback turn - a 3B local model can't reliably tell the
+      // difference between something it actually knows and something
+      // it's confidently making up, so hedge-detection alone can't
+      // catch that. Falls back to the local LLM if cloud isn't
+      // configured OR if the cloud call itself fails (bad/expired key,
+      // network issue, etc.) - a broken cloud key should degrade the
+      // answer, not break the whole response.
+      if (serviceManager.isCloudAvailable()) {
         try {
-          console.log('ℹ Local answer looked like a non-answer, escalating to cloud + web search');
+          console.log('Using cloud + tools for AI fallback');
           const toolResult = await serviceManager.generateResponseWithTools(messages);
           responseText = toolResult.response;
-        } catch (escalationError) {
-          console.warn('Web search escalation unavailable, keeping local answer:', escalationError.message);
+        } catch (cloudError) {
+          console.warn('Cloud + tools failed, falling back to local LLM:', cloudError.message);
+          const chatResult = await serviceManager.generateResponse(messages);
+          responseText = chatResult.response;
         }
+      } else {
+        console.log('Cloud not configured, using local LLM for AI fallback (no live tool access)');
+        const chatResult = await serviceManager.generateResponse(messages);
+        responseText = chatResult.response;
       }
     }
 
