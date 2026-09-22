@@ -458,6 +458,7 @@ class VoiceAssistant {
             // Start recording
             this.mediaRecorder.start();
             this.isRecording = true;
+            this.recordingStartTime = Date.now();
 
             // Update UI
             this.updateStatus('Listening...', 'recording');
@@ -589,7 +590,22 @@ class VoiceAssistant {
 
         // Create audio blob
         const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-        console.log(`Audio recorded: ${(audioBlob.size / 1024).toFixed(2)} KB`);
+        const recordingDuration = this.recordingStartTime ? Date.now() - this.recordingStartTime : null;
+        console.log(`Audio recorded: ${(audioBlob.size / 1024).toFixed(2)} KB, ${recordingDuration}ms`);
+
+        // A press-and-release shorter than this produces a WebM with no
+        // real audio content (just container header) - ffmpeg can't
+        // decode it, so catch it here with a friendly message instead of
+        // sending it to the server.
+        const MIN_RECORDING_DURATION_MS = 300;
+        const MIN_RECORDING_SIZE_BYTES = 1024;
+        if ((recordingDuration !== null && recordingDuration < MIN_RECORDING_DURATION_MS) ||
+            audioBlob.size < MIN_RECORDING_SIZE_BYTES) {
+            this.updateStatus('Recording too short', 'error');
+            this.showError('Recording too short - hold the button and speak before releasing.');
+            setTimeout(() => this.updateStatus('Ready', 'ready'), 2000);
+            return;
+        }
 
         // Show loading
         this.showLoading('Transcribing audio...');

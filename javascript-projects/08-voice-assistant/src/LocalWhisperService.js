@@ -3,6 +3,19 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Pull the actionable tail out of ffmpeg's output. Its full output leads
+ * with a version/build-config banner that's noise for an error message -
+ * the actual failure reason is always in the last few lines.
+ */
+function extractFfmpegError(execError) {
+  const output = (execError.stdout || '').trim();
+  if (!output) return execError.message;
+
+  const lines = output.split('\n').filter(line => line.trim());
+  return lines.slice(-5).join('\n');
+}
+
+/**
  * Local Whisper Service - Wrapper for whisper.cpp CLI
  * Provides offline speech-to-text using local Whisper models
  */
@@ -109,9 +122,14 @@ class LocalWhisperService {
 
         fs.unlinkSync(webmPath); // Clean up WebM file
       } catch (error) {
-        console.error(`❌ FFmpeg conversion failed:`, error.message);
+        // execSync's error.message is just "Command failed: <cmd>" - the
+        // actual ffmpeg diagnostic (e.g. "Invalid data found when
+        // processing input") is in stdout, since we redirected stderr
+        // there with 2>&1.
+        const ffmpegDetail = extractFfmpegError(error);
+        console.error(`❌ FFmpeg conversion failed:`, ffmpegDetail);
         if (fs.existsSync(webmPath)) fs.unlinkSync(webmPath);
-        throw new Error(`Audio conversion failed: ${error.message}`);
+        throw new Error(`Audio conversion failed: ${ffmpegDetail}`);
       }
 
       audioPath = wavPath;
@@ -145,8 +163,9 @@ class LocalWhisperService {
           audioPath = wavPath;
           cleanupRequired = true;
         } catch (error) {
-          console.error(`❌ FFmpeg conversion failed:`, error.message);
-          throw new Error(`Audio conversion failed: ${error.message}`);
+          const ffmpegDetail = extractFfmpegError(error);
+          console.error(`❌ FFmpeg conversion failed:`, ffmpegDetail);
+          throw new Error(`Audio conversion failed: ${ffmpegDetail}`);
         }
       } else {
         // Already a WAV file or other supported format
