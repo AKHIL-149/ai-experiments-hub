@@ -437,10 +437,13 @@ class VoiceCommandHandler {
    * Get current weather via OpenWeatherMap
    */
   async getWeather(params, context) {
-    if (!this.weatherService || !this.weatherService.available()) {
+    // Always available in practice (OpenWeatherMap when configured,
+    // wttr.in with no key otherwise) - this only fires if the handler
+    // was somehow constructed without a weather service at all.
+    if (!this.weatherService) {
       return {
         success: true,
-        response: "I don't have access to weather data yet - set OPENWEATHER_API_KEY to enable this.",
+        response: "I don't have access to weather data right now.",
         data: { placeholder: true }
       };
     }

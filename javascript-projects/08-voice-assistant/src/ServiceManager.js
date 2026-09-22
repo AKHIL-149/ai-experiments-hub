@@ -48,16 +48,14 @@ class ServiceManager {
     });
     console.log(`✓ Web search service available (${this.webSearchService.getInfo().mode})`);
 
-    // Weather (dedicated command, independent of tool-calling)
+    // Weather (dedicated command, independent of tool-calling) - always
+    // available: OpenWeatherMap when configured, wttr.in (free, no key)
+    // otherwise
     this.weatherService = new WeatherService({
       apiKey: options.openWeatherApiKey,
       defaultLocation: options.defaultWeatherLocation
     });
-    if (this.weatherService.available()) {
-      console.log('✓ Weather service (OpenWeatherMap) available');
-    } else {
-      console.warn('⚠️  Weather service not configured (set OPENWEATHER_API_KEY to enable)');
-    }
+    console.log(`✓ Weather service available (${this.weatherService.getInfo().mode})`);
 
     // F1 schedule - free, no key required, always available
     this.f1Service = new F1Service();
