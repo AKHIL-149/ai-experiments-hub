@@ -111,6 +111,22 @@ function buildDateTimeContext() {
   })}.`;
 }
 
+/**
+ * Build the AI-fallback system prompt: date/time grounding plus an
+ * explicit instruction not to state unconfirmed guesses as fact. Tool
+ * access and grounding reduce *opportunities* to hallucinate, but don't
+ * stop the model from confidently guessing when a tool doesn't cover the
+ * question (or wasn't asked) - this instructs it to say so instead.
+ * @param {boolean} hasTools - whether this call has live tool access (cloud path)
+ */
+function buildSystemPrompt(hasTools) {
+  const honesty = hasTools
+    ? "If you are not confident a fact is current and accurate (specific dates, schedules, prices, recent events, releases, etc.), use your tools to check rather than guessing. If your tools don't turn up the answer, say plainly that you don't have reliable current information on it - never state an unconfirmed guess as settled fact."
+    : "You do not have internet access right now, so your knowledge of anything time-sensitive (recent events, schedules, prices, releases) may be outdated or wrong. If a question needs current information you can't be sure of, say plainly that you don't have up-to-date information on that, rather than guessing at specifics.";
+
+  return `You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words. ${buildDateTimeContext()} ${honesty}`;
+}
+
 // Routes
 
 /**
@@ -262,13 +278,16 @@ app.post('/api/command', async (req, res) => {
     } else {
       // No command recognized - use AI chat with conversation context.
       // Current date/time is injected so the model never has to guess
-      // at "what is today" style questions.
+      // at "what is today" style questions, and the prompt explicitly
+      // asks it to admit uncertainty rather than guess at anything else
+      // time-sensitive its tools (if any) don't cover.
       console.log('ℹ No command recognized, using AI fallback with context');
 
+      const hasTools = serviceManager.isCloudAvailable();
       const messages = [
         {
           role: 'system',
-          content: `You are a helpful voice assistant. Provide concise, natural responses suitable for speech. Keep responses under 100 words. ${buildDateTimeContext()}`
+          content: buildSystemPrompt(hasTools)
         }
       ];
 
@@ -292,7 +311,7 @@ app.post('/api/command', async (req, res) => {
       // configured OR if the cloud call itself fails (bad/expired key,
       // network issue, etc.) - a broken cloud key should degrade the
       // answer, not break the whole response.
-      if (serviceManager.isCloudAvailable()) {
+      if (hasTools) {
         try {
           console.log('Using cloud + tools for AI fallback');
           const toolResult = await serviceManager.generateResponseWithTools(messages);

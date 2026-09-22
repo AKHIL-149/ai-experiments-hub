@@ -126,7 +126,14 @@ class VoiceCommandHandler {
     const precision = matchedWords.length / patternWords.length;
     const recall = matchedWords.length / transcriptWords.length;
 
-    if (precision >= 0.7 && recall >= 0.5) {
+    // Recall threshold matches precision's - confirmed live that 0.5 was
+    // still loose enough for a short, mostly-stopword pattern like
+    // "when is the next race" to match "when is the next iphone release"
+    // (4/5 precision, 4/6=0.67 recall). A contiguous phrase with a few
+    // extra filler words is already caught by the substring check above,
+    // which doesn't have this issue - this tier is the scattered-word
+    // fallback, so it can afford to be conservative.
+    if (precision >= 0.7 && recall >= 0.7) {
       return { matched: true, parameters: {}, confidence: precision };
     }
 
