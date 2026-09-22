@@ -5,6 +5,7 @@ const LocalLLMService = require('./LocalLLMService');
 const WebSearchService = require('./WebSearchService');
 const WeatherService = require('./WeatherService');
 const F1Service = require('./F1Service');
+const ConnectivityService = require('./ConnectivityService');
 
 /**
  * Service Manager - Handles switching between cloud and local AI services
@@ -23,6 +24,7 @@ class ServiceManager {
     this.webSearchService = null;
     this.weatherService = null;
     this.f1Service = null;
+    this.connectivityService = null;
 
     this.initializeServices(options);
   }
@@ -31,16 +33,20 @@ class ServiceManager {
    * Initialize all available services
    */
   initializeServices(options) {
+    // Internet reachability - built first so it's checking in the
+    // background while everything else initializes
+    this.connectivityService = new ConnectivityService();
+
     // Web search (used by cloud tool-calling) - built before the cloud
-    // service so it can be handed to OpenAIService directly
+    // service so it can be handed to OpenAIService directly. Always
+    // reports available: Tavily is used when configured (better
+    // quality), otherwise falls back to DuckDuckGo's free Instant
+    // Answer API (no signup, but much narrower coverage - mostly
+    // definitions/infobox facts, not general search results).
     this.webSearchService = new WebSearchService({
       apiKey: options.tavilyApiKey
     });
-    if (this.webSearchService.available()) {
-      console.log('✓ Web search service (Tavily) available');
-    } else {
-      console.warn('⚠️  Web search not configured (set TAVILY_API_KEY to enable)');
-    }
+    console.log(`✓ Web search service available (${this.webSearchService.getInfo().mode})`);
 
     // Weather (dedicated command, independent of tool-calling)
     this.weatherService = new WeatherService({
@@ -257,6 +263,17 @@ class ServiceManager {
   }
 
   /**
+   * Best-known internet reachability. Not a hard guarantee (DNS/routing
+   * can change between the check and the next real call), but avoids
+   * attempting a cloud/search/weather call we already know will just
+   * time out - skip straight to local instead of paying that latency.
+   * @returns {boolean}
+   */
+  isInternetAvailable() {
+    return this.connectivityService ? this.connectivityService.available() : true;
+  }
+
+  /**
    * Determine if local service should be used
    * @param {string} serviceType - 'stt' or 'tts'
    * @returns {boolean}
@@ -333,6 +350,10 @@ class ServiceManager {
       weather: {
         available: this.weatherService ? this.weatherService.available() : false,
         info: this.weatherService ? this.weatherService.getInfo() : null
+      },
+      internet: {
+        available: this.isInternetAvailable(),
+        info: this.connectivityService ? this.connectivityService.getInfo() : null
       },
       fallbackEnabled: this.fallbackToCloud
     };

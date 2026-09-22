@@ -283,7 +283,12 @@ app.post('/api/command', async (req, res) => {
       // time-sensitive its tools (if any) don't cover.
       console.log('ℹ No command recognized, using AI fallback with context');
 
-      const hasTools = serviceManager.isCloudAvailable();
+      // Skip a cloud attempt entirely when we already know we're offline
+      // - avoids paying the timeout for a call that can only fail.
+      const hasTools = serviceManager.isCloudAvailable() && serviceManager.isInternetAvailable();
+      if (serviceManager.isCloudAvailable() && !serviceManager.isInternetAvailable()) {
+        console.log('No internet connectivity detected, skipping cloud attempt');
+      }
       const messages = [
         {
           role: 'system',
