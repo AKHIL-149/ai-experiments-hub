@@ -9,6 +9,24 @@
         "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/10-chat-application && exec venv/bin/python3 server.py"
       ],
       "port": 8000
+    },
+    {
+      "name": "meeting-summarizer",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/09-meeting-summarizer && exec venv/bin/python3 server.py"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "voice-assistant",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/08-voice-assistant && exec node server.js"
+      ],
+      "port": 3000
     }
   ]
 }
