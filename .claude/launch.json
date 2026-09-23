@@ -27,6 +27,15 @@
         "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/08-voice-assistant && exec node server.js"
       ],
       "port": 3000
+    },
+    {
+      "name": "content-analyzer",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/07-content-analyzer && exec python3 server.py"
+      ],
+      "port": 8000
     }
   ]
 }
