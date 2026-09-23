@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """CLI for Content Analyzer - AI-powered image analysis tool."""
+import os
 import sys
 import argparse
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to Python path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+
+# Load .env before anything reads os.getenv() - every provider default,
+# API key, and model override in this file and src/core/ depends on this
+# actually running (confirmed live: without it, .env's DEFAULT_PROVIDER,
+# API keys, etc. are silently ignored no matter what's in the file).
+load_dotenv(project_root / '.env')
 
 from src.core.vision_client import VisionClient
 from src.core.image_processor import ImageProcessor
@@ -767,7 +775,7 @@ Examples:
     describe_parser.add_argument(
         '--provider',
         choices=['ollama', 'anthropic', 'openai'],
-        default='ollama',
+        default=os.getenv('DEFAULT_PROVIDER', 'ollama'),
         help='Vision provider (default: ollama)'
     )
     describe_parser.add_argument(
@@ -827,8 +835,8 @@ Examples:
     ocr_parser.add_argument(
         '--provider',
         choices=['ollama', 'anthropic', 'openai'],
-        default='anthropic',
-        help='Vision provider for fallback (default: anthropic)'
+        default=os.getenv('DEFAULT_PROVIDER', 'ollama'),
+        help='Vision provider for fallback (default: $DEFAULT_PROVIDER env var, or ollama)'
     )
     ocr_parser.add_argument(
         '--model',
@@ -883,8 +891,8 @@ Examples:
     lang_parser.add_argument(
         '--provider',
         choices=['ollama', 'anthropic', 'openai'],
-        default='anthropic',
-        help='Vision provider (default: anthropic)'
+        default=os.getenv('DEFAULT_PROVIDER', 'ollama'),
+        help='Vision provider (default: $DEFAULT_PROVIDER env var, or ollama)'
     )
     lang_parser.add_argument(
         '--model',
@@ -946,8 +954,8 @@ Examples:
     compare_parser.add_argument(
         '--provider',
         choices=['ollama', 'anthropic', 'openai'],
-        default='anthropic',
-        help='Vision provider for AI comparison (default: anthropic)'
+        default=os.getenv('DEFAULT_PROVIDER', 'ollama'),
+        help='Vision provider for AI comparison (default: $DEFAULT_PROVIDER env var, or ollama)'
     )
     compare_parser.add_argument(
         '--model',
@@ -1016,8 +1024,8 @@ Examples:
     batch_describe_parser.add_argument(
         '--provider',
         choices=['ollama', 'anthropic', 'openai'],
-        default='anthropic',
-        help='Vision provider (default: anthropic)'
+        default=os.getenv('DEFAULT_PROVIDER', 'ollama'),
+        help='Vision provider (default: $DEFAULT_PROVIDER env var, or ollama)'
     )
     batch_describe_parser.add_argument(
         '--model',
@@ -1111,8 +1119,8 @@ Examples:
     batch_ocr_parser.add_argument(
         '--provider',
         choices=['ollama', 'anthropic', 'openai'],
-        default='anthropic',
-        help='Vision provider for fallback (default: anthropic)'
+        default=os.getenv('DEFAULT_PROVIDER', 'ollama'),
+        help='Vision provider for fallback (default: $DEFAULT_PROVIDER env var, or ollama)'
     )
     batch_ocr_parser.add_argument(
         '--model',

@@ -7,7 +7,31 @@ document.addEventListener('DOMContentLoaded', function() {
     setupDragAndDrop();
     setupEventListeners();
     loadCacheStats();
+    applyDefaultProvider();
 });
+
+// Set every provider dropdown to whatever the server is actually
+// configured to use (DEFAULT_PROVIDER in .env), instead of leaving them
+// on the HTML's hardcoded "Anthropic" option - a fresh install with no
+// cloud API keys (the README's "Option 1: Local Only" path) would
+// otherwise fail on the very first request with an API-key error.
+async function applyDefaultProvider() {
+    try {
+        const response = await fetch('/api/health');
+        const health = await response.json();
+        const defaultProvider = health.default_provider;
+        if (!defaultProvider) return;
+
+        ['provider', 'ocrProvider', 'compareProvider', 'batchProvider'].forEach(id => {
+            const select = document.getElementById(id);
+            if (select && select.querySelector(`option[value="${defaultProvider}"]`)) {
+                select.value = defaultProvider;
+            }
+        });
+    } catch (error) {
+        console.warn('Could not fetch default provider from /api/health:', error);
+    }
+}
 
 // Setup drag and drop for vision analysis
 function setupDragAndDrop() {

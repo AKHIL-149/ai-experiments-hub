@@ -3,13 +3,21 @@
 import sys
 import os
 import base64
+import requests
 from pathlib import Path
 from typing import Optional, List
 from io import BytesIO
+from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+
+# Load .env before anything reads os.getenv() - every provider default,
+# API key, and model override in this file and src/core/ depends on this
+# actually running (confirmed live: without it, .env's DEFAULT_PROVIDER,
+# API keys, etc. are silently ignored no matter what's in the file).
+load_dotenv(project_root / '.env')
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -115,17 +123,50 @@ class BatchResponse(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    """Serve the main HTML page."""
+    """Serve the main HTML page.
+
+    app.js is referenced with a cache-busting ?v=<mtime> query param -
+    confirmed live that without one, the browser's HTTP cache (shared
+    across tabs, keyed by URL) can silently keep serving a stale copy
+    of app.js indefinitely after any update, even in a brand new tab.
+    """
     html_file = project_root / "templates" / "index.html"
     if html_file.exists():
-        return html_file.read_text()
+        html = html_file.read_text()
+        app_js_file = static_dir / "app.js"
+        if app_js_file.exists():
+            version = int(app_js_file.stat().st_mtime)
+            html = html.replace('src="/static/app.js"', f'src="/static/app.js?v={version}"')
+        return html
     return HTMLResponse(content="<h1>Content Analyzer</h1><p>Frontend not found. Please check templates/index.html</p>")
 
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "version": "0.7.7"}
+    """Health check endpoint - also reports the configured default
+    provider and which providers are actually usable, so the frontend
+    can default its provider dropdowns correctly instead of assuming
+    a cloud provider is configured."""
+    default_provider = os.getenv("DEFAULT_PROVIDER", "ollama")
+
+    ollama_available = False
+    try:
+        ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+        resp = requests.get(f"{ollama_url}/api/tags", timeout=2)
+        ollama_available = resp.status_code == 200
+    except Exception:
+        pass
+
+    return {
+        "status": "healthy",
+        "version": "0.7.7",
+        "default_provider": default_provider,
+        "providers": {
+            "ollama": {"available": ollama_available},
+            "anthropic": {"available": bool(os.getenv("ANTHROPIC_API_KEY"))},
+            "openai": {"available": bool(os.getenv("OPENAI_API_KEY"))}
+        }
+    }
 
 
 @app.get("/api/presets")
@@ -188,7 +229,7 @@ async def analyze_image(
     file: UploadFile = File(...),
     prompt: Optional[str] = Form(None),
     preset: Optional[str] = Form(None),
-    provider: str = Form("anthropic"),
+    provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.7),
     max_tokens: int = Form(300),
@@ -266,7 +307,7 @@ async def extract_text(
     file: UploadFile = File(...),
     method: str = Form("auto"),
     language: str = Form("eng"),
-    provider: str = Form("anthropic"),
+    provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None),
     fallback: bool = Form(True),
     confidence: float = Form(60.0)
@@ -327,7 +368,7 @@ async def extract_text(
 async def detect_language(
     file: UploadFile = File(...),
     use_vision: bool = Form(False),
-    provider: str = Form("anthropic"),
+    provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None)
 ):
     """Detect language in image text."""
@@ -371,7 +412,7 @@ async def compare_images(
     file2: UploadFile = File(...),
     use_ai: bool = Form(False),
     mode: str = Form("content"),
-    provider: str = Form("anthropic"),
+    provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.3),
     max_tokens: int = Form(300)
@@ -436,7 +477,7 @@ async def batch_analyze(
     files: List[UploadFile] = File(...),
     prompt: Optional[str] = Form(None),
     preset: Optional[str] = Form(None),
-    provider: str = Form("anthropic"),
+    provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.7),
     max_tokens: int = Form(300),
@@ -520,7 +561,7 @@ async def batch_ocr(
     files: List[UploadFile] = File(...),
     method: str = Form("auto"),
     language: str = Form("eng"),
-    provider: str = Form("anthropic"),
+    provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None),
     fallback: bool = Form(True),
     confidence: float = Form(60.0),
