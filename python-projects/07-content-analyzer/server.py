@@ -340,11 +340,15 @@ async def extract_text(
             vision_client=vision_client
         )
 
-        # Extract text
+        # Extract text. fallback_to_vision is the only thing that
+        # actually gates whether vision runs at all - method='vision'
+        # with fallback left unchecked would otherwise silently return
+        # an empty result (method: 'none') despite the vision_client
+        # above having been constructed specifically to do this.
         result = ocr_processor.extract_text(
             image=image,
             language=language,
-            fallback_to_vision=fallback,
+            fallback_to_vision=(fallback or method == 'vision'),
             confidence_threshold=confidence
         )
 
@@ -415,7 +419,12 @@ async def compare_images(
     provider: str = Form(os.getenv("DEFAULT_PROVIDER", "ollama")),
     model: Optional[str] = Form(None),
     temperature: float = Form(0.3),
-    max_tokens: int = Form(300)
+    # 300 wasn't enough for a multi-point comparison + similarity rating -
+    # confirmed live the AI's response got cut off mid-sentence right
+    # before it could state a similarity score, silently leaving
+    # extracted_similarity null and the reported score structural-only.
+    # The CLI's `compare --use-ai` already defaults to 1000; match it.
+    max_tokens: int = Form(1000)
 ):
     """Compare two images."""
     try:

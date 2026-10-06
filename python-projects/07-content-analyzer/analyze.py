@@ -165,11 +165,16 @@ def ocr_text(args):
             vision_client=vision_client
         )
 
-        # Extract text
+        # Extract text. OCRProcessor.extract_text()'s fallback_to_vision
+        # flag is the only thing that actually gates whether vision runs
+        # at all - confirmed live that `--method vision` without also
+        # passing `--fallback` silently returns an empty result (method:
+        # 'none', confidence: 0.0) instead of ever calling vision, even
+        # though a vision_client was constructed for it above.
         result = ocr_processor.extract_text(
             image=image,
             language=args.language,
-            fallback_to_vision=args.fallback,
+            fallback_to_vision=(args.fallback or args.method == 'vision'),
             confidence_threshold=args.confidence
         )
 

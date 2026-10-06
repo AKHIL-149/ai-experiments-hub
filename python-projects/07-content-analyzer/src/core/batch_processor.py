@@ -158,13 +158,19 @@ class BatchProcessor:
         errors = []
         start_time = time.time()
 
+        # fallback_to_vision is the only thing that actually gates
+        # whether extract_text() runs vision at all - method='vision'
+        # with fallback_to_vision left False would otherwise silently
+        # return an empty result for every image in the batch.
+        effective_fallback_to_vision = fallback_to_vision or method == 'vision'
+
         def ocr_image(index: int, image: Image.Image, name: str):
             """OCR a single image."""
             try:
                 result = self.ocr_processor.extract_text(
                     image=image,
                     language=language,
-                    fallback_to_vision=fallback_to_vision,
+                    fallback_to_vision=effective_fallback_to_vision,
                     confidence_threshold=confidence_threshold
                 )
                 return {

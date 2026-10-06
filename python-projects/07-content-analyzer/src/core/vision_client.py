@@ -171,7 +171,14 @@ class VisionClient:
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=120)
+            # 120s wasn't enough for CPU-only Ollama inference on a
+            # multi-image prompt (e.g. image comparison) - confirmed live
+            # a real comparison request read-timed-out at exactly 120s
+            # with the model still genuinely working, not hung. A fuller
+            # response (raising max_tokens for /api/compare, see server.py)
+            # takes proportionally longer to generate, so this needs real
+            # headroom, not just enough to cover the old truncated case.
+            response = requests.post(url, json=payload, timeout=300)
             response.raise_for_status()
 
             result = response.json()
