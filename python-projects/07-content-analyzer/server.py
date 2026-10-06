@@ -352,13 +352,21 @@ async def extract_text(
             confidence_threshold=confidence
         )
 
+        # extract_text() swallows engine failures (timeouts, etc.) into
+        # details and returns method 'none' - report that as an error
+        # rather than a successful empty extraction.
+        details = result.get('details', {})
+        engine_error = details.get('vision_error') or details.get('tesseract_error')
+        if result['method'] == 'none' and engine_error:
+            return OCRResponse(success=False, error=engine_error, details=details)
+
         return OCRResponse(
             success=True,
             text=result['text'],
             confidence=result['confidence'],
             method=result['method'],
             language=result['language'],
-            details=result.get('details', {})
+            details=details
         )
 
     except Exception as e:

@@ -173,6 +173,12 @@ class BatchProcessor:
                     fallback_to_vision=effective_fallback_to_vision,
                     confidence_threshold=confidence_threshold
                 )
+                # extract_text() swallows engine failures (timeouts, etc.)
+                # into details and returns method 'none' - surface that
+                # as a real failure instead of an empty "successful" result.
+                details = result.get('details') or {}
+                engine_error = details.get('vision_error') or details.get('tesseract_error')
+                failed = result['method'] == 'none' and engine_error
                 return {
                     'index': index,
                     'name': name,
@@ -180,8 +186,8 @@ class BatchProcessor:
                     'method': result['method'],
                     'confidence': result['confidence'],
                     'language': result['language'],
-                    'success': True,
-                    'error': None
+                    'success': not failed,
+                    'error': engine_error if failed else None
                 }
             except Exception as e:
                 return {
