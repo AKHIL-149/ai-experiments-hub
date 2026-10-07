@@ -8,6 +8,13 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     loadCacheStats();
     applyDefaultProvider();
+
+    // Stats were only loaded once at page load, so the tab showed stale
+    // numbers until Refresh was clicked - reload them whenever it's opened.
+    const statsTabLink = document.querySelector('a[href="#stats-tab"]');
+    if (statsTabLink) {
+        statsTabLink.addEventListener('shown.bs.tab', loadCacheStats);
+    }
 });
 
 // Set every provider dropdown to whatever the server is actually
