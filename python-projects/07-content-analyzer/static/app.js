@@ -743,35 +743,62 @@ function displayBatchResults(data) {
     const resultsList = document.getElementById('batchResultsList');
     resultsList.innerHTML = '';
 
+    const PREVIEW_LENGTH = 200;
+
     data.results.forEach((result, index) => {
-        const resultItem = document.createElement('div');
+        const fullText = result.text || result.result || '';
+        const needsExpand = fullText.length > PREVIEW_LENGTH;
+
+        // Native <details> gives expand/collapse with no extra state; the
+        // summary shows the name plus a preview, opening shows everything.
+        // textContent (not innerHTML) so model output and filenames can't
+        // inject markup.
+        const resultItem = document.createElement('details');
         resultItem.className = 'border-bottom pb-2 mb-2';
 
-        let resultText = '';
-        if (result.text) {
-            // OCR result
-            resultText = result.text.substring(0, 200) + (result.text.length > 200 ? '...' : '');
-        } else if (result.result) {
-            // Vision analysis result
-            resultText = result.result.substring(0, 200) + (result.result.length > 200 ? '...' : '');
+        const summary = document.createElement('summary');
+        summary.style.cursor = needsExpand ? 'pointer' : 'default';
+        const name = document.createElement('small');
+        name.className = 'text-muted';
+        name.textContent = `${index + 1}. ${result.name}`;
+        summary.appendChild(name);
+
+        const preview = document.createElement('p');
+        preview.className = 'mb-0 small preview-text';
+        preview.textContent = needsExpand
+            ? fullText.substring(0, PREVIEW_LENGTH) + '... (click to expand)'
+            : fullText;
+        summary.appendChild(preview);
+        resultItem.appendChild(summary);
+
+        if (needsExpand) {
+            const full = document.createElement('p');
+            full.className = 'mb-0 mt-2 small';
+            full.style.whiteSpace = 'pre-wrap';
+            full.textContent = fullText;
+            resultItem.appendChild(full);
+
+            // Hide the preview while open so the text isn't shown twice
+            resultItem.addEventListener('toggle', () => {
+                preview.style.display = resultItem.open ? 'none' : '';
+            });
         }
 
-        resultItem.innerHTML = `
-            <small class="text-muted">${index + 1}. ${result.name}</small>
-            <p class="mb-0 small">${resultText}</p>
-        `;
         resultsList.appendChild(resultItem);
     });
 
     // Errors if any
     if (data.errors && data.errors.length > 0) {
-        data.errors.forEach((error, index) => {
+        data.errors.forEach((error) => {
             const errorItem = document.createElement('div');
             errorItem.className = 'border-bottom pb-2 mb-2 text-danger';
-            errorItem.innerHTML = `
-                <small>❌ ${error.name}</small>
-                <p class="mb-0 small">${error.error}</p>
-            `;
+            const title = document.createElement('small');
+            title.textContent = `❌ ${error.name}`;
+            const msg = document.createElement('p');
+            msg.className = 'mb-0 small';
+            msg.textContent = error.error;
+            errorItem.appendChild(title);
+            errorItem.appendChild(msg);
             resultsList.appendChild(errorItem);
         });
     }
