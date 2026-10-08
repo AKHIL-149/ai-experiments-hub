@@ -22,6 +22,7 @@ load_dotenv(project_root / '.env')
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
@@ -268,7 +269,11 @@ async def analyze_image(
         )
 
         # Analyze image
-        result = vision_client.analyze(
+        # Model calls block for seconds to minutes. Running them directly in
+        # this async handler froze the whole event loop (confirmed live: during a
+        # long batch /api/cache/stats hung for 2+ minutes and the UI was dead), so
+        # every heavy endpoint runs its blocking work in the threadpool.
+        result = await run_in_threadpool(vision_client.analyze,
             prompt=final_prompt,
             images=[image],
             max_tokens=max_tokens,
@@ -345,7 +350,7 @@ async def extract_text(
         # with fallback left unchecked would otherwise silently return
         # an empty result (method: 'none') despite the vision_client
         # above having been constructed specifically to do this.
-        result = ocr_processor.extract_text(
+        result = await run_in_threadpool(ocr_processor.extract_text,
             image=image,
             language=language,
             fallback_to_vision=(fallback or method == 'vision'),
@@ -404,7 +409,7 @@ async def detect_language(
         )
 
         # Detect language
-        result = ocr_processor.detect_language(image)
+        result = await run_in_threadpool(ocr_processor.detect_language, image)
 
         return {
             "success": True,
@@ -469,7 +474,7 @@ async def compare_images(
         comparator = ImageComparator(vision_client=vision_client)
 
         # Compare images
-        result = comparator.compare_images(
+        result = await run_in_threadpool(comparator.compare_images,
             image1=image1,
             image2=image2,
             mode=mode,
@@ -548,7 +553,7 @@ async def batch_analyze(
         )
 
         # Process images
-        results = batch_processor.batch_analyze(
+        results = await run_in_threadpool(batch_processor.batch_analyze,
             images=images,
             image_names=image_names,
             prompt=final_prompt,
@@ -630,7 +635,7 @@ async def batch_ocr(
         )
 
         # Process images
-        results = batch_processor.batch_ocr(
+        results = await run_in_threadpool(batch_processor.batch_ocr,
             images=images,
             image_names=image_names,
             language=language,
