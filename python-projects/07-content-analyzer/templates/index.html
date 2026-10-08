@@ -69,6 +69,10 @@
             min-height: 200px;
             font-family: 'Georgia', serif;
             line-height: 1.8;
+            /* Model output is plain text with its own line breaks (numbered
+               lists, bullets, OCR lines) - without this they collapse into
+               one paragraph. */
+            white-space: pre-wrap;
         }
 
         .stats-card {

@@ -219,7 +219,7 @@ async function analyzeImage() {
 
         if (data.success) {
             // Show results
-            document.getElementById('resultText').textContent = data.result;
+            document.getElementById('resultText').textContent = data.result.trim();
 
             // Show metadata
             const metadata = data.metadata;
@@ -290,7 +290,7 @@ async function extractText() {
 
         if (data.success) {
             // Show results
-            document.getElementById('ocrResultText').textContent = data.text;
+            document.getElementById('ocrResultText').textContent = (data.text || '').trim();
 
             // Show metadata
             const metadataHtml = `
@@ -589,7 +589,7 @@ function displayComparisonResults(result) {
 
     // AI analysis if available
     if (result.ai_analysis && result.ai_analysis.analysis) {
-        document.getElementById('aiAnalysisText').textContent = result.ai_analysis.analysis;
+        document.getElementById('aiAnalysisText').textContent = result.ai_analysis.analysis.trim();
         document.getElementById('aiAnalysisCard').style.display = 'block';
     } else {
         document.getElementById('aiAnalysisCard').style.display = 'none';
