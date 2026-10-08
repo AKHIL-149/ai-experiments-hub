@@ -693,6 +693,30 @@ curl -X POST http://localhost:8000/api/batch-ocr \
   -F "workers=4"
 ```
 
+## Benchmark (one run, multiple tests)
+
+`benchmark.py` runs several suites against the live server in one command and compares the
+result with the previous run, so you can see week over week what improved or regressed:
+
+```bash
+python3 server.py &                        # server must be running
+python3 benchmark.py                       # health + vision (34 images) + compare + OCR (6 images)
+python3 benchmark.py --suites vision       # one suite
+python3 benchmark.py --limit 5             # quick check: first 5 items per suite
+python3 benchmark.py --ocr-all             # all 12 OCR images (~2.5 min each on CPU Ollama)
+```
+
+- **Suites:** `health` (provider available, server stays responsive during model calls),
+  `vision` (keyword checks against verified ground truth, including phrases the local model
+  has hallucinated before), `compare` (identical / mirrored / unrelated image pairs), `ocr`
+  (vision OCR with repetition-loop detection).
+- **Output:** `data/benchmarks/run_<timestamp>.json` (full model text) and `.md` (summary,
+  failures, and a diff against the earlier run with the most tests in common).
+- **Ground truth:** `benchmarks/expectations.json`. The test images live in `data/test_images/`
+  (gitignored); `benchmarks/image_sources/` lists where each came from (Wikimedia Commons /
+  picsum.photos, with licenses) so they can be re-downloaded.
+- A full run on CPU-only Ollama takes about 30 minutes.
+
 ## Examples
 
 ```bash

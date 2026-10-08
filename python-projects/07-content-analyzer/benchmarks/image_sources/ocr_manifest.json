@@ -1,0 +1,132 @@
+[
+ {
+  "file": "printed_document/printed_document_1.jpg",
+  "category": "printed_document",
+  "query": "official document printed text",
+  "title": "File:EFTA00002695 - Crumpled white paper document with printed text and faint diagrams lies on a dark gray surface.jpg",
+  "license": "Public domain",
+  "author": "Federal Bureau of Investigation",
+  "source": "https://commons.wikimedia.org/wiki/File:EFTA00002695_-_Crumpled_white_paper_document_with_printed_text_and_faint_diagrams_lies_on_a_dark_gray_surface.jpg",
+  "bytes": 164952
+ },
+ {
+  "file": "printed_document/printed_document_2.jpg",
+  "category": "printed_document",
+  "query": "official document printed text",
+  "title": "File:New Taxi Fare Table for Greater Taipei area effective from 2015-10-01 printed by Keelung City Government.jpg",
+  "license": "Public domain",
+  "author": "Solomon203",
+  "source": "https://commons.wikimedia.org/wiki/File:New_Taxi_Fare_Table_for_Greater_Taipei_area_effective_from_2015-10-01_printed_by_Keelung_City_Government.jpg",
+  "bytes": 412659
+ },
+ {
+  "file": "receipt/receipt_1.jpg",
+  "category": "receipt",
+  "query": "shopping receipt",
+  "title": "File:ReceiptSwiss.jpg",
+  "license": "CC BY-SA 3.0",
+  "author": "Audrius Meskauskas (Audriusa)",
+  "source": "https://commons.wikimedia.org/wiki/File:ReceiptSwiss.jpg",
+  "bytes": 559781
+ },
+ {
+  "file": "receipt/receipt_2.jpg",
+  "category": "receipt",
+  "query": "restaurant bill receipt",
+  "title": "File:HK \u5317\u89d2 North Point \u9577\u5eb7\u8857 Cheung Hong Street \u660e\u661f\u6d77\u9bae\u9152\u5bb6 Star Seafood Restaurant food bill Receipt night March 2019 SSG.jpg",
+  "license": "CC BY-SA 4.0",
+  "author": "KM francois Georges Pierre",
+  "source": "https://commons.wikimedia.org/wiki/File:HK_%E5%8C%97%E8%A7%92_North_Point_%E9%95%B7%E5%BA%B7%E8%A1%97_Cheung_Hong_Street_%E6%98%8E%E6%98%9F%E6%B5%B7%E9%AE%AE%E9%85%92%E5%AE%B6_Star_Seafood_Restaurant_food_bill_Receipt_night_March_2019_SSG.jpg",
+  "bytes": 340036
+ },
+ {
+  "file": "book_page/book_page_1.jpg",
+  "category": "book_page",
+  "query": "book page printed text",
+  "title": "File:Liji 2.jpg",
+  "license": "CC BY-SA 2.0",
+  "author": "user:snowyowls",
+  "source": "https://commons.wikimedia.org/wiki/File:Liji_2.jpg",
+  "bytes": 184616
+ },
+ {
+  "file": "book_page/book_page_2.jpg",
+  "category": "book_page",
+  "query": "old printed book page scan",
+  "title": "File:Book, print, title-page (BM 1949,0411.4963).jpg",
+  "license": "Public domain",
+  "author": "Print made by: Hans Springinklee\n\nPrinted by: Friedrich Peypus",
+  "source": "https://commons.wikimedia.org/wiki/File:Book,_print,_title-page_(BM_1949,0411.4963).jpg",
+  "bytes": 411295
+ },
+ {
+  "file": "handwriting/handwriting_1.jpg",
+  "category": "handwriting",
+  "query": "handwritten letter",
+  "title": "File:Handwritten Letter of Resignation.jpg",
+  "license": "CC BY 2.0",
+  "author": "CIPHR Connect",
+  "source": "https://commons.wikimedia.org/wiki/File:Handwritten_Letter_of_Resignation.jpg",
+  "bytes": 169131
+ },
+ {
+  "file": "handwriting/handwriting_2.jpg",
+  "category": "handwriting",
+  "query": "handwritten note",
+  "title": "File:Handwritten note, ca. 1918 December - DPLA - 65285abb9b084add5d8d6ea988e22400.jpg",
+  "license": "Public domain",
+  "author": "Taylor, Franklin Newton",
+  "source": "https://commons.wikimedia.org/wiki/File:Handwritten_note,_ca._1918_December_-_DPLA_-_65285abb9b084add5d8d6ea988e22400.jpg",
+  "bytes": 341672
+ },
+ {
+  "file": "screenshot_code/screenshot_code_1.jpg",
+  "category": "screenshot_code",
+  "query": "source code screenshot",
+  "title": "File:Screenshot wikiwand.jpg",
+  "license": "CC BY 1.0",
+  "author": "wikipedia, wikiwand license: https://web.archive.org/web/20160921011949/https://www.wikiwand.com/terms",
+  "source": "https://commons.wikimedia.org/wiki/File:Screenshot_wikiwand.jpg",
+  "bytes": 239278
+ },
+ {
+  "file": "multilingual_sign/multilingual_sign_1.jpg",
+  "category": "multilingual_sign",
+  "query": "Japanese shop signboard",
+  "title": "File:Pawn Shop Miyagawa Signboard 20170924.jpg",
+  "license": "CC BY-SA 4.0",
+  "author": "\u5186\u5468\u7387\uff13\u30d1\u30fc\u30bb\u30f3\u30c8",
+  "source": "https://commons.wikimedia.org/wiki/File:Pawn_Shop_Miyagawa_Signboard_20170924.jpg",
+  "bytes": 309769
+ },
+ {
+  "file": "multilingual_sign/multilingual_sign_2.jpg",
+  "category": "multilingual_sign",
+  "query": "Japanese shop signboard",
+  "title": "File:Minosa Shop ac (6).jpg",
+  "license": "CC BY-SA 4.0",
+  "author": "Asturio Cantabrio",
+  "source": "https://commons.wikimedia.org/wiki/File:Minosa_Shop_ac_(6).jpg",
+  "bytes": 235490
+ },
+ {
+  "file": "menu_poster/menu_poster_1.jpg",
+  "category": "menu_poster",
+  "query": "restaurant menu board",
+  "title": "File:Drive thru menu board at Del Taco in Albany, Oregon.jpg",
+  "license": "CC BY 4.0",
+  "author": "Rick Obst",
+  "source": "https://commons.wikimedia.org/wiki/File:Drive_thru_menu_board_at_Del_Taco_in_Albany,_Oregon.jpg",
+  "bytes": 522452
+ },
+ {
+  "file": "menu_poster/menu_poster_2.jpg",
+  "category": "menu_poster",
+  "query": "event poster text",
+  "title": "File:\u00c9mile Bertrand - Jules Massenet - Cendrillon poster.jpg",
+  "license": "Public domain",
+  "author": "Adam Cuerden",
+  "source": "https://commons.wikimedia.org/wiki/File:%C3%89mile_Bertrand_-_Jules_Massenet_-_Cendrillon_poster.jpg",
+  "bytes": 746698
+ }
+]
