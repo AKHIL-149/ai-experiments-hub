@@ -591,6 +591,18 @@ function displayComparisonResults(result) {
     if (result.ai_analysis && result.ai_analysis.analysis) {
         document.getElementById('aiAnalysisText').textContent = result.ai_analysis.analysis.trim();
         document.getElementById('aiAnalysisCard').style.display = 'block';
+
+        // Ollama compares per-image descriptions instead of both images at once;
+        // show them so the score can be sanity-checked against what the model saw.
+        const descs = result.ai_analysis.descriptions;
+        const descBox = document.getElementById('aiDescriptions');
+        if (descs && descs.length === 2) {
+            document.getElementById('aiDescriptionsText').textContent =
+                'Image 1: ' + descs[0] + '\n\nImage 2: ' + descs[1];
+            descBox.style.display = 'block';
+        } else {
+            descBox.style.display = 'none';
+        }
     } else {
         document.getElementById('aiAnalysisCard').style.display = 'none';
     }

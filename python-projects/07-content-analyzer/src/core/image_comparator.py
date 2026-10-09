@@ -160,14 +160,35 @@ class ImageComparator:
         }
 
         prompt = prompts.get(mode, prompts['content'])
+        backend = self.vision_client.backend if self.vision_client else None
 
         try:
-            result = self.vision_client.analyze(
-                prompt=prompt,
-                images=[image1, image2],
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
+            descriptions = None
+            if backend == 'ollama':
+                # LLaVA can't reliably keep two images apart in one prompt - confirmed
+                # live: for a beach footprint and a galaxy it answered "both images show
+                # a night sky with a galaxy and a footprint" and scored them 62-76%.
+                # Describe each image on its own (single-image input is what it handles
+                # well), then compare the two descriptions as plain text.
+                descriptions = [
+                    self._describe_single(image1, temperature),
+                    self._describe_single(image2, temperature),
+                ]
+                result = self.vision_client.analyze(
+                    prompt=self._text_comparison_prompt(prompt, descriptions),
+                    images=[],
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                strategy = 'describe_then_compare'
+            else:
+                result = self.vision_client.analyze(
+                    prompt=prompt,
+                    images=[image1, image2],
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                strategy = 'joint'
 
             # Try to extract similarity score from response
             similarity = self._extract_similarity_score(result)
@@ -175,8 +196,10 @@ class ImageComparator:
             return {
                 'analysis': result,
                 'extracted_similarity': similarity,
+                'descriptions': descriptions,
+                'strategy': strategy,
                 'method': 'vision_ai',
-                'provider': self.vision_client.backend if self.vision_client else None
+                'provider': backend
             }
         except Exception as e:
             return {
@@ -184,6 +207,48 @@ class ImageComparator:
                 'method': 'vision_ai',
                 'analysis': None
             }
+
+    def _describe_single(self, image: Image.Image, temperature: float) -> str:
+        """Structured description of one image (temperature is ignored on purpose)."""
+        # Fixed format, generic terms, temperature 0: two independent free-form
+        # descriptions of the same scene differed in specificity ("the Brooklyn
+        # Bridge" vs "a large suspension bridge") and the comparison step then
+        # treated that as two different places. Comparable descriptions first.
+        return self.vision_client.analyze(
+            prompt=(
+                "Describe this image in exactly this format, using short generic terms. "
+                "Do not name specific landmarks, places, people or brands, and do not "
+                "speculate about anything you cannot see.\n"
+                "Subject: <main subject, a few words>\n"
+                "Setting: <where it is>\n"
+                "Time and lighting: <time of day, light quality>\n"
+                "Main colors: <2-4 colors>\n"
+                "Notable objects: <up to 5 things>"
+            ),
+            images=[image],
+            temperature=0.0,
+            max_tokens=200
+        ).strip()
+
+    @staticmethod
+    def _text_comparison_prompt(mode_prompt: str, descriptions: List[str]) -> str:
+        """Turn a two-image comparison prompt into one over two text descriptions."""
+        task = mode_prompt.replace("these two images", "Image 1 and Image 2")
+        return (
+            "You are comparing two images you cannot see. Below is a factual "
+            "description of each.\n\n"
+            f"Image 1: {descriptions[0]}\n\n"
+            f"Image 2: {descriptions[1]}\n\n"
+            f"{task}\n\n"
+            "Rules: base your answer ONLY on the two descriptions and do not invent "
+            "details. A detail that appears in only one description (for example a "
+            "landmark name or an object the other description doesn't mention) is NOT "
+            "a difference - only count things the descriptions actually contradict. If "
+            "everything they say is consistent with the same scene, treat them as the "
+            "same scene and rate similarity 80-100%. If they describe clearly different "
+            "subjects or settings, say so plainly and rate low. End with a final line "
+            "of the form 'Similarity rating: NN%'."
+        )
 
     def _calculate_image_hash(self, image: Image.Image) -> str:
         """Calculate hash of image for exact comparison.
@@ -233,6 +298,19 @@ class ImageComparator:
         """
         import re
 
+        # Prefer the explicit final rating line. Models often give a range
+        # ("Similarity rating: 80-100%"); take its midpoint rather than the
+        # upper bound the generic "(\d+)%" pattern below would pick.
+        rating = re.findall(
+            r'similarity\s*(?:rating|score)?\s*:?\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?\s*%',
+            text.lower()
+        )
+        if rating:
+            lo, hi = rating[-1]
+            score = (int(lo) + int(hi)) // 2 if hi else int(lo)
+            if 0 <= score <= 100:
+                return score
+
         # Look for patterns like "80%", "similarity: 75", "score: 90%", etc.
         patterns = [
             r'(\d+)%',
@@ -281,7 +359,8 @@ class ImageComparator:
             score += 10
 
         # If AI comparison available and has similarity score, use it (weighted)
-        if ai_comparison and ai_comparison.get('extracted_similarity'):
+        # `is not None`, not truthiness: an AI rating of 0% is a real answer
+        if ai_comparison and ai_comparison.get('extracted_similarity') is not None:
             ai_score = ai_comparison['extracted_similarity']
             # Weighted average: 30% structural, 70% AI
             score = int(score * 0.3 + ai_score * 0.7)
