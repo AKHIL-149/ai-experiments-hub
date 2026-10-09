@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Union
 from ..parsers.parser_registry import ParserRegistry
 from ..parsers.models import ParsedModule
 from .ai_explainer import AIExplainer
-from .llm_client import LLMClient
+from .llm_client import LLMClient, default_provider
 from .cache_manager import CacheManager
 from ..formatters import (
     MarkdownFormatter,
@@ -26,7 +26,7 @@ class DocGenerator:
 
     def __init__(
         self,
-        llm_provider: str = "ollama",
+        llm_provider: Optional[str] = None,
         model: Optional[str] = None,
         use_ai: bool = True,
         enable_cache: bool = True,
@@ -50,7 +50,7 @@ class DocGenerator:
         self.ai_explainer: Optional[AIExplainer] = None
         if use_ai:
             try:
-                llm_client = LLMClient(backend=llm_provider, model=model)
+                llm_client = LLMClient(backend=llm_provider or default_provider(), model=model)
                 cache_manager = CacheManager(cache_dir=cache_dir) if enable_cache else None
                 self.ai_explainer = AIExplainer(llm_client, cache_manager, enable_cache)
             except Exception as e:
@@ -212,7 +212,8 @@ class DocGenerator:
             'languages': {},
             'total_functions': 0,
             'total_classes': 0,
-            'total_lines': 0
+            'total_lines': 0,
+            'failed_files': []
         }
 
         for language, lang_files in by_language.items():
@@ -243,6 +244,7 @@ class DocGenerator:
 
                 except Exception as e:
                     print(f"Warning: Failed to analyze {file_path}: {e}")
+                    analysis['failed_files'].append({'path': file_path, 'error': str(e)})
 
             analysis['languages'][language] = lang_stats
             analysis['total_functions'] += lang_stats['functions']
@@ -285,8 +287,8 @@ class DocGenerator:
                     context=Path(module.file_path).stem
                 )
 
-                # Method explanations (first 3 methods)
-                for method in cls.methods[:3]:
+                # Method explanations (every method, not just the first few)
+                for method in cls.methods:
                     method.ai_explanation = self.ai_explainer.explain_function(
                         method,
                         context=f"{cls.name}.{method.name}"

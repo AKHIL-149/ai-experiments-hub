@@ -13,6 +13,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.core.doc_generator import DocGenerator
+from src.core.llm_client import default_provider
 from src.utils.file_utils import FileDiscovery, get_file_stats, format_file_size
 
 try:
@@ -122,8 +123,8 @@ Examples:
         gen_parser.add_argument(
             '--provider',
             choices=['ollama', 'anthropic', 'openai'],
-            default='ollama',
-            help='LLM provider (default: ollama)'
+            default=default_provider(),
+            help='LLM provider (default: $LLM_PROVIDER or ollama)'
         )
 
         gen_parser.add_argument(
@@ -183,8 +184,8 @@ Examples:
         enh_parser.add_argument(
             '--provider',
             choices=['ollama', 'anthropic', 'openai'],
-            default='ollama',
-            help='LLM provider (default: ollama)'
+            default=default_provider(),
+            help='LLM provider (default: $LLM_PROVIDER or ollama)'
         )
 
         enh_parser.add_argument(
@@ -510,6 +511,17 @@ Examples:
                 print("⚠️  No supported source files found")
 
             print()
+            failed = analysis.get('failed_files', [])
+            if failed:
+                print(f"⚠️  {len(failed)} of {analysis['total_files']} file(s) could not be parsed and are not counted:")
+                for item in failed:
+                    print(f"   • {item['path']}: {item['error']}")
+                if len(failed) == analysis['total_files']:
+                    print("\n❌ Analysis failed: no files could be parsed")
+                    return 1
+                print("\n⚠️  Analysis completed with skipped files")
+                return 0
+
             print("✅ Analysis complete!")
 
             return 0

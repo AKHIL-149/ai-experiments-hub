@@ -79,8 +79,14 @@ class JavaScriptParser(BaseParser):
                         line_number=error_data.get('line')
                     )
                 except json.JSONDecodeError:
+                    if "Cannot find module 'esprima'" in result.stderr:
+                        raise ParseError(
+                            "JavaScript parsing needs the esprima package. "
+                            f"Run `npm install` in {Path(__file__).resolve().parents[2]}",
+                            file_path=file_path
+                        )
                     raise ParseError(
-                        f"Failed to parse JavaScript: {result.stderr}",
+                        f"Failed to parse JavaScript: {result.stderr.strip()[-500:]}",
                         file_path=file_path
                     )
 
