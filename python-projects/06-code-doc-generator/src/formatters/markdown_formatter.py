@@ -179,7 +179,7 @@ class MarkdownFormatter(BaseFormatter):
 
         # Complexity indicator
         if func.complexity:
-            sections.append(f"**Complexity**: {func.complexity}\n")
+            sections.append(f"\n**Complexity**: {func.complexity}\n")
 
         sections.append("")
         return "\n".join(sections)
@@ -231,7 +231,7 @@ class MarkdownFormatter(BaseFormatter):
     def _format_method_brief(self, method: FunctionInfo, level: int) -> str:
         """Format brief method documentation"""
         heading = "#" * level
-        params = ", ".join([p.name for p in method.parameters])
+        params = ", ".join([self._format_param_signature(p) for p in method.parameters])
         return_type = f" -> {method.return_type}" if method.return_type else ""
 
         lines = [f"{heading} `{method.name}({params}){return_type}`\n"]

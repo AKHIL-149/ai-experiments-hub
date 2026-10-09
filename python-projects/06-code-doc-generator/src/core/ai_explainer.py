@@ -1,8 +1,75 @@
 """AI-powered code explanation generator using LLMs"""
-from typing import List, Optional
+import re
+from pathlib import Path
+from typing import Dict, List, Optional
 from .llm_client import LLMClient
 from .cache_manager import CacheManager
 from ..parsers.models import FunctionInfo, ClassInfo, ParsedModule, ParameterInfo
+
+
+# Bump when prompts or response cleaning change so stale cache entries
+# (e.g. ones containing "Here is a summary of...") are not served again.
+CACHE_VERSION = "v2"
+
+_PREAMBLE_RE = re.compile(
+    r"^\s*(here\s+(is|are)|sure|certainly|of course|okay|below (is|are))\b[^\n]*:\s*$",
+    re.IGNORECASE,
+)
+_PREAMBLE_INLINE_RE = re.compile(
+    r"^\s*(here\s+(is|are)|sure|certainly|of course)\b[^\n:]*:\s+(?=\S)",
+    re.IGNORECASE,
+)
+_BASED_ON_RE = re.compile(
+    r"^\s*based on (?:the )?(?:provided |given )?(?:context|code|information|details|snippet)[^,]{0,40},\s*",
+    re.IGNORECASE,
+)
+_EDITORIAL_RE = re.compile(r"^\s*(note\b|please note|i hope|let me know)", re.IGNORECASE)
+
+
+def clean_llm_text(text: str) -> str:
+    """Strip chatty framing the model wraps around the actual explanation.
+
+    Removes a leading "Here is ...:" line and trailing "Note that ..." style
+    paragraphs, which otherwise end up inside the generated documentation.
+    """
+    text = (text or "").strip()
+    lines = text.split("\n")
+    while lines and (not lines[0].strip() or _PREAMBLE_RE.match(lines[0])):
+        lines.pop(0)
+    text = "\n".join(lines).strip()
+    text = _PREAMBLE_INLINE_RE.sub("", text, count=1)
+    stripped = _BASED_ON_RE.sub("", text, count=1)
+    if stripped != text:
+        text = stripped[:1].upper() + stripped[1:]
+
+    paragraphs = [p for p in re.split(r"\n\s*\n", text)]
+    # Only drop editorial paragraphs that follow real content.
+    kept = paragraphs[:1] + [p for p in paragraphs[1:] if not _EDITORIAL_RE.match(p)]
+    return "\n\n".join(kept).strip()
+
+
+def parse_parameter_descriptions(response: str, names: List[str]) -> Dict[str, str]:
+    """Map parameter name -> description from an LLM list-style response.
+
+    Matches lines like "- `x`: desc", "x - desc" or "1. x: desc" by name, so
+    preamble lines and reordering cannot shift descriptions onto the wrong
+    parameter.
+    """
+    found: Dict[str, str] = {}
+    for line in (response or "").split("\n"):
+        line = line.strip()
+        for name in names:
+            if name in found:
+                continue
+            m = re.match(
+                r"^(?:[-*\u2022]|\d+[.)])?\s*[`*_]*" + re.escape(name) + r"[`*_]*"
+                r"(?:\s*\([^)]*\))?\s*[:\-\u2013\u2014]+\s*(.+)$",
+                line,
+            )
+            if m:
+                found[name] = m.group(1).strip().strip("*_ ")
+                break
+    return found
 
 
 class AIExplainer:
@@ -47,18 +114,17 @@ class AIExplainer:
         Returns:
             Human-friendly explanation
         """
-        # Build function signature for cache key
-        params = ", ".join([p.name for p in func_info.parameters])
-        signature = f"{func_info.name}({params})"
+        # Build prompt; it carries the signature, context, docstring and body
+        # preview, so keying on it keeps same-named methods in different
+        # classes apart and invalidates the entry when the code changes.
+        prompt = self._build_function_prompt(func_info, context)
+        signature = f"{CACHE_VERSION}:function:{prompt}"
 
         # Check cache
         if self.enable_cache and self.cache:
             cached = self.cache.get_ai_cache(signature, self.llm.model)
             if cached:
                 return cached
-
-        # Build prompt
-        prompt = self._build_function_prompt(func_info, context)
 
         # Generate explanation
         try:
@@ -69,11 +135,13 @@ class AIExplainer:
                 system="You are a code documentation expert. Provide clear, concise explanations of code functions. Focus on WHAT the function does and WHY, not HOW (the code shows that). Be technical but accessible."
             )
 
+            explanation = clean_llm_text(explanation)
+
             # Cache the result
             if self.enable_cache and self.cache:
                 self.cache.set_ai_cache(signature, self.llm.model, explanation)
 
-            return explanation.strip()
+            return explanation
 
         except Exception as e:
             return f"[AI explanation unavailable: {str(e)}]"
@@ -95,18 +163,14 @@ class AIExplainer:
         Returns:
             Human-friendly explanation
         """
-        # Build class signature for cache key
-        inheritance = f" extends {', '.join(class_info.base_classes)}" if class_info.base_classes else ""
-        signature = f"class {class_info.name}{inheritance}"
+        prompt = self._build_class_prompt(class_info, context)
+        signature = f"{CACHE_VERSION}:class:{prompt}"
 
         # Check cache
         if self.enable_cache and self.cache:
             cached = self.cache.get_ai_cache(signature, self.llm.model)
             if cached:
                 return cached
-
-        # Build prompt
-        prompt = self._build_class_prompt(class_info, context)
 
         # Generate explanation
         try:
@@ -117,11 +181,13 @@ class AIExplainer:
                 system="You are a code documentation expert. Explain what this class represents and its main responsibilities. Focus on the purpose and design, not implementation details."
             )
 
+            explanation = clean_llm_text(explanation)
+
             # Cache the result
             if self.enable_cache and self.cache:
                 self.cache.set_ai_cache(signature, self.llm.model, explanation)
 
-            return explanation.strip()
+            return explanation
 
         except Exception as e:
             return f"[AI explanation unavailable: {str(e)}]"
@@ -141,17 +207,14 @@ class AIExplainer:
         Returns:
             Module-level summary
         """
-        # Use file path as cache key
-        cache_key = f"module:{parsed_module.file_path}"
+        prompt = self._build_module_prompt(parsed_module)
+        cache_key = f"{CACHE_VERSION}:module:{parsed_module.file_path}:{prompt}"
 
         # Check cache
         if self.enable_cache and self.cache:
             cached = self.cache.get_ai_cache(cache_key, self.llm.model)
             if cached:
                 return cached
-
-        # Build prompt
-        prompt = self._build_module_prompt(parsed_module)
 
         # Generate summary
         try:
@@ -162,11 +225,13 @@ class AIExplainer:
                 system="You are a code documentation expert. Provide a high-level summary of what this module does. Explain its purpose and main components in 2-3 sentences."
             )
 
+            summary = clean_llm_text(summary)
+
             # Cache the result
             if self.enable_cache and self.cache:
                 self.cache.set_ai_cache(cache_key, self.llm.model, summary)
 
-            return summary.strip()
+            return summary
 
         except Exception as e:
             return f"[AI summary unavailable: {str(e)}]"
@@ -189,47 +254,38 @@ class AIExplainer:
         if not parameters:
             return parameters
 
-        # Build cache key
-        param_names = ", ".join([p.name for p in parameters])
-        cache_key = f"params:{param_names}:{function_context}"
+        prompt = self._build_parameter_prompt(parameters, function_context)
+        cache_key = f"{CACHE_VERSION}:params:{prompt}"
+        names = [p.name for p in parameters]
 
-        # Check cache
-        cached_descriptions = None
+        response = None
         if self.enable_cache and self.cache:
-            cached = self.cache.get_ai_cache(cache_key, self.llm.model)
-            if cached:
-                cached_descriptions = cached.split("\n")
+            response = self.cache.get_ai_cache(cache_key, self.llm.model)
 
-        # Generate descriptions if not cached
-        if not cached_descriptions:
-            prompt = self._build_parameter_prompt(parameters, function_context)
-
+        if not response:
             try:
                 response = self.llm.generate(
                     prompt=prompt,
                     max_tokens=50 * len(parameters),  # ~50 tokens per parameter
                     temperature=0.3,
-                    system="You are a code documentation expert. Provide brief descriptions for function parameters. One line per parameter."
+                    system="You are a code documentation expert. Provide brief descriptions for function parameters. Output only lines in the form `name: description`, one per parameter, with no introduction."
                 )
-
-                cached_descriptions = response.strip().split("\n")
-
-                # Cache the result
-                if self.enable_cache and self.cache:
-                    self.cache.set_ai_cache(cache_key, self.llm.model, response.strip())
-
             except Exception:
                 # If AI fails, return original parameters
                 return parameters
 
-        # Apply descriptions to parameters
-        enhanced = []
-        for i, param in enumerate(parameters):
-            if i < len(cached_descriptions):
-                param.description = cached_descriptions[i].strip()
-            enhanced.append(param)
+            response = response.strip()
+            if self.enable_cache and self.cache:
+                self.cache.set_ai_cache(cache_key, self.llm.model, response)
 
-        return enhanced
+        # Apply descriptions by parameter name so preambles or reordering
+        # cannot attach text to the wrong parameter
+        descriptions = parse_parameter_descriptions(response, names)
+        for param in parameters:
+            if param.name in descriptions:
+                param.description = descriptions[param.name]
+
+        return parameters
 
     def _build_function_prompt(self, func_info: FunctionInfo, context: str) -> str:
         """Build prompt for function explanation."""
@@ -321,10 +377,6 @@ class AIExplainer:
             param_list.append(f"  - {p.name}{type_info}{default}")
 
         prompt = f"Function context: {function_context}\n\nParameters:\n" + "\n".join(param_list)
-        prompt += "\n\nProvide a brief description for each parameter (one line each):"
+        prompt += "\n\nProvide a brief description for each parameter, formatted as `name: description`, one per line:"
 
         return prompt
-
-
-# Import Path for module prompt
-from pathlib import Path
