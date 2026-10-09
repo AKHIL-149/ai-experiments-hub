@@ -124,8 +124,9 @@ if FASTAPI_AVAILABLE:
         """Root endpoint - main web interface"""
         try:
             return templates.TemplateResponse(
+                request,
                 "index.html",
-                {"request": request, "title": "Code Documentation Generator"}
+                {"title": "Code Documentation Generator"}
             )
         except Exception as e:
             # If template doesn't exist yet, return placeholder
@@ -175,9 +176,9 @@ if FASTAPI_AVAILABLE:
             doc_html = markdown_to_html(documentation)
 
         return templates.TemplateResponse(
+            request,
             "result.html",
             {
-                "request": request,
                 "code": code,
                 "documentation": doc_html,
                 "raw_documentation": raw_documentation or documentation,

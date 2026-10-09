@@ -15,7 +15,17 @@ except ImportError:
     BaseModel = object
 
 from src.core import DocGenerator
+from src.core.llm_client import default_provider
+from starlette.concurrency import run_in_threadpool
 from src.utils import FileDiscovery
+
+# Language -> temp file extension (parsers pick the language from the extension)
+EXTENSION_MAP = {
+    'python': '.py',
+    'javascript': '.js',
+    'typescript': '.ts',
+    'java': '.java'
+}
 
 # Create router
 if FASTAPI_AVAILABLE:
@@ -31,7 +41,7 @@ if FASTAPI_AVAILABLE:
         code: str
         language: str = "python"
         format: str = "markdown"
-        provider: str = "ollama"
+        provider: str = default_provider()
         model: Optional[str] = None
         use_ai: bool = True
         
@@ -68,7 +78,7 @@ if FASTAPI_AVAILABLE:
         code: str
         language: str = "python"
         style: str = "auto"
-        provider: str = "ollama"
+        provider: str = default_provider()
         model: Optional[str] = None
         
     class EnhanceResponse(BaseModel):
@@ -142,7 +152,7 @@ if FASTAPI_AVAILABLE:
         code: Optional[str] = Form(None),
         language: str = Form("python"),
         format: str = Form("markdown"),
-        provider: str = Form("ollama"),
+        provider: str = Form(default_provider()),
         model: Optional[str] = Form(None),
         use_ai: bool = Form(True)
     ):
@@ -175,14 +185,7 @@ if FASTAPI_AVAILABLE:
             else:
                 raise HTTPException(status_code=400, detail="No code provided")
 
-            # Map language to file extension
-            extension_map = {
-                'python': '.py',
-                'javascript': '.js',
-                'typescript': '.ts',
-                'java': '.java'
-            }
-            file_extension = extension_map.get(language, '.py')
+            file_extension = EXTENSION_MAP.get(language, '.py')
 
             # Create temporary file
             with tempfile.NamedTemporaryFile(mode='w', suffix=file_extension, delete=False) as tmp_file:
@@ -202,7 +205,7 @@ if FASTAPI_AVAILABLE:
                 from src.parsers.parser_registry import ParserRegistry
                 registry = ParserRegistry()
                 parser = registry.get_parser(tmp_path)
-                parsed = parser.parse_file(tmp_path)
+                parsed = await run_in_threadpool(parser.parse_file, tmp_path)
 
                 # Calculate stats
                 stats = {
@@ -215,7 +218,9 @@ if FASTAPI_AVAILABLE:
                 # Create temporary output directory
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     # Generate documentation
-                    output_files = generator.generate_docs(
+                    # Blocking LLM calls: keep them off the event loop
+                    output_files = await run_in_threadpool(
+                        generator.generate_docs,
                         input_path=tmp_path,
                         output_format=format,
                         output_dir=tmp_dir,
@@ -225,6 +230,18 @@ if FASTAPI_AVAILABLE:
                     if output_files:
                         # Read generated documentation
                         doc_content = Path(output_files[0]).read_text()
+                        # Don't expose the server's temp path / random file name
+                        display_name = (
+                            Path(file.filename).name if file and file.filename
+                            else f"pasted_code{file_extension}"
+                        )
+                        # Resolved path first: on macOS /var/... resolves to /private/var/...
+                        for temp_ref in (str(Path(tmp_path).resolve()), tmp_path, Path(tmp_path).name):
+                            doc_content = doc_content.replace(temp_ref, display_name)
+                        ai_active = generator.ai_explainer is not None
+                        used_model = (
+                            generator.ai_explainer.llm.model if ai_active else None
+                        )
 
                         # Calculate processing time
                         processing_time = round(time.time() - start_time, 2)
@@ -233,7 +250,7 @@ if FASTAPI_AVAILABLE:
                         metadata = {
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "provider": provider.title(),
-                            "model": model or "Default",
+                            "model": used_model or "n/a (AI off)",
                             "processing_time": processing_time
                         }
 
@@ -244,7 +261,7 @@ if FASTAPI_AVAILABLE:
                             raw_documentation=doc_content,
                             format=format,
                             language=language,
-                            ai_enhanced=use_ai,
+                            ai_enhanced=ai_active,
                             stats=stats,
                             metadata=metadata
                         )
@@ -298,7 +315,7 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=400, detail="No code provided")
             
             # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix=f'.{language}', delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(mode='w', suffix=EXTENSION_MAP.get(language, '.py'), delete=False) as tmp_file:
                 tmp_file.write(code_content)
                 tmp_path = tmp_file.name
             
@@ -349,7 +366,7 @@ if FASTAPI_AVAILABLE:
         code: Optional[str] = Form(None),
         language: str = Form("python"),
         style: str = Form("auto"),
-        provider: str = Form("ollama"),
+        provider: str = Form(default_provider()),
         model: Optional[str] = Form(None)
     ):
         """
@@ -374,7 +391,7 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=400, detail="No code provided")
             
             # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix=f'.{language}', delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(mode='w', suffix=EXTENSION_MAP.get(language, '.py'), delete=False) as tmp_file:
                 tmp_file.write(code_content)
                 tmp_path = tmp_file.name
             
@@ -388,12 +405,13 @@ if FASTAPI_AVAILABLE:
                 )
                 
                 # Create temporary output file
-                with tempfile.NamedTemporaryFile(mode='w', suffix=f'_documented.{language}', delete=False) as tmp_out:
+                with tempfile.NamedTemporaryFile(mode='w', suffix='_documented' + EXTENSION_MAP.get(language, '.py'), delete=False) as tmp_out:
                     tmp_out_path = tmp_out.name
                 
                 try:
                     # Enhance code
-                    output_path = generator.enhance_code(
+                    output_path = await run_in_threadpool(
+                        generator.enhance_code,
                         input_path=tmp_path,
                         output_path=tmp_out_path,
                         style=style

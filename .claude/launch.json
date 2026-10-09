@@ -36,6 +36,15 @@
         "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/07-content-analyzer && exec python3 server.py"
       ],
       "port": 8000
+    },
+    {
+      "name": "code-doc-generator",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/06-code-doc-generator && exec python3 doc_gen.py serve --port 8006"
+      ],
+      "port": 8006
     }
   ]
 }
