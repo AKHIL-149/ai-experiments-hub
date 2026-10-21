@@ -2,7 +2,7 @@
 import subprocess
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from .base_parser import BaseParser, ParseError
@@ -17,13 +17,17 @@ class JavaScriptParser(BaseParser):
     Requires Node.js and esprima to be installed.
     """
 
-    def __init__(self, node_path: str = 'node'):
+    def __init__(self, node_path: Optional[str] = None):
         """
         Initialize JavaScript parser.
 
         Args:
-            node_path: Path to Node.js executable (default: 'node')
+            node_path: Path to Node.js executable (default: $NODEJS_PATH or 'node')
         """
+        if node_path is None:
+            # Lazy import: src.core imports the parsers, so a top-level import would be circular
+            from ..core import settings
+            node_path = settings.nodejs_path()
         self.node_path = node_path
         self.helper_script = Path(__file__).parent / 'js_parser_helper.js'
         self._nodejs_verified = False

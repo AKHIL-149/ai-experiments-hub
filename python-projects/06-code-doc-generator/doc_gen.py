@@ -13,6 +13,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.core.doc_generator import DocGenerator
+from src.core import settings
 from src.core.llm_client import default_provider
 from src.utils.file_utils import FileDiscovery, get_file_stats, format_file_size
 
@@ -96,8 +97,8 @@ Examples:
 
         gen_parser.add_argument(
             '--format', '-f',
-            default='markdown',
-            help='Output format(s): markdown, html, json, docstring, all (default: markdown). '
+            default=settings.default_format(),
+            help='Output format(s): markdown, html, json, docstring, all (default: $DEFAULT_FORMAT or markdown). '
                  'Comma-separated for multiple formats'
         )
 
@@ -146,8 +147,8 @@ Examples:
 
         gen_parser.add_argument(
             '--cache-dir',
-            default='./data/cache',
-            help='Cache directory (default: ./data/cache)'
+            default=settings.cache_dir(),
+            help='Cache directory (default: $CACHE_DIR or ./data/cache)'
         )
 
         gen_parser.add_argument(
@@ -222,15 +223,15 @@ Examples:
 
         srv_parser.add_argument(
             '--host',
-            default='127.0.0.1',
-            help='Host to bind (default: 127.0.0.1)'
+            default=settings.web_host(),
+            help='Host to bind (default: $WEB_HOST or 127.0.0.1)'
         )
 
         srv_parser.add_argument(
             '--port', '-p',
             type=int,
-            default=8000,
-            help='Port to bind (default: 8000)'
+            default=settings.web_port(),
+            help='Port to bind (default: $WEB_PORT or 8000)'
         )
 
     def run(self, args=None):
@@ -271,7 +272,7 @@ Examples:
             print("📋 Configuration:")
             print(f"   Input:     {args.input}")
             print(f"   Format(s): {', '.join(formats)}")
-            print(f"   Output:    {args.output or './data/output'}")
+            print(f"   Output:    {args.output or settings.default_output_dir()}")
             print(f"   AI:        {'Enabled' if not args.no_ai else 'Disabled'}")
             if not args.no_ai:
                 print(f"   Provider:  {args.provider}")
@@ -313,7 +314,7 @@ Examples:
                 llm_provider=args.provider,
                 model=args.model,
                 use_ai=not args.no_ai,
-                enable_cache=not args.no_cache,
+                enable_cache=settings.cache_enabled() and not args.no_cache,
                 cache_dir=args.cache_dir
             )
             print("✓ Generator ready")

@@ -49,7 +49,7 @@ An AI-powered code documentation generator that analyzes source code in multiple
 - ✅ `analyze` command - Analyze code structure without generating docs
 - ✅ Main orchestrator (DocGenerator class)
 - ✅ Comprehensive error handling and validation
-- ⏳ `serve` command - Web UI (planned for Phase 7)
+- ✅ `serve` command - Web UI (see Phase 7)
 
 **Phase 6 - Python API:**
 - ✅ Package setup with setup.py and pyproject.toml
@@ -59,9 +59,9 @@ An AI-powered code documentation generator that analyzes source code in multiple
 - ✅ MANIFEST.in for package data
 - ✅ Installation documentation
 
-### Upcoming Features
-
-- [ ] Web interface with FastAPI (Phase 7)
+**Phase 7 - Web Interface:**
+- ✅ FastAPI server (`doc_gen.py serve`) with upload/paste UI, results page and download
+- ✅ REST API under `/api` (`generate`, `analyze`, `enhance`; interactive docs at `/api/docs`)
 
 ## Quick Start
 
@@ -592,7 +592,7 @@ python doc_gen.py serve [options]
 - ✅ `doc_gen.py enhance` - Add docstrings to code
 - ✅ `doc_gen.py analyze` - Analyze code structure
 - ✅ Main orchestrator and error handling
-- ⏳ `doc_gen.py serve` - Start web UI (Phase 7)
+- ✅ `doc_gen.py serve` - Start web UI (Phase 7)
 
 ### Phase 6: Python API ✅
 - ✅ Package installable with setup.py and pyproject.toml
@@ -601,11 +601,10 @@ python doc_gen.py serve [options]
 - ✅ Optional dependency groups
 - ✅ Comprehensive installation documentation
 
-### Phase 7: Web Interface (NEXT)
-- FastAPI web server
-- Upload and generate docs
-- Preview and download
-- Implement `serve` command
+### Phase 7: Web Interface ✅
+- ✅ FastAPI web server (`doc_gen.py serve`)
+- ✅ Upload or paste code, generate docs, preview and download
+- ✅ REST API (`/api/generate`, `/api/analyze`, `/api/enhance`)
 
 ## Testing
 
@@ -625,7 +624,20 @@ Expected output includes:
 
 ## Configuration
 
-See [.env.example](.env.example) for configuration options (needed in later phases for LLM integration).
+Copy [.env.example](.env.example) to `.env` in the project root; it is loaded automatically by the CLI and the web server. Real environment variables override `.env`, and CLI flags override both.
+
+| Variable | Effect | Default |
+|---|---|---|
+| `LLM_PROVIDER` | Default provider (`ollama`, `anthropic`, `openai`) | `ollama` |
+| `OLLAMA_API_URL`, `OLLAMA_MODEL` | Ollama endpoint and model | `http://localhost:11434`, `llama3.2` |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Keys for the hosted providers | unset |
+| `ENABLE_CACHE` | Set `false` to turn off AST/AI caching | `true` |
+| `CACHE_DIR`, `CACHE_EXPIRY_DAYS` | Cache location and lifetime | `./data/cache`, `7` |
+| `DEFAULT_FORMAT`, `DEFAULT_OUTPUT_DIR` | Default `--format` and output directory | `markdown`, `./data/output` |
+| `WEB_HOST`, `WEB_PORT` | Defaults for `serve --host/--port` | `127.0.0.1`, `8000` |
+| `NODEJS_PATH` | Node.js executable used for JavaScript parsing | `node` |
+
+Relative paths resolve against the directory you run the command from. JavaScript/TypeScript parsing also needs `npm install` once in the project root.
 
 ## License
 

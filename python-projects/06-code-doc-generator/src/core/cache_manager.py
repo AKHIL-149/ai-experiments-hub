@@ -5,6 +5,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Any, Dict
 
+from . import settings
+
 
 class CacheManager:
     """
@@ -13,7 +15,7 @@ class CacheManager:
     2. AI cache - LLM-generated explanations
     """
 
-    def __init__(self, cache_dir: str = './data/cache', expiry_days: int = 7):
+    def __init__(self, cache_dir: Optional[str] = None, expiry_days: Optional[int] = None):
         """
         Initialize cache manager.
 
@@ -21,6 +23,8 @@ class CacheManager:
             cache_dir: Directory for cache storage
             expiry_days: Days before cache expires
         """
+        cache_dir = cache_dir if cache_dir is not None else settings.cache_dir()
+        expiry_days = expiry_days if expiry_days is not None else settings.cache_expiry_days()
         self.cache_dir = Path(cache_dir)
         self.ast_cache_dir = self.cache_dir / 'ast'
         self.ai_cache_dir = self.cache_dir / 'ai'

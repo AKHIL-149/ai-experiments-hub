@@ -198,7 +198,6 @@ if FASTAPI_AVAILABLE:
                     llm_provider=provider,
                     model=model,
                     use_ai=use_ai,
-                    enable_cache=True
                 )
 
                 # First, analyze the code to get stats
@@ -401,7 +400,6 @@ if FASTAPI_AVAILABLE:
                     llm_provider=provider,
                     model=model,
                     use_ai=True,
-                    enable_cache=True
                 )
                 
                 # Create temporary output file

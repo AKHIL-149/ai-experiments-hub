@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Union
 from ..parsers.parser_registry import ParserRegistry
 from ..parsers.models import ParsedModule
 from .ai_explainer import AIExplainer
+from . import settings
 from .llm_client import LLMClient, default_provider
 from .cache_manager import CacheManager
 from ..formatters import (
@@ -29,8 +30,8 @@ class DocGenerator:
         llm_provider: Optional[str] = None,
         model: Optional[str] = None,
         use_ai: bool = True,
-        enable_cache: bool = True,
-        cache_dir: str = "./data/cache"
+        enable_cache: Optional[bool] = None,
+        cache_dir: Optional[str] = None
     ):
         """
         Initialize documentation generator.
@@ -42,6 +43,8 @@ class DocGenerator:
             enable_cache: Whether to enable caching
             cache_dir: Directory for cache storage
         """
+        if enable_cache is None:
+            enable_cache = settings.cache_enabled()
         self.use_ai = use_ai
         self.parser_registry = ParserRegistry()
         self.file_discovery = FileDiscovery()
@@ -94,7 +97,7 @@ class DocGenerator:
 
         # Set default output directory
         if output_dir is None:
-            output_dir = './data/output'
+            output_dir = settings.default_output_dir()
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)

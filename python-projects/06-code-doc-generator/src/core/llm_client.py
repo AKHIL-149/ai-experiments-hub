@@ -5,18 +5,7 @@ from typing import Optional
 
 import requests
 
-try:
-    from dotenv import load_dotenv
-    # Load the project's .env (documented in .env.example) regardless of cwd.
-    # Real environment variables still win over file values.
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-except ImportError:
-    pass
-
-
-def default_provider() -> str:
-    """Provider from LLM_PROVIDER (.env or environment), else ollama."""
-    return os.getenv("LLM_PROVIDER", "ollama").strip().lower() or "ollama"
+from .settings import default_provider  # noqa: F401  (also loads .env)
 
 
 class LLMClient:
