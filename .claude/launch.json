@@ -45,6 +45,15 @@
         "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/python-projects/06-code-doc-generator && exec python3 doc_gen.py serve --port 8006"
       ],
       "port": 8006
+    },
+    {
+      "name": "workflow-automation",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/05-workflow-automation && exec node server.js"
+      ],
+      "port": 3000
     }
   ]
 }
