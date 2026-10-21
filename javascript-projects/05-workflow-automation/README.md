@@ -152,6 +152,18 @@ console.log(execution.status); // 'completed' or 'failed'
 console.log(execution.outputs); // Step outputs
 ```
 
+## Example: Meeting Notes to Action Items
+
+`workflows/examples/meeting-actions.json` reads a notes file, has the LLM extract the action items, and saves them as a checklist. Execute it from the dashboard's Quick Execute (pick the workflow and paste the input JSON), or via the API:
+
+```bash
+curl -X POST http://localhost:3000/api/workflows/meeting-actions/execute \
+  -H 'content-type: application/json' \
+  -d '{"inputData": {"notes_path": "examples/meeting-notes.txt", "output_path": "data/artifacts/action-items.md"}}'
+```
+
+The response carries an `execution_id`; open it under Execution History (or `GET /api/executions/<id>`) to see each step's log and output.
+
 ## Workflow Definition Format
 
 ### Basic Structure
@@ -190,6 +202,22 @@ Optional task fields:
 | `require_tools` | `true` makes the step fail unless the agent actually calls a tool. Use it for steps that must read or write files; otherwise the model may skip the tool and answer from imagination. |
 
 A step also fails if any tool call it makes fails (e.g. file not found), instead of reporting a plausible-sounding summary. Each step's record keeps `details.tools_used` and the raw `details.tool_results`.
+
+#### Tool Step
+
+Runs a tool directly with fixed parameters: no LLM planning, so it is fast and deterministic. Use it for file reads and writes, and keep agent steps for judgment (extracting, summarizing, rewriting).
+
+```json
+{
+  "id": "read_notes",
+  "type": "tool",
+  "tool": "file_operations",
+  "parameters": { "operation": "read", "path": "{{notes_path}}" },
+  "output": "notes"
+}
+```
+
+A tool step's output is the tool's result object, so a read's text is `{{notes.content}}` (`{{name.field}}` looks inside an output). An agent step can set `"use_tools": false` to skip tool planning for pure-text work.
 
 ### Template Variables
 

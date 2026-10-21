@@ -1,0 +1,37 @@
+{
+  "id": "meeting-actions",
+  "name": "Meeting Notes to Action Items",
+  "description": "Reads meeting notes (input: notes_path, output_path), has the LLM extract action items, and saves them as a checklist. Shows tool steps (deterministic file I/O) combined with an LLM step.",
+  "steps": [
+    {
+      "id": "read_notes",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "read",
+        "path": "{{notes_path}}"
+      },
+      "output": "notes"
+    },
+    {
+      "id": "extract_actions",
+      "type": "agent",
+      "task": {
+        "instruction": "From these meeting notes, list every action item as a markdown checklist line in the form '- [ ] Owner: task (due: date or 'unspecified')'. Output only the checklist.\n\nNotes:\n{{notes.content}}",
+        "use_tools": false
+      },
+      "output": "actions"
+    },
+    {
+      "id": "save_checklist",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "write",
+        "path": "{{output_path}}",
+        "content": "# Action items\n\n{{actions}}\n"
+      },
+      "output": "saved"
+    }
+  ]
+}

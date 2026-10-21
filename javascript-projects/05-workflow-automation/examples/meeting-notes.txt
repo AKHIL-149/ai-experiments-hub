@@ -1,0 +1,8 @@
+Product sync - Tuesday
+Attendees: Priya, Marcus, Elena, Tom
+
+- Priya said the onboarding redesign is on track; she will share the final mockups with Marcus by Friday.
+- Marcus raised that the payment webhook is failing intermittently. Elena will investigate the logs and report back on Thursday.
+- Tom needs to book the customer interview sessions for next week; he'll send the calendar invites tomorrow.
+- Team agreed to postpone the dark-mode release to the next sprint.
+- Marcus will update the release checklist once Elena confirms the webhook fix.

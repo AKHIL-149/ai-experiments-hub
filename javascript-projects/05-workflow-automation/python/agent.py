@@ -39,8 +39,13 @@ class WorkflowAgent:
             raise ValueError("Task must contain 'instruction' field")
 
         try:
-            # Step 1: Analyze task and determine tools needed
-            analysis = self._analyze_task(instruction, context)
+            # Step 1: Analyze task and determine tools needed. Pure-text steps can
+            # set "use_tools": false to skip tool planning entirely (faster, and the
+            # model can't decide to call a tool it doesn't need)
+            if task.get("use_tools") is False:
+                analysis = {"reasoning": "Tools disabled for this step", "tools": []}
+            else:
+                analysis = self._analyze_task(instruction, context)
             self.execution_steps.append({"step": "analyze", "result": analysis})
 
             # Step 2: Execute selected tools
@@ -203,8 +208,8 @@ Respond ONLY with valid JSON:"""
 
 Context: {json.dumps(context) if context else "None"}
 
-Provide a brief response to this task:"""
-            return self.llm_client.generate(prompt, temperature=0.5, max_tokens=300)
+Respond with the result of the task only, without introduction or commentary:"""
+            return self.llm_client.generate(prompt, temperature=0.3, max_tokens=1000)
 
         # Synthesize from tool results
         results_summary = "\n".join([

@@ -191,6 +191,10 @@ class WorkflowEngine {
           tools_used: agentResult.tools_used || [],
           tool_results: agentResult.tool_results || []
         };
+      } else if (step.type === 'tool') {
+        // Deterministic tool call: no LLM planning, parameters come from the step
+        result = await this.executeToolStep(step, context);
+        details = { tools_used: [step.tool] };
       } else {
         throw new Error(`Unsupported step type: ${step.type}`);
       }
@@ -225,6 +229,28 @@ class WorkflowEngine {
         error: error.message
       };
     }
+  }
+
+  /**
+   * Execute a tool step: run a registered tool directly with templated parameters
+   * @returns {Promise<Object>} The tool's result object
+   */
+  async executeToolStep(step, context) {
+    if (!step.tool) {
+      throw new Error(`Tool step "${step.id}" is missing "tool"`);
+    }
+
+    const missing = new Set();
+    const params = this.resolveTemplateVariables(step.parameters || {}, context, missing);
+    if (missing.size > 0) {
+      throw new Error(`Unresolved template variable(s): ${[...missing].join(', ')}`);
+    }
+
+    const response = await this.pythonBridge.executeTool(step.tool, params);
+    if (!response.success) {
+      throw new Error(response.error || `Tool ${step.tool} failed`);
+    }
+    return response.result;
   }
 
   /**
@@ -272,13 +298,17 @@ class WorkflowEngine {
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === 'string') {
         // Replace {{variable}} with context value
-        resolved[key] = value.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-          if (varName in context) {
-            const ctxValue = context[varName];
-            return typeof ctxValue === 'string' ? ctxValue : JSON.stringify(ctxValue);
+        // {{name}} or a path into an object output, e.g. {{notes.content}}
+        resolved[key] = value.replace(/\{\{([\w]+(?:\.[\w]+)*)\}\}/g, (match, varName) => {
+          let ctxValue = context;
+          for (const part of varName.split('.')) {
+            if (ctxValue === null || typeof ctxValue !== 'object' || !(part in ctxValue)) {
+              missing.add(varName);
+              return match;
+            }
+            ctxValue = ctxValue[part];
           }
-          missing.add(varName);
-          return match;
+          return typeof ctxValue === 'string' ? ctxValue : JSON.stringify(ctxValue);
         });
       } else if (typeof value === 'object' && value !== null) {
         resolved[key] = this.resolveTemplateVariables(value, context, missing);

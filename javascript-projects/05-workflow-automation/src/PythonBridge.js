@@ -103,6 +103,46 @@ class PythonBridge {
   }
 
   /**
+   * Run one tool directly, without an LLM
+   * @param {String} tool - Registered tool name
+   * @param {Object} params - Tool parameters
+   * @returns {Promise<Object>} {success, result, error}
+   */
+  executeTool(tool, params, timeout = 60000) {
+    const scriptPath = path.join(__dirname, '../python/run_tool.py');
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(
+        this.pythonPath,
+        [scriptPath, '--tool', tool, '--params', JSON.stringify(params)],
+        { cwd: PROJECT_ROOT }
+      );
+
+      let stdout = '';
+      let stderr = '';
+      const timeoutId = setTimeout(() => {
+        proc.kill();
+        reject(new Error(`Tool ${tool} timed out after ${timeout}ms`));
+      }, timeout);
+
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', () => {
+        clearTimeout(timeoutId);
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (e) {
+          reject(new Error(`Tool ${tool} produced no result:\n${stderr || stdout}`));
+        }
+      });
+      proc.on('error', (error) => {
+        clearTimeout(timeoutId);
+        reject(new Error(`Failed to spawn Python process: ${error.message}`));
+      });
+    });
+  }
+
+  /**
    * Test Python environment health: the interpreter starts and the agent's
    * imports resolve. Deliberately does not call an LLM, so it is fast and can
    * be polled without loading the model.
