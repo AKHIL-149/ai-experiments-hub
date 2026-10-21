@@ -7,6 +7,27 @@ from typing import Dict, Any
 from .base_tool import BaseTool
 
 
+# Paths are relative to the project root and may not escape it
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def resolve_project_path(path: str) -> Path:
+    """Resolve a tool-supplied path inside the project root.
+
+    The agent's paths come from an LLM (and may be steered by file contents
+    or workflow inputs), so anything outside the project, and secret files
+    like .env, is refused.
+    """
+    resolved = (PROJECT_ROOT / path).resolve()
+    try:
+        relative = resolved.relative_to(PROJECT_ROOT)
+    except ValueError:
+        raise ValueError(f"Path is outside the project directory: {path}")
+    if any(part.startswith(".env") or part == ".git" for part in relative.parts):
+        raise ValueError(f"Access to {path} is not allowed")
+    return resolved
+
+
 class FileOpsTool(BaseTool):
     """Tool for file operations: read, write, append, and transform files."""
 
@@ -52,7 +73,7 @@ class FileOpsTool(BaseTool):
     def execute(self, operation: str, path: str, content: str = None, target_format: str = None) -> Dict[str, Any]:
         """Execute file operation."""
         try:
-            file_path = Path(path)
+            file_path = resolve_project_path(path)
 
             if operation == "read":
                 return self._read_file(file_path)

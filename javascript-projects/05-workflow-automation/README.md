@@ -183,9 +183,17 @@ Executes AI agent with tool access:
 }
 ```
 
+Optional task fields:
+
+| Field | Meaning |
+|---|---|
+| `require_tools` | `true` makes the step fail unless the agent actually calls a tool. Use it for steps that must read or write files; otherwise the model may skip the tool and answer from imagination. |
+
+A step also fails if any tool call it makes fails (e.g. file not found), instead of reporting a plausible-sounding summary. Each step's record keeps `details.tools_used` and the raw `details.tool_results`.
+
 ### Template Variables
 
-Use `{{variable}}` to reference previous step outputs:
+Use `{{variable}}` to reference previous step outputs. A step that reads a file outputs the file's content, so the next step receives the real text. Referencing a variable that is neither an input nor an earlier step's `output` fails the step with an "Unresolved template variable" error.
 
 ```json
 {
@@ -200,6 +208,8 @@ Use `{{variable}}` to reference previous step outputs:
 ## Available Tools (Phase 1)
 
 ### FileOpsTool
+
+Paths are relative to the project root. Paths that escape the project directory (`../`, absolute paths) and secret files (`.env*`, `.git`) are refused, since the paths come from an LLM.
 
 Read, write, transform files:
 
@@ -393,8 +403,12 @@ OPENAI_API_KEY=
 # Storage
 WORKFLOWS_DIR=./workflows
 EXECUTIONS_DIR=./data/executions
-ARTIFACTS_DIR=./data/artifacts
+
+# Execution
+MAX_CONCURRENT_EXECUTIONS=5   # further API executions get HTTP 429
 ```
+
+Relative paths resolve against the project root. `/api/health` checks that Python starts and that Ollama is reachable; it does not call the LLM.
 
 ## Troubleshooting
 

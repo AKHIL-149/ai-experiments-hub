@@ -62,9 +62,8 @@ class ToolRegistry:
         Returns:
             Tool execution result
         """
-        tool = self.get_tool(tool_name)
-
         try:
+            tool = self.get_tool(tool_name)
             validated_params = tool.validate_inputs(parameters)
             result = tool.execute(**validated_params)
             return result

@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from typing import Optional
 
@@ -64,9 +65,21 @@ class LLMClient:
             }
         }
 
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
-        return response.json()["response"]
+        # Ollama occasionally answers 500 (e.g. while swapping models) or drops the
+        # connection; retry briefly so one blip doesn't fail a whole workflow step
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            try:
+                response = requests.post(url, json=payload, timeout=120)
+                if response.status_code >= 500 and attempt < attempts:
+                    time.sleep(2 * attempt)
+                    continue
+                response.raise_for_status()
+                return response.json()["response"]
+            except (requests.ConnectionError, requests.Timeout):
+                if attempt == attempts:
+                    raise
+                time.sleep(2 * attempt)
 
     def _generate_anthropic(self, prompt: str, max_tokens: int, temperature: float) -> str:
         """Generate using Anthropic Claude."""

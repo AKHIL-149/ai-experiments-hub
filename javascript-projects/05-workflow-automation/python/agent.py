@@ -47,6 +47,36 @@ class WorkflowAgent:
             tool_results = self._execute_tools(analysis.get("tools", []))
             self.execution_steps.append({"step": "execute_tools", "results": tool_results})
 
+            # Steps that must act on the real world (read/write files, ...) can set
+            # "require_tools": the model otherwise may answer from imagination
+            if task.get("require_tools") and not tool_results:
+                return {
+                    "success": False,
+                    "error": "Step requires a tool call but the model used none",
+                    "tools_used": self.tools_used,
+                    "tool_results": [],
+                    "execution_steps": len(self.execution_steps)
+                }
+
+            # A failed tool call is a failed task: don't let the LLM paper over
+            # it with a plausible-sounding summary
+            failures = [
+                tr for tr in tool_results
+                if isinstance(tr["result"], dict) and tr["result"].get("success") is False
+            ]
+            if failures:
+                details = "; ".join(
+                    f"{tr['tool']}: {tr['result'].get('error', 'unknown error')}"
+                    for tr in failures
+                )
+                return {
+                    "success": False,
+                    "error": f"Tool call failed - {details}",
+                    "tools_used": self.tools_used,
+                    "tool_results": tool_results,
+                    "execution_steps": len(self.execution_steps)
+                }
+
             # Step 3: Synthesize final result
             final_result = self._synthesize_result(instruction, tool_results, context)
             self.execution_steps.append({"step": "synthesize", "result": final_result})
@@ -55,6 +85,7 @@ class WorkflowAgent:
                 "success": True,
                 "result": final_result,
                 "tools_used": self.tools_used,
+                "tool_results": tool_results,
                 "execution_steps": len(self.execution_steps)
             }
 
@@ -84,6 +115,11 @@ Task: {instruction}
 
 Context: {json.dumps(context) if context else "None"}
 
+Only use a tool when the task needs one (for example reading or writing a file).
+Tasks that just ask you to analyze, count, summarize or transform text that is already
+in the task need NO tools: return an empty "tools" array for them.
+Only use tools from the Available Tools list above.
+
 Analyze this task and respond with a JSON object containing:
 1. "tools": array of tool calls needed to complete this task
 2. "reasoning": your thought process
@@ -110,7 +146,15 @@ Respond ONLY with valid JSON:"""
             json_end = response.rfind('}') + 1
             if json_start != -1 and json_end > json_start:
                 json_str = response[json_start:json_end]
-                return json.loads(json_str)
+                analysis = json.loads(json_str)
+                tools = analysis.get("tools") if isinstance(analysis, dict) else None
+                if not isinstance(tools, list):
+                    tools = []
+                analysis = {
+                    "reasoning": analysis.get("reasoning", "") if isinstance(analysis, dict) else "",
+                    "tools": [t for t in tools if isinstance(t, dict)]
+                }
+                return analysis
             else:
                 # Fallback: no tools needed
                 return {"reasoning": "No tools required", "tools": []}
@@ -127,6 +171,11 @@ Respond ONLY with valid JSON:"""
             parameters = tool_call.get("parameters", {})
 
             if not tool_name:
+                continue
+
+            if tool_name not in self.tool_registry.tools:
+                # The model invented a tool; skip it rather than failing the task
+                print(f"Ignoring unknown tool: {tool_name}", file=sys.stderr)
                 continue
 
             print(f"Executing tool: {tool_name}", file=sys.stderr)
@@ -170,9 +219,14 @@ Task: {instruction}
 Tool Results:
 {results_summary}
 
-Based on these results, provide a concise summary of what was accomplished:"""
+Respond with the result of the task itself, using the actual data from the tool results.
+- If the task was to read or show a file, output the file's content exactly as it is, with no commentary.
+- If the task was to write or create something, state in one sentence what was written and where.
+- Do not describe how the tools were used.
 
-        return self.llm_client.generate(prompt, temperature=0.5, max_tokens=300)
+Result:"""
+
+        return self.llm_client.generate(prompt, temperature=0.2, max_tokens=1000)
 
 
 def setup_environment():
