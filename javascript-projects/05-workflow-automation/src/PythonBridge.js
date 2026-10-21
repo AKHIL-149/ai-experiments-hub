@@ -1,6 +1,8 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
+const PROJECT_ROOT = path.join(__dirname, '..');
+
 /**
  * Bridge for executing Python agents and handling IPC
  */
@@ -38,7 +40,7 @@ class PythonBridge {
     }
 
     return new Promise((resolve, reject) => {
-      const pythonProcess = spawn(this.pythonPath, args);
+      const pythonProcess = spawn(this.pythonPath, args, { cwd: PROJECT_ROOT });
 
       let stdoutData = '';
       let stderrData = '';
@@ -72,13 +74,19 @@ class PythonBridge {
           clearTimeout(timeoutId);
         }
 
-        if (code === 0) {
-          try {
-            const result = JSON.parse(stdoutData);
-            resolve(result);
-          } catch (e) {
-            reject(new Error(`Failed to parse Python output: ${e.message}\n${stdoutData}`));
-          }
+        // The agent prints a JSON result to stdout even when the task fails
+        // (exit code 1), so prefer its structured error over raw stderr logs
+        let parsed = null;
+        try {
+          parsed = JSON.parse(stdoutData);
+        } catch (e) {
+          // handled below
+        }
+
+        if (parsed) {
+          resolve(parsed);
+        } else if (code === 0) {
+          reject(new Error(`Failed to parse Python output: invalid JSON\n${stdoutData}`));
         } else {
           reject(new Error(`Python process failed (exit code ${code}):\n${stderrData}`));
         }
@@ -95,26 +103,29 @@ class PythonBridge {
   }
 
   /**
-   * Test Python environment health
+   * Test Python environment health: the interpreter starts and the agent's
+   * imports resolve. Deliberately does not call an LLM, so it is fast and can
+   * be polled without loading the model.
    * @returns {Promise<Boolean>} True if Python environment is working
    */
   async healthCheck() {
-    try {
-      const testTask = {
-        instruction: "Test health check - respond with 'OK'",
-        context: {}
-      };
+    return new Promise((resolve) => {
+      const proc = spawn(this.pythonPath, ['-c', 'import requests, dotenv']);
+      const timeoutId = setTimeout(() => {
+        proc.kill();
+        resolve(false);
+      }, 10000);
 
-      const result = await this.executeAgent(testTask, {
-        backend: 'ollama',
-        timeout: 30000
+      proc.on('close', (code) => {
+        clearTimeout(timeoutId);
+        resolve(code === 0);
       });
-
-      return result.success === true;
-    } catch (error) {
-      console.error('Python health check failed:', error.message);
-      return false;
-    }
+      proc.on('error', (error) => {
+        clearTimeout(timeoutId);
+        console.error('Python health check failed:', error.message);
+        resolve(false);
+      });
+    });
   }
 }
 

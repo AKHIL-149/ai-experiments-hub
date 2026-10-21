@@ -3,18 +3,21 @@ const path = require('path');
 const PythonBridge = require('./PythonBridge');
 const ExecutionManager = require('./ExecutionManager');
 
+const PROJECT_ROOT = path.join(__dirname, '..');
+
 /**
  * Core workflow execution engine
  */
 class WorkflowEngine {
-  constructor(workflowsDir = './workflows', options = {}) {
-    this.workflowsDir = workflowsDir;
+  constructor(workflowsDir, options = {}) {
+    // Relative paths resolve against the project root, not the process cwd
+    this.workflowsDir = path.resolve(PROJECT_ROOT, workflowsDir || process.env.WORKFLOWS_DIR || './workflows');
     this.pythonBridge = new PythonBridge(
       options.pythonPath || process.env.PYTHON_PATH || 'python3',
       options.pythonTimeout || parseInt(process.env.PYTHON_TIMEOUT) || 300000
     );
     this.executionManager = new ExecutionManager(
-      options.executionsDir || process.env.EXECUTIONS_DIR || './data/executions'
+      path.resolve(PROJECT_ROOT, options.executionsDir || process.env.EXECUTIONS_DIR || './data/executions')
     );
   }
 
@@ -24,14 +27,28 @@ class WorkflowEngine {
    * @returns {Promise<Object>} Workflow definition
    */
   async loadWorkflow(workflowId) {
-    const workflowPath = path.join(this.workflowsDir, `${workflowId}.json`);
-
-    try {
-      const data = await fs.readFile(workflowPath, 'utf-8');
-      return JSON.parse(data);
-    } catch (error) {
+    if (typeof workflowId !== 'string' || !/^[\w-]+(\/[\w-]+)*$/.test(workflowId)) {
       throw new Error(`Workflow not found: ${workflowId}`);
     }
+
+    // Direct path (e.g. "examples/file-processor"), kept inside the workflows dir
+    const root = path.resolve(this.workflowsDir);
+    const workflowPath = path.resolve(root, `${workflowId}.json`);
+    if (workflowPath.startsWith(root + path.sep)) {
+      try {
+        return JSON.parse(await fs.readFile(workflowPath, 'utf-8'));
+      } catch (error) {
+        // fall through to lookup by the "id" field
+      }
+    }
+
+    // The list endpoint advertises each workflow's own "id", which can differ
+    // from its file path when it lives in a sub-folder
+    const found = (await this._readAllWorkflows()).find(w => w.id === workflowId);
+    if (found) {
+      return found;
+    }
+    throw new Error(`Workflow not found: ${workflowId}`);
   }
 
   /**
@@ -42,16 +59,33 @@ class WorkflowEngine {
    * @returns {Promise<Object>} Execution result
    */
   async executeWorkflow(workflowId, inputData = {}, options = {}) {
-    // Load workflow definition
+    const { execution, run } = await this.startExecution(workflowId, inputData, options);
+    await run();
+    return await this.executionManager.loadExecution(execution.execution_id);
+  }
+
+  /**
+   * Validate the workflow and create its execution record, without running it.
+   * Lets callers (the API) get the real execution ID and report "not found"
+   * before anything runs.
+   * @returns {Promise<{execution: Object, run: Function}>} run() performs the execution
+   */
+  async startExecution(workflowId, inputData = {}, options = {}) {
     const workflow = await this.loadWorkflow(workflowId);
 
-    // Create execution record
     const execution = await this.executionManager.createExecution(
       workflowId,
       options.triggerType || 'manual',
       inputData
     );
 
+    return {
+      execution,
+      run: () => this._runExecution(workflow, execution, inputData, options)
+    };
+  }
+
+  async _runExecution(workflow, execution, inputData, options) {
     await this.executionManager.appendLog(
       execution.execution_id,
       'info',
@@ -109,7 +143,7 @@ class WorkflowEngine {
         `Workflow ${finalStatus}: ${workflow.name}`
       );
 
-      return await this.executionManager.loadExecution(execution.execution_id);
+      return finalStatus;
 
     } catch (error) {
       // Mark execution as failed
@@ -147,10 +181,16 @@ class WorkflowEngine {
 
     try {
       let result;
+      let details = null;
 
       if (step.type === 'agent') {
         // Execute agent step via Python
-        result = await this.executeAgentStep(step, context, options);
+        const agentResult = await this.executeAgentStep(step, context, options);
+        result = agentResult.result;
+        details = {
+          tools_used: agentResult.tools_used || [],
+          tool_results: agentResult.tool_results || []
+        };
       } else {
         throw new Error(`Unsupported step type: ${step.type}`);
       }
@@ -166,7 +206,8 @@ class WorkflowEngine {
       return {
         step_id: step.id,
         success: true,
-        result: result
+        result: result,
+        ...(details && { details })
       };
 
     } catch (error) {
@@ -195,7 +236,15 @@ class WorkflowEngine {
    */
   async executeAgentStep(step, context, options = {}) {
     // Resolve template variables in task (e.g., {{variable}})
-    const task = this.resolveTemplateVariables(step.task, context);
+    const missing = new Set();
+    const task = this.resolveTemplateVariables(step.task, context, missing);
+    if (missing.size > 0) {
+      // Sending a literal "{{name}}" to the model would silently produce nonsense
+      throw new Error(
+        `Unresolved template variable(s): ${[...missing].join(', ')} ` +
+        `(not an input or the "output" of an earlier step)`
+      );
+    }
 
     // Execute via Python bridge
     const agentResult = await this.pythonBridge.executeAgent(task, {
@@ -208,7 +257,7 @@ class WorkflowEngine {
       throw new Error(agentResult.error || 'Agent execution failed');
     }
 
-    return agentResult.result;
+    return agentResult;
   }
 
   /**
@@ -217,7 +266,7 @@ class WorkflowEngine {
    * @param {Object} context - Context with variable values
    * @returns {Object} Object with resolved variables
    */
-  resolveTemplateVariables(obj, context) {
+  resolveTemplateVariables(obj, context, missing = new Set()) {
     const resolved = {};
 
     for (const [key, value] of Object.entries(obj)) {
@@ -228,10 +277,11 @@ class WorkflowEngine {
             const ctxValue = context[varName];
             return typeof ctxValue === 'string' ? ctxValue : JSON.stringify(ctxValue);
           }
+          missing.add(varName);
           return match;
         });
       } else if (typeof value === 'object' && value !== null) {
-        resolved[key] = this.resolveTemplateVariables(value, context);
+        resolved[key] = this.resolveTemplateVariables(value, context, missing);
       } else {
         resolved[key] = value;
       }
@@ -245,30 +295,45 @@ class WorkflowEngine {
    * @returns {Promise<Array>} List of workflow summaries
    */
   async listWorkflows() {
+    const workflows = await this._readAllWorkflows();
+    return workflows.map(workflow => ({
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description,
+      steps: Array.isArray(workflow.steps) ? workflow.steps.length : 0
+    }));
+  }
+
+  /**
+   * Read every workflow definition under the workflows dir. A malformed file
+   * is skipped with a warning instead of hiding every other workflow.
+   */
+  async _readAllWorkflows() {
+    let files;
     try {
       await fs.mkdir(this.workflowsDir, { recursive: true });
-      const files = await fs.readdir(this.workflowsDir, { recursive: true });
-
-      const workflows = [];
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue;
-
-        const filePath = path.join(this.workflowsDir, file);
-        const data = await fs.readFile(filePath, 'utf-8');
-        const workflow = JSON.parse(data);
-
-        workflows.push({
-          id: workflow.id,
-          name: workflow.name,
-          description: workflow.description,
-          steps: workflow.steps.length
-        });
-      }
-
-      return workflows;
+      files = await fs.readdir(this.workflowsDir, { recursive: true });
     } catch (error) {
       return [];
     }
+
+    const workflows = [];
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+
+      try {
+        const data = await fs.readFile(path.join(this.workflowsDir, file), 'utf-8');
+        const workflow = JSON.parse(data);
+        if (workflow && workflow.id && Array.isArray(workflow.steps)) {
+          workflows.push(workflow);
+        } else {
+          console.warn(`Skipping ${file}: missing "id" or "steps"`);
+        }
+      } catch (error) {
+        console.warn(`Skipping ${file}: ${error.message}`);
+      }
+    }
+    return workflows;
   }
 }
 

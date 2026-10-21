@@ -131,6 +131,10 @@ class ExecutionManager {
    * @returns {Promise<Object>} Execution record
    */
   async loadExecution(executionId) {
+    if (typeof executionId !== 'string' || !/^exec-[\w-]+$/.test(executionId)) {
+      throw new Error(`Execution not found: ${executionId}`);
+    }
+
     const filePath = path.join(this.executionsDir, `${executionId}.json`);
 
     try {

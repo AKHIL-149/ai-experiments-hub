@@ -24,10 +24,17 @@ const activeExecutions = new Map();
 // Health check
 app.get('/api/health', async (req, res) => {
   try {
-    const pythonHealthy = await workflowEngine.pythonBridge.healthCheck();
+    const ollamaUrl = process.env.OLLAMA_API_URL || 'http://localhost:11434';
+    const [pythonHealthy, ollamaHealthy] = await Promise.all([
+      workflowEngine.pythonBridge.healthCheck(),
+      fetch(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(3000) })
+        .then(r => r.ok)
+        .catch(() => false)
+    ]);
     res.json({
       status: 'ok',
       python: pythonHealthy ? 'healthy' : 'unhealthy',
+      ollama: ollamaHealthy ? 'reachable' : 'unreachable',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -63,29 +70,42 @@ app.post('/api/workflows/:id/execute', async (req, res) => {
   try {
     const { inputData = {}, options = {} } = req.body;
 
-    // Start execution asynchronously
-    const executionPromise = workflowEngine.executeWorkflow(
-      req.params.id,
-      inputData,
-      { ...options, triggerType: 'api' }
-    );
+    const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_EXECUTIONS) || 5;
+    if (activeExecutions.size >= maxConcurrent) {
+      return res.status(429).json({
+        error: `Too many running executions (limit ${maxConcurrent})`
+      });
+    }
 
-    // Get the execution ID immediately
-    const execution = await workflowEngine.executionManager.listExecutions();
-    const latestExecution = execution[0];
+    // Validates the workflow and creates the execution record up front, so the
+    // response carries the real execution ID and unknown workflows get a 404
+    let started;
+    try {
+      started = await workflowEngine.startExecution(
+        req.params.id,
+        inputData,
+        { ...options, triggerType: 'api' }
+      );
+    } catch (error) {
+      if (error.message.startsWith('Workflow not found')) {
+        return res.status(404).json({ error: error.message });
+      }
+      throw error;
+    }
 
-    // Store promise for SSE streaming
-    activeExecutions.set(latestExecution.execution_id, executionPromise);
+    const executionId = started.execution.execution_id;
 
-    // Return execution ID immediately
-    res.json({
-      execution_id: latestExecution.execution_id,
-      status: 'started'
+    // Run in the background. Failures are already recorded on the execution;
+    // the catch keeps a rejected promise from crashing the server.
+    const executionPromise = started.run().catch((error) => {
+      console.error(`Execution ${executionId} failed:`, error.message);
     });
+    activeExecutions.set(executionId, executionPromise);
+    executionPromise.finally(() => activeExecutions.delete(executionId));
 
-    // Clean up after execution completes
-    executionPromise.finally(() => {
-      activeExecutions.delete(latestExecution.execution_id);
+    res.json({
+      execution_id: executionId,
+      status: 'started'
     });
 
   } catch (error) {
