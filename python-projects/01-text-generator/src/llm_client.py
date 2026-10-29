@@ -3,12 +3,18 @@ import requests
 from typing import Optional
 
 
+class GenerationError(Exception):
+    """Raised when a backend cannot produce text; the message is user-facing."""
+
+
 class LLMClient:
     """Unified interface for different LLM backends."""
 
     def __init__(self, backend: str = "ollama", model: Optional[str] = None):
         self.backend = backend.lower()
         self.model = model or self._get_default_model()
+        # True when the last generation stopped because it hit max_tokens
+        self.truncated = False
 
         if self.backend == "anthropic":
             import anthropic
@@ -34,13 +40,14 @@ class LLMClient:
         """Get default model for each backend."""
         defaults = {
             "ollama": os.getenv("OLLAMA_MODEL", "llama3.2"),
-            "anthropic": "claude-3-5-sonnet-20241022",
+            "anthropic": "claude-sonnet-5-5",
             "openai": "gpt-4o-mini"
         }
         return defaults.get(self.backend, "llama3.2")
 
     def generate(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
         """Generate text based on prompt."""
+        self.truncated = False
         try:
             if self.backend == "ollama":
                 return self._generate_ollama(prompt, max_tokens, temperature)
@@ -48,8 +55,10 @@ class LLMClient:
                 return self._generate_anthropic(prompt, max_tokens, temperature)
             elif self.backend == "openai":
                 return self._generate_openai(prompt, max_tokens, temperature)
+        except GenerationError:
+            raise
         except Exception as e:
-            raise Exception(f"Generation failed: {str(e)}")
+            raise GenerationError(f"Generation failed: {str(e)}")
 
     def _generate_ollama(self, prompt: str, max_tokens: int, temperature: float) -> str:
         """Generate using Ollama local model."""
@@ -64,9 +73,34 @@ class LLMClient:
             }
         }
 
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
-        return response.json()["response"]
+        timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+        try:
+            response = requests.post(url, json=payload, timeout=timeout)
+        except requests.ConnectionError:
+            raise GenerationError(
+                f"Cannot reach Ollama at {self.ollama_url}. "
+                "Is it running? Start it with: ollama serve"
+            )
+        except requests.Timeout:
+            raise GenerationError(
+                f"Ollama did not finish within {timeout}s. Try a smaller --max-tokens "
+                "or model, or raise OLLAMA_TIMEOUT."
+            )
+
+        if not response.ok:
+            try:
+                detail = response.json().get("error", response.text)
+            except ValueError:
+                detail = response.text
+            if response.status_code == 404 and "not found" in detail.lower():
+                raise GenerationError(
+                    f"Model '{self.model}' is not installed. Install it with: ollama pull {self.model}"
+                )
+            raise GenerationError(f"Ollama error ({response.status_code}): {detail}")
+
+        data = response.json()
+        self.truncated = data.get("done_reason") == "length"
+        return data["response"]
 
     def _generate_anthropic(self, prompt: str, max_tokens: int, temperature: float) -> str:
         """Generate using Anthropic Claude."""
@@ -78,6 +112,7 @@ class LLMClient:
                 {"role": "user", "content": prompt}
             ]
         )
+        self.truncated = message.stop_reason == "max_tokens"
         return message.content[0].text
 
     def _generate_openai(self, prompt: str, max_tokens: int, temperature: float) -> str:
@@ -90,4 +125,5 @@ class LLMClient:
                 {"role": "user", "content": prompt}
             ]
         )
+        self.truncated = response.choices[0].finish_reason == "length"
         return response.choices[0].message.content

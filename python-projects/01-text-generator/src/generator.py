@@ -90,9 +90,18 @@ def main():
     setup_environment()
     args = parse_args()
 
-    # Validate temperature
+    # Validate arguments
+    if not args.prompt.strip():
+        print("Error: prompt must not be empty", file=sys.stderr)
+        sys.exit(1)
     if not 0.0 <= args.temperature <= 2.0:
         print("Error: temperature must be between 0.0 and 2.0", file=sys.stderr)
+        sys.exit(1)
+    if args.backend == "anthropic" and args.temperature > 1.0:
+        print("Error: Anthropic supports temperature 0.0-1.0", file=sys.stderr)
+        sys.exit(1)
+    if args.max_tokens < 1:
+        print("Error: --max-tokens must be at least 1", file=sys.stderr)
         sys.exit(1)
 
     # Apply template if specified
@@ -113,10 +122,21 @@ def main():
             temperature=args.temperature
         )
 
+        if client.truncated:
+            print(
+                f"Warning: output was cut off at --max-tokens {args.max_tokens}; "
+                "increase it for a complete response.",
+                file=sys.stderr
+            )
+        if not result.strip():
+            print("Error: the model returned an empty response", file=sys.stderr)
+            sys.exit(1)
+
         # Output results
         if args.output:
             output_path = Path(args.output)
-            output_path.write_text(result)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(result.rstrip("\n") + "\n")
             print(f"Output saved to {args.output}", file=sys.stderr)
         else:
             print("\n" + "=" * 70)
