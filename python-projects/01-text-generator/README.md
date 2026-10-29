@@ -58,6 +58,14 @@ python src/generator.py --backend anthropic --model claude-3-5-sonnet-20241022 "
 python src/generator.py --backend openai --model gpt-4 "Your prompt"
 ```
 
+Options:
+- `--max-tokens N` - output limit (default 1000). A warning is printed if the output was cut off.
+- `--temperature T` - 0.0-2.0 (0.0-1.0 for Anthropic)
+- `-o FILE` - save to a file (parent folders are created)
+- `--plain` - print only the text, without the `====` frame. This happens automatically when output is piped, so `python generate.py "..." > out.txt` and `| pbcopy` work as expected.
+
+Thinking models (e.g. `qwen3`) spend tokens on hidden reasoning, so give them a larger `--max-tokens`.
+
 Available templates:
 - `email` - Professional email writing
 - `story` - Creative storytelling
@@ -78,3 +86,12 @@ This project demonstrates:
 - Error handling for API calls
 
 The code prioritizes clarity and simplicity over advanced features.
+
+## Tests
+
+```bash
+pip install pytest
+python -m pytest tests -q
+```
+
+The suite mocks the backends, so it needs no Ollama or API keys.

@@ -77,6 +77,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="Print only the generated text, without decoration (automatic when piped)"
+    )
+
+    parser.add_argument(
         "--output",
         "-o",
         help="Save output to file instead of printing to stdout"
@@ -129,7 +135,12 @@ def main():
                 file=sys.stderr
             )
         if not result.strip():
-            print("Error: the model returned an empty response", file=sys.stderr)
+            hint = (
+                " The model likely spent its whole token budget on hidden reasoning "
+                "(thinking models do this); increase --max-tokens."
+                if client.truncated else ""
+            )
+            print(f"Error: the model returned an empty response.{hint}", file=sys.stderr)
             sys.exit(1)
 
         # Output results
@@ -138,6 +149,9 @@ def main():
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(result.rstrip("\n") + "\n")
             print(f"Output saved to {args.output}", file=sys.stderr)
+        elif args.plain or not sys.stdout.isatty():
+            # Scripts/pipes get just the text
+            print(result.rstrip("\n"))
         else:
             print("\n" + "=" * 70)
             print(result)
