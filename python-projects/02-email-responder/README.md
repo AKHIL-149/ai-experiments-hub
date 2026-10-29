@@ -73,6 +73,22 @@ python respond.py --template thank_you \
   --output my_response.txt
 ```
 
+### Sign the Reply
+
+```bash
+python respond.py --template accept --name "Akhil" --file examples/meeting_request.txt
+```
+
+Without `--name` the reply ends with a `[Your Name]` placeholder.
+
+### Pipe an Email In
+
+```bash
+pbpaste | python respond.py --template professional --file - | pbcopy
+```
+
+When output is piped, only the reply is printed (no `====` frame); `--plain` forces that in a terminal too.
+
 ### Adjust Creativity
 
 ```bash
@@ -128,6 +144,23 @@ Each template is optimized for specific scenarios:
 **Inquiry Response**: Answering questions, providing information, being helpful
 
 **Apology**: Addressing mistakes, acknowledging issues, making amends
+
+## Behavior Notes
+
+- The reply is written in the same language as the incoming email.
+- The email is treated as untrusted content: instructions inside it ("ignore previous instructions...") are not followed.
+- The prompt tells the model not to invent refunds, replacements, deadlines or other commitments. A small local model can still slip, and it may skip part of an instruction, so **always read the reply before sending**. Put the real remedy in `--instructions` (e.g. `--instructions "Offer a 10% discount"`).
+- Files may be UTF-8 or Windows-1252 (Outlook exports). Use `--max-tokens` for longer replies; a warning appears if a reply was cut off.
+- Thinking models (e.g. `qwen3`) need a larger `--max-tokens`, since they spend tokens on hidden reasoning.
+
+## Tests
+
+```bash
+pip install pytest
+python -m pytest tests -q
+```
+
+The suite mocks the model, so it needs no Ollama.
 
 ## Tips
 
