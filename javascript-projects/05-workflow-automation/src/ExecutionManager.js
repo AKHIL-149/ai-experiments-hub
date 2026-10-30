@@ -38,6 +38,7 @@ class ExecutionManager {
       started_at: new Date().toISOString(),
       input_data: inputData,
       model: options.model || null, // null: the server's default model
+      schedule_id: options.scheduleId || null,
       steps_completed: 0,
       steps_failed: 0,
       logs: [],
@@ -148,6 +149,31 @@ class ExecutionManager {
   }
 
   /**
+   * Mark runs that were still "running" or "pending" as failed. Called when the server starts:
+   * their process died with the previous server, so nothing will ever finish them.
+   * @param {String} cutoff - Only runs that started before this ISO time (default: all)
+   * @returns {Promise<Number>} How many runs were marked
+   */
+  async markInterrupted(cutoff = null) {
+    let marked = 0;
+    for (const execution of await this.listExecutions()) {
+      if (execution.status !== 'running' && execution.status !== 'pending') continue;
+      if (cutoff && execution.started_at >= cutoff) continue;
+
+      const message = 'Interrupted: the server stopped while this run was in progress';
+      const now = new Date();
+      execution.status = 'failed';
+      execution.completed_at = now.toISOString();
+      execution.duration_ms = now - new Date(execution.started_at);
+      execution.result = { ...(execution.result || {}), error: message };
+      execution.logs.push({ timestamp: now.toISOString(), level: 'error', message });
+      await this._saveExecution(execution);
+      marked += 1;
+    }
+    return marked;
+  }
+
+  /**
    * List all executions
    * @param {Object} filters - Optional filters
    * @returns {Promise<Array>} List of executions
@@ -175,6 +201,9 @@ class ExecutionManager {
           continue;
         }
         if (filters.status && execution.status !== filters.status) {
+          continue;
+        }
+        if (filters.schedule_id && execution.schedule_id !== filters.schedule_id) {
           continue;
         }
 

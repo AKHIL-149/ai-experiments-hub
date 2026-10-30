@@ -86,3 +86,13 @@ test('a bad model name is refused before an execution record is created', async 
     assert.deepEqual(await engine.executionManager.listExecutions(), []);
   });
 });
+
+test('the schedule that started a run is recorded on its execution record', async () => {
+  const bridge = { executeAgent: async () => ({ success: true, result: 'ok' }) };
+  await withEngine(bridge, async (engine) => {
+    const scheduled = await engine.executeWorkflow('w', {}, { triggerType: 'schedule', scheduleId: 'sch-1a2b' });
+    assert.equal(scheduled.trigger_type, 'schedule');
+    assert.equal(scheduled.schedule_id, 'sch-1a2b');
+    assert.equal((await engine.executeWorkflow('w', {}, {})).schedule_id, null);
+  });
+});

@@ -7,6 +7,9 @@ require('dotenv').config();
 const WorkflowEngine = require('./src/WorkflowEngine');
 const { WorkflowValidationError } = require('./src/workflowSchema');
 const { listGenerationModels } = require('./src/ollamaModels');
+const ScheduleStore = require('./src/ScheduleStore');
+const { Scheduler, describeFailure } = require('./src/Scheduler');
+const { registerScheduleRoutes, makeWorkflowChecker } = require('./src/scheduleRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +29,51 @@ const workflowEngine = new WorkflowEngine();
 
 // Store active executions for SSE
 const activeExecutions = new Map();
+
+const MAX_CONCURRENT = () => parseInt(process.env.MAX_CONCURRENT_EXECUTIONS) || 5;
+
+/**
+ * Start a workflow run in the background. Used by the API and by the scheduler, so both get the same
+ * limit and the same checks. Resolves { executionId, done } where done settles with the final status.
+ * Rejects with code "BUSY" at the run limit; the workflow-not-found and bad-model errors pass through.
+ */
+async function startRun(workflowId, inputData, options) {
+  if (activeExecutions.size >= MAX_CONCURRENT()) {
+    throw Object.assign(new Error(`Too many running executions (limit ${MAX_CONCURRENT()})`), { code: 'BUSY' });
+  }
+
+  // Validates the workflow and creates the execution record up front, so the caller gets the real
+  // execution ID and unknown workflows are reported before anything runs
+  const started = await workflowEngine.startExecution(workflowId, inputData, options);
+  const executionId = started.execution.execution_id;
+
+  // Failures are already recorded on the execution; the catch keeps a rejected promise from crashing the server
+  const executionPromise = started.run().catch((error) => {
+    console.error(`Execution ${executionId} failed:`, error.message);
+  });
+  activeExecutions.set(executionId, executionPromise);
+  executionPromise.finally(() => activeExecutions.delete(executionId));
+
+  const done = executionPromise
+    .then(() => workflowEngine.executionManager.loadExecution(executionId))
+    .then(execution => ({
+      status: execution.status,
+      message: execution.status === 'failed' ? describeFailure(execution) : ''
+    }), () => ({ status: 'failed', message: '' }));
+  return { executionId, done };
+}
+
+// Schedules: runs workflows on cron schedules (see src/Scheduler.js)
+const scheduler = new Scheduler({
+  store: new ScheduleStore(path.resolve(__dirname, process.env.SCHEDULES_FILE || 'data/schedules.json')),
+  start: startRun,
+  checkWorkflow: makeWorkflowChecker(workflowEngine),
+  tickMs: parseInt(process.env.SCHEDULER_TICK_MS, 10) || 10000,
+  maxSchedules: parseInt(process.env.MAX_SCHEDULES, 10) || 50,
+  // 0 turns automatic pausing off
+  pauseAfterFailures: process.env.SCHEDULER_PAUSE_AFTER_FAILURES === undefined
+    ? 10 : Math.max(0, parseInt(process.env.SCHEDULER_PAUSE_AFTER_FAILURES, 10) || 0),
+});
 
 // API Routes
 
@@ -164,24 +212,16 @@ app.post('/api/workflows/:id/execute', async (req, res) => {
       return res.status(400).json({ error: 'inputData and options must be JSON objects' });
     }
 
-    const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_EXECUTIONS) || 5;
-    if (activeExecutions.size >= maxConcurrent) {
-      return res.status(429).json({
-        error: `Too many running executions (limit ${maxConcurrent})`
-      });
-    }
-
-    // Validates the workflow and creates the execution record up front, so the
-    // response carries the real execution ID and unknown workflows get a 404
     let started;
     try {
-      started = await workflowEngine.startExecution(
-        req.params.id,
-        inputData,
-        // only the options the engine understands; anything else the client sends is ignored
-        { model: options.model, continueOnError: options.continueOnError === true, triggerType: 'api' }
-      );
+      // only the options the engine understands; anything else the client sends is ignored
+      started = await startRun(req.params.id, inputData, {
+        model: options.model, continueOnError: options.continueOnError === true, triggerType: 'api'
+      });
     } catch (error) {
+      if (error.code === 'BUSY') {
+        return res.status(429).json({ error: error.message });
+      }
       if (error.message.startsWith('Workflow not found')) {
         return res.status(404).json({ error: error.message });
       }
@@ -191,18 +231,8 @@ app.post('/api/workflows/:id/execute', async (req, res) => {
       throw error;
     }
 
-    const executionId = started.execution.execution_id;
-
-    // Run in the background. Failures are already recorded on the execution;
-    // the catch keeps a rejected promise from crashing the server.
-    const executionPromise = started.run().catch((error) => {
-      console.error(`Execution ${executionId} failed:`, error.message);
-    });
-    activeExecutions.set(executionId, executionPromise);
-    executionPromise.finally(() => activeExecutions.delete(executionId));
-
     res.json({
-      execution_id: executionId,
+      execution_id: started.executionId,
       status: 'started'
     });
 
@@ -214,11 +244,12 @@ app.post('/api/workflows/:id/execute', async (req, res) => {
 // List executions
 app.get('/api/executions', async (req, res) => {
   try {
-    const { workflow_id, status, limit = 50 } = req.query;
+    const { workflow_id, status, schedule_id, limit = 50 } = req.query;
 
     const filters = {};
     if (workflow_id) filters.workflow_id = workflow_id;
     if (status) filters.status = status;
+    if (schedule_id) filters.schedule_id = schedule_id;
 
     const executions = await workflowEngine.executionManager.listExecutions(filters);
 
@@ -288,6 +319,8 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+registerScheduleRoutes(app, { scheduler, executionManager: workflowEngine.executionManager });
+
 // JSON errors only (bad JSON bodies, oversized requests): no HTML pages or stack traces
 app.use((error, req, res, next) => {
   if (error.type === 'entity.parse.failed') {
@@ -303,10 +336,35 @@ app.use((error, req, res, next) => {
 // Start server
 // Loopback only unless HOST says otherwise
 const HOST = process.env.HOST || '127.0.0.1';
-app.listen(PORT, HOST, () => {
-  console.log(`\n🤖 AI Workflow Automation Server`);
-  console.log(`📡 Server: http://localhost:${PORT}`);
-  console.log(`🐍 Python: ${process.env.PYTHON_PATH || 'python3'}`);
-  console.log(`🦙 Ollama: ${process.env.OLLAMA_API_URL || 'http://localhost:11434'}`);
-  console.log(`\nPress Ctrl+C to stop\n`);
+
+async function main() {
+  // Runs that were in progress when the previous server stopped can never finish: say so
+  const interrupted = await workflowEngine.executionManager.markInterrupted(new Date().toISOString());
+  if (interrupted > 0) {
+    console.warn(`Marked ${interrupted} unfinished run(s) from the previous server as interrupted`);
+  }
+  await scheduler.init();
+
+  app.listen(PORT, HOST, () => {
+    console.log(`\n🤖 AI Workflow Automation Server`);
+    console.log(`📡 Server: http://localhost:${PORT}`);
+    console.log(`🐍 Python: ${process.env.PYTHON_PATH || 'python3'}`);
+    console.log(`🦙 Ollama: ${process.env.OLLAMA_API_URL || 'http://localhost:11434'}`);
+    const active = scheduler.list().filter(s => s.enabled).length;
+    console.log(`⏰ Scheduler: ${active} active schedule(s), time zone ${scheduler.timezone}`);
+    console.log(`\nPress Ctrl+C to stop\n`);
+    scheduler.startTimer();
+  });
+}
+
+main().catch((error) => {
+  console.error('Could not start the server:', error.message);
+  process.exit(1);
 });
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    scheduler.stopTimer();
+    process.exit(0);
+  });
+}

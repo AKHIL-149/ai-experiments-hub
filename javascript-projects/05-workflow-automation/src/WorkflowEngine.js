@@ -80,7 +80,7 @@ class WorkflowEngine {
       workflowId,
       options.triggerType || 'manual',
       inputData,
-      { model }
+      { model, scheduleId: options.scheduleId }
     );
 
     return {
