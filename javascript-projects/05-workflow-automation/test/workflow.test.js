@@ -174,3 +174,10 @@ test('max_tokens must be a whole number from 1 to 32768', () => {
     assert.ok(withLimit(bad).some(e => /max_tokens must be a whole number/.test(e)), `${bad} should be rejected`);
   }
 });
+
+test('variables used only in if_skipped count as inputs and must exist before the step', () => {
+  const gated = { run_if: { variable: 'n', operator: '>', value: 0 }, if_skipped: 'under {{limit}} for {{later.text}}' };
+  assert.deepEqual(requiredInputs(workflow([agentStep('a', 'hi', gated)])), ['n', 'limit', 'later']);
+  const errors = validateWorkflow(workflow([agentStep('a', 'hi', gated), toolStep('t', { output: 'later' })]));
+  assert.ok(errors.some(e => /\{\{later\}\}.*later/.test(e)));
+});

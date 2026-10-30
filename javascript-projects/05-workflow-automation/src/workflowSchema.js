@@ -27,12 +27,16 @@ function stepPayload(step) {
 
 const CONDITION_OPERATORS = ['==', '!=', '>', '>=', '<', '<='];
 
-/** Every {{variable}} a step needs: its template variables plus the one its run_if tests. */
+/** Every {{variable}} a step needs: its template variables, the one its run_if tests and any in if_skipped. */
 function stepVariables(step) {
-  const found = templateRoots(stepPayload(step || {}));
+  const found = new Set();
   const variable = step && step.run_if && step.run_if.variable;
   if (typeof variable === 'string' && /^\w+(\.\w+)*$/.test(variable)) {
     found.add(variable.split('.')[0]);
+  }
+  templateRoots(stepPayload(step || {}), found);
+  if (step && step.run_if && typeof step.if_skipped === 'string') {
+    templateRoots(step.if_skipped, found);
   }
   return found;
 }

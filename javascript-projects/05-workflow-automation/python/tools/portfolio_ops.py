@@ -8,7 +8,7 @@ and it gives no advice. Holdings are CSV text with the columns symbol, shares, c
 import csv
 import io
 import random
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Tuple
 from .base_tool import BaseTool
 from .csv_ops import parse_csv
@@ -44,7 +44,7 @@ def _markdown(header: List[str], rows: List[List[str]]) -> str:
 
 def _to_csv(fields: List[str], rows: List[Dict[str, Any]]) -> str:
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\n")
+    writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\n", extrasaction="ignore")
     writer.writeheader()
     writer.writerows(rows)
     return buffer.getvalue()
@@ -132,7 +132,8 @@ def generate_holdings(count: Any, seed: Any, source: str) -> Dict[str, Any]:
     }
 
 
-def value_holdings(holdings_text: str, source: str) -> Dict[str, Any]:
+def compute_positions(holdings_text: str, source: str):
+    """Priced positions (value, gain/loss, day change per holding), the quotes used, and the symbols that failed."""
     holdings = read_holdings(holdings_text)
     quotes, failed = get_quotes([h["symbol"] for h in holdings], source)
     quote = {q["symbol"]: q for q in quotes}
@@ -147,6 +148,7 @@ def value_holdings(holdings_text: str, source: str) -> Dict[str, Any]:
         day = h["shares"] * q["change"]
         rows.append({
             "symbol": h["symbol"], "shares": h["shares"], "cost_basis": round(h["cost_basis"], 2), "price": q["price"],
+            "prev_close": q["prev_close"],
             "market_value": round(value, 2), "cost_value": round(cost, 2),
             "gain_loss": round(value - cost, 2), "gain_loss_pct": round((value - cost) / cost * 100, 2) if cost else 0.0,
             "day_change": round(day, 2), "day_change_pct": q["change_pct"],
@@ -154,6 +156,11 @@ def value_holdings(holdings_text: str, source: str) -> Dict[str, Any]:
     if not rows:
         detail = "; ".join(f"{f['symbol']}: {f['error']}" for f in failed)
         raise ValueError(f"None of the holdings could be priced ({detail})")
+    return rows, quotes, failed
+
+
+def value_holdings(holdings_text: str, source: str) -> Dict[str, Any]:
+    rows, quotes, failed = compute_positions(holdings_text, source)
 
     total_value = sum(r["market_value"] for r in rows)
     total_cost = sum(r["cost_value"] for r in rows)
@@ -204,6 +211,61 @@ def value_holdings(holdings_text: str, source: str) -> Dict[str, Any]:
         "summary": f"{len(rows)} positions worth {money(total_value)}; {signed_money(day_change)} ({pct(day_pct)}) today; "
                    f"{signed_money(total_gain)} ({pct(total_gain_pct)}) versus cost.",
         "history_row": f"{as_of},{total_value:.2f},{total_cost:.2f},{day_change:.2f},{len(rows)}",
+    }
+
+
+def parse_threshold(value: Any) -> float:
+    try:
+        threshold = float(str(value).strip())
+    except (TypeError, ValueError):
+        threshold = float("nan")
+    if not 0 < threshold <= 100:  # also rejects nan and inf
+        raise ValueError("threshold must be a number above 0 and up to 100 (a percent, e.g. 3)")
+    return threshold
+
+
+def check_moves(holdings_text: str, source: str, threshold_value: Any) -> Dict[str, Any]:
+    """Which positions moved at least `threshold` percent today, in either direction."""
+    threshold = parse_threshold(threshold_value)
+    rows, quotes, failed = compute_positions(holdings_text, source)
+
+    hits = sorted((r for r in rows if abs(r["day_change_pct"]) >= threshold), key=lambda r: -abs(r["day_change_pct"]))
+    fields = ["symbol", "direction", "price", "prev_close", "day_change_pct", "position_change", "position_value"]
+    alert_rows = [{
+        "symbol": r["symbol"], "direction": "up" if r["day_change"] > 0 else "down" if r["day_change"] < 0 else "flat",
+        "price": r["price"], "prev_close": r["prev_close"], "day_change_pct": r["day_change_pct"],
+        "position_change": r["day_change"], "position_value": r["market_value"],
+    } for r in hits]
+
+    total_value = sum(r["market_value"] for r in rows)
+    day_change = sum(r["day_change"] for r in rows)
+    prev_value = total_value - day_change
+    biggest = max(rows, key=lambda r: abs(r["day_change_pct"]))
+    label = f"{threshold:g}"
+    if hits:
+        moves = ", ".join(f"{r['symbol']} {pct(r['day_change_pct'])}" for r in hits)
+        summary = f"{len(hits)} of {len(rows)} positions moved at least {label}%: {moves}."
+        markdown = _markdown(
+            ["Symbol", "Direction", "Price", "Prev close", "Move", "Position change", "Position value"],
+            [[a["symbol"], a["direction"], money(a["price"]), money(a["prev_close"]), pct(a["day_change_pct"]),
+              signed_money(a["position_change"]), money(a["position_value"])] for a in alert_rows])
+    else:
+        summary = (f"No alert: none of {len(rows)} positions moved at least {label}% "
+                   f"(largest move {biggest['symbol']} {pct(biggest['day_change_pct'])}).")
+        markdown = "(no positions moved that much)"
+
+    symbols = " ".join(r["symbol"] for r in hits)
+    as_of = max(q["as_of"] for q in quotes)
+    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    unpriced = [f["symbol"] for f in failed]
+    return {
+        "success": True, "operation": "alerts", "source": source, "as_of": as_of, "threshold": threshold,
+        "count": len(hits), "symbols": symbols, "rows": len(hits), "positions": len(rows),
+        "content": _to_csv(fields, alert_rows), "markdown": markdown, "summary": summary,
+        "portfolio_day_change_pct": round(day_change / prev_value * 100, 2) if prev_value else 0.0,
+        "unpriced": unpriced,
+        "notes": "All positions priced." if not unpriced else "Not priced (left out of the check): " + ", ".join(unpriced),
+        "log_line": f"{checked_at},{as_of},{len(hits)},{symbols},{label}",
     }
 
 
@@ -264,26 +326,28 @@ class PortfolioOpsTool(BaseTool):
         Operations:
         - generate: make a random SAMPLE portfolio (count, seed, source)
         - value: price the holdings and compute value, gain/loss, day change and weights (holdings, source)
+        - alerts: list the positions that moved at least `threshold` percent today, up or down (holdings, source, threshold)
         - trend: summarise a history of daily totals (history)"""
 
     def get_parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "operation": {"type": "string", "enum": ["generate", "value", "trend"], "description": "What to do"},
+                "operation": {"type": "string", "enum": ["generate", "value", "alerts", "trend"], "description": "What to do"},
                 "count": {"type": "string", "description": f"generate: how many holdings (1-{MAX_HOLDINGS})"},
                 "seed": {"type": "string", "description": "generate: any whole number; the same seed gives the same portfolio"},
                 "holdings": {"type": "string", "description": "value: holdings CSV text (usually {{portfolio.content}})"},
                 "history": {"type": "string", "description": "trend: history lines date,total_value,total_cost,day_change,positions"},
+                "threshold": {"type": "string", "description": "alerts: flag positions whose move today is at least this many percent (above 0, up to 100)"},
                 "source": {"type": "string", "enum": SOURCES, "description": "Prices: yahoo (real, delayed) or simulated (made-up)"}
             },
             "required": ["operation"]
         }
 
     def execute(self, operation: str, count: str = None, seed: str = None, holdings: str = None,
-                history: str = None, source: str = "yahoo") -> Dict[str, Any]:
+                history: str = None, source: str = "yahoo", threshold: str = None) -> Dict[str, Any]:
         try:
-            if operation in ("generate", "value") and source not in SOURCES:
+            if operation in ("generate", "value", "alerts") and source not in SOURCES:
                 raise ValueError(f"source must be one of: {', '.join(SOURCES)}")
             if operation == "generate":
                 return generate_holdings(count, seed, source)
@@ -291,6 +355,10 @@ class PortfolioOpsTool(BaseTool):
                 if not holdings:
                     raise ValueError("holdings is required for the value operation")
                 return value_holdings(holdings, source)
+            if operation == "alerts":
+                if not holdings:
+                    raise ValueError("holdings is required for the alerts operation")
+                return check_moves(holdings, source, threshold)
             if operation == "trend":
                 return summarize_history(history)
             raise ValueError(f"Unknown operation: {operation}")

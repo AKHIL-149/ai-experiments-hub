@@ -207,3 +207,41 @@ test('a skipped step with no if_skipped leaves an empty output, which stops the 
     assert.match(execution.result.steps.at(-1).error, /\{\{draft\}\} are empty/);
   });
 });
+
+// ----------------------------------------------------------------- if_skipped templates
+
+test('if_skipped can use {{variables}} from inputs and earlier results', async () => {
+  const bridge = countingBridge();
+  bridge.executeTool = async () => ({ success: true, result: { content: 'x', rows: 0, count: 0 } });
+  await withEngine(bridge, async (engine) => {
+    const execution = await runWorkflow(engine, [
+      { id: 'check', type: 'tool', tool: 'csv_operations', parameters: { operation: 'count', content: 'x' }, output: 'moves' },
+      agent('note', 'Describe it', {
+        run_if: { variable: 'moves.count', operator: '>', value: 0 },
+        if_skipped: 'No alert: nothing moved {{threshold}}% or more ({{moves.count}} found).', output: 'note'
+      })
+    ], { threshold: 3 });
+    assert.equal(execution.status, 'completed');
+    assert.equal(execution.result.steps[1].result, 'No alert: nothing moved 3% or more (0 found).');
+    assert.deepEqual(bridge.calls, []);
+  });
+});
+
+test('an if_skipped variable that does not exist fails the step with a clear message', async () => {
+  await withEngine(countingBridge(), async (engine) => {
+    const execution = await runWorkflow(engine, [
+      agent('a', 'hi', { run_if: { variable: 'flag', operator: '==', value: 'yes' }, if_skipped: 'Skipped for {{ghost}}' })
+    ], { flag: 'no' });
+    assert.equal(execution.status, 'failed');
+    assert.match(execution.result.steps[0].error, /if_skipped.*\{\{ghost\}\}/);
+  });
+});
+
+test('literal if_skipped text without variables is unchanged', async () => {
+  await withEngine(countingBridge(), async (engine) => {
+    const execution = await runWorkflow(engine, [
+      agent('a', 'hi', { run_if: { variable: 'n', operator: '>', value: 1 }, if_skipped: 'Nothing to do. 100% fine {not a var}' })
+    ], { n: 0 });
+    assert.equal(execution.result.steps[0].result, 'Nothing to do. 100% fine {not a var}');
+  });
+});

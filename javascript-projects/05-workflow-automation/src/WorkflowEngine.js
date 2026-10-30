@@ -202,7 +202,7 @@ class WorkflowEngine {
             ...(step.output && { output: step.output }),
             success: true,
             skipped: true,
-            result: step.if_skipped ?? ''
+            result: this.resolveSkippedText(step, context)
           };
         }
       }
@@ -340,6 +340,22 @@ class WorkflowEngine {
    * @param {Object} context - Context with variable values
    * @returns {Object} Object with resolved variables
    */
+  /** The text a skipped step stands in with: its if_skipped, with {{variables}} filled in. */
+  resolveSkippedText(step, context) {
+    if (step.if_skipped === undefined) {
+      return '';
+    }
+    const missing = new Set();
+    const { text } = this.resolveTemplateVariables({ text: step.if_skipped }, context, missing);
+    if (missing.size > 0) {
+      throw new Error(
+        `if_skipped uses ${[...missing].map(v => `{{${v}}}`).join(', ')}, which is not available ` +
+        '(not an input or the "output" of an earlier step)'
+      );
+    }
+    return text;
+  }
+
   /**
    * Evaluate a step's run_if: { variable: "table.rows", operator: ">", value: 0 }.
    * Numbers compare as numbers; anything else compares as text with == and !=.

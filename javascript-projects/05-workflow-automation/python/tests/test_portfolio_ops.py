@@ -201,3 +201,76 @@ def test_trend_ignores_damaged_lines_but_needs_at_least_one_good_one(tool):
 
 def test_unknown_operation(tool):
     assert "Unknown operation" in tool.execute(operation="trade")["error"]
+
+
+# ----------------------------------------------------------------------- alerts
+# fixed_prices: AAPL 150 vs 145 (+3.45%, 10 shares = +$50), MSFT 190 vs 195 (-2.56%, 20 shares = -$100)
+
+def alerts(tool, threshold, holdings=HOLDINGS, source="yahoo"):
+    return tool.execute(operation="alerts", holdings=holdings, source=source, threshold=str(threshold))
+
+
+def test_only_positions_that_moved_enough_are_alerted(tool, fixed_prices):
+    out = alerts(tool, 3)
+    assert out["success"] and out["count"] == 1 and out["symbols"] == "AAPL"
+    assert out["summary"] == "1 of 2 positions moved at least 3%: AAPL +3.45%."
+    lines = out["content"].splitlines()
+    assert lines[0] == "symbol,direction,price,prev_close,day_change_pct,position_change,position_value"
+    assert lines[1] == "AAPL,up,150.0,145.0,3.45,50.0,1500.0"
+
+
+def test_alerts_catch_falls_as_well_as_rises_and_sort_by_size(tool, fixed_prices):
+    out = alerts(tool, 2.5)
+    assert out["count"] == 2 and out["symbols"] == "AAPL MSFT"           # 3.45% then 2.56%
+    assert "AAPL +3.45%, MSFT -2.56%" in out["summary"]
+    assert out["content"].splitlines()[2].startswith("MSFT,down,190.0,195.0,-2.56,-100.0,3800.0")
+    assert "| AAPL | up |" in out["markdown"] and "| MSFT | down |" in out["markdown"] and "-$100.00" in out["markdown"]
+
+
+def test_the_threshold_is_inclusive(tool, fixed_prices):
+    assert alerts(tool, 3.45)["count"] == 1        # exactly equal counts
+    assert alerts(tool, 3.46)["count"] == 0        # just above does not
+
+
+def test_no_alert_says_so_and_names_the_largest_move(tool, fixed_prices):
+    out = alerts(tool, 5)
+    assert out["success"] and out["count"] == 0 and out["symbols"] == ""
+    assert out["summary"] == "No alert: none of 2 positions moved at least 5% (largest move AAPL +3.45%)."
+    assert out["content"].strip() == "symbol,direction,price,prev_close,day_change_pct,position_change,position_value"
+    assert out["markdown"] == "(no positions moved that much)"
+
+
+def test_alerts_report_the_whole_portfolio_move_and_the_check_time(tool, fixed_prices):
+    out = alerts(tool, 3)
+    assert out["portfolio_day_change_pct"] == -0.93 and out["as_of"] == "2026-10-30" and out["threshold"] == 3.0
+    assert out["log_line"].split(",")[1:] == ["2026-10-30", "1", "AAPL", "3"]
+    import re
+    assert re.match(r"^\d{4}-\d\d-\d\d \d\d:\d\d,2026-10-30,1,AAPL,3$", out["log_line"])
+
+
+def test_unpriced_symbols_are_left_out_and_reported(tool, fixed_prices):
+    out = alerts(tool, 3, holdings=HOLDINGS + "ZZZZ9,5,10\n")
+    assert out["success"] and out["count"] == 1 and "ZZZZ9" in out["notes"] and out["summary"].startswith("1 of 2 positions")
+
+
+@pytest.mark.parametrize("threshold", ["abc", "0", "-1", "100.5", "", "nan", "inf", "3%"])
+def test_threshold_must_be_a_number_above_0_and_up_to_100(tool, fixed_prices, threshold):
+    out = alerts(tool, threshold)
+    assert not out["success"] and "threshold must be a number above 0 and up to 100" in out["error"]
+
+
+def test_a_missing_threshold_is_an_error_not_a_default(tool, fixed_prices):
+    out = tool.execute(operation="alerts", holdings=HOLDINGS, source="yahoo")
+    assert not out["success"] and "threshold" in out["error"]
+
+
+def test_alerts_share_the_holdings_validation(tool, fixed_prices):
+    assert "shares must be above 0" in alerts(tool, 3, holdings="symbol,shares,cost_basis\nAAPL,-1,1\n")["error"]
+    assert "holdings is required" in tool.execute(operation="alerts", source="yahoo", threshold="3")["error"]
+    assert "None of the holdings could be priced" in alerts(tool, 3, holdings="symbol,shares,cost_basis\nZZZZ9,1,1\n")["error"]
+
+
+def test_alerts_are_ordered_by_size_of_move_not_by_the_order_in_the_file(tool, fixed_prices):
+    reversed_file = "symbol,shares,cost_basis\nMSFT,20,200\nAAPL,10,100\n"      # smaller move listed first
+    out = alerts(tool, 2.5, holdings=reversed_file)
+    assert out["symbols"] == "AAPL MSFT" and out["summary"].index("AAPL") < out["summary"].index("MSFT")
