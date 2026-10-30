@@ -3,6 +3,7 @@
 from typing import List
 from sentence_transformers import SentenceTransformer
 import os
+import sys
 
 
 class EmbeddingService:
@@ -13,9 +14,8 @@ class EmbeddingService:
             "EMBEDDING_MODEL",
             "sentence-transformers/all-MiniLM-L6-v2"
         )
-        print(f"Loading embedding model: {self.model_name}...")
+        print(f"Loading embedding model: {self.model_name}...", file=sys.stderr)
         self.model = SentenceTransformer(self.model_name)
-        print("Embedding model loaded successfully")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple documents."""

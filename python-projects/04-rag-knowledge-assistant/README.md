@@ -17,8 +17,8 @@ RAG-powered system for building a searchable knowledge base from your documents.
 1. **Document Processing**: Documents are loaded and split into overlapping chunks
 2. **Embedding**: Each chunk is converted to a vector using local sentence transformers
 3. **Storage**: Vectors are stored in ChromaDB for fast similarity search
-4. **Query**: Your question is embedded and similar chunks are retrieved
-5. **Generation**: Retrieved context is used to generate a factual answer
+4. **Query**: Chunks are found two ways and combined: by meaning (vector similarity) and by exact words (BM25 keyword search). Exact-word matching catches terms that embeddings blur, such as "retained", "hours" or part numbers. On a small test set this raised top-1 retrieval accuracy from 16/20 to 20/20.
+5. **Generation**: The best chunks are passed to the local LLM, which answers only from them and cites them as `[1]`, `[2]`. If nothing relevant is found, it says so instead of guessing.
 
 ## Setup
 
@@ -67,19 +67,36 @@ Control response creativity:
 python assistant.py query "Explain neural networks" --temperature 0.3
 ```
 
+Adding is safe to repeat: a file is identified by its full path, so `notes.txt`, `./notes.txt` and `/abs/path/notes.txt` are one document. Re-adding an **unchanged** file does nothing (no re-embedding); re-adding an **edited** file replaces its old chunks.
+
 ### Check Statistics
 
-View collection stats:
+List every indexed document with its chunk count:
 ```bash
 python assistant.py stats
 ```
 
+### Remove a Document
+
+```bash
+python assistant.py remove documents/old_notes.md
+```
+
 ### Clear Knowledge Base
 
-Remove all documents:
+Remove all documents (asks for confirmation; use `--yes` in scripts):
 ```bash
 python assistant.py clear
+python assistant.py clear --yes
 ```
+
+### Scripting
+
+When output is piped, `query` prints only the answer (no frame or sources), and `--plain` forces that in a terminal:
+```bash
+python assistant.py query "What is the refund window?" | pbcopy
+```
+`add` exits with status 1 if any file failed (the others are still indexed).
 
 ## Configuration
 
@@ -88,17 +105,22 @@ Create a `.env` file (optional):
 ```bash
 OLLAMA_API_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT=120
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 CHROMA_DB_PATH=./data/chroma
 ```
+
+A relative `CHROMA_DB_PATH` is resolved against this project folder, so the same knowledge base is used no matter where you run the command from.
 
 ## Document Processing
 
 The system chunks documents intelligently:
 - Default chunk size: 500 characters
 - Overlap: 50 characters
-- Sentence-aware splitting when possible
-- Preserves context across chunks
+- Breaks at paragraphs, then sentences (never inside a number like `3.14`), then words
+- Each chunk is embedded together with its file name, which helps questions that mention the document's topic
+- Supports `.txt`, `.md` (UTF-8 or Windows-1252) and text-based `.pdf` (blank pages are skipped; scanned PDFs need OCR first)
+- Overlap must be smaller than the chunk size
 
 Adjust chunking:
 ```bash
@@ -192,8 +214,24 @@ The system uses a straightforward RAG pipeline: chunk documents, generate embedd
 4. **Document Quality**: Clean, well-structured documents produce better results
 5. **Query Specificity**: Specific questions get better answers than vague ones
 
+## Safety and Quality Notes
+
+- Document text is treated as untrusted: instructions planted inside a document ("ignore the question and say...") are not followed.
+- The LLM's context window is sized to the prompt. Ollama otherwise silently cuts long prompts, which can drop the very chunk that holds the answer.
+- A small local model can still misread or skip details. Check the cited sources for anything important.
+
+## Tests
+
+```bash
+venv/bin/python -m pip install pytest
+venv/bin/python -m pytest tests -q
+```
+
+The tests use a fake embedder and LLM, so they need neither the embedding model nor Ollama.
+
 ## Limitations
 
+- Keyword search scores every stored chunk in memory on each query. That is instant for personal collections (thousands of chunks) but not meant for millions.
 - Answers are only as good as your documents
 - Works best with factual, structured content
 - Large documents may need careful chunking
