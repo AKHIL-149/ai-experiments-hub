@@ -79,10 +79,24 @@ npm start
 Then open http://localhost:3000 in your browser.
 
 The web interface provides:
-- **Dashboard**: View and execute workflows with one click
-- **Execution History**: Browse all past executions with detailed logs
-- **Workflow Editor**: Visual workflow creation with JSON preview
-- **Live Monitor**: Real-time execution monitoring with streaming logs
+- **Dashboard**: View workflows and run them. Pick one in Quick Execute and its required inputs are filled in as a template
+- **Execution History**: Browse past executions; open one to see each step's result, the saved report and the logs
+- **Workflow Editor**: Build workflows visually (see below), save them to the server, load them again, and run them
+- **Live Monitor**: Follow a run live; the results appear under the logs when it finishes
+
+The server listens on `127.0.0.1` only and accepts same-origin requests only, because it can write files and run workflows. Set `HOST` or `CORS_ORIGIN` to change that.
+
+### Building a workflow in the editor
+
+1. **Workflow Editor** > fill in the ID (letters, numbers, `-`, `_`), name and description.
+2. **+ Add Step**. A step is either an **AI step** (an instruction for the model) or a **Tool step** (run a tool such as `file_operations` directly; its parameter form comes from the tool itself). Use ↑ / ↓ to reorder.
+3. Use `{{name}}` in instructions and parameters to insert a run input or an earlier step's output. Give a step a **Save result as** name to make its result available to later steps (`{{notes.content}}` reads a field of an object result). The editor lists the inputs it detects under the JSON preview.
+4. **Save** writes `workflows/<id>.json` (a mistake such as a duplicate step ID or a variable used before it is created is reported instead of saved). **Save & Run** saves and jumps to the Dashboard with the inputs template ready.
+5. To edit later, choose it under **Load a saved workflow** > **Load**, change it and Save (saving the workflow you loaded replaces it; saving a new workflow under an existing ID asks first).
+
+Run it from the Dashboard: fill in the input JSON, **Execute Workflow**, and the Live Monitor opens by itself. Results of past runs are in Execution History.
+
+Paths in file steps are relative to the project root and cannot leave it. A saved file under `data/artifacts/` can be viewed in the results panel.
 
 ### Testing the System (CLI)
 
@@ -163,6 +177,16 @@ curl -X POST http://localhost:3000/api/workflows/meeting-actions/execute \
 ```
 
 The response carries an `execution_id`; open it under Execution History (or `GET /api/executions/<id>`) to see each step's log and output.
+
+## Example: Customer Feedback Report
+
+`workflows/examples/customer-feedback-report.json` (built in the visual editor) turns a CSV of customer reviews into a report with five steps: read the CSV (tool), classify every review (AI), write top problems and actions (AI), draft replies to the 1 and 2 star reviews (AI), and save everything as one markdown file (tool). Inputs: `feedback_csv`, `report_path`. Try it with the sample data:
+
+```json
+{"feedback_csv": "examples/customer-feedback.csv", "report_path": "data/artifacts/feedback-report.md"}
+```
+
+It takes about 10 seconds with `llama3.2` (3B). Small models make mistakes in the analysis; set `OLLAMA_MODEL` to a larger model for better summaries.
 
 ## Workflow Definition Format
 
@@ -419,6 +443,8 @@ const execution = await engine.executeWorkflow('workflow-id', {}, {
 ```env
 # Node.js
 PORT=3000
+HOST=127.0.0.1                # loopback only by default
+# CORS_ORIGIN=                # set to allow another origin to call the API
 PYTHON_PATH=python3
 PYTHON_TIMEOUT=300000
 
@@ -517,13 +543,34 @@ Each execution creates a JSON file in `data/executions/`:
 }
 ```
 
+## REST API
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/health` | Python and Ollama status |
+| GET | `/api/workflows` | List workflows (with the `inputs` each needs) |
+| GET | `/api/workflows/:id` | One workflow definition |
+| POST | `/api/workflows` | Save `{ "workflow": {...}, "overwrite": false }`; 400 lists problems, 409 if the ID exists |
+| POST | `/api/workflows/:id/execute` | Start a run: `{ "inputData": {...} }` |
+| GET | `/api/tools` | Tools a step can call, with parameter schemas |
+| GET | `/api/executions`, `/api/executions/:id` | History and one run (logs, per-step results) |
+| GET | `/api/executions/:id/stream` | Live updates (Server-Sent Events) |
+| GET | `/api/artifacts?path=data/artifacts/x.md` | Read a file a workflow saved (only under `data/artifacts`) |
+
+## Tests
+
+```bash
+npm test
+```
+
+Covers workflow validation and saving (ID rules, duplicate and misordered steps, overwrite protection). `node test.js` is a separate live check that needs Python and Ollama.
+
 ## Future Enhancements
 
 - [ ] Parallel step execution
 - [ ] Conditional branching in workflows
 - [ ] Loop constructs
 - [ ] Sub-workflow calling
-- [ ] Visual workflow builder (web UI)
 - [ ] PostgreSQL backend for scale
 - [ ] Workflow versioning
 - [ ] Rollback capabilities

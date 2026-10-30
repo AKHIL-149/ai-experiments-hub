@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const PythonBridge = require('./PythonBridge');
 const ExecutionManager = require('./ExecutionManager');
+const { validateWorkflow, requiredInputs, WorkflowValidationError } = require('./workflowSchema');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 
@@ -209,6 +210,9 @@ class WorkflowEngine {
 
       return {
         step_id: step.id,
+        type: step.type,
+        ...(step.tool && { tool: step.tool }),
+        ...(step.output && { output: step.output }),
         success: true,
         result: result,
         ...(details && { details })
@@ -225,6 +229,9 @@ class WorkflowEngine {
 
       return {
         step_id: step.id,
+        type: step.type,
+        ...(step.tool && { tool: step.tool }),
+        ...(step.output && { output: step.output }),
         success: false,
         error: error.message
       };
@@ -330,8 +337,67 @@ class WorkflowEngine {
       id: workflow.id,
       name: workflow.name,
       description: workflow.description,
-      steps: Array.isArray(workflow.steps) ? workflow.steps.length : 0
+      steps: Array.isArray(workflow.steps) ? workflow.steps.length : 0,
+      // Values the caller must supply when executing (used before any step produces them)
+      inputs: requiredInputs(workflow)
     }));
+  }
+
+  /**
+   * Validate and store a workflow definition so it shows up in the workflow list.
+   * An existing workflow is only replaced when overwrite is true.
+   * @returns {Promise<{id: string, created: boolean}>}
+   */
+  async saveWorkflow(workflow, { overwrite = false } = {}) {
+    const errors = validateWorkflow(workflow);
+    if (errors.length > 0) {
+      throw new WorkflowValidationError(errors);
+    }
+
+    // Replace the file that already holds this ID (it may sit in a sub-folder)
+    const existing = await this._findWorkflowFile(workflow.id);
+    if (existing && !overwrite) {
+      const error = new Error(`A workflow with ID "${workflow.id}" already exists`);
+      error.status = 409;
+      throw error;
+    }
+
+    const target = existing || path.join(this.workflowsDir, `${workflow.id}.json`);
+    const definition = {
+      id: workflow.id,
+      name: workflow.name.trim(),
+      description: (workflow.description || '').trim(),
+      steps: workflow.steps
+    };
+
+    // Write to a temp file first so a crash never leaves half a workflow behind
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const temp = `${target}.${process.pid}.tmp`;
+    await fs.writeFile(temp, JSON.stringify(definition, null, 2) + '\n', 'utf-8');
+    await fs.rename(temp, target);
+
+    return { id: workflow.id, created: !existing };
+  }
+
+  async _findWorkflowFile(workflowId) {
+    let files;
+    try {
+      files = await fs.readdir(this.workflowsDir, { recursive: true });
+    } catch (error) {
+      return null;
+    }
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+      const fullPath = path.join(this.workflowsDir, file);
+      try {
+        if (JSON.parse(await fs.readFile(fullPath, 'utf-8')).id === workflowId) {
+          return fullPath;
+        }
+      } catch (error) {
+        // unreadable file: not ours
+      }
+    }
+    return null;
   }
 
   /**

@@ -10,9 +10,16 @@ from tool_registry import ToolRegistry
 
 def main():
     parser = argparse.ArgumentParser(description="Run one workflow tool")
-    parser.add_argument("--tool", required=True, help="Tool name, e.g. file_operations")
-    parser.add_argument("--params", required=True, help="JSON object of tool parameters")
+    parser.add_argument("--tool", help="Tool name, e.g. file_operations")
+    parser.add_argument("--params", help="JSON object of tool parameters")
+    parser.add_argument("--list", action="store_true", help="Print every registered tool and its parameter schema")
     args = parser.parse_args()
+
+    if args.list:
+        print(json.dumps({"success": True, "tools": ToolRegistry().get_tool_descriptions()}))
+        return
+    if not args.tool or args.params is None:
+        parser.error("--tool and --params are required unless --list is used")
 
     try:
         params = json.loads(args.params)

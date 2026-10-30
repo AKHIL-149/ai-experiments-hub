@@ -1,17 +1,24 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs').promises;
 require('dotenv').config();
 
 const WorkflowEngine = require('./src/WorkflowEngine');
+const { WorkflowValidationError } = require('./src/workflowSchema');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
+// Local tool that can run workflows and write files: only same-origin pages may call it
+app.use(cors({ origin: process.env.CORS_ORIGIN || false }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Workflows may only show files they saved under this folder
+const ARTIFACTS_DIR = path.join(__dirname, 'data', 'artifacts');
+const MAX_VIEW_BYTES = 1024 * 1024;
 
 // Initialize workflow engine
 const workflowEngine = new WorkflowEngine();
@@ -62,6 +69,71 @@ app.get('/api/workflows/:id', async (req, res) => {
     res.json(workflow);
   } catch (error) {
     res.status(404).json({ error: 'Workflow not found' });
+  }
+});
+
+// Save a workflow created in the editor (body: { workflow, overwrite })
+app.post('/api/workflows', async (req, res) => {
+  try {
+    const { workflow, overwrite = false } = req.body || {};
+    const saved = await workflowEngine.saveWorkflow(workflow, { overwrite: overwrite === true });
+    res.status(saved.created ? 201 : 200).json(saved);
+  } catch (error) {
+    if (error instanceof WorkflowValidationError) {
+      return res.status(400).json({ error: 'Workflow is not valid', details: error.errors });
+    }
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+// Tools a step can call, with their parameter schemas (lets the editor build the form)
+let toolsCache = null;
+app.get('/api/tools', async (req, res) => {
+  try {
+    if (!toolsCache) {
+      toolsCache = await workflowEngine.pythonBridge.listTools();
+    }
+    res.json(toolsCache);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Read a file a workflow saved, so results can be viewed in the UI
+app.get('/api/artifacts', async (req, res) => {
+  try {
+    const requested = typeof req.query.path === 'string' ? req.query.path : '';
+    if (!requested) {
+      return res.status(400).json({ error: 'path is required' });
+    }
+
+    // realpath, so a symlink cannot lead out of the artifacts folder
+    await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
+    const root = await fs.realpath(ARTIFACTS_DIR);
+    let resolved;
+    try {
+      resolved = await fs.realpath(path.resolve(__dirname, requested));
+    } catch (error) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    if (!resolved.startsWith(root + path.sep)) {
+      return res.status(403).json({ error: 'Only files under data/artifacts can be viewed' });
+    }
+
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    if (stat.size > MAX_VIEW_BYTES) {
+      return res.status(413).json({ error: 'File is larger than 1 MB' });
+    }
+    res.json({
+      path: path.relative(__dirname, resolved),
+      size: stat.size,
+      content: await fs.readFile(resolved, 'utf-8')
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -190,8 +262,22 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// JSON errors only (bad JSON bodies, oversized requests): no HTML pages or stack traces
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Request body is not valid JSON' });
+  }
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request too large (limit 1 MB)' });
+  }
+  console.error('Request error:', error.message);
+  res.status(error.status || 500).json({ error: error.message });
+});
+
 // Start server
-app.listen(PORT, () => {
+// Loopback only unless HOST says otherwise
+const HOST = process.env.HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => {
   console.log(`\n🤖 AI Workflow Automation Server`);
   console.log(`📡 Server: http://localhost:${PORT}`);
   console.log(`🐍 Python: ${process.env.PYTHON_PATH || 'python3'}`);

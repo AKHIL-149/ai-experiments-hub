@@ -143,6 +143,39 @@ class PythonBridge {
   }
 
   /**
+   * Describe the registered tools (name, description, parameter schema) for the editor
+   * @returns {Promise<Array>} Tool descriptions
+   */
+  listTools(timeout = 15000) {
+    const scriptPath = path.join(__dirname, '../python/run_tool.py');
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(this.pythonPath, [scriptPath, '--list'], { cwd: PROJECT_ROOT });
+      let stdout = '';
+      let stderr = '';
+      const timeoutId = setTimeout(() => {
+        proc.kill();
+        reject(new Error('Listing tools timed out'));
+      }, timeout);
+
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', () => {
+        clearTimeout(timeoutId);
+        try {
+          resolve(JSON.parse(stdout).tools);
+        } catch (e) {
+          reject(new Error(`Could not list tools:\n${stderr || stdout}`));
+        }
+      });
+      proc.on('error', (error) => {
+        clearTimeout(timeoutId);
+        reject(new Error(`Failed to spawn Python process: ${error.message}`));
+      });
+    });
+  }
+
+  /**
    * Test Python environment health: the interpreter starts and the agent's
    * imports resolve. Deliberately does not call an LLM, so it is fast and can
    * be polled without loading the model.

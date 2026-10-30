@@ -51,9 +51,9 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/05-workflow-automation && exec node server.js"
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/05-workflow-automation && PORT=3005 exec node server.js"
       ],
-      "port": 3000
+      "port": 3005
     },
     {
       "name": "prompt-playground",

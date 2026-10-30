@@ -40,7 +40,8 @@
                     <select id="workflowSelect" class="input">
                         <option value="">Select a workflow...</option>
                     </select>
-                    <textarea id="inputDataJson" class="input textarea" placeholder='Input data (JSON, optional)\nExample: {"key": "value"}'></textarea>
+                    <textarea id="inputDataJson" class="input textarea" placeholder='Input data (JSON), filled in automatically for the selected workflow'></textarea>
+                    <div id="inputHint" class="hint hidden"></div>
                     <button id="executeBtn" class="btn btn-primary">Execute Workflow</button>
                 </div>
                 <div id="executeResult" class="result-box hidden"></div>
@@ -85,9 +86,15 @@
                 <h2>Visual Workflow Editor</h2>
                 <div class="editor-toolbar">
                     <button id="newWorkflowBtn" class="btn">New Workflow</button>
-                    <button id="saveWorkflowBtn" class="btn btn-primary">Save Workflow</button>
-                    <button id="loadWorkflowBtn" class="btn">Load Workflow</button>
+                    <select id="loadWorkflowSelect" class="input-sm" aria-label="Saved workflows">
+                        <option value="">Load a saved workflow...</option>
+                    </select>
+                    <button id="loadWorkflowBtn" class="btn">Load</button>
+                    <span class="toolbar-spacer"></span>
+                    <button id="saveWorkflowBtn" class="btn">Save</button>
+                    <button id="saveRunBtn" class="btn btn-primary">Save &amp; Run</button>
                 </div>
+                <div id="editorMessage" class="editor-message hidden"></div>
 
                 <div class="editor-container">
                     <div class="workflow-properties">
@@ -99,6 +106,7 @@
 
                     <div class="workflow-steps">
                         <h3>Workflow Steps</h3>
+                        <p class="hint">Steps run top to bottom. Use <code>{{name}}</code> to insert a run input or the output variable of an earlier step (for example <code>{{notes.content}}</code>).</p>
                         <div id="stepsList" class="steps-container">
                             <div class="empty-state">No steps yet. Click "Add Step" to begin.</div>
                         </div>
@@ -108,6 +116,7 @@
 
                 <div class="editor-preview">
                     <h3>JSON Preview</h3>
+                    <p id="inputsHint" class="hint"></p>
                     <pre id="jsonPreview" class="code-block">{}</pre>
                 </div>
             </div>
@@ -139,6 +148,8 @@
                         </div>
                     </div>
                 </div>
+
+                <div id="monitorResults" class="results-container hidden"></div>
 
                 <div id="monitorLogs" class="logs-container hidden">
                     <h3>Execution Logs</h3>
