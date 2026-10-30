@@ -307,3 +307,18 @@ button {
         grid-template-columns: 1fr;
     }
 }
+
+.notice {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+}
+
+.meta .truncated {
+    color: #b7791f;
+    font-weight: 600;
+}

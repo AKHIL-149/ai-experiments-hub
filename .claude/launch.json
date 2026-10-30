@@ -54,6 +54,15 @@
         "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/05-workflow-automation && exec node server.js"
       ],
       "port": 3000
+    },
+    {
+      "name": "prompt-playground",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/03-prompt-playground && exec node src/server.js"
+      ],
+      "port": 3000
     }
   ]
 }

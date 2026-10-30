@@ -44,7 +44,7 @@ http://localhost:3000
 1. **Enter a Prompt**: Type your prompt in the text area
 2. **Select Model(s)**: Choose one or two models to compare
 3. **Adjust Parameters**: Set temperature (creativity) and max tokens
-4. **Generate**: Click "Generate" or press Ctrl+Enter
+4. **Generate**: Click "Generate" or press Ctrl+Enter (Cmd+Enter on Mac)
 5. **Save Prompts**: Save good prompts for later use
 
 ## Tips
@@ -66,48 +66,34 @@ http://localhost:3000
 
 ## Available Models
 
-By default, the following Ollama models are available:
-- Llama 3.2 (general purpose)
-- Mistral (fast and capable)
-- CodeLlama (code-focused)
-
-Pull additional models with:
+The dropdowns list whatever is installed in your Ollama (embedding models are hidden), so there is nothing to edit. Pull more with:
 ```bash
 ollama pull <model-name>
 ```
+then reload the page. If Ollama is not reachable, a banner explains how to start it.
 
-Then add them to the dropdown in `public/index.html`.
+## Comparing Models
 
-## Project Structure
+With two models selected they run one after the other, not at the same time, so they don't fight over the same GPU/CPU. Each panel shows time, tokens, **tokens/s** (measured by Ollama, so it is a fair speed comparison), and a note when the output stopped at the Max Tokens limit.
 
+Thinking models (e.g. `qwen3`) spend tokens on hidden reasoning; with a small Max Tokens they can return no text, and the panel says so.
+
+## Configuration (`.env`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `3000` | Port to listen on |
+| `HOST` | `127.0.0.1` | Interface to bind. Loopback only, so other machines on your network cannot use your Ollama |
+| `OLLAMA_API_URL` | `http://localhost:11434` | Ollama endpoint |
+| `OLLAMA_TIMEOUT` | `300` | Seconds to wait for one generation |
+| `CORS_ORIGIN` | (none) | Allow another web origin to call the API |
+
+Temperature accepts 0-2 (0 is respected and gives repeatable output); Max Tokens accepts 1-8192.
+
+## Tests
+
+```bash
+npm test
 ```
-01-prompt-playground/
-├── public/
-│   ├── index.html      # Main UI
-│   ├── styles.css      # Styling
-│   └── app.js          # Frontend logic
-├── src/
-│   └── server.js       # Express server + API
-├── package.json
-└── .env.example
-```
 
-## Implementation Notes
-
-This project demonstrates:
-- RESTful API design with Express
-- Async/await patterns for API calls
-- Local storage for client-side persistence
-- Responsive UI design
-- Error handling and loading states
-
-The code prioritizes simplicity and clarity. No complex build tools or frameworks - just clean vanilla JavaScript.
-
-## Future Enhancements
-
-Potential additions:
-- Cloud API support (Anthropic, OpenAI)
-- Export conversation history
-- Prompt templates library
-- Statistics and analytics
-- Dark mode
+The tests run the real server against a fake Ollama, so no model is needed.

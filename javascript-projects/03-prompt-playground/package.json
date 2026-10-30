@@ -5,9 +5,15 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node src/server.js"
+    "dev": "node src/server.js",
+    "test": "node --test"
   },
-  "keywords": ["llm", "prompts", "ai", "testing"],
+  "keywords": [
+    "llm",
+    "prompts",
+    "ai",
+    "testing"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {

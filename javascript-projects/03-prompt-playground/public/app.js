@@ -4,6 +4,40 @@ class PromptPlayground {
         this.initializeElements();
         this.attachEventListeners();
         this.renderSavedPrompts();
+        this.loadModels();
+    }
+
+    // Fill both dropdowns from the models actually installed in Ollama
+    async loadModels() {
+        const notice = document.getElementById('modelsNotice');
+        try {
+            const response = await fetch('/api/models');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Could not load models');
+            if (data.models.length === 0) {
+                throw new Error('No models installed. Run: ollama pull llama3.2');
+            }
+
+            const options = data.models.map(m => {
+                const size = m.parameterSize ? ` (${m.parameterSize})` : '';
+                return `<option value="ollama:${this.escapeHtml(m.name)}">${this.escapeHtml(m.name)}${size}</option>`;
+            }).join('');
+
+            const preferred = data.models.find(m => m.name.startsWith('llama3.2')) || data.models[0];
+            this.model1Select.innerHTML = options;
+            this.model1Select.value = `ollama:${preferred.name}`;
+            this.model2Select.innerHTML = '<option value="">None (single model)</option>' + options;
+            notice.style.display = 'none';
+        } catch (error) {
+            notice.textContent = `${error.message} (showing default model list)`;
+            notice.style.display = 'block';
+        }
+    }
+
+    // "ollama:llama3.2:3b" -> backend "ollama", model "llama3.2:3b" (only the first colon separates)
+    splitModel(modelStr) {
+        const index = modelStr.indexOf(':');
+        return [modelStr.slice(0, index), modelStr.slice(index + 1)];
     }
 
     initializeElements() {
@@ -27,7 +61,7 @@ class PromptPlayground {
         this.model2Select.addEventListener('change', () => this.toggleResult2Panel());
 
         this.promptInput.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 this.handleGenerate();
             }
         });
@@ -48,23 +82,28 @@ class PromptPlayground {
         const model1 = this.model1Select.value;
         const model2 = this.model2Select.value;
         const temperature = parseFloat(this.temperatureInput.value);
-        const maxTokens = parseInt(this.maxTokensInput.value);
+        const maxTokens = parseInt(this.maxTokensInput.value, 10);
+
+        if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
+            alert('Temperature must be a number between 0 and 2');
+            return;
+        }
+        if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 8192) {
+            alert('Max tokens must be a whole number between 1 and 8192');
+            return;
+        }
 
         this.showLoading();
         this.clearResults();
 
         try {
-            const promises = [
-                this.generateWithModel(prompt, model1, temperature, maxTokens, 1)
-            ];
-
+            // One at a time: running both at once makes them compete for the same
+            // GPU/CPU, which would distort the timings being compared
+            await this.generateWithModel(prompt, model1, temperature, maxTokens, 1);
             if (model2) {
-                promises.push(
-                    this.generateWithModel(prompt, model2, temperature, maxTokens, 2)
-                );
+                this.setLoadingText('Generating output 2 of 2...');
+                await this.generateWithModel(prompt, model2, temperature, maxTokens, 2);
             }
-
-            await Promise.all(promises);
         } catch (error) {
             this.showError(error.message);
         } finally {
@@ -73,7 +112,7 @@ class PromptPlayground {
     }
 
     async generateWithModel(prompt, modelStr, temperature, maxTokens, outputNum) {
-        const [backend, model] = modelStr.split(':');
+        const [backend, model] = this.splitModel(modelStr);
         const startTime = Date.now();
 
         try {
@@ -106,32 +145,53 @@ class PromptPlayground {
             })
         });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Generation failed');
+        let data;
+        try {
+            data = await response.json();
+        } catch (e) {
+            throw new Error(`Server returned an unexpected response (${response.status})`);
         }
-
-        const data = await response.json();
-        return data.text;
+        if (!response.ok) {
+            throw new Error(data.error || 'Generation failed');
+        }
+        return data;
     }
 
-    displayResult(outputNum, text, model, elapsed) {
+    displayResult(outputNum, result, model, elapsed) {
         const modelName = document.getElementById(`modelName${outputNum}`);
         const output = document.getElementById(`output${outputNum}`);
         const meta = document.getElementById(`meta${outputNum}`);
+        const text = result.text;
 
         modelName.textContent = model.replace(':', ' - ');
-        output.textContent = text;
-        meta.innerHTML = `
-            <span>Generated in ${elapsed}s</span>
-            <span>${text.split(/\s+/).length} words</span>
-            <span>${text.length} characters</span>
-        `;
+
+        if (!text.trim()) {
+            output.innerHTML = '<div class="error">The model returned no text. ' +
+                (result.truncated
+                    ? 'It likely used all its tokens on hidden reasoning; raise Max Tokens.'
+                    : 'Try a different prompt or model.') + '</div>';
+        } else {
+            output.textContent = text;
+        }
+
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        const parts = [`<span>Generated in ${elapsed}s</span>`];
+        if (result.tokens != null) {
+            parts.push(`<span>${result.tokens} tokens</span>`);
+        }
+        if (result.tokensPerSecond != null) {
+            parts.push(`<span>${result.tokensPerSecond} tokens/s</span>`);
+        }
+        parts.push(`<span>${words} words</span>`, `<span>${text.length} characters</span>`);
+        if (result.truncated) {
+            parts.push('<span class="truncated">Stopped at the Max Tokens limit</span>');
+        }
+        meta.innerHTML = parts.join('');
     }
 
     displayError(outputNum, message) {
         const output = document.getElementById(`output${outputNum}`);
-        output.innerHTML = `<div class="error">Error: ${message}</div>`;
+        output.innerHTML = `<div class="error">Error: ${this.escapeHtml(message)}</div>`;
     }
 
     clearResults() {
@@ -148,8 +208,13 @@ class PromptPlayground {
     }
 
     showLoading() {
+        this.setLoadingText('Generating...');
         this.loadingOverlay.style.display = 'flex';
         this.generateBtn.disabled = true;
+    }
+
+    setLoadingText(text) {
+        this.loadingOverlay.querySelector('p').textContent = text;
     }
 
     hideLoading() {
@@ -161,6 +226,11 @@ class PromptPlayground {
         const prompt = this.promptInput.value.trim();
         if (!prompt) {
             alert('Please enter a prompt to save');
+            return;
+        }
+
+        if (this.savedPrompts.some(p => p.text === prompt)) {
+            alert('This prompt is already saved');
             return;
         }
 
@@ -187,12 +257,21 @@ class PromptPlayground {
     }
 
     loadSavedPrompts() {
-        const saved = localStorage.getItem('savedPrompts');
-        return saved ? JSON.parse(saved) : [];
+        // Storage can be blocked or hold corrupt data; never let that break the whole page
+        try {
+            const saved = JSON.parse(localStorage.getItem('savedPrompts') || '[]');
+            return Array.isArray(saved) ? saved.filter(p => p && typeof p.text === 'string') : [];
+        } catch (e) {
+            return [];
+        }
     }
 
     saveSavedPrompts() {
-        localStorage.setItem('savedPrompts', JSON.stringify(this.savedPrompts));
+        try {
+            localStorage.setItem('savedPrompts', JSON.stringify(this.savedPrompts));
+        } catch (e) {
+            alert('Could not save: browser storage is unavailable');
+        }
     }
 
     renderSavedPrompts() {
