@@ -1,0 +1,30 @@
+{
+  "id": "create-random-portfolio",
+  "name": "Create Random Portfolio",
+  "description": "Makes a random SAMPLE stock portfolio (made-up holdings, not real investments) and saves it as a CSV the Portfolio Tracker can read. The same seed always gives the same portfolio. Inputs: count (1-25), seed (any whole number), source (yahoo or simulated prices used to set each cost basis), portfolio_path.",
+  "steps": [
+    {
+      "id": "generate_holdings",
+      "type": "tool",
+      "tool": "portfolio_operations",
+      "parameters": {
+        "operation": "generate",
+        "count": "{{count}}",
+        "seed": "{{seed}}",
+        "source": "{{source}}"
+      },
+      "output": "generated"
+    },
+    {
+      "id": "save_portfolio",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "write",
+        "path": "{{portfolio_path}}",
+        "content": "{{generated.content}}"
+      },
+      "output": "saved"
+    }
+  ]
+}

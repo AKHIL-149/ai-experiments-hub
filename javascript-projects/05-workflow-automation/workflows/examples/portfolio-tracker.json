@@ -1,0 +1,79 @@
+{
+  "id": "portfolio-tracker",
+  "name": "Portfolio Tracker",
+  "description": "Values a portfolio CSV (symbol, shares, cost_basis) at current prices, records today's total in a history file so a trend builds up over time, and writes a report with totals, positions, trend and a factual commentary. Read-only: no trading and no advice. Inputs: portfolio_path, source (yahoo or simulated), history_path, report_path.",
+  "steps": [
+    {
+      "id": "read_portfolio",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "read",
+        "path": "{{portfolio_path}}"
+      },
+      "output": "portfolio"
+    },
+    {
+      "id": "value_portfolio",
+      "type": "tool",
+      "tool": "portfolio_operations",
+      "parameters": {
+        "operation": "value",
+        "holdings": "{{portfolio.content}}",
+        "source": "{{source}}"
+      },
+      "output": "valued"
+    },
+    {
+      "id": "log_history",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "append",
+        "path": "{{history_path}}",
+        "content": "{{valued.history_row}}\n"
+      },
+      "output": "logged"
+    },
+    {
+      "id": "read_history",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "read",
+        "path": "{{history_path}}"
+      },
+      "output": "history"
+    },
+    {
+      "id": "summarize_trend",
+      "type": "tool",
+      "tool": "portfolio_operations",
+      "parameters": {
+        "operation": "trend",
+        "history": "{{history.content}}"
+      },
+      "output": "trend"
+    },
+    {
+      "id": "describe_portfolio",
+      "type": "agent",
+      "task": {
+        "instruction": "Restate these portfolio facts as 3 to 4 plain sentences. Copy each name and number exactly as written below; do not work anything out yourself.\nCover: the total value and today's change; the largest position and its weight; the best and worst performer versus cost (the 'Best / worst vs cost' line); and the trend sentence.\nDo not predict, give opinions or give advice, and do not suggest buying, selling or holding anything.\n\n<totals>\n{{valued.totals_text}}\n</totals>\n\n<trend>\n{{trend.summary}}\n</trend>",
+        "use_tools": false,
+        "max_tokens": 600
+      },
+      "output": "commentary"
+    },
+    {
+      "id": "save_report",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "write",
+        "path": "{{report_path}}",
+        "content": "# Portfolio Report\n\nPrices: {{source}}, as of {{valued.as_of}}. _Informational only, not investment advice. Prices come from the source named above and may be delayed._\n\n## Totals\n\n{{valued.totals_text}}\n\n## Positions\n\n{{valued.markdown}}\n\n## Trend\n\n{{trend.summary}}\n\n{{trend.markdown}}\n\n## Commentary\n\n{{commentary}}\n\n{{valued.notes}}\n"
+      }
+    }
+  ]
+}

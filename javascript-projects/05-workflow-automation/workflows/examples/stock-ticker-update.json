@@ -1,0 +1,48 @@
+{
+  "id": "stock-ticker-update",
+  "name": "Stock Ticker Update",
+  "description": "Gets the latest price and day change for a list of tickers and writes a short report with a factual market snapshot. Read-only: no trading and no advice. Inputs: symbols (e.g. AAPL,MSFT,NVDA), source (yahoo = real delayed prices, simulated = made-up prices), report_path.",
+  "steps": [
+    {
+      "id": "fetch_quotes",
+      "type": "tool",
+      "tool": "market_data",
+      "parameters": {
+        "symbols": "{{symbols}}",
+        "source": "{{source}}"
+      },
+      "output": "quotes"
+    },
+    {
+      "id": "build_table",
+      "type": "tool",
+      "tool": "csv_operations",
+      "parameters": {
+        "operation": "to_markdown",
+        "content": "{{quotes.content}}",
+        "columns": "symbol,price,prev_close,change,change_pct,as_of"
+      },
+      "output": "table"
+    },
+    {
+      "id": "market_snapshot",
+      "type": "agent",
+      "task": {
+        "instruction": "Write a short, factual market snapshot from the facts and table below.\nWrite exactly 3 sentences: (1) how many symbols rose and how many fell; (2) the biggest rise and the biggest fall with their percentages; (3) any symbol that moved more than 3% in either direction, or say that none did.\nUse only numbers that appear below. Do not predict, give opinions or give advice.\n\nFacts: {{quotes.summary}}\n\n<table>\n{{table.content}}\n</table>",
+        "use_tools": false,
+        "max_tokens": 500
+      },
+      "output": "snapshot"
+    },
+    {
+      "id": "save_report",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "write",
+        "path": "{{report_path}}",
+        "content": "# Stock Ticker Update\n\nSource: {{source}} (data as of the dates shown). _Informational only, not investment advice. Prices come from the source named above and may be delayed._\n\n## Prices\n\n{{table.content}}\n\n## Snapshot\n\n{{quotes.summary}}\n\n{{snapshot}}\n\n{{quotes.notes}}\n"
+      }
+    }
+  ]
+}

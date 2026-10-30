@@ -220,6 +220,29 @@ Inputs: `feedback_csv`, `report_path`. Try it with the sample data:
 
 Tested against 14 kinds of data (all-positive, all-negative, one review, empty file, header only, non-English, emoji, unquoted commas, 60 reviews, a 9 KB comment, prompt injection, braces in the text). Errors and empty data are handled reliably. Writing quality is the weak spot with the default 3B model: it can duplicate or skip a reply, drop a problem from the summary, or repeat injected text as a finding. Use a larger model (`OLLAMA_MODEL`) for real use. A "for each row" step would make the replies deterministic and is not built yet.
 
+## Example: Stock Ticker, Random Portfolio and Portfolio Tracker
+
+Three finance workflows built on the same idea as the feedback report: code does every number, the AI only restates facts. **They read prices and write reports; they never trade, and nothing they write is investment advice.** Every report says so.
+
+| Workflow | Inputs | What it does |
+|---|---|---|
+| `stock-ticker-update` | `symbols`, `source`, `report_path` | Latest price and day change for a list of tickers, a table and a 3-sentence factual snapshot |
+| `create-random-portfolio` | `count`, `seed`, `source`, `portfolio_path` | Makes a random **sample** portfolio (made-up holdings) and saves it as CSV. The same seed always gives the same portfolio |
+| `portfolio-tracker` | `portfolio_path`, `source`, `history_path`, `report_path` | Values a portfolio, appends today's total to a history file, and reports totals, positions, trend and a factual commentary |
+
+A typical sequence (paths are relative to the project):
+
+```json
+{"count": 8, "seed": 2026, "source": "yahoo", "portfolio_path": "data/portfolio/random-portfolio.csv"}
+{"portfolio_path": "data/portfolio/random-portfolio.csv", "source": "yahoo", "history_path": "data/portfolio/history.csv", "report_path": "data/artifacts/portfolio-report.md"}
+```
+
+Run the tracker on different days and the history file builds a trend (reruns on the same day count once). `examples/sample-portfolio.csv` is a ready-made portfolio. Your own portfolio is a CSV with the columns `symbol,shares,cost_basis` (cost_basis = price paid per share); repeated symbols are merged.
+
+**Price sources.** `source` is `yahoo` or `simulated`:
+- `yahoo` gives real, delayed prices from Yahoo Finance's public chart endpoint. It needs no key but is **unofficial and undocumented**: it can change, rate-limit or stop working, and it is meant for personal, informational use. A symbol it cannot find is reported and left out of the totals.
+- `simulated` gives made-up prices (stable within a day, different tomorrow). It works offline and is labelled "simulated" everywhere. It invents a price for any symbol, so use it for demos only.
+
 ## Workflow Definition Format
 
 ### Basic Structure
@@ -303,6 +326,20 @@ Exact work on CSV *text* (usually `{{something.content}}` from a file read), so 
 | `count` | number of data rows |
 
 Results carry `rows` (and `total` for filter) so `run_if` can test them. `if_empty` is returned instead when nothing is left. A row with more cells than the header (unquoted commas in the last column) is repaired by joining the extra text onto the last column and reported as `repaired_rows`.
+
+### MarketDataTool (`market_data`)
+
+`symbols` (comma-separated, up to 25, e.g. `AAPL,BRK-B,^GSPC`) and `source` (`yahoo` or `simulated`). Returns a CSV of `symbol,price,prev_close,change,change_pct,currency,as_of,source`, a one-line `summary`, `up`/`down` counts and a `notes` line naming any symbol it could not price. Read-only. `MARKET_DATA_TIMEOUT` (seconds, default 10) limits each request.
+
+### PortfolioOpsTool (`portfolio_operations`)
+
+| operation | what it does |
+|---|---|
+| `generate` | random sample holdings from 40 well-known US companies: `count` (1-25), `seed` (any whole number), `source`; cost basis is set within 30% of the current price |
+| `value` | prices `holdings` CSV and returns value, cost, gain/loss, day change and weights per position, plus totals (`total_value`, `day_change_pct`, `largest_position_symbol`, ...), a markdown table and a `history_row` |
+| `trend` | summarises a history file (`date,total_value,total_cost,day_change,positions`): period change, best and worst day; damaged lines are ignored |
+
+All arithmetic is done here, tested against hand-calculated figures, and the totals are given to the AI as text to restate rather than to work out.
 
 ### FileOpsTool
 
@@ -500,6 +537,7 @@ LLM_MAX_TOKENS=4096           # default cap on one AI reply (a step can set max_
 OLLAMA_TIMEOUT=240            # seconds to wait for one model reply
 OLLAMA_MAX_CTX=32768          # largest context window requested
 OLLAMA_THINK=false            # true lets thinking models reason before answering
+MARKET_DATA_TIMEOUT=10        # seconds to wait for each price request
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
@@ -610,8 +648,8 @@ Each execution creates a JSON file in `data/executions/`:
 ## Tests
 
 ```bash
-npm test                              # Node: engine, validation, execution records, markdown renderer
-python3 -m pytest python/tests -q     # Python: csv_operations, LLM client limits
+npm test                              # Node: engine, validation, execution records, markdown renderer, example workflows
+python3 -m pytest python/tests -q     # Python: csv_operations, market_data, portfolio_operations, LLM client limits
 ```
 
 Covers workflow validation and saving (ID rules, duplicate and misordered steps, overwrite protection) and the markdown renderer (including HTML escaping). `node test.js` is a separate live check that needs Python and Ollama.

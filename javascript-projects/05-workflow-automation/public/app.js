@@ -595,6 +595,17 @@ class WorkflowApp {
       return `<p class="note">${esc(summary)}${repaired}</p>${data}`;
     }
 
+    // market_data / portfolio_operations: a one-line summary, anything worth flagging, then the table
+    if (typeof result.summary === 'string' && typeof result.content === 'string') {
+      const body = typeof result.markdown === 'string'
+        ? textBlock(`${result.totals_text ? `${result.totals_text}\n\n` : ''}${result.markdown}`)
+        : `<details class="raw-data"><summary>Show the data</summary>
+            <pre class="output-text mono">${esc(result.content)}</pre></details>`;
+      const flag = result.notes && !/^All /.test(result.notes) ? `<p class="note"><strong>${esc(result.notes)}</strong></p>` : '';
+      const source = result.source ? ` <span class="model-chip">${esc(result.source)}</span>` : '';
+      return `<p class="note">${esc(result.summary)}${source}</p>${flag}${body}`;
+    }
+
     if (result.operation === 'transform') {
       return `<p class="note">Converted ${result.records ?? '?'} records (${esc(result.format)}) into <code>${esc(result.target)}</code></p>`;
     }
@@ -788,9 +799,11 @@ class WorkflowApp {
       const label = `${esc(name)}${required.includes(name) ? ' *' : ''} <span style="color:#999">${esc(schema.description || '')}</span>`;
       let control;
       if (schema.enum) {
+        // a value outside the list (typically a template such as {{source}}) must stay visible and selected
+        const options = value !== '' && !schema.enum.includes(value) ? [...schema.enum, value] : schema.enum;
         control = `<select class="input-sm" data-field="param:${esc(name)}">
           <option value="">(choose)</option>
-          ${schema.enum.map(o => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+          ${options.map(o => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}${schema.enum.includes(o) ? '' : ' (from a variable)'}</option>`).join('')}
         </select>`;
       } else if (['content', 'body', 'text', 'prompt'].includes(name)) {
         control = `<textarea class="input textarea" data-field="param:${esc(name)}">${esc(value)}</textarea>`;
