@@ -8,6 +8,19 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
+// Text shown as formatted markdown, with a button to flip to the raw text
+function textBlock(text, asMarkdown = true) {
+  if (!asMarkdown) {
+    return `<pre class="output-text">${esc(text)}</pre>`;
+  }
+  return `
+    <div class="text-block">
+      <div class="md-view">${renderMarkdown(text)}</div>
+      <pre class="output-text hidden">${esc(text)}</pre>
+      <button class="btn-sm raw-toggle">Show raw text</button>
+    </div>`;
+}
+
 function statusClass(status) {
   return status === 'completed' ? 'success' : status === 'failed' ? 'error' : 'info';
 }
@@ -94,6 +107,13 @@ class WorkflowApp {
     document.addEventListener('click', (e) => {
       const artifact = e.target.closest('.view-artifact');
       if (artifact) this.toggleArtifact(artifact);
+      const raw = e.target.closest('.raw-toggle');
+      if (raw) {
+        const block = raw.closest('.text-block');
+        const showing = block.querySelector('.md-view').classList.toggle('hidden');
+        block.querySelector('pre').classList.toggle('hidden', !showing);
+        raw.textContent = showing ? 'Show formatted' : 'Show raw text';
+      }
       const monitor = e.target.closest('[data-monitor]');
       if (monitor) this.monitorExecution(monitor.dataset.monitor);
     });
@@ -468,7 +488,7 @@ class WorkflowApp {
 
     const result = step.result;
     if (typeof result === 'string') {
-      return `<pre class="output-text">${esc(result)}</pre>`;
+      return textBlock(result);
     }
     if (!result || typeof result !== 'object') {
       return `<pre class="output-text mono">${esc(JSON.stringify(result, null, 2))}</pre>`;
@@ -492,7 +512,7 @@ class WorkflowApp {
         <p class="note">${verb} ${size} characters to <code>${esc(result.path)}</code></p>
         ${artifact ? `
           <button class="btn-sm view-artifact" data-path="${esc(artifact[0])}"${isLast ? ' data-auto="1"' : ''}>View saved file</button>
-          <pre class="output-text hidden"></pre>` : ''}`;
+          <div class="hidden"></div>` : ''}`;
     }
 
     if (result.operation === 'transform') {
@@ -517,7 +537,7 @@ class WorkflowApp {
       const response = await fetch(`/api/artifacts?path=${encodeURIComponent(button.dataset.path)}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      view.textContent = data.content;
+      view.innerHTML = textBlock(data.content, /\.(md|markdown)$/i.test(data.path));
       view.classList.remove('hidden');
       button.textContent = 'Hide saved file';
     } catch (error) {

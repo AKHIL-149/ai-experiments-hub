@@ -96,7 +96,7 @@ The server listens on `127.0.0.1` only and accepts same-origin requests only, be
 
 Run it from the Dashboard: fill in the input JSON, **Execute Workflow**, and the Live Monitor opens by itself. Results of past runs are in Execution History.
 
-Paths in file steps are relative to the project root and cannot leave it. A saved file under `data/artifacts/` can be viewed in the results panel.
+Paths in file steps are relative to the project root and cannot leave it. A saved file under `data/artifacts/` can be viewed in the results panel. AI output and `.md` files are shown formatted (headings, lists, tables, bold); **Show raw text** switches to the plain text. HTML in model output is always escaped.
 
 ### Testing the System (CLI)
 
@@ -563,7 +563,7 @@ Each execution creates a JSON file in `data/executions/`:
 npm test
 ```
 
-Covers workflow validation and saving (ID rules, duplicate and misordered steps, overwrite protection). `node test.js` is a separate live check that needs Python and Ollama.
+Covers workflow validation and saving (ID rules, duplicate and misordered steps, overwrite protection) and the markdown renderer (including HTML escaping). `node test.js` is a separate live check that needs Python and Ollama.
 
 ## Future Enhancements
 
