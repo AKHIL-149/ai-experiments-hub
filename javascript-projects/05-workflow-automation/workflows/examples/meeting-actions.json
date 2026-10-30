@@ -17,7 +17,7 @@
       "id": "extract_actions",
       "type": "agent",
       "task": {
-        "instruction": "From these meeting notes, list every action item as a markdown checklist line in the form '- [ ] Owner: task (due: date or 'unspecified')'. Output only the checklist.\n\nNotes:\n{{notes.content}}",
+        "instruction": "From the meeting notes below, list every action item as one markdown checklist line.\nUse this style (the example is from a different meeting):\n- [ ] Alex: send the budget draft to finance (due: Tuesday)\n- [ ] Sam: book the venue (due: unspecified)\nRules: use the real person's name; describe the real task in a few words; give the due date from the notes or 'unspecified'. Only list things a person will do, not decisions or chatter. Output only the checklist.\n\nNotes:\n{{notes.content}}",
         "use_tools": false
       },
       "output": "actions"

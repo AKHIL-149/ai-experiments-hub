@@ -25,7 +25,8 @@
       "id": "analyze_content",
       "type": "agent",
       "task": {
-        "instruction": "Analyze the file content and count the number of words. Content: {{file_content}}"
+        "instruction": "Analyze the file content and count the number of words. Content: {{file_content}}",
+        "use_tools": false
       },
       "output": "analysis"
     }

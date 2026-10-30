@@ -44,6 +44,7 @@ function detectInputs(workflow) {
   };
   for (const step of workflow.steps || []) {
     scan(step.type === 'tool' ? step.parameters : step.task);
+    if (step.run_if?.variable) scan(`{{${step.run_if.variable}}}`);
     if (step.output) produced.add(step.output);
   }
   return inputs;
@@ -457,7 +458,9 @@ class WorkflowApp {
 
     return steps.map((step, index) => {
       const isLast = index === steps.length - 1;
-      const badge = step.success
+      const badge = step.skipped
+        ? '<span class="badge badge-info" title="Its condition was not met">skipped</span>'
+        : step.success
         ? '<span class="badge badge-success">done</span>'
         : '<span class="badge badge-error">failed</span>';
       const kind = step.type === 'tool'
@@ -470,6 +473,7 @@ class WorkflowApp {
           <div class="result-step-header">
             <span class="step-name">${index + 1}. ${esc(step.step_id)}</span>
             ${badge}
+            ${step.truncated ? '<span class="badge badge-warn" title="The model hit its token limit. Raise max_tokens in this step.">output cut off</span>' : ''}
             <span class="hint" style="margin:0">${kind}</span>
             ${variable}
           </div>
@@ -513,6 +517,27 @@ class WorkflowApp {
         ${artifact ? `
           <button class="btn-sm view-artifact" data-path="${esc(artifact[0])}"${isLast ? ' data-auto="1"' : ''}>View saved file</button>
           <div class="hidden"></div>` : ''}`;
+    }
+
+    // csv_operations: say what happened, then show the data (a table when it is one)
+    if (['filter', 'label', 'to_markdown', 'count'].includes(result.operation) && typeof result.content === 'string') {
+      const summary = {
+        filter: `Kept ${result.rows} of ${result.total} rows`,
+        label: `Labelled ${result.rows} rows${result.unlabelled ? ` (${result.unlabelled} outside every range)` : ''}`,
+        to_markdown: `Built a table of ${result.rows} rows`,
+        count: `Counted ${result.rows} rows`
+      }[result.operation];
+      let data = '';
+      if (result.operation === 'to_markdown') {
+        data = textBlock(result.content);
+      } else if (result.operation !== 'count') {
+        data = `<details class="raw-data"><summary>Show the CSV</summary>
+          <pre class="output-text mono">${esc(result.content)}</pre></details>`;
+      }
+      const repaired = result.repaired_rows
+        ? ` <strong>${result.repaired_rows} row(s) had extra commas; the extra text was joined onto the last column.</strong>`
+        : '';
+      return `<p class="note">${esc(summary)}${repaired}</p>${data}`;
     }
 
     if (result.operation === 'transform') {
@@ -593,8 +618,11 @@ class WorkflowApp {
       output: '',
       instruction: '',
       use_tools: false,
+      maxTokens: '',
       tool: this.tools[0]?.name || '',
       params: {},
+      runIf: { variable: '', operator: '>', value: '' },
+      ifSkipped: '',
       extraTask: {},
       extra: {}
     };
@@ -645,6 +673,8 @@ class WorkflowApp {
         }
       } else if (field === 'type' || field === 'tool') {
         return; // handled on change: these rebuild the card
+      } else if (field.startsWith('runIf.')) {
+        step.runIf[field.slice(6)] = e.target.value;
       } else {
         step[field] = e.target.value;
       }
@@ -742,7 +772,11 @@ class WorkflowApp {
         <label class="step-check">
           <input type="checkbox" data-field="use_tools"${step.use_tools ? ' checked' : ''} />
           Let the AI decide to call tools on its own (slower; leave off for plain writing or analysis)
-        </label>`;
+        </label>
+        <div class="step-field">
+          <label>Longest reply, in tokens (optional; default 4096). A reply that hits it is flagged as cut off</label>
+          <input class="input-sm" data-field="maxTokens" inputmode="numeric" placeholder="e.g. 1500" value="${esc(step.maxTokens)}" />
+        </div>`;
     }
 
     return `
@@ -760,6 +794,21 @@ class WorkflowApp {
           </div>
         </div>
         ${body}
+        <details class="step-field condition"${step.runIf.variable ? ' open' : ''}>
+          <summary>Only run this step when… (optional)</summary>
+          <div class="step-row three">
+            <div><label>Result to check</label>
+              <input class="input-sm" data-field="runIf.variable" placeholder="e.g. unhappy.rows" value="${esc(step.runIf.variable)}" /></div>
+            <div><label>Is</label>
+              <select class="input-sm" data-field="runIf.operator">
+                ${['==', '!=', '>', '>=', '<', '<='].map(o => `<option value="${o}"${o === step.runIf.operator ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+              </select></div>
+            <div><label>Value</label>
+              <input class="input-sm" data-field="runIf.value" placeholder="e.g. 0" value="${esc(step.runIf.value)}" /></div>
+          </div>
+          <label>If the step is skipped, its result is</label>
+          <input class="input-sm" data-field="ifSkipped" placeholder="e.g. No unhappy customers this period." value="${esc(step.ifSkipped)}" />
+        </details>
         <div class="step-field">
           <label>Save result as (optional): later steps can use it as {{name}}</label>
           <input class="input-sm" data-field="output" placeholder="e.g. notes" value="${esc(step.output)}" />
@@ -791,7 +840,22 @@ class WorkflowApp {
         } else {
           task.use_tools = false;
         }
+        const limit = String(s.maxTokens).trim();
+        if (limit !== '') {
+          task.max_tokens = Number.isFinite(Number(limit)) ? Number(limit) : limit; // the server explains a bad value
+        } else {
+          delete task.max_tokens;
+        }
         step.task = task;
+      }
+      if (s.runIf.variable.trim()) {
+        const raw = String(s.runIf.value).trim();
+        step.run_if = {
+          variable: s.runIf.variable.trim(),
+          operator: s.runIf.operator,
+          value: raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : s.runIf.value
+        };
+        if (s.ifSkipped) step.if_skipped = s.ifSkipped;
       }
       if (s.output) step.output = s.output;
       return { ...s.extra, ...step };
@@ -904,16 +968,21 @@ class WorkflowApp {
     step.id = def.id || step.id;
     step.output = def.output || '';
 
-    const { id, type, output, task, tool, parameters, ...extra } = def;
+    const { id, type, output, task, tool, parameters, run_if, if_skipped, ...extra } = def;
     step.extra = extra;
+    if (run_if) {
+      step.runIf = { variable: run_if.variable || '', operator: run_if.operator || '>', value: run_if.value ?? '' };
+      step.ifSkipped = if_skipped || '';
+    }
 
     if (def.type === 'tool') {
       step.tool = tool || '';
       step.params = { ...(parameters || {}) };
     } else {
-      const { instruction, use_tools, ...extraTask } = task || {};
+      const { instruction, use_tools, max_tokens, ...extraTask } = task || {};
       step.instruction = instruction || '';
       step.use_tools = use_tools !== false;
+      step.maxTokens = max_tokens ?? '';
       step.extraTask = extraTask;
     }
     return step;

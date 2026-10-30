@@ -91,6 +91,7 @@ The server listens on `127.0.0.1` only and accepts same-origin requests only, be
 1. **Workflow Editor** > fill in the ID (letters, numbers, `-`, `_`), name and description.
 2. **+ Add Step**. A step is either an **AI step** (an instruction for the model) or a **Tool step** (run a tool such as `file_operations` directly; its parameter form comes from the tool itself). Use ↑ / ↓ to reorder.
 3. Use `{{name}}` in instructions and parameters to insert a run input or an earlier step's output. Give a step a **Save result as** name to make its result available to later steps (`{{notes.content}}` reads a field of an object result). The editor lists the inputs it detects under the JSON preview.
+   Under **Only run this step when…** a step can depend on an earlier result (for example `unhappy.rows > 0`); when the condition is false the step is skipped and its result becomes the text you enter for "If the step is skipped". An AI step can also have a **Longest reply** (`max_tokens`); a reply that hits it is flagged "output cut off".
 4. **Save** writes `workflows/<id>.json` (a mistake such as a duplicate step ID or a variable used before it is created is reported instead of saved). **Save & Run** saves and jumps to the Dashboard with the inputs template ready.
 5. To edit later, choose it under **Load a saved workflow** > **Load**, change it and Save (saving the workflow you loaded replaces it; saving a new workflow under an existing ID asks first).
 
@@ -178,15 +179,43 @@ curl -X POST http://localhost:3000/api/workflows/meeting-actions/execute \
 
 The response carries an `execution_id`; open it under Execution History (or `GET /api/executions/<id>`) to see each step's log and output.
 
+## Conditional steps, token limits and empty data
+
+```json
+{
+  "id": "draft_replies",
+  "type": "agent",
+  "task": { "instruction": "...", "use_tools": false, "max_tokens": 1500 },
+  "run_if": { "variable": "unhappy.rows", "operator": ">", "value": 0 },
+  "if_skipped": "No unhappy customers this period.",
+  "output": "replies"
+}
+```
+
+- **`run_if`** compares an earlier result (`name` or `name.field`) with a value using `== != > >= < <=`. Numbers compare as numbers. When it is false the step is skipped (shown as "skipped") and `if_skipped` becomes the step's output. Use it instead of asking a small model to "do X, but if there is no data say Y": the engine decides, so the model never sees an empty case.
+- **`max_tokens`** (1 to 32768, default 4096, `LLM_MAX_TOKENS` changes the default) caps the length of an AI reply. If a reply hits the cap, the step is marked `truncated`, a warning is logged and the results show an "output cut off" badge.
+- **Empty values stop the step.** A blank input, an empty file or an earlier step that produced nothing makes `{{name}}` empty; the next step fails with "`{{name}}` are empty" instead of sending nothing to the model, which would invent data.
+- The context window is sized to each prompt (Ollama silently drops the start of a prompt that does not fit).
+
 ## Example: Customer Feedback Report
 
-`workflows/examples/customer-feedback-report.json` (built in the visual editor) turns a CSV of customer reviews into a report with five steps: read the CSV (tool), classify every review (AI), write top problems and actions (AI), draft replies to the 1 and 2 star reviews (AI), and save everything as one markdown file (tool). Inputs: `feedback_csv`, `report_path`. Try it with the sample data:
+`workflows/examples/customer-feedback-report.json` (built in the visual editor) turns a CSV of customer reviews (columns `id,date,customer,rating,comment`) into a report. Code does the exact work and the AI only writes text:
+
+1. read the CSV (tool)
+2. label each review Positive / Neutral / Negative from its rating (`csv_operations`)
+3. build the markdown table (`csv_operations`)
+4. find the reviews rated 1 or 2 (`csv_operations`)
+5. write top problems and actions (AI, skipped when there are no reviews)
+6. draft a reply for every unhappy customer (AI, skipped when there are none)
+7. save everything as one markdown file (tool)
+
+Inputs: `feedback_csv`, `report_path`. Try it with the sample data:
 
 ```json
 {"feedback_csv": "examples/customer-feedback.csv", "report_path": "data/artifacts/feedback-report.md"}
 ```
 
-It takes about 10 seconds with `llama3.2` (3B). Small models make mistakes in the analysis; set `OLLAMA_MODEL` to a larger model for better summaries.
+Tested against 14 kinds of data (all-positive, all-negative, one review, empty file, header only, non-English, emoji, unquoted commas, 60 reviews, a 9 KB comment, prompt injection, braces in the text). Errors and empty data are handled reliably. Writing quality is the weak spot with the default 3B model: it can duplicate or skip a reply, drop a problem from the summary, or repeat injected text as a finding. Use a larger model (`OLLAMA_MODEL`) for real use. A "for each row" step would make the replies deterministic and is not built yet.
 
 ## Workflow Definition Format
 
@@ -258,6 +287,19 @@ Use `{{variable}}` to reference previous step outputs. A step that reads a file 
 ```
 
 ## Available Tools (Phase 1)
+
+### CsvOpsTool (`csv_operations`)
+
+Exact work on CSV *text* (usually `{{something.content}}` from a file read), so the AI does not have to filter or count:
+
+| operation | what it does |
+|---|---|
+| `filter` | keep rows where `column` `operator` `value` (`< <= > >= == != contains`; numbers compare as numbers) |
+| `label` | add `new_column` from numeric `ranges`, e.g. `4-5:Positive,3:Neutral,1-2:Negative` |
+| `to_markdown` | markdown table, optional `columns` |
+| `count` | number of data rows |
+
+Results carry `rows` (and `total` for filter) so `run_if` can test them. `if_empty` is returned instead when nothing is left. A row with more cells than the header (unquoted commas in the last column) is repaired by joining the extra text onto the last column and reported as `repaired_rows`.
 
 ### FileOpsTool
 
@@ -451,6 +493,9 @@ PYTHON_TIMEOUT=300000
 # Python/LLM
 OLLAMA_API_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
+LLM_MAX_TOKENS=4096           # default cap on one AI reply (a step can set max_tokens)
+OLLAMA_TIMEOUT=240            # seconds to wait for one model reply
+OLLAMA_MAX_CTX=32768          # largest context window requested
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
@@ -560,7 +605,8 @@ Each execution creates a JSON file in `data/executions/`:
 ## Tests
 
 ```bash
-npm test
+npm test                              # Node: engine, validation, execution records, markdown renderer
+python3 -m pytest python/tests -q     # Python: csv_operations, LLM client limits
 ```
 
 Covers workflow validation and saving (ID rules, duplicate and misordered steps, overwrite protection) and the markdown renderer (including HTML escaping). `node test.js` is a separate live check that needs Python and Ollama.
