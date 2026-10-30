@@ -195,6 +195,7 @@ The response carries an `execution_id`; open it under Execution History (or `GET
 ```
 
 - **`run_if`** compares an earlier result (`name` or `name.field`) with a value using `== != > >= < <=`. Numbers compare as numbers. When it is false the step is skipped (shown as "skipped") and `if_skipped` becomes the step's output. Use it instead of asking a small model to "do X, but if there is no data say Y": the engine decides, so the model never sees an empty case.
+- **`if_skipped`** may contain `{{variables}}` (inputs or earlier results), e.g. `"No alert: nothing moved {{threshold_pct}}% today."`; one that does not exist fails the step with a clear message.
 - **`max_tokens`** (1 to 32768, default 4096, `LLM_MAX_TOKENS` changes the default) caps the length of an AI reply. If a reply hits the cap, the step is marked `truncated`, a warning is logged and the results show an "output cut off" badge.
 - **Empty values stop the step.** A blank input, an empty file or an earlier step that produced nothing makes `{{name}}` empty; the next step fails with "`{{name}}` are empty" instead of sending nothing to the model, which would invent data.
 - **Thinking models** (qwen3 and similar) reason before answering, which is slow and can use up the whole token limit. Thinking is switched off for workflow steps (`OLLAMA_THINK=true` turns it back on). A reply that comes back empty fails the step with a clear message instead of passing nothing on, and a model that is not installed fails with the `ollama pull` command to run.
@@ -229,6 +230,7 @@ Three finance workflows built on the same idea as the feedback report: code does
 | `stock-ticker-update` | `symbols`, `source`, `report_path` | Latest price and day change for a list of tickers, a table and a 3-sentence factual snapshot |
 | `create-random-portfolio` | `count`, `seed`, `source`, `portfolio_path` | Makes a random **sample** portfolio (made-up holdings) and saves it as CSV. The same seed always gives the same portfolio |
 | `portfolio-tracker` | `portfolio_path`, `source`, `history_path`, `report_path` | Values a portfolio, appends today's total to a history file, and reports totals, positions, trend and a factual commentary |
+| `price-alert` | `portfolio_path`, `source`, `threshold_pct`, `log_path`, `alert_path` | Flags positions that moved at least `threshold_pct` percent today (up or down). Every check is logged; the alert file is written only when something qualifies |
 
 A typical sequence (paths are relative to the project):
 
@@ -238,6 +240,22 @@ A typical sequence (paths are relative to the project):
 ```
 
 Run the tracker on different days and the history file builds a trend (reruns on the same day count once). `examples/sample-portfolio.csv` is a ready-made portfolio. Your own portfolio is a CSV with the columns `symbol,shares,cost_basis` (cost_basis = price paid per share); repeated symbols are merged.
+
+### Price alert
+
+`price-alert` is deliberately **free of AI text**: the check, the table and the message are all produced by code, so an alert can never contradict the numbers (an earlier version with a model-written description once said "Eight positions moved" when one had). It needs `threshold_pct` between 0 (exclusive) and 100, e.g. `3`; a move of exactly the threshold counts.
+
+- When something qualifies, `alert_path` is written (symbol, direction, price, previous close, move, effect on the position, and the whole portfolio's move today).
+- When nothing does, the alert step is shown as **skipped** with the sentence "No alert: none of 8 positions moved at least 3% (largest move LLY +2.10%)" and **no file is written**. A quiet check does not remove an earlier alert file, so read the "as of" line in it.
+- Every check appends `check time, price date, number of alerts, symbols, threshold` to `log_path`, so you can see it ran even when it stayed quiet.
+
+The project has no scheduler yet, so something has to start the workflow. The API is enough, for example from your system's cron every 30 minutes on weekdays (the server must be running; adjust the port and paths):
+
+```bash
+*/30 * * * 1-5 curl -s -X POST http://127.0.0.1:3000/api/workflows/price-alert/execute -H 'Content-Type: application/json' -d '{"inputData": {"portfolio_path": "data/portfolio/random-portfolio.csv", "source": "yahoo", "threshold_pct": 3, "log_path": "data/portfolio/alert-log.csv", "alert_path": "data/artifacts/price-alert.md"}}'
+```
+
+Nothing is sent to you: the alert is a file and a result in the UI. Prices are delayed and a daily move is measured against the previous close, so this is not a real-time alerting system.
 
 **Price sources.** `source` is `yahoo` or `simulated`:
 - `yahoo` gives real, delayed prices from Yahoo Finance's public chart endpoint. It needs no key but is **unofficial and undocumented**: it can change, rate-limit or stop working, and it is meant for personal, informational use. A symbol it cannot find is reported and left out of the totals.
@@ -336,6 +354,7 @@ Results carry `rows` (and `total` for filter) so `run_if` can test them. `if_emp
 | operation | what it does |
 |---|---|
 | `generate` | random sample holdings from 40 well-known US companies: `count` (1-25), `seed` (any whole number), `source`; cost basis is set within 30% of the current price |
+| `alerts` | `holdings`, `source`, `threshold` (percent): the positions whose move today is at least the threshold, biggest first, with `count`, `symbols`, a `summary` sentence, a markdown table and a `log_line` |
 | `value` | prices `holdings` CSV and returns value, cost, gain/loss, day change and weights per position, plus totals (`total_value`, `day_change_pct`, `largest_position_symbol`, ...), a markdown table and a `history_row` |
 | `trend` | summarises a history file (`date,total_value,total_cost,day_change,positions`): period change, best and worst day; damaged lines are ignored |
 

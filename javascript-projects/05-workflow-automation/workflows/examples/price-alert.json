@@ -1,0 +1,57 @@
+{
+  "id": "price-alert",
+  "name": "Price Alert",
+  "description": "Checks a portfolio CSV against today's prices and raises an alert only when a position moved at least threshold_pct percent, up or down. Fully deterministic (no AI text, so an alert can never contradict the numbers). Every check is logged; an alert file is written only when something qualifies. Read-only: no trading and no advice. Inputs: portfolio_path, source (yahoo or simulated), threshold_pct (e.g. 3), log_path, alert_path.",
+  "steps": [
+    {
+      "id": "read_portfolio",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "read",
+        "path": "{{portfolio_path}}"
+      },
+      "output": "portfolio"
+    },
+    {
+      "id": "check_moves",
+      "type": "tool",
+      "tool": "portfolio_operations",
+      "parameters": {
+        "operation": "alerts",
+        "holdings": "{{portfolio.content}}",
+        "source": "{{source}}",
+        "threshold": "{{threshold_pct}}"
+      },
+      "output": "moves"
+    },
+    {
+      "id": "log_check",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "append",
+        "path": "{{log_path}}",
+        "content": "{{moves.log_line}}\n"
+      },
+      "output": "logged"
+    },
+    {
+      "id": "write_alert",
+      "type": "tool",
+      "tool": "file_operations",
+      "parameters": {
+        "operation": "write",
+        "path": "{{alert_path}}",
+        "content": "# Price Alert\n\nPrices: {{source}}, as of {{moves.as_of}}. Alert level: a move of at least {{threshold_pct}}% in a day. _Informational only, not investment advice. Prices may be delayed._\n\n## {{moves.summary}}\n\n{{moves.markdown}}\n\nWhole portfolio today: {{moves.portfolio_day_change_pct}}%.\n\n{{moves.notes}}\n"
+      },
+      "run_if": {
+        "variable": "moves.count",
+        "operator": ">",
+        "value": 0
+      },
+      "if_skipped": "{{moves.summary}}",
+      "output": "alert"
+    }
+  ]
+}
