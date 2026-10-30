@@ -9,7 +9,7 @@ Autonomous agent system for executing workflows with AI reasoning and tool execu
 - **Extensible Tool System**: Plugin-based tools (web scraping, file ops, API calls, data analysis)
 - **Workflow Definitions**: JSON-based workflow configuration
 - **Execution History**: File-based persistence of all executions and logs
-- **Multiple Triggers**: Manual, API, cron schedules, event-driven (future)
+- **Multiple Triggers**: Manual, API, built-in cron schedules (Schedules tab), event-driven (future)
 - **Template Variables**: Dynamic workflows with {{variable}} substitution
 
 ## Architecture
@@ -19,7 +19,7 @@ Node.js Layer (Orchestration)
 ├── WorkflowEngine    - Executes workflow steps
 ├── PythonBridge      - Spawns Python processes, handles IPC
 ├── ExecutionManager  - Tracks execution state and logs
-└── TaskScheduler     - Cron scheduling (Phase 4)
+├── Scheduler         - Runs workflows on cron schedules (src/Scheduler.js, src/cron.js)
 
 Python Layer (AI Agent)
 ├── agent.py          - Main agent with reasoning loop
@@ -85,6 +85,20 @@ The web interface provides:
 - **Live Monitor**: Follow a run live; the results appear under the logs when it finishes
 
 The server listens on `127.0.0.1` only and accepts same-origin requests only, because it can write files and run workflows. Set `HOST` or `CORS_ORIGIN` to change that.
+
+### Schedules
+
+The **Schedules** tab runs a workflow automatically while the server is running. Create one with **+ New Schedule**, or choose a workflow and inputs on the Dashboard and click **Schedule this…**: pick the workflow, its inputs (a template is filled in), an optional model, and when to run. The form shows what the schedule means and its next three run times before you save.
+
+- **When** is a standard 5-field cron expression (`minute hour day-of-month month day-of-week`) in the **server's time zone**, with presets for the common cases. Supported: `*`, lists (`1,15`), ranges (`9-17`), steps (`*/15`, `10-30/10`), month and day names, and daylight-saving changes. A step larger than its field (`*/90` minutes) is refused, because it would not do what it says. Seconds are not supported: the finest schedule is one minute, and a run starts within about 10 seconds after its minute.
+- **Each card** shows the next run, the last run and its result, how many runs started and how many failed in a row. **Run now** starts it immediately, **Show runs** lists its recent runs (open one to see its results), and the **Enabled** switch pauses it.
+- **Nothing is made up after downtime.** A run that was due while the server was off, or the computer asleep, is skipped and noted ("missed"), never run late: an out-of-date price check is worse than none. A run more than 2 minutes late is treated the same way.
+- **No overlapping runs.** If the previous run is still going when the next one is due, the new one is skipped and says so. Scheduled runs count towards `MAX_CONCURRENT_EXECUTIONS`; at the limit they are skipped, not queued.
+- **Failures are visible.** A failed run shows its reason on the card. A schedule that fails 10 times in a row **pauses itself** and says so (`SCHEDULER_PAUSE_AFTER_FAILURES`, `0` turns this off); turning it back on starts the count again.
+- **A server restart** keeps the schedules (`data/schedules.json`), and runs that were in progress are marked as interrupted instead of staying "running" forever (this also applies to runs started any other way).
+- Inputs are checked when you save: the workflow must exist and every input it needs must have a value.
+
+The scheduler lives inside the server process, so schedules only run while `npm start` is running. Times use the server's clock and time zone; the Schedules tab shows which.
 
 ### Building a workflow in the editor
 
@@ -249,7 +263,7 @@ Run the tracker on different days and the history file builds a trend (reruns on
 - When nothing does, the alert step is shown as **skipped** with the sentence "No alert: none of 8 positions moved at least 3% (largest move LLY +2.10%)" and **no file is written**. A quiet check does not remove an earlier alert file, so read the "as of" line in it.
 - Every check appends `check time, price date, number of alerts, symbols, threshold` to `log_path`, so you can see it ran even when it stayed quiet.
 
-The project has no scheduler yet, so something has to start the workflow. The API is enough, for example from your system's cron every 30 minutes on weekdays (the server must be running; adjust the port and paths):
+To run the check automatically, use the **Schedules** tab (for example `*/30 9-16 * * 1-5`, "Weekdays every 30 minutes, 09:00 to 16:30"). Anything else that can make an HTTP request can also start it through the API, for example system cron:
 
 ```bash
 */30 * * * 1-5 curl -s -X POST http://127.0.0.1:3000/api/workflows/price-alert/execute -H 'Content-Type: application/json' -d '{"inputData": {"portfolio_path": "data/portfolio/random-portfolio.csv", "source": "yahoo", "threshold_pct": 3, "log_path": "data/portfolio/alert-log.csv", "alert_path": "data/artifacts/price-alert.md"}}'
@@ -437,8 +451,10 @@ Read, write, transform files:
 │   ├── WorkflowEngine.js
 │   ├── PythonBridge.js
 │   ├── ExecutionManager.js
-│   ├── TaskScheduler.js       (Phase 4)
-│   └── routes.js              (Phase 3)
+│   ├── Scheduler.js           # Runs workflows on cron schedules
+│   ├── ScheduleStore.js       # Saves schedules (atomic writes) to data/schedules.json
+│   ├── scheduleRoutes.js      # /api/schedules
+│   └── cron.js                # 5-field cron: parsing, next run, descriptions
 └── python/                    # Python agent layer
     ├── agent.py
     ├── llm_client.py
@@ -525,8 +541,8 @@ const execution = await engine.executeWorkflow('workflow-id', {}, {
 - Execution management API
 - Real-time execution streaming
 
-### 📋 Phase 4: Scheduling & Events
-- Cron-based scheduling
+### 🔄 Phase 4: Scheduling & Events
+- ✅ Cron-based scheduling (Schedules tab)
 - File watcher triggers
 - Webhook endpoints
 - Queue management
@@ -557,6 +573,10 @@ OLLAMA_TIMEOUT=240            # seconds to wait for one model reply
 OLLAMA_MAX_CTX=32768          # largest context window requested
 OLLAMA_THINK=false            # true lets thinking models reason before answering
 MARKET_DATA_TIMEOUT=10        # seconds to wait for each price request
+SCHEDULES_FILE=data/schedules.json
+SCHEDULER_TICK_MS=10000       # how often due schedules are looked for
+MAX_SCHEDULES=50
+SCHEDULER_PAUSE_AFTER_FAILURES=10   # failed runs in a row before a schedule pauses itself (0 = never)
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
@@ -662,6 +682,11 @@ Each execution creates a JSON file in `data/executions/`:
 | GET | `/api/tools` | Tools a step can call, with parameter schemas |
 | GET | `/api/executions`, `/api/executions/:id` | History and one run (logs, per-step results) |
 | GET | `/api/executions/:id/stream` | Live updates (Server-Sent Events) |
+| GET, POST | `/api/schedules` | List schedules (with next run, last result, time zone) / create one: `{ "name", "workflow_id", "cron", "input_data", "model", "enabled" }`; 400 lists every problem |
+| GET, PATCH, DELETE | `/api/schedules/:id` | Read, change (any of the fields above) or delete a schedule |
+| POST | `/api/schedules/:id/run` | Run it now (409 if already running, 429 if the server is at its limit) |
+| GET | `/api/schedules/:id/runs?limit=10` | Recent executions of that schedule |
+| POST | `/api/schedules/preview` | `{ "cron" }` -> whether it is valid, a plain description, and the next 5 run times |
 | GET | `/api/artifacts?path=data/artifacts/x.md` | Read a file a workflow saved (only under `data/artifacts`) |
 
 ## Tests

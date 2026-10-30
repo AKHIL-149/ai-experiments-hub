@@ -50,6 +50,34 @@ function detectInputs(workflow) {
   return inputs;
 }
 
+const SCHEDULE_PRESETS = [
+  { label: 'Every 5 minutes', cron: '*/5 * * * *' },
+  { label: 'Every 15 minutes', cron: '*/15 * * * *' },
+  { label: 'Every 30 minutes', cron: '*/30 * * * *' },
+  { label: 'Every hour', cron: '0 * * * *' },
+  { label: 'Weekdays every 30 minutes, 09:00 to 16:30', cron: '*/30 9-16 * * 1-5' },
+  { label: 'Weekdays at 09:30', cron: '30 9 * * 1-5' },
+  { label: 'Every day at 09:00', cron: '0 9 * * *' },
+  { label: 'Custom…', cron: null }
+];
+
+function formatWhen(iso) {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// "in 3 min", "2 h 5 min ago": relative to `now` (the server's clock, so a wrong browser clock does not matter)
+function relativeTime(iso, now = Date.now()) {
+  const diff = new Date(iso).getTime() - now;
+  const minutes = Math.round(Math.abs(diff) / 60000);
+  let text;
+  if (Math.abs(diff) < 45000) text = 'a moment';
+  else if (minutes < 60) text = `${minutes} min`;
+  else if (minutes < 1440) text = minutes % 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes / 60} h`;
+  else text = `${Math.round(minutes / 1440)} day${Math.round(minutes / 1440) === 1 ? '' : 's'}`;
+  return diff >= 0 ? `in ${text}` : `${text} ago`;
+}
+
 class WorkflowApp {
   constructor() {
     this.workflows = [];
@@ -57,6 +85,13 @@ class WorkflowApp {
     this.tools = [];
     this.models = [];
     this.defaultModel = '';
+    this.schedules = [];
+    this.scheduleTimer = null;
+    this.scheduleClockOffset = 0;
+    this.editingScheduleId = null;
+    this.autoScheduleInputs = '';
+    this.openRuns = new Set();
+    this.previewSeq = 0;
     this.monitorEventSource = null;
     this.monitorRenderedKey = null;
 
@@ -135,6 +170,19 @@ class WorkflowApp {
       document.getElementById(id)?.addEventListener('input', () => this.updateJsonPreview());
     });
 
+    // Schedules
+    document.getElementById('newScheduleBtn').addEventListener('click', () => this.openScheduleForm());
+    document.getElementById('scheduleFromQuickBtn').addEventListener('click', () => this.scheduleFromQuickExecute());
+    document.getElementById('cancelScheduleBtn').addEventListener('click', () => this.closeScheduleForm());
+    document.getElementById('saveScheduleBtn').addEventListener('click', () => this.saveSchedule());
+    document.getElementById('scheduleWorkflow').addEventListener('change', (e) => this.prefillScheduleInputs(e.target.value));
+    document.getElementById('schedulePreset').addEventListener('change', () => this.onPresetChange());
+    document.getElementById('scheduleCron').addEventListener('input', () => this.refreshSchedulePreview());
+    document.getElementById('schedulesList').addEventListener('click', (e) => this.onScheduleClick(e));
+    document.getElementById('schedulesList').addEventListener('change', (e) => {
+      if (e.target.dataset.action === 'toggle') this.toggleSchedule(e.target.closest('.schedule-card').dataset.id, e.target.checked);
+    });
+
     // Monitor
     document.getElementById('startMonitorBtn').addEventListener('click', () => this.startMonitoring());
     document.getElementById('stopMonitorBtn').addEventListener('click', () => this.stopMonitoring());
@@ -150,6 +198,12 @@ class WorkflowApp {
 
     if (tabName === 'history') {
       this.loadExecutions();
+    }
+    if (tabName === 'schedules') {
+      this.loadSchedules();
+      this.startScheduleRefresh();
+    } else {
+      this.stopScheduleRefresh();
     }
   }
 
@@ -219,6 +273,11 @@ class WorkflowApp {
     const selected = select.value;
     select.innerHTML = '<option value="">Select a workflow...</option>' + options;
     select.value = selected;
+
+    const scheduleSelect = document.getElementById('scheduleWorkflow');
+    const scheduleSelected = scheduleSelect.value;
+    scheduleSelect.innerHTML = '<option value="">Select a workflow...</option>' + options;
+    scheduleSelect.value = scheduleSelected;
 
     const loadSelect = document.getElementById('loadWorkflowSelect');
     const loadSelected = loadSelect.value;
@@ -355,6 +414,11 @@ class WorkflowApp {
 
     // a remembered model that is no longer installed falls back to the default
     select.value = this.models.some(m => m.name === wanted) ? wanted : '';
+
+    const scheduleModel = document.getElementById('scheduleModel');
+    const keep = scheduleModel.value;
+    scheduleModel.innerHTML = select.innerHTML;
+    scheduleModel.value = this.models.some(m => m.name === keep) ? keep : '';
   }
 
   selectedModel() {
@@ -420,6 +484,7 @@ class WorkflowApp {
           <div class="execution-header">
             <strong>${esc(exec.workflow_id)}</strong>
             ${exec.model ? `<span class="model-chip">${esc(exec.model)}</span>` : ''}
+            ${String(exec.trigger_type || '').startsWith('schedule') ? '<span class="model-chip">⏰ scheduled</span>' : ''}
             <span class="badge badge-${statusClass(exec.status)}">${esc(exec.status)}</span>
           </div>
           <div class="execution-meta">
@@ -1054,6 +1119,345 @@ class WorkflowApp {
       step.extraTask = extraTask;
     }
     return step;
+  }
+
+  // ------------------------------------------------------------ schedules
+
+  startScheduleRefresh() {
+    this.stopScheduleRefresh();
+    this.scheduleTimer = setInterval(() => this.loadSchedules(), 5000);
+  }
+
+  stopScheduleRefresh() {
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+  }
+
+  async loadSchedules() {
+    try {
+      const response = await fetch('/api/schedules');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      this.schedules = data.schedules;
+      this.scheduleClockOffset = Date.parse(data.now) - Date.now();
+      document.getElementById('scheduleTz').textContent = `Times use the server's time zone (${data.timezone})`;
+      this.renderSchedules();
+    } catch (error) {
+      document.getElementById('schedulesList').innerHTML =
+        `<div class="error">Failed to load schedules: ${esc(error.message)}</div>`;
+    }
+  }
+
+  scheduleStatusBadge(s) {
+    if (s.running) return '<span class="badge badge-info">running</span>';
+    if (!s.last_status) return '<span class="badge">not run yet</span>';
+    const kind = { completed: 'success', failed: 'error', error: 'error', skipped: 'warn', missed: 'warn' }[s.last_status] || 'info';
+    return `<span class="badge badge-${kind}">${esc(s.last_status)}</span>`;
+  }
+
+  renderSchedules() {
+    const container = document.getElementById('schedulesList');
+    if (this.schedules.length === 0) {
+      container.innerHTML = '<div class="empty-state">No schedules yet. Click "+ New Schedule", or use "Schedule this…" on the Dashboard.</div>';
+      return;
+    }
+
+    const now = Date.now() + this.scheduleClockOffset;
+    container.innerHTML = this.schedules.map((s) => {
+      const next = !s.enabled ? 'Paused'
+        : s.next_run ? `${esc(formatWhen(s.next_run))} <span class="hint">(${esc(relativeTime(s.next_run, now))})</span>`
+        : '<span class="warning-text">none: check the schedule</span>';
+      const last = s.last_run_at
+        ? `${esc(formatWhen(s.last_run_at))} <span class="hint">(${esc(relativeTime(s.last_run_at, now))})</span>`
+        : 'never';
+      const problem = ['skipped', 'missed', 'error', 'failed'].includes(s.last_status) && s.last_message
+        ? `<div class="warning-text">${esc(s.last_message)}</div>` : '';
+      const streak = s.consecutive_failures > 0
+        ? ` · <span class="warning-text">${s.consecutive_failures} failed in a row</span>` : '';
+
+      return `
+        <div class="schedule-card${s.enabled ? '' : ' off'}" data-id="${esc(s.id)}">
+          <div class="schedule-top">
+            <h3>${esc(s.name)}</h3>
+            <span class="model-chip">${esc(s.workflow_id)}</span>
+            ${this.scheduleStatusBadge(s)}
+            <span class="spacer"></span>
+            <label class="step-check" style="margin:0"><input type="checkbox" data-action="toggle"${s.enabled ? ' checked' : ''} /> Enabled</label>
+          </div>
+          <dl class="schedule-meta">
+            <dt>Schedule</dt><dd>${esc(s.description)} <code>${esc(s.cron)}</code></dd>
+            <dt>Next run</dt><dd>${next}</dd>
+            <dt>Last run</dt><dd>${last}${problem}</dd>
+            <dt>Runs</dt><dd>${s.run_count} started${streak}${s.model ? ` · model ${esc(s.model)}` : ''}</dd>
+          </dl>
+          <div class="schedule-actions">
+            <button class="btn-sm" data-action="run">Run now</button>
+            <button class="btn-sm" data-action="edit">Edit</button>
+            <button class="btn-sm" data-action="runs">${this.openRuns.has(s.id) ? 'Hide runs' : 'Show runs'}</button>
+            <button class="btn-sm btn-danger" data-action="delete">Delete</button>
+          </div>
+          <div class="schedule-runs${this.openRuns.has(s.id) ? '' : ' hidden'}" data-runs></div>
+        </div>`;
+    }).join('');
+
+    this.openRuns.forEach(id => this.loadScheduleRuns(id));
+  }
+
+  onScheduleClick(e) {
+    const open = e.target.closest('[data-open-run]');
+    if (open) return this.monitorExecution(open.dataset.openRun);
+
+    const button = e.target.closest('[data-action]');
+    if (!button || button.dataset.action === 'toggle') return;
+    const id = button.closest('.schedule-card').dataset.id;
+    const action = button.dataset.action;
+
+    if (action === 'run') this.runScheduleNow(id, button);
+    else if (action === 'edit') this.openScheduleForm(this.schedules.find(s => s.id === id));
+    else if (action === 'runs') this.toggleScheduleRuns(id);
+    else if (action === 'delete') this.deleteSchedule(id);
+  }
+
+  async scheduleRequest(method, url, body) {
+    const response = await fetch(url, {
+      method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    const data = response.status === 204 ? null : await response.json();
+    if (!response.ok) {
+      const error = new Error(data.details ? data.details.join('; ') : data.error);
+      error.details = data.details;
+      throw error;
+    }
+    return data;
+  }
+
+  async toggleSchedule(id, enabled) {
+    try {
+      await this.scheduleRequest('PATCH', `/api/schedules/${encodeURIComponent(id)}`, { enabled });
+    } catch (error) {
+      alert(`Could not change the schedule: ${error.message}`);
+    }
+    this.loadSchedules();
+  }
+
+  async runScheduleNow(id, button) {
+    button.disabled = true;
+    try {
+      await this.scheduleRequest('POST', `/api/schedules/${encodeURIComponent(id)}/run`);
+      this.openRuns.add(id);
+    } catch (error) {
+      alert(`Could not run it: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+    this.loadSchedules();
+  }
+
+  async deleteSchedule(id) {
+    const schedule = this.schedules.find(s => s.id === id);
+    if (!confirm(`Delete the schedule "${schedule?.name || id}"? Its past runs stay in History.`)) return;
+    try {
+      await this.scheduleRequest('DELETE', `/api/schedules/${encodeURIComponent(id)}`);
+      this.openRuns.delete(id);
+    } catch (error) {
+      alert(`Could not delete it: ${error.message}`);
+    }
+    this.loadSchedules();
+  }
+
+  toggleScheduleRuns(id) {
+    if (this.openRuns.has(id)) this.openRuns.delete(id);
+    else this.openRuns.add(id);
+    this.renderSchedules();
+  }
+
+  async loadScheduleRuns(id) {
+    const card = document.querySelector(`.schedule-card[data-id="${CSS.escape(id)}"] [data-runs]`);
+    if (!card) return;
+    try {
+      const response = await fetch(`/api/schedules/${encodeURIComponent(id)}/runs?limit=8`);
+      const runs = await response.json();
+      if (!response.ok) throw new Error(runs.error);
+      const now = Date.now() + this.scheduleClockOffset;
+      card.innerHTML = runs.length === 0 ? '<span class="hint">No runs yet.</span>' : runs.map(run => `
+        <div class="schedule-run">
+          <span class="badge badge-${statusClass(run.status)}">${esc(run.status)}</span>
+          <span>${esc(formatWhen(run.started_at))} <span class="hint">(${esc(relativeTime(run.started_at, now))})</span></span>
+          <span class="hint">${run.trigger_type === 'schedule-manual' ? 'run now' : 'scheduled'}${formatDuration(run.duration_ms) ? ` · ${formatDuration(run.duration_ms)}` : ''}</span>
+          <a data-open-run="${esc(run.execution_id)}">Open results</a>
+        </div>`).join('');
+    } catch (error) {
+      card.innerHTML = `<span class="warning-text">Could not load runs: ${esc(error.message)}</span>`;
+    }
+  }
+
+  // ---- the form
+
+  scheduleFormFields() {
+    return {
+      name: document.getElementById('scheduleName'),
+      workflow: document.getElementById('scheduleWorkflow'),
+      inputs: document.getElementById('scheduleInputs'),
+      model: document.getElementById('scheduleModel'),
+      preset: document.getElementById('schedulePreset'),
+      cron: document.getElementById('scheduleCron'),
+      enabled: document.getElementById('scheduleEnabled')
+    };
+  }
+
+  openScheduleForm(schedule = null, prefill = {}) {
+    const f = this.scheduleFormFields();
+    this.editingScheduleId = schedule ? schedule.id : null;
+    document.getElementById('scheduleFormTitle').textContent = schedule ? 'Edit schedule' : 'New schedule';
+    document.getElementById('scheduleFormMessage').className = 'editor-message hidden';
+
+    f.preset.innerHTML = SCHEDULE_PRESETS.map((p, i) => `<option value="${i}">${esc(p.label)}</option>`).join('');
+    f.name.value = schedule?.name || prefill.name || '';
+    f.workflow.value = schedule?.workflow_id || prefill.workflow_id || '';
+    f.model.value = schedule ? (schedule.model || '') : (prefill.model || '');
+    f.enabled.checked = schedule ? schedule.enabled : true;
+
+    const cron = schedule?.cron || '*/30 * * * *';
+    const presetIndex = SCHEDULE_PRESETS.findIndex(p => p.cron === cron);
+    f.preset.value = String(presetIndex >= 0 ? presetIndex : SCHEDULE_PRESETS.length - 1);
+    f.cron.value = presetIndex >= 0 ? '' : cron;
+    f.cron.classList.toggle('hidden', presetIndex >= 0);
+
+    const inputs = schedule ? schedule.input_data : prefill.input_data;
+    this.autoScheduleInputs = '';
+    if (inputs && Object.keys(inputs).length > 0) {
+      f.inputs.value = JSON.stringify(inputs, null, 2);
+    } else {
+      f.inputs.value = '';
+      this.prefillScheduleInputs(f.workflow.value);
+    }
+
+    document.getElementById('scheduleForm').classList.remove('hidden');
+    document.getElementById('scheduleForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    f.name.focus();
+    this.refreshSchedulePreview();
+  }
+
+  closeScheduleForm() {
+    document.getElementById('scheduleForm').classList.add('hidden');
+    this.editingScheduleId = null;
+  }
+
+  prefillScheduleInputs(workflowId) {
+    const f = this.scheduleFormFields();
+    const hint = document.getElementById('scheduleInputHint');
+    const workflow = this.workflows.find(w => w.id === workflowId);
+    if (!workflow) {
+      hint.textContent = '';
+      return;
+    }
+    const inputs = workflow.inputs || [];
+    const template = inputs.length ? JSON.stringify(Object.fromEntries(inputs.map(name => [name, ''])), null, 2) : '';
+    if (!f.inputs.value.trim() || f.inputs.value === this.autoScheduleInputs) {
+      f.inputs.value = template;
+      this.autoScheduleInputs = template;
+    }
+    hint.textContent = inputs.length ? `This workflow needs: ${inputs.join(', ')}. Every one must have a value.` : 'This workflow needs no inputs.';
+  }
+
+  onPresetChange() {
+    const f = this.scheduleFormFields();
+    const preset = SCHEDULE_PRESETS[Number(f.preset.value)];
+    f.cron.classList.toggle('hidden', preset.cron !== null);
+    if (preset.cron === null) f.cron.focus();
+    this.refreshSchedulePreview();
+  }
+
+  currentCron() {
+    const f = this.scheduleFormFields();
+    const preset = SCHEDULE_PRESETS[Number(f.preset.value)];
+    return preset && preset.cron !== null ? preset.cron : f.cron.value.trim();
+  }
+
+  // Shows what the chosen schedule means and when it will next run (asks the server, which owns the rules)
+  refreshSchedulePreview() {
+    clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(async () => {
+      const box = document.getElementById('schedulePreview');
+      const cron = this.currentCron();
+      const seq = ++this.previewSeq;
+      if (!cron) {
+        box.innerHTML = '<span class="hint">Enter a schedule: minute hour day-of-month month day-of-week</span>';
+        return;
+      }
+      try {
+        const response = await fetch('/api/schedules/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cron })
+        });
+        const data = await response.json();
+        if (seq !== this.previewSeq) return; // a newer edit is already being checked
+        box.innerHTML = data.valid
+          ? `<strong>${esc(data.description)}</strong><ul>${data.next.slice(0, 3).map(n => `<li>${esc(formatWhen(n))}</li>`).join('')}</ul>`
+          : `<span class="bad">${esc(data.error)}</span>`;
+      } catch (error) {
+        if (seq === this.previewSeq) box.innerHTML = '<span class="bad">Could not check the schedule</span>';
+      }
+    }, 250);
+  }
+
+  showScheduleFormMessage(html) {
+    const box = document.getElementById('scheduleFormMessage');
+    box.className = 'editor-message bad';
+    box.innerHTML = html;
+  }
+
+  async saveSchedule() {
+    const f = this.scheduleFormFields();
+    let inputData = {};
+    if (f.inputs.value.trim()) {
+      try {
+        inputData = JSON.parse(f.inputs.value);
+      } catch (error) {
+        return this.showScheduleFormMessage(`Inputs are not valid JSON: ${esc(error.message)}`);
+      }
+    }
+
+    const body = {
+      name: f.name.value, workflow_id: f.workflow.value, cron: this.currentCron(),
+      input_data: inputData, model: f.model.value || null, enabled: f.enabled.checked
+    };
+    try {
+      if (this.editingScheduleId) {
+        await this.scheduleRequest('PATCH', `/api/schedules/${encodeURIComponent(this.editingScheduleId)}`, body);
+      } else {
+        await this.scheduleRequest('POST', '/api/schedules', body);
+      }
+      this.closeScheduleForm();
+      this.loadSchedules();
+    } catch (error) {
+      this.showScheduleFormMessage(error.details
+        ? `<strong>Not saved. Please fix:</strong><ul>${error.details.map(d => `<li>${esc(d)}</li>`).join('')}</ul>`
+        : esc(error.message));
+    }
+  }
+
+  // Dashboard "Schedule this…": start a schedule from the workflow, inputs and model chosen there
+  scheduleFromQuickExecute() {
+    const workflowId = document.getElementById('workflowSelect').value;
+    if (!workflowId) {
+      return this.showExecuteMessage('Select a workflow first, then choose "Schedule this…".', 'error');
+    }
+    let inputData = {};
+    const text = document.getElementById('inputDataJson').value;
+    if (text.trim()) {
+      try {
+        inputData = JSON.parse(text);
+      } catch (error) {
+        return this.showExecuteMessage(`Input data is not valid JSON: ${esc(error.message)}`, 'error');
+      }
+    }
+    const workflow = this.workflows.find(w => w.id === workflowId);
+    this.switchTab('schedules');
+    this.openScheduleForm(null, {
+      name: workflow ? workflow.name : '', workflow_id: workflowId, input_data: inputData, model: this.selectedModel()
+    });
   }
 
   // ------------------------------------------------------------ live monitor

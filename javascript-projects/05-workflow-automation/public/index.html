@@ -22,6 +22,7 @@
             <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
             <button class="tab-btn" data-tab="history">Execution History</button>
             <button class="tab-btn" data-tab="editor">Workflow Editor</button>
+            <button class="tab-btn" data-tab="schedules">Schedules</button>
             <button class="tab-btn" data-tab="monitor">Live Monitor</button>
         </nav>
 
@@ -50,7 +51,10 @@
                     <div id="modelHint" class="hint"></div>
                     <textarea id="inputDataJson" class="input textarea" placeholder='Input data (JSON), filled in automatically for the selected workflow'></textarea>
                     <div id="inputHint" class="hint hidden"></div>
-                    <button id="executeBtn" class="btn btn-primary">Execute Workflow</button>
+                    <div class="button-row">
+                        <button id="executeBtn" class="btn btn-primary">Execute Workflow</button>
+                        <button id="scheduleFromQuickBtn" class="btn" title="Run this workflow with these inputs on a schedule">Schedule this…</button>
+                    </div>
                 </div>
                 <div id="executeResult" class="result-box hidden"></div>
             </div>
@@ -126,6 +130,47 @@
                     <h3>JSON Preview</h3>
                     <p id="inputsHint" class="hint"></p>
                     <pre id="jsonPreview" class="code-block">{}</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedules Tab -->
+        <div id="schedules" class="tab-content">
+            <div class="section">
+                <div class="section-header">
+                    <h2>Schedules</h2>
+                    <div class="filters">
+                        <span id="scheduleTz" class="hint"></span>
+                        <button id="newScheduleBtn" class="btn btn-primary">+ New Schedule</button>
+                    </div>
+                </div>
+                <p class="hint">Runs a workflow automatically while this server is running. A run that was due while the server was off, or the computer asleep, is skipped rather than made up later.</p>
+
+                <div id="scheduleForm" class="schedule-form hidden">
+                    <h3 id="scheduleFormTitle">New schedule</h3>
+                    <div class="step-field"><label for="scheduleName">Name</label>
+                        <input id="scheduleName" class="input" placeholder="e.g. Portfolio price alert" maxlength="80" /></div>
+                    <div class="step-field"><label for="scheduleWorkflow">Workflow</label>
+                        <select id="scheduleWorkflow" class="input"><option value="">Select a workflow...</option></select></div>
+                    <div class="step-field"><label for="scheduleInputs">Inputs (JSON)</label>
+                        <textarea id="scheduleInputs" class="input textarea" placeholder="Filled in automatically for the selected workflow"></textarea>
+                        <div id="scheduleInputHint" class="hint"></div></div>
+                    <div class="step-field"><label for="scheduleModel">Model</label>
+                        <select id="scheduleModel" class="input"><option value="">Default</option></select></div>
+                    <div class="step-field"><label for="schedulePreset">When</label>
+                        <select id="schedulePreset" class="input"></select>
+                        <input id="scheduleCron" class="input hidden" placeholder="minute hour day-of-month month day-of-week, e.g. */15 9-16 * * 1-5" spellcheck="false" />
+                        <div id="schedulePreview" class="schedule-preview"></div></div>
+                    <label class="step-check"><input id="scheduleEnabled" type="checkbox" checked /> Enabled</label>
+                    <div id="scheduleFormMessage" class="editor-message hidden"></div>
+                    <div class="button-row">
+                        <button id="saveScheduleBtn" class="btn btn-primary">Save schedule</button>
+                        <button id="cancelScheduleBtn" class="btn">Cancel</button>
+                    </div>
+                </div>
+
+                <div id="schedulesList" class="schedules-list">
+                    <div class="loading">Loading schedules...</div>
                 </div>
             </div>
         </div>
