@@ -141,3 +141,36 @@ test('overwriting replaces the file that already holds the id, even in a sub-fol
     assert.equal((await engine.listWorkflows()).length, 1);
   });
 });
+
+test('run_if and if_skipped are validated', () => {
+  const step = (extra) => agentStep('a', 'x', extra);
+  const ok = { run_if: { variable: 'data.rows', operator: '>', value: 0 }, if_skipped: 'none' };
+  assert.deepEqual(validateWorkflow(workflow([toolStep('data', { output: 'data' }), step(ok)])), []);
+
+  const problems = (extra) => validateWorkflow(workflow([toolStep('data', { output: 'data' }), step(extra)]));
+  assert.ok(problems({ run_if: 'rows > 0' }).some(e => /run_if must be an object/.test(e)));
+  assert.ok(problems({ run_if: { variable: 'a b', operator: '>', value: 1 } }).some(e => /variable/.test(e)));
+  assert.ok(problems({ run_if: { variable: 'data.rows', operator: 'contains', value: 1 } }).some(e => /operator/.test(e)));
+  assert.ok(problems({ run_if: { variable: 'data.rows', operator: '>' } }).some(e => /value/.test(e)));
+  assert.ok(problems({ run_if: ok.run_if, if_skipped: 5 }).some(e => /if_skipped must be text/.test(e)));
+  assert.ok(problems({ if_skipped: 'x' }).some(e => /only applies to a step that has run_if/.test(e)));
+});
+
+test('a run_if variable counts as an input unless an earlier step makes it, and must not come from a later step', () => {
+  const gate = { run_if: { variable: 'flag', operator: '==', value: 'yes' } };
+  assert.deepEqual(requiredInputs(workflow([agentStep('a', 'hi', gate)])), ['flag']);
+  assert.deepEqual(requiredInputs(workflow([toolStep('t', { output: 'flag' }), agentStep('a', 'hi', gate)])), ['src']);
+
+  const errors = validateWorkflow(workflow([agentStep('a', 'hi', gate), toolStep('t', { output: 'flag' })]));
+  assert.ok(errors.some(e => /\{\{flag\}\}.*later/.test(e)));
+});
+
+test('max_tokens must be a whole number from 1 to 32768', () => {
+  const withLimit = (max_tokens) => validateWorkflow(workflow([
+    { id: 'a', type: 'agent', task: { instruction: 'x', max_tokens } }
+  ]));
+  for (const ok of [1, 1500, 32768]) assert.deepEqual(withLimit(ok), []);
+  for (const bad of [0, -1, 32769, 1.5, '1500', null, true]) {
+    assert.ok(withLimit(bad).some(e => /max_tokens must be a whole number/.test(e)), `${bad} should be rejected`);
+  }
+});

@@ -4,12 +4,30 @@ import requests
 from typing import Optional
 
 
+# Default cap on generated tokens. A step that must produce a long table or report needs
+# more than a chat reply does; a step can lower or raise it with "max_tokens" in its task.
+DEFAULT_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
+
+# Ollama silently drops the start of a prompt that does not fit its context window,
+# so the window is sized to the prompt (3 characters per token is a safe estimate).
+MIN_CONTEXT = 4096
+MAX_CONTEXT = int(os.getenv("OLLAMA_MAX_CTX", "32768"))
+
+
+def context_window_for(prompt: str, max_tokens: int) -> int:
+    """Context size (a multiple of 1024) that fits the prompt plus the reply."""
+    needed = len(prompt) // 3 + max_tokens + 256
+    return min(MAX_CONTEXT, max(MIN_CONTEXT, -(-needed // 1024) * 1024))
+
+
 class LLMClient:
     """Unified interface for different LLM backends."""
 
     def __init__(self, backend: str = "ollama", model: Optional[str] = None):
         self.backend = backend.lower()
         self.model = model or self._get_default_model()
+        # True when the last reply was cut off by the token limit
+        self.truncated = False
 
         if self.backend == "anthropic":
             import anthropic
@@ -40,8 +58,10 @@ class LLMClient:
         }
         return defaults.get(self.backend, "llama3.2")
 
-    def generate(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
-        """Generate text based on prompt."""
+    def generate(self, prompt: str, max_tokens: int = None, temperature: float = 0.7) -> str:
+        """Generate text based on prompt. Sets self.truncated when the reply hit max_tokens."""
+        max_tokens = max_tokens or DEFAULT_MAX_TOKENS
+        self.truncated = False
         try:
             if self.backend == "ollama":
                 return self._generate_ollama(prompt, max_tokens, temperature)
@@ -61,7 +81,8 @@ class LLMClient:
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_predict": max_tokens
+                "num_predict": max_tokens,
+                "num_ctx": context_window_for(prompt, max_tokens)
             }
         }
 
@@ -70,12 +91,16 @@ class LLMClient:
         attempts = 3
         for attempt in range(1, attempts + 1):
             try:
-                response = requests.post(url, json=payload, timeout=120)
+                response = requests.post(
+                    url, json=payload, timeout=int(os.getenv("OLLAMA_TIMEOUT", "240"))
+                )
                 if response.status_code >= 500 and attempt < attempts:
                     time.sleep(2 * attempt)
                     continue
                 response.raise_for_status()
-                return response.json()["response"]
+                data = response.json()
+                self.truncated = data.get("done_reason") == "length"
+                return data["response"]
             except (requests.ConnectionError, requests.Timeout):
                 if attempt == attempts:
                     raise
@@ -91,6 +116,7 @@ class LLMClient:
                 {"role": "user", "content": prompt}
             ]
         )
+        self.truncated = message.stop_reason == "max_tokens"
         return message.content[0].text
 
     def _generate_openai(self, prompt: str, max_tokens: int, temperature: float) -> str:
@@ -103,4 +129,5 @@ class LLMClient:
                 {"role": "user", "content": prompt}
             ]
         )
+        self.truncated = response.choices[0].finish_reason == "length"
         return response.choices[0].message.content

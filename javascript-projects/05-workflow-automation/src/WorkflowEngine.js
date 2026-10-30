@@ -181,13 +181,46 @@ class WorkflowEngine {
     );
 
     try {
+      // A step can be conditional on an earlier result ("only draft replies when some exist").
+      // The engine decides, not the model: small models do not reliably follow "if X then ...".
+      if (step.run_if) {
+        const check = this.evaluateCondition(step.run_if, context);
+        if (!check.passed) {
+          await this.executionManager.incrementStepCounter(executionId, true);
+          await this.executionManager.appendLog(
+            executionId,
+            'info',
+            `Skipped step: ${step.id} (needs ${check.description}, but it is ${check.actual})`
+          );
+          return {
+            step_id: step.id,
+            type: step.type,
+            ...(step.tool && { tool: step.tool }),
+            ...(step.output && { output: step.output }),
+            success: true,
+            skipped: true,
+            result: step.if_skipped ?? ''
+          };
+        }
+      }
+
       let result;
       let details = null;
+      let truncated = false;
 
       if (step.type === 'agent') {
         // Execute agent step via Python
         const agentResult = await this.executeAgentStep(step, context, options);
         result = agentResult.result;
+        truncated = agentResult.truncated === true;
+        if (truncated) {
+          await this.executionManager.appendLog(
+            executionId,
+            'warn',
+            `Step ${step.id}: the model's reply was cut off at ${agentResult.max_tokens || 'the default'} tokens, ` +
+            'so the result is incomplete. Raise "max_tokens" in this step\'s task.'
+          );
+        }
         details = {
           tools_used: agentResult.tools_used || [],
           tool_results: agentResult.tool_results || []
@@ -214,6 +247,7 @@ class WorkflowEngine {
         ...(step.tool && { tool: step.tool }),
         ...(step.output && { output: step.output }),
         success: true,
+        ...(truncated && { truncated: true }),
         result: result,
         ...(details && { details })
       };
@@ -248,10 +282,12 @@ class WorkflowEngine {
     }
 
     const missing = new Set();
-    const params = this.resolveTemplateVariables(step.parameters || {}, context, missing);
+    const empty = new Set();
+    const params = this.resolveTemplateVariables(step.parameters || {}, context, missing, empty);
     if (missing.size > 0) {
       throw new Error(`Unresolved template variable(s): ${[...missing].join(', ')}`);
     }
+    this.assertNoEmptyVariables(empty);
 
     const response = await this.pythonBridge.executeTool(step.tool, params);
     if (!response.success) {
@@ -270,7 +306,8 @@ class WorkflowEngine {
   async executeAgentStep(step, context, options = {}) {
     // Resolve template variables in task (e.g., {{variable}})
     const missing = new Set();
-    const task = this.resolveTemplateVariables(step.task, context, missing);
+    const empty = new Set();
+    const task = this.resolveTemplateVariables(step.task, context, missing, empty);
     if (missing.size > 0) {
       // Sending a literal "{{name}}" to the model would silently produce nonsense
       throw new Error(
@@ -278,6 +315,7 @@ class WorkflowEngine {
         `(not an input or the "output" of an earlier step)`
       );
     }
+    this.assertNoEmptyVariables(empty);
 
     // Execute via Python bridge
     const agentResult = await this.pythonBridge.executeAgent(task, {
@@ -299,7 +337,55 @@ class WorkflowEngine {
    * @param {Object} context - Context with variable values
    * @returns {Object} Object with resolved variables
    */
-  resolveTemplateVariables(obj, context, missing = new Set()) {
+  /**
+   * Evaluate a step's run_if: { variable: "table.rows", operator: ">", value: 0 }.
+   * Numbers compare as numbers; anything else compares as text with == and !=.
+   * @returns {{passed: boolean, description: string, actual: *}}
+   */
+  evaluateCondition(condition, context) {
+    let actual = context;
+    for (const part of String(condition.variable).split('.')) {
+      if (actual === null || typeof actual !== 'object' || !(part in actual)) {
+        throw new Error(
+          `run_if variable {{${condition.variable}}} is not available ` +
+          '(not an input or the "output" of an earlier step)'
+        );
+      }
+      actual = actual[part];
+    }
+
+    const description = `${condition.variable} ${condition.operator} ${JSON.stringify(condition.value)}`;
+    const isNumeric = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v));
+
+    if (isNumeric(actual) && isNumeric(condition.value)) {
+      const [a, b] = [Number(actual), Number(condition.value)];
+      const passed = { '==': a === b, '!=': a !== b, '>': a > b, '>=': a >= b, '<': a < b, '<=': a <= b }[condition.operator];
+      return { passed, description, actual };
+    }
+    if (condition.operator === '==' || condition.operator === '!=') {
+      const same = String(actual).trim().toLowerCase() === String(condition.value).trim().toLowerCase();
+      return { passed: condition.operator === '==' ? same : !same, description, actual };
+    }
+    throw new Error(
+      `run_if cannot compare ${JSON.stringify(actual)} with ${JSON.stringify(condition.value)} using ${condition.operator} ` +
+      '(both must be numbers)'
+    );
+  }
+
+  /**
+   * An empty value (a blank input, an empty file, an empty reply) must stop the step: a model
+   * given nothing to work on invents plausible data instead of reporting that there is none.
+   */
+  assertNoEmptyVariables(empty) {
+    if (empty.size > 0) {
+      throw new Error(
+        `Template variable(s) ${[...empty].map(v => `{{${v}}}`).join(', ')} are empty ` +
+        '(a blank input, an empty file, or an earlier step that produced nothing)'
+      );
+    }
+  }
+
+  resolveTemplateVariables(obj, context, missing = new Set(), empty = new Set()) {
     const resolved = {};
 
     for (const [key, value] of Object.entries(obj)) {
@@ -315,10 +401,13 @@ class WorkflowEngine {
             }
             ctxValue = ctxValue[part];
           }
+          if (typeof ctxValue === 'string' && ctxValue.trim() === '') {
+            empty.add(varName);
+          }
           return typeof ctxValue === 'string' ? ctxValue : JSON.stringify(ctxValue);
         });
       } else if (typeof value === 'object' && value !== null) {
-        resolved[key] = this.resolveTemplateVariables(value, context, missing);
+        resolved[key] = this.resolveTemplateVariables(value, context, missing, empty);
       } else {
         resolved[key] = value;
       }

@@ -159,9 +159,14 @@ class ExecutionManager {
       for (const file of files) {
         if (!file.endsWith('.json')) continue;
 
-        const filePath = path.join(this.executionsDir, file);
-        const data = await fs.readFile(filePath, 'utf-8');
-        const execution = JSON.parse(data);
+        // One unreadable record must not hide every other execution
+        let execution;
+        try {
+          execution = JSON.parse(await fs.readFile(path.join(this.executionsDir, file), 'utf-8'));
+        } catch (error) {
+          console.warn(`Skipping unreadable execution record ${file}: ${error.message}`);
+          continue;
+        }
 
         // Apply filters
         if (filters.workflow_id && execution.workflow_id !== filters.workflow_id) {
@@ -195,7 +200,12 @@ class ExecutionManager {
     await fs.mkdir(this.executionsDir, { recursive: true });
 
     const filePath = path.join(this.executionsDir, `${execution.execution_id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(execution, null, 2), 'utf-8');
+    // Write a temp file and rename it into place: a reader (the history list, the live monitor)
+    // sees the old or the new record, never a half-written one
+    this.writeCounter = (this.writeCounter || 0) + 1;
+    const temp = `${filePath}.${process.pid}.${this.writeCounter}.tmp`;
+    await fs.writeFile(temp, JSON.stringify(execution, null, 2), 'utf-8');
+    await fs.rename(temp, filePath);
   }
 }
 

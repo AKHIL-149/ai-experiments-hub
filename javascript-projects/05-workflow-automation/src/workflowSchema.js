@@ -25,12 +25,24 @@ function stepPayload(step) {
   return step.type === 'tool' ? step.parameters : step.task;
 }
 
+const CONDITION_OPERATORS = ['==', '!=', '>', '>=', '<', '<='];
+
+/** Every {{variable}} a step needs: its template variables plus the one its run_if tests. */
+function stepVariables(step) {
+  const found = templateRoots(stepPayload(step || {}));
+  const variable = step && step.run_if && step.run_if.variable;
+  if (typeof variable === 'string' && /^\w+(\.\w+)*$/.test(variable)) {
+    found.add(variable.split('.')[0]);
+  }
+  return found;
+}
+
 /** Variables a caller must supply: used by a step but not produced by an earlier step. */
 function requiredInputs(workflow) {
   const produced = new Set();
   const inputs = [];
   for (const step of workflow.steps || []) {
-    for (const name of templateRoots(stepPayload(step || {}))) {
+    for (const name of stepVariables(step)) {
       if (!produced.has(name) && !inputs.includes(name)) {
         inputs.push(name);
       }
@@ -40,6 +52,34 @@ function requiredInputs(workflow) {
     }
   }
   return inputs;
+}
+
+function validateCondition(step, name) {
+  const errors = [];
+  if (step.if_skipped !== undefined && typeof step.if_skipped !== 'string') {
+    errors.push(`${name}: if_skipped must be text`);
+  }
+  if (step.run_if === undefined) {
+    if (step.if_skipped !== undefined) {
+      errors.push(`${name}: if_skipped only applies to a step that has run_if`);
+    }
+    return errors;
+  }
+
+  const cond = step.run_if;
+  if (!cond || typeof cond !== 'object' || Array.isArray(cond)) {
+    return [...errors, `${name}: run_if must be an object with variable, operator and value`];
+  }
+  if (typeof cond.variable !== 'string' || !/^\w+(\.\w+)*$/.test(cond.variable)) {
+    errors.push(`${name}: run_if variable must be a name such as table.rows`);
+  }
+  if (!CONDITION_OPERATORS.includes(cond.operator)) {
+    errors.push(`${name}: run_if operator must be one of ${CONDITION_OPERATORS.join(' ')}`);
+  }
+  if (!['string', 'number', 'boolean'].includes(typeof cond.value)) {
+    errors.push(`${name}: run_if needs a value to compare with`);
+  }
+  return errors;
 }
 
 /** Returns a list of human-readable problems; empty means the workflow is valid. */
@@ -109,8 +149,14 @@ function validateWorkflow(workflow) {
       const task = step.task;
       if (!task || typeof task !== 'object' || typeof task.instruction !== 'string' || !task.instruction.trim()) {
         errors.push(`${name}: instruction is required`);
-      } else if (task.use_tools !== undefined && typeof task.use_tools !== 'boolean') {
-        errors.push(`${name}: use_tools must be true or false`);
+      } else {
+        if (task.use_tools !== undefined && typeof task.use_tools !== 'boolean') {
+          errors.push(`${name}: use_tools must be true or false`);
+        }
+        if (task.max_tokens !== undefined &&
+            (!Number.isInteger(task.max_tokens) || task.max_tokens < 1 || task.max_tokens > 32768)) {
+          errors.push(`${name}: max_tokens must be a whole number between 1 and 32768`);
+        }
       }
     } else {
       if (typeof step.tool !== 'string' || !step.tool.trim()) {
@@ -122,8 +168,10 @@ function validateWorkflow(workflow) {
       }
     }
 
+    errors.push(...validateCondition(step, name));
+
     // A variable that only a later step creates would never be filled in
-    for (const variable of templateRoots(stepPayload(step))) {
+    for (const variable of stepVariables(step)) {
       if (!produced.has(variable) && laterOutputs.has(variable) && laterOutputs.get(variable) !== step.id) {
         errors.push(
           `${name}: uses {{${variable}}}, which step "${laterOutputs.get(variable)}" only produces later. ` +
@@ -147,4 +195,6 @@ class WorkflowValidationError extends Error {
   }
 }
 
-module.exports = { validateWorkflow, requiredInputs, templateRoots, WorkflowValidationError };
+module.exports = {
+  validateWorkflow, requiredInputs, templateRoots, CONDITION_OPERATORS, WorkflowValidationError
+};

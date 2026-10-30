@@ -34,11 +34,14 @@ class WorkflowAgent:
         """
         instruction = task.get("instruction", "")
         context = task.get("context", {})
+        self.max_tokens = None
 
         if not instruction:
             raise ValueError("Task must contain 'instruction' field")
 
         try:
+            self.max_tokens = self._task_max_tokens(task)
+
             # Step 1: Analyze task and determine tools needed. Pure-text steps can
             # set "use_tools": false to skip tool planning entirely (faster, and the
             # model can't decide to call a tool it doesn't need)
@@ -89,6 +92,8 @@ class WorkflowAgent:
             return {
                 "success": True,
                 "result": final_result,
+                "truncated": self.llm_client.truncated,
+                "max_tokens": self.max_tokens,
                 "tools_used": self.tools_used,
                 "tool_results": tool_results,
                 "execution_steps": len(self.execution_steps)
@@ -101,6 +106,16 @@ class WorkflowAgent:
                 "tools_used": self.tools_used,
                 "execution_steps": self.execution_steps
             }
+
+    @staticmethod
+    def _task_max_tokens(task: Dict[str, Any]):
+        """Optional per-step cap on generated tokens ("max_tokens" in the task)."""
+        value = task.get("max_tokens")
+        if value is None:
+            return None  # the client's default applies
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 32768:
+            raise ValueError("max_tokens must be a whole number between 1 and 32768")
+        return value
 
     def _analyze_task(self, instruction: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Use LLM to analyze task and determine which tools to use."""
@@ -209,7 +224,7 @@ Respond ONLY with valid JSON:"""
 Context: {json.dumps(context) if context else "None"}
 
 Respond with the result of the task only, without introduction or commentary:"""
-            return self.llm_client.generate(prompt, temperature=0.3, max_tokens=1000)
+            return self.llm_client.generate(prompt, temperature=0.3, max_tokens=self.max_tokens)
 
         # Synthesize from tool results
         results_summary = "\n".join([
@@ -231,7 +246,7 @@ Respond with the result of the task itself, using the actual data from the tool 
 
 Result:"""
 
-        return self.llm_client.generate(prompt, temperature=0.2, max_tokens=1000)
+        return self.llm_client.generate(prompt, temperature=0.2, max_tokens=self.max_tokens)
 
 
 def setup_environment():
