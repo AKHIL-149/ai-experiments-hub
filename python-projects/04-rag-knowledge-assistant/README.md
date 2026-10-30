@@ -18,7 +18,8 @@ RAG-powered system for building a searchable knowledge base from your documents.
 2. **Embedding**: Each chunk is converted to a vector using local sentence transformers
 3. **Storage**: Vectors are stored in ChromaDB for fast similarity search
 4. **Query**: Chunks are found two ways and combined: by meaning (vector similarity) and by exact words (BM25 keyword search). Exact-word matching catches terms that embeddings blur, such as "retained", "hours" or part numbers. On a small test set this raised top-1 retrieval accuracy from 16/20 to 20/20.
-5. **Generation**: The best chunks are passed to the local LLM, which answers only from them and cites them as `[1]`, `[2]`. If nothing relevant is found, it says so instead of guessing.
+5. **Context widening**: Answers that span several chunks ("the three types are…", numbered steps) are often split so the later chunks look nothing like the question. The chunks next to the best matches (`--neighbors`, default 2) are therefore added and shown in document order, marked "adjacent context" in the sources. On the sample document this took complete answers to list-style questions from 13/18 to 17/18 runs, with no loss on single-fact questions.
+6. **Generation**: The best chunks are passed to the local LLM, which answers only from them and cites them as `[1]`, `[2]`. If nothing relevant is found, it says so instead of guessing.
 
 ## Setup
 
@@ -117,7 +118,7 @@ A relative `CHROMA_DB_PATH` is resolved against this project folder, so the same
 The system chunks documents intelligently:
 - Default chunk size: 500 characters
 - Overlap: 50 characters
-- Breaks at paragraphs, then sentences (never inside a number like `3.14`), then words
+- Breaks at paragraphs, then sentences (never inside a number like `3.14`), then words; each chunk starts at a word boundary
 - Each chunk is embedded together with its file name, which helps questions that mention the document's topic
 - Supports `.txt`, `.md` (UTF-8 or Windows-1252) and text-based `.pdf` (blank pages are skipped; scanned PDFs need OCR first)
 - Overlap must be smaller than the chunk size

@@ -85,6 +85,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--neighbors",
+        type=int,
+        default=2,
+        help="Chunks on each side of the best matches to include as context, so answers "
+             "that span several chunks (lists, steps) are complete; 0 disables (default: 2)"
+    )
+
+    parser.add_argument(
         "--yes", "-y",
         action="store_true",
         help="Skip the confirmation prompt for 'clear'"
@@ -111,6 +119,8 @@ def main():
 
     if args.top_k < 1:
         fail("--top-k must be at least 1")
+    if args.neighbors < 0:
+        fail("--neighbors cannot be negative")
     if not 0.0 <= args.temperature <= 2.0:
         fail("--temperature must be between 0.0 and 2.0")
 
@@ -123,7 +133,8 @@ def main():
     try:
         rag = RAGEngine(
             chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap
+            chunk_overlap=args.chunk_overlap,
+            neighbors=args.neighbors
         )
     except ValueError as e:
         fail(str(e))
@@ -187,10 +198,13 @@ def main():
             if sources:
                 print("\nSources:")
                 for src in sources:
-                    relevance_pct = src['relevance'] * 100
-                    matched = ", keyword match" if src.get('keyword_match') else ""
-                    print(f"\n  [{src['index']}] {Path(src['source']).name} "
-                          f"(similarity: {relevance_pct:.0f}%{matched})")
+                    if src.get('adjacent'):
+                        detail = "adjacent context"
+                    else:
+                        detail = f"similarity: {src['relevance'] * 100:.0f}%"
+                        if src.get('keyword_match'):
+                            detail += ", keyword match"
+                    print(f"\n  [{src['index']}] {Path(src['source']).name} ({detail})")
                     if 'page' in src:
                         print(f"      Page: {src['page']}")
                     print(f"      Preview: {src['preview']}")

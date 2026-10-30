@@ -81,6 +81,13 @@ class VectorStore:
         everything = self.collection.get(include=["documents", "metadatas"])
         return everything["ids"], everything["documents"], everything["metadatas"]
 
+    def get_chunks(self, ids: List[str]) -> Dict[str, Tuple[str, Dict]]:
+        """{id: (text, metadata)} for the chunk ids that exist."""
+        if not ids:
+            return {}
+        found = self.collection.get(ids=ids, include=["documents", "metadatas"])
+        return {i: (t, m) for i, t, m in zip(found["ids"], found["documents"], found["metadatas"])}
+
     def get_embeddings(self, ids: List[str]) -> Dict[str, List[float]]:
         """Stored embeddings for the given chunk ids."""
         if not ids:

@@ -122,3 +122,11 @@ def test_pdf_blank_pages_skipped(make_pdf):
 def test_pdf_without_text_rejected(make_pdf):
     with pytest.raises(ValueError, match="OCR"):
         DocumentProcessor().load_file(str(make_pdf("b.pdf", ["", ""])))
+
+
+@pytest.mark.parametrize("size,overlap", [(100, 30), (60, 20), (200, 50)])
+def test_chunks_start_at_word_boundaries(size, overlap):
+    text = "The quick brown fox jumps over the lazy dog near the riverbank today. " * 30
+    words = set(text.split())
+    for chunk in DocumentProcessor(size, overlap)._chunk_text(text):
+        assert chunk.split()[0] in words, f"chunk starts mid-word: {chunk[:20]!r}"

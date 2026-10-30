@@ -13,8 +13,8 @@ def cli(monkeypatch, capsys, tmp_path):
     db = str(tmp_path / "db")
     llm = FakeLLM()
 
-    def factory(chunk_size=500, chunk_overlap=50):
-        return RAGEngine(chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+    def factory(chunk_size=500, chunk_overlap=50, neighbors=2):
+        return RAGEngine(chunk_size=chunk_size, chunk_overlap=chunk_overlap, neighbors=neighbors,
                          vector_store=VectorStore("tests", db), embedding_service=FakeEmbedding(), llm_client=llm)
 
     monkeypatch.setattr(assistant, "RAGEngine", factory)
@@ -120,3 +120,14 @@ def test_llm_errors_are_clean(cli, make_file, monkeypatch):
     monkeypatch.setattr(cli.llm, "generate", lambda *a, **k: (_ for _ in ()).throw(GenerationError("Cannot reach Ollama")))
     code, out, err = cli("query", "bananas")
     assert code == 1 and "Cannot reach Ollama" in err and "Traceback" not in err
+
+
+def test_tty_sources_label_adjacent_context(cli, make_file):
+    cli("add", str(make_file("a.txt", "Alpha paragraph one. " * 30)), "--chunk-size", "100", "--chunk-overlap", "10")
+    code, out, err = cli("query", "alpha", "--top-k", "1", tty=True)
+    assert "adjacent context" in out and "similarity:" in out
+
+
+def test_negative_neighbors_rejected(cli):
+    code, out, err = cli("query", "x", "--neighbors", "-1")
+    assert code == 1 and "--neighbors" in err

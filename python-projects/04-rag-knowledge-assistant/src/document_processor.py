@@ -30,6 +30,9 @@ def decode_text_bytes(data: bytes) -> str:
     return data.decode("latin-1")
 
 
+# Bump when chunking behaviour changes so existing indexes are rebuilt on the next `add`
+CHUNKER_VERSION = 2
+
 # A sentence ends at . ! ? followed by whitespace, so "3.14" and "e.g.x" are not split points
 _SENTENCE_END = re.compile(r"[.!?](?=\s)")
 
@@ -145,8 +148,12 @@ class DocumentProcessor:
 
             if end >= length:
                 break
-            # Always move forward, even with a large overlap
-            start = max(end - self.chunk_overlap, start + 1)
+            # Always move forward, even with a large overlap, and begin the next chunk at a
+            # word boundary rather than in the middle of a word
+            next_start = max(end - self.chunk_overlap, start + 1)
+            while 0 < next_start < end and not text[next_start - 1].isspace():
+                next_start += 1
+            start = next_start
 
         return chunks
 

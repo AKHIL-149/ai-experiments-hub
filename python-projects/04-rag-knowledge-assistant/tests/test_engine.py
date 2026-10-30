@@ -181,7 +181,9 @@ def test_prompt_structure_and_sources(engine, make_file):
 def test_pdf_page_numbers_reach_the_prompt_and_sources(engine, make_pdf):
     engine.add_document(str(make_pdf("r.pdf", ["Intro text.", "The Falcon budget is 2.5 million."])))
     answer, sources = engine.query("Falcon budget")
-    assert "page 2" in engine.llm_client.prompts[0] and sources[0]["page"] == 2
+    assert "page 2" in engine.llm_client.prompts[0]
+    best = next(s for s in sources if not s["adjacent"])
+    assert best["page"] == 2
 
 
 def test_truncation_flag_propagates(engine, make_file):
@@ -212,3 +214,97 @@ def test_relative_chroma_env_is_anchored_and_absolute_is_kept(monkeypatch, tmp_p
     assert str(default_persist_directory()).endswith("04-rag-knowledge-assistant/custom/db")
     monkeypatch.setenv("CHROMA_DB_PATH", str(tmp_path / "abs"))
     assert default_persist_directory() == tmp_path / "abs"
+
+
+# ------------------------------------------------- neighbouring chunks (lists spanning chunks)
+LIST_DOC = (
+    "Overview of the options.\n\nThere are three main types of widgets: 1. Alpha.\n\n"
+    "Alpha widgets are red and cheap to make.\n\n2. Beta\n\nBeta widgets are blue and sturdy.\n\n"
+    "3. Gamma\n\nGamma widgets are green and rare."
+)
+
+
+@pytest.fixture
+def list_engine(tmp_path, make_file):
+    e = RAGEngine(chunk_size=60, chunk_overlap=10, vector_store=VectorStore("tests", str(tmp_path / "db")),
+                  embedding_service=FakeEmbedding(), llm_client=FakeLLM())
+    e.add_document(str(make_file("widgets.txt", LIST_DOC)))
+    assert e.vector_store.collection.count() >= 5
+    return e
+
+
+def test_best_hit_pulls_in_the_following_chunks(list_engine):
+    hits = list_engine.retrieve("three main types of widgets", top_k=1)
+    assert "Beta" not in hits[0]["text"]
+    expanded = list_engine.expand_with_neighbors(hits)
+    texts = " ".join(h["text"] for h in expanded)
+    # the best hit is the document's first chunk: no previous neighbour, two following ones
+    assert len(expanded) == 3 and [h.get("adjacent", False) for h in expanded] == [False, True, True]
+    assert "three main types" in texts and "Alpha widgets" in texts and "Beta" in texts
+
+
+def test_context_is_in_document_order(list_engine):
+    list_engine.query("three main types of widgets", top_k=2)
+    prompt = list_engine.llm_client.prompts[0]
+    positions = [prompt.index(f"[{i}]") for i in range(1, 4)]
+    assert positions == sorted(positions)
+    ids = [list_engine._split_id(h["id"])[1] for h in list_engine.expand_with_neighbors(list_engine.retrieve("types of widgets", top_k=2))]
+    assert ids == sorted(ids)
+
+
+def test_neighbors_are_labelled_and_not_duplicated(list_engine):
+    _, sources = list_engine.query("three main types of widgets", top_k=2)
+    assert any(s["adjacent"] and s["relevance"] is None for s in sources)
+    assert len({s["preview"] for s in sources}) == len(sources)
+
+
+def test_neighbors_can_be_disabled(list_engine):
+    list_engine.neighbors = 0
+    hits = list_engine.retrieve("three main types of widgets", top_k=1)
+    assert list_engine.expand_with_neighbors(hits) == hits
+    _, sources = list_engine.query("three main types of widgets", top_k=1)
+    assert len(sources) == 1 and not sources[0]["adjacent"]
+
+
+def test_edges_of_a_document_do_not_invent_neighbors(engine, make_file):
+    engine.add_document(str(make_file("one.txt", "Single chunk about zebras.")))
+    hits = engine.retrieve("zebras", top_k=1)
+    assert engine.expand_with_neighbors(hits) == hits
+
+
+def test_neighbors_never_cross_into_another_file(tmp_path, make_file):
+    e = RAGEngine(chunk_size=60, chunk_overlap=10, vector_store=VectorStore("tests", str(tmp_path / "db")),
+                  embedding_service=FakeEmbedding(), llm_client=FakeLLM())
+    e.add_document(str(make_file("a.txt", "Apples are red. " * 20)))
+    e.add_document(str(make_file("b.txt", "Bananas are yellow. " * 20)))
+    hits = e.retrieve("bananas yellow", top_k=1)
+    for h in e.expand_with_neighbors(hits):
+        assert h["meta"]["source"] == hits[0]["meta"]["source"]
+
+
+def test_prompt_allows_partial_answers_without_placeholders(engine, make_file):
+    engine.add_document(str(make_file("a.txt", "Bananas are yellow.")))
+    engine.query("bananas")
+    assert "Do not write placeholders for missing parts" in engine.llm_client.prompts[0]
+
+
+def test_default_radius_reaches_two_chunks_away(list_engine):
+    assert list_engine.neighbors == 2
+    hit = list_engine.retrieve("three main types of widgets", top_k=1)
+    reached = {list_engine._split_id(h["id"])[1] for h in list_engine.expand_with_neighbors(hit)}
+    assert reached == {0, 1, 2}
+
+
+def test_radius_one_stops_at_the_adjacent_chunk(list_engine):
+    list_engine.neighbors = 1
+    hit = list_engine.retrieve("three main types of widgets", top_k=1)
+    assert len(list_engine.expand_with_neighbors(hit)) == 2
+
+
+def test_chunker_upgrade_triggers_reindex(engine, make_file, monkeypatch):
+    f = make_file("a.txt", "Stable content.")
+    engine.add_document(str(f))
+    assert engine.add_document(str(f)).status == "unchanged"
+    import rag_engine
+    monkeypatch.setattr(rag_engine, "CHUNKER_VERSION", rag_engine.CHUNKER_VERSION + 1)
+    assert engine.add_document(str(f)).status == "updated"
