@@ -55,6 +55,8 @@ class WorkflowApp {
     this.workflows = [];
     this.executions = [];
     this.tools = [];
+    this.models = [];
+    this.defaultModel = '';
     this.monitorEventSource = null;
     this.monitorRenderedKey = null;
 
@@ -70,7 +72,7 @@ class WorkflowApp {
   async init() {
     this.setupEventListeners();
     await this.checkHealth();
-    await Promise.all([this.loadWorkflows(), this.loadExecutions(), this.loadTools()]);
+    await Promise.all([this.loadWorkflows(), this.loadExecutions(), this.loadTools(), this.loadModels()]);
     this.renderSteps();
     this.updateJsonPreview();
 
@@ -87,6 +89,8 @@ class WorkflowApp {
     // Dashboard
     document.getElementById('executeBtn').addEventListener('click', () => this.executeWorkflow());
     document.getElementById('workflowSelect').addEventListener('change', (e) => this.prefillInputs(e.target.value));
+    document.getElementById('modelSelect').addEventListener('change', (e) => this.rememberModel(e.target.value));
+    document.getElementById('refreshModelsBtn').addEventListener('click', () => this.loadModels());
     document.getElementById('workflowsList').addEventListener('click', (e) => {
       const button = e.target.closest('[data-run]');
       if (button) this.runFromCard(button.dataset.run);
@@ -308,6 +312,55 @@ class WorkflowApp {
     await this.executeWorkflowById(workflowId, inputData);
   }
 
+  // Models installed in Ollama. The choice is remembered in this browser only.
+  async loadModels() {
+    const hint = document.getElementById('modelHint');
+    try {
+      const response = await fetch('/api/models');
+      const data = await response.json();
+      this.models = data.models || [];
+      this.defaultModel = data.default || '';
+      hint.textContent = response.ok ? '' : data.error;
+    } catch (error) {
+      this.models = [];
+      hint.textContent = 'Could not load the model list.';
+    }
+    this.renderModelSelect();
+  }
+
+  savedModel() {
+    try {
+      return localStorage.getItem('workflowModel') || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  rememberModel(model) {
+    try {
+      if (model) localStorage.setItem('workflowModel', model);
+      else localStorage.removeItem('workflowModel');
+    } catch (error) {
+      // private window or blocked storage: the choice just lasts for this page
+    }
+  }
+
+  renderModelSelect() {
+    const select = document.getElementById('modelSelect');
+    const wanted = select.value || this.savedModel();
+    const gb = (bytes) => (bytes ? ` · ${(bytes / 1e9).toFixed(1)} GB` : '');
+
+    select.innerHTML = `<option value="">Default${this.defaultModel ? ` (${esc(this.defaultModel)})` : ''}</option>` +
+      this.models.map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.parameterSize ? ` · ${esc(m.parameterSize)}` : ''}${gb(m.sizeBytes)}</option>`).join('');
+
+    // a remembered model that is no longer installed falls back to the default
+    select.value = this.models.some(m => m.name === wanted) ? wanted : '';
+  }
+
+  selectedModel() {
+    return document.getElementById('modelSelect').value;
+  }
+
   async executeWorkflowById(workflowId, inputData = {}) {
     this.showExecuteMessage('Starting execution...', 'loading');
 
@@ -315,7 +368,7 @@ class WorkflowApp {
       const response = await fetch(`/api/workflows/${encodeURIComponent(workflowId)}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputData })
+        body: JSON.stringify({ inputData, options: this.selectedModel() ? { model: this.selectedModel() } : {} })
       });
       const data = await response.json();
       if (!response.ok) {
@@ -366,6 +419,7 @@ class WorkflowApp {
         <div class="execution-item" data-execution="${esc(exec.execution_id)}">
           <div class="execution-header">
             <strong>${esc(exec.workflow_id)}</strong>
+            ${exec.model ? `<span class="model-chip">${esc(exec.model)}</span>` : ''}
             <span class="badge badge-${statusClass(exec.status)}">${esc(exec.status)}</span>
           </div>
           <div class="execution-meta">
@@ -403,6 +457,7 @@ class WorkflowApp {
           <table class="detail-table">
             <tr><td>Execution ID</td><td><code>${esc(execution.execution_id)}</code></td></tr>
             <tr><td>Workflow</td><td>${esc(execution.workflow_id)}</td></tr>
+            <tr><td>Model</td><td>${esc(execution.model || 'default')}</td></tr>
             <tr><td>Status</td><td><span class="badge badge-${statusClass(execution.status)}">${esc(execution.status)}</span></td></tr>
             <tr><td>Started</td><td>${esc(new Date(execution.started_at).toLocaleString())}</td></tr>
             <tr><td>Duration</td><td>${esc(duration)}</td></tr>
@@ -1041,6 +1096,7 @@ class WorkflowApp {
     statusBadge.textContent = execution.status;
     statusBadge.className = `badge badge-${statusClass(execution.status)}`;
 
+    document.getElementById('monitorModelValue').textContent = execution.model || 'default';
     document.getElementById('monitorStepsValue').textContent =
       `${execution.steps_completed} completed, ${execution.steps_failed} failed`;
 

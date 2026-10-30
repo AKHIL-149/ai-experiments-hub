@@ -95,7 +95,9 @@ The server listens on `127.0.0.1` only and accepts same-origin requests only, be
 4. **Save** writes `workflows/<id>.json` (a mistake such as a duplicate step ID or a variable used before it is created is reported instead of saved). **Save & Run** saves and jumps to the Dashboard with the inputs template ready.
 5. To edit later, choose it under **Load a saved workflow** > **Load**, change it and Save (saving the workflow you loaded replaces it; saving a new workflow under an existing ID asks first).
 
-Run it from the Dashboard: fill in the input JSON, **Execute Workflow**, and the Live Monitor opens by itself. Results of past runs are in Execution History.
+Run it from the Dashboard: pick a **Model**, fill in the input JSON, **Execute Workflow**, and the Live Monitor opens by itself.
+
+The **Model** list shows every text model installed in Ollama (embedding models are left out) with its size; "Default" uses `OLLAMA_MODEL`. Your choice is remembered in this browser, applies to every AI step of the run, and is recorded with the run (shown in History and the Monitor). Use **Refresh** after `ollama pull`. A larger model (qwen3:8b or 14b) follows instructions and summarises noticeably better than the 3B default, at the cost of speed and memory. Results of past runs are in Execution History.
 
 Paths in file steps are relative to the project root and cannot leave it. A saved file under `data/artifacts/` can be viewed in the results panel. AI output and `.md` files are shown formatted (headings, lists, tables, bold); **Show raw text** switches to the plain text. HTML in model output is always escaped.
 
@@ -195,6 +197,7 @@ The response carries an `execution_id`; open it under Execution History (or `GET
 - **`run_if`** compares an earlier result (`name` or `name.field`) with a value using `== != > >= < <=`. Numbers compare as numbers. When it is false the step is skipped (shown as "skipped") and `if_skipped` becomes the step's output. Use it instead of asking a small model to "do X, but if there is no data say Y": the engine decides, so the model never sees an empty case.
 - **`max_tokens`** (1 to 32768, default 4096, `LLM_MAX_TOKENS` changes the default) caps the length of an AI reply. If a reply hits the cap, the step is marked `truncated`, a warning is logged and the results show an "output cut off" badge.
 - **Empty values stop the step.** A blank input, an empty file or an earlier step that produced nothing makes `{{name}}` empty; the next step fails with "`{{name}}` are empty" instead of sending nothing to the model, which would invent data.
+- **Thinking models** (qwen3 and similar) reason before answering, which is slow and can use up the whole token limit. Thinking is switched off for workflow steps (`OLLAMA_THINK=true` turns it back on). A reply that comes back empty fails the step with a clear message instead of passing nothing on, and a model that is not installed fails with the `ollama pull` command to run.
 - The context window is sized to each prompt (Ollama silently drops the start of a prompt that does not fit).
 
 ## Example: Customer Feedback Report
@@ -496,6 +499,7 @@ OLLAMA_MODEL=llama3.2
 LLM_MAX_TOKENS=4096           # default cap on one AI reply (a step can set max_tokens)
 OLLAMA_TIMEOUT=240            # seconds to wait for one model reply
 OLLAMA_MAX_CTX=32768          # largest context window requested
+OLLAMA_THINK=false            # true lets thinking models reason before answering
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
@@ -596,7 +600,8 @@ Each execution creates a JSON file in `data/executions/`:
 | GET | `/api/workflows` | List workflows (with the `inputs` each needs) |
 | GET | `/api/workflows/:id` | One workflow definition |
 | POST | `/api/workflows` | Save `{ "workflow": {...}, "overwrite": false }`; 400 lists problems, 409 if the ID exists |
-| POST | `/api/workflows/:id/execute` | Start a run: `{ "inputData": {...} }` |
+| POST | `/api/workflows/:id/execute` | Start a run: `{ "inputData": {...}, "options": { "model": "qwen3:8b" } }` (`options.model` is optional; 400 for a bad name) |
+| GET | `/api/models` | Installed text models and the default (502 with an empty list when Ollama is not running) |
 | GET | `/api/tools` | Tools a step can call, with parameter schemas |
 | GET | `/api/executions`, `/api/executions/:id` | History and one run (logs, per-step results) |
 | GET | `/api/executions/:id/stream` | Live updates (Server-Sent Events) |

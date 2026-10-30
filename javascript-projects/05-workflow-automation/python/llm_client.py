@@ -79,6 +79,9 @@ class LLMClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            # Thinking models (qwen3, ...) spend most of the token budget reasoning first, which
+            # is slow and can leave nothing for the answer; steps want the answer, so it is off
+            "think": os.getenv("OLLAMA_THINK", "false").lower() == "true",
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
@@ -97,14 +100,35 @@ class LLMClient:
                 if response.status_code >= 500 and attempt < attempts:
                     time.sleep(2 * attempt)
                     continue
+                if 400 <= response.status_code < 500:
+                    raise Exception(self._ollama_error(response))
                 response.raise_for_status()
                 data = response.json()
                 self.truncated = data.get("done_reason") == "length"
+                if not data["response"].strip():
+                    # An empty answer would flow into the next step as if it were a result
+                    if data.get("done_reason") == "length":
+                        raise Exception(
+                            f"{self.model} used its whole token limit before it answered "
+                            "(thinking models do this). Raise max_tokens or choose another model."
+                        )
+                    raise Exception(f"{self.model} returned an empty reply")
                 return data["response"]
             except (requests.ConnectionError, requests.Timeout):
                 if attempt == attempts:
                     raise
                 time.sleep(2 * attempt)
+
+    def _ollama_error(self, response) -> str:
+        """Ollama's own message for a 4xx, with a hint when the model is not installed."""
+        try:
+            detail = response.json().get("error") or ""
+        except ValueError:
+            detail = ""
+        detail = detail or f"HTTP {response.status_code}"
+        if response.status_code == 404 and "not found" in detail.lower():
+            return f"{detail}. Install it with: ollama pull {self.model}"
+        return f"Ollama error: {detail}"
 
     def _generate_anthropic(self, prompt: str, max_tokens: int, temperature: float) -> str:
         """Generate using Anthropic Claude."""

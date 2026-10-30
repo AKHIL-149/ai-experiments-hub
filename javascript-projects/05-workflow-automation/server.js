@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const WorkflowEngine = require('./src/WorkflowEngine');
 const { WorkflowValidationError } = require('./src/workflowSchema');
+const { listGenerationModels } = require('./src/ollamaModels');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -86,6 +87,23 @@ app.post('/api/workflows', async (req, res) => {
   }
 });
 
+// Models installed in Ollama, for the model picker (the default is what runs when none is chosen)
+app.get('/api/models', async (req, res) => {
+  const ollamaUrl = process.env.OLLAMA_API_URL || 'http://localhost:11434';
+  const fallback = process.env.OLLAMA_MODEL || 'llama3.2';
+  try {
+    const response = await fetch(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error(`Ollama answered ${response.status}`);
+    res.json({ default: fallback, models: listGenerationModels(await response.json()) });
+  } catch (error) {
+    res.status(502).json({
+      error: `Cannot list models from Ollama at ${ollamaUrl}. Is it running? Start it with: ollama serve`,
+      default: fallback,
+      models: []
+    });
+  }
+});
+
 // Tools a step can call, with their parameter schemas (lets the editor build the form)
 let toolsCache = null;
 app.get('/api/tools', async (req, res) => {
@@ -140,7 +158,11 @@ app.get('/api/artifacts', async (req, res) => {
 // Execute workflow
 app.post('/api/workflows/:id/execute', async (req, res) => {
   try {
-    const { inputData = {}, options = {} } = req.body;
+    const { inputData = {}, options = {} } = req.body || {};
+    if (!inputData || typeof inputData !== 'object' || Array.isArray(inputData) ||
+        !options || typeof options !== 'object' || Array.isArray(options)) {
+      return res.status(400).json({ error: 'inputData and options must be JSON objects' });
+    }
 
     const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_EXECUTIONS) || 5;
     if (activeExecutions.size >= maxConcurrent) {
@@ -156,11 +178,15 @@ app.post('/api/workflows/:id/execute', async (req, res) => {
       started = await workflowEngine.startExecution(
         req.params.id,
         inputData,
-        { ...options, triggerType: 'api' }
+        // only the options the engine understands; anything else the client sends is ignored
+        { model: options.model, continueOnError: options.continueOnError === true, triggerType: 'api' }
       );
     } catch (error) {
       if (error.message.startsWith('Workflow not found')) {
         return res.status(404).json({ error: error.message });
+      }
+      if (error.status === 400) {
+        return res.status(400).json({ error: error.message });
       }
       throw error;
     }

@@ -12,13 +12,13 @@ from agent import WorkflowAgent
 
 
 class FakeResponse:
-    status_code = 200
-
-    def __init__(self, body):
+    def __init__(self, body, status_code=200):
         self.body = body
+        self.status_code = status_code
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise llm_client.requests.HTTPError(f"{self.status_code} Client Error")
 
     def json(self):
         return self.body
@@ -29,10 +29,11 @@ def client(monkeypatch):
     c = LLMClient("ollama", "test-model")
     c.sent = []
     c.done_reason = "stop"
+    c.reply = FakeResponse({})
 
     def fake_post(url, json=None, timeout=None):
         c.sent.append({"payload": json, "timeout": timeout})
-        return FakeResponse({"response": "text", "done_reason": c.done_reason})
+        return c.reply if c.reply.body else FakeResponse({"response": "text", "done_reason": c.done_reason})
 
     monkeypatch.setattr(llm_client.requests, "post", fake_post)
     return c
@@ -98,3 +99,39 @@ def test_agent_returns_an_error_result_for_a_bad_limit():
     agent.llm_client = None
     result = agent.execute({"instruction": "x", "use_tools": False, "max_tokens": 0})
     assert result["success"] is False and "max_tokens" in result["error"]
+
+
+def test_thinking_is_off_by_default_so_it_cannot_eat_the_token_budget(client):
+    client.generate("hi")
+    assert client.sent[0]["payload"]["think"] is False
+
+
+def test_thinking_can_be_switched_on(client, monkeypatch):
+    monkeypatch.setenv("OLLAMA_THINK", "true")
+    client.generate("hi")
+    assert client.sent[0]["payload"]["think"] is True
+
+
+def test_an_empty_reply_is_an_error_not_an_empty_result(client):
+    client.reply = FakeResponse({"response": "  ", "done_reason": "stop"})
+    with pytest.raises(Exception, match="empty reply"):
+        client.generate("hi")
+
+
+def test_an_empty_reply_at_the_token_limit_explains_thinking_models(client):
+    client.reply = FakeResponse({"response": "", "thinking": "hmm...", "done_reason": "length"})
+    with pytest.raises(Exception, match="token limit before it answered"):
+        client.generate("hi")
+
+
+def test_unknown_model_gives_a_pull_hint_not_a_bare_http_error(client):
+    client.reply = FakeResponse({"error": "model 'nope:1b' not found"}, status_code=404)
+    with pytest.raises(Exception) as info:
+        client.generate("hi")
+    assert "nope:1b" in str(info.value) and "ollama pull" in str(info.value)
+
+
+def test_other_client_errors_show_ollamas_own_message(client):
+    client.reply = FakeResponse({"error": "invalid options: num_ctx too large"}, status_code=400)
+    with pytest.raises(Exception, match="invalid options: num_ctx too large"):
+        client.generate("hi")

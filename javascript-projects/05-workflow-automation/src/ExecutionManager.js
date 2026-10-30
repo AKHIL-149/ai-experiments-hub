@@ -24,9 +24,10 @@ class ExecutionManager {
    * @param {String} workflowId - Workflow identifier
    * @param {String} triggerType - How workflow was triggered
    * @param {Object} inputData - Input data for workflow
+   * @param {Object} options - Run options (model)
    * @returns {Promise<Object>} Created execution record
    */
-  async createExecution(workflowId, triggerType, inputData = {}) {
+  async createExecution(workflowId, triggerType, inputData = {}, options = {}) {
     const executionId = this.generateExecutionId();
 
     const execution = {
@@ -36,6 +37,7 @@ class ExecutionManager {
       trigger_type: triggerType,
       started_at: new Date().toISOString(),
       input_data: inputData,
+      model: options.model || null, // null: the server's default model
       steps_completed: 0,
       steps_failed: 0,
       logs: [],

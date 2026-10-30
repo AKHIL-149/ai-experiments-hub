@@ -40,6 +40,14 @@
                     <select id="workflowSelect" class="input">
                         <option value="">Select a workflow...</option>
                     </select>
+                    <div class="model-row">
+                        <label for="modelSelect">Model</label>
+                        <select id="modelSelect" class="input">
+                            <option value="">Default</option>
+                        </select>
+                        <button id="refreshModelsBtn" class="btn-sm" title="Look for newly installed models">Refresh</button>
+                    </div>
+                    <div id="modelHint" class="hint"></div>
                     <textarea id="inputDataJson" class="input textarea" placeholder='Input data (JSON), filled in automatically for the selected workflow'></textarea>
                     <div id="inputHint" class="hint hidden"></div>
                     <button id="executeBtn" class="btn btn-primary">Execute Workflow</button>
@@ -145,6 +153,10 @@
                         <div class="status-item">
                             <label>Duration:</label>
                             <span id="monitorDurationValue">-</span>
+                        </div>
+                        <div class="status-item">
+                            <label>Model:</label>
+                            <span id="monitorModelValue">-</span>
                         </div>
                     </div>
                 </div>

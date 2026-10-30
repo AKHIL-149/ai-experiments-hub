@@ -3,6 +3,7 @@ const path = require('path');
 const PythonBridge = require('./PythonBridge');
 const ExecutionManager = require('./ExecutionManager');
 const { validateWorkflow, requiredInputs, WorkflowValidationError } = require('./workflowSchema');
+const { validateModelName } = require('./ollamaModels');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 
@@ -72,17 +73,19 @@ class WorkflowEngine {
    * @returns {Promise<{execution: Object, run: Function}>} run() performs the execution
    */
   async startExecution(workflowId, inputData = {}, options = {}) {
+    const model = validateModelName(options.model);
     const workflow = await this.loadWorkflow(workflowId);
 
     const execution = await this.executionManager.createExecution(
       workflowId,
       options.triggerType || 'manual',
-      inputData
+      inputData,
+      { model }
     );
 
     return {
       execution,
-      run: () => this._runExecution(workflow, execution, inputData, options)
+      run: () => this._runExecution(workflow, execution, inputData, { ...options, model })
     };
   }
 
