@@ -2,6 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+// Conversation ids become file names, so only the exact shape generateConversationId()
+// produces is accepted. Anything else (e.g. "../../package") would let a request read,
+// overwrite or delete files outside the storage directory.
+const ID_PATTERN = /^conv_\d{10,16}_[0-9a-f]{8}$/;
+
 /**
  * Conversation Manager - Handles conversation context and history
  */
@@ -19,6 +24,15 @@ class ConversationManager {
   }
 
   /**
+   * Whether a value is a well-formed conversation id
+   * @param {*} conversationId
+   * @returns {boolean}
+   */
+  static isValidId(conversationId) {
+    return typeof conversationId === 'string' && ID_PATTERN.test(conversationId);
+  }
+
+  /**
    * Initialize storage directory
    */
   initializeStorage() {
@@ -31,10 +45,16 @@ class ConversationManager {
   /**
    * Create a new conversation
    * @param {string} userId - Optional user identifier
+   * @param {string} conversationId - Optional id to create it under (must be well-formed)
    * @returns {Object} - { conversationId, createdAt }
    */
-  createConversation(userId = 'default') {
-    const conversationId = this.generateConversationId();
+  createConversation(userId = 'default', conversationId = null) {
+    if (conversationId === null) {
+      conversationId = this.generateConversationId();
+    } else if (!ConversationManager.isValidId(conversationId)) {
+      throw new Error('Invalid conversation id');
+    }
+    userId = typeof userId === 'string' && userId.trim() ? userId.trim().slice(0, 64) : 'default';
     const timestamp = new Date().toISOString();
 
     const conversation = {
@@ -72,11 +92,16 @@ class ConversationManager {
    * @returns {Object} - Added message
    */
   addMessage(conversationId, role, content, metadata = {}) {
+    if (!ConversationManager.isValidId(conversationId)) {
+      throw new Error('Invalid conversation id');
+    }
+
     let conversation = this.getConversation(conversationId);
 
     if (!conversation) {
-      // Auto-create conversation if it doesn't exist
-      this.createConversation();
+      // The client may hold an id whose file is gone (deleted elsewhere, cleaned up
+      // after a week) - recreate it under the same id so the chat carries on.
+      this.createConversation('default', conversationId);
       conversation = this.getConversation(conversationId);
     }
 
@@ -125,6 +150,7 @@ class ConversationManager {
 
     const messages = conversation.messages;
 
+    limit = Number.isInteger(limit) && limit > 0 ? limit : null;
     if (limit && limit < messages.length) {
       return messages.slice(-limit);
     }
@@ -177,6 +203,10 @@ class ConversationManager {
    * @returns {Object|null} - Conversation object
    */
   getConversation(conversationId) {
+    if (!ConversationManager.isValidId(conversationId)) {
+      return null;
+    }
+
     // Check memory cache first
     if (this.activeConversations.has(conversationId)) {
       return this.activeConversations.get(conversationId);
@@ -205,8 +235,12 @@ class ConversationManager {
         return false;
       }
 
+      // Write to a temp file and rename, so a crash mid-write cannot leave a half-written
+      // (unparseable) conversation behind
       const filePath = this.getConversationFilePath(conversationId);
-      fs.writeFileSync(filePath, JSON.stringify(conversation, null, 2), 'utf8');
+      const tempPath = `${filePath}.${process.pid}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(conversation, null, 2), 'utf8');
+      fs.renameSync(tempPath, filePath);
 
       return true;
     } catch (error) {
@@ -231,6 +265,13 @@ class ConversationManager {
       const data = fs.readFileSync(filePath, 'utf8');
       const conversation = JSON.parse(data);
 
+      // A file that parses but is not a conversation must not be treated as one
+      if (!conversation || !Array.isArray(conversation.messages) ||
+          !conversation.metadata || typeof conversation.metadata !== 'object') {
+        console.error(`Conversation file ${conversationId} has an unexpected shape`);
+        return null;
+      }
+
       return conversation;
     } catch (error) {
       console.error(`Failed to load conversation ${conversationId}:`, error.message);
@@ -244,14 +285,23 @@ class ConversationManager {
    * @returns {boolean} - Success status
    */
   deleteConversation(conversationId) {
+    if (!ConversationManager.isValidId(conversationId)) {
+      return false;
+    }
+
     try {
       // Remove from memory
-      this.activeConversations.delete(conversationId);
+      const wasLoaded = this.activeConversations.delete(conversationId);
 
       // Remove from disk
       const filePath = this.getConversationFilePath(conversationId);
-      if (fs.existsSync(filePath)) {
+      const onDisk = fs.existsSync(filePath);
+      if (onDisk) {
         fs.unlinkSync(filePath);
+      }
+
+      if (!onDisk && !wasLoaded) {
+        return false; // nothing by that id existed
       }
 
       console.log(`✓ Deleted conversation: ${conversationId}`);
@@ -273,7 +323,7 @@ class ConversationManager {
       const conversations = [];
 
       for (const file of files) {
-        if (file.endsWith('.json')) {
+        if (this.isConversationFile(file)) {
           const conversationId = file.replace('.json', '');
           const info = this.getConversationInfo(conversationId);
           if (info) {
@@ -287,6 +337,7 @@ class ConversationManager {
         new Date(b.lastActivity) - new Date(a.lastActivity)
       );
 
+      limit = Number.isInteger(limit) && limit > 0 ? limit : 50;
       return conversations.slice(0, limit);
     } catch (error) {
       console.error('Failed to list conversations:', error.message);
@@ -306,7 +357,7 @@ class ConversationManager {
       let deleted = 0;
 
       for (const file of files) {
-        if (file.endsWith('.json')) {
+        if (this.isConversationFile(file)) {
           const filePath = path.join(this.storageDir, file);
           const stats = fs.statSync(filePath);
           const fileAge = now - stats.mtimeMs;
@@ -338,7 +389,7 @@ class ConversationManager {
   getStats() {
     try {
       const files = fs.readdirSync(this.storageDir);
-      const jsonFiles = files.filter(f => f.endsWith('.json'));
+      const jsonFiles = files.filter(f => this.isConversationFile(f));
 
       let totalSize = 0;
       let totalMessages = 0;
@@ -406,11 +457,23 @@ class ConversationManager {
   }
 
   /**
+   * Whether a directory entry is a conversation file (not a temp file or a stray .json)
+   * @param {string} fileName
+   * @returns {boolean}
+   */
+  isConversationFile(fileName) {
+    return fileName.endsWith('.json') && ConversationManager.isValidId(fileName.slice(0, -5));
+  }
+
+  /**
    * Get file path for conversation
    * @param {string} conversationId - Conversation identifier
    * @returns {string} - File path
    */
   getConversationFilePath(conversationId) {
+    if (!ConversationManager.isValidId(conversationId)) {
+      throw new Error('Invalid conversation id');
+    }
     return path.join(this.storageDir, `${conversationId}.json`);
   }
 

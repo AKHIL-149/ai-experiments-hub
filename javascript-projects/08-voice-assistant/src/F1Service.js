@@ -19,14 +19,16 @@ class F1Service {
     if (races.length === 0) return null;
 
     const race = races[0];
-    const raceDate = new Date(`${race.date}T${race.time || '00:00:00Z'}`);
+    // race.date is the calendar date at the circuit. Converting the start time into the
+    // server's timezone would move late races (Las Vegas, Qatar) to the wrong day.
+    const raceDate = new Date(`${race.date}T12:00:00Z`);
 
     return {
       raceName: race.raceName,
       circuit: race.Circuit?.circuitName,
       date: race.date,
       dateFormatted: raceDate.toLocaleDateString('en-US', {
-        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC'
       })
     };
   }

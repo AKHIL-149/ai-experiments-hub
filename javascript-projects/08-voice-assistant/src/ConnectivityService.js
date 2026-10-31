@@ -12,20 +12,40 @@ class ConnectivityService {
   constructor(options = {}) {
     this.checkURL = options.checkURL || 'https://www.google.com';
     this.timeoutMs = options.timeoutMs || 3000;
+    this.recheckMs = options.recheckMs ?? 30000; // how often to look again while offline
     this.isOnline = null; // unknown until the first check resolves
+    this.lastCheck = 0;
+    this.checking = false;
     this.checkPromise = this.check();
   }
 
   async check() {
+    this.checking = true;
     try {
       await axios.head(this.checkURL, { timeout: this.timeoutMs });
+      if (this.isOnline !== true) {
+        console.log('✓ Internet connectivity confirmed');
+      }
       this.isOnline = true;
-      console.log('✓ Internet connectivity confirmed');
     } catch (error) {
+      if (this.isOnline !== false) {
+        console.warn('⚠️  No internet connectivity detected - cloud/search/weather calls will be skipped');
+      }
       this.isOnline = false;
-      console.warn('⚠️  No internet connectivity detected - cloud/search/weather calls will be skipped');
     }
+    this.lastCheck = Date.now();
+    this.checking = false;
     return this.isOnline;
+  }
+
+  /**
+   * While offline, look again in the background every so often - otherwise a server that
+   * started without a network would skip the cloud until it was restarted.
+   */
+  recheckIfStale() {
+    if (this.isOnline === false && !this.checking && Date.now() - this.lastCheck >= this.recheckMs) {
+      this.checkPromise = this.check();
+    }
   }
 
   /**

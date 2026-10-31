@@ -1,6 +1,17 @@
 const OpenAI = require('openai');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+/**
+ * A failed call to OpenAI: the message says what failed, and the status tells the server
+ * to answer 502 (bad gateway) rather than a generic 500
+ */
+function upstreamError(message) {
+  const error = new Error(message);
+  error.status = 502;
+  return error;
+}
 
 /**
  * OpenAI Service - Handles speech-to-text and text-to-speech operations
@@ -27,6 +38,7 @@ class OpenAIService {
    * @returns {Promise<Object>} - { text, duration }
    */
   async transcribeAudio(audioInput, options = {}) {
+    let tempPath = null;
     try {
       const startTime = Date.now();
 
@@ -36,8 +48,8 @@ class OpenAIService {
         // File path provided
         audioFile = fs.createReadStream(audioInput);
       } else if (Buffer.isBuffer(audioInput)) {
-        // Buffer provided - save to temp file
-        const tempPath = path.join(__dirname, '../data/audio-cache', `temp_${Date.now()}.webm`);
+        // Buffer provided - save to temp file (removed again in the finally block below)
+        tempPath = path.join(__dirname, '../data/audio-cache', `temp_${crypto.randomBytes(8).toString('hex')}.webm`);
         fs.writeFileSync(tempPath, audioInput);
         audioFile = fs.createReadStream(tempPath);
       } else {
@@ -55,12 +67,16 @@ class OpenAIService {
       const duration = Date.now() - startTime;
 
       return {
-        text: transcription.text,
+        text: (transcription.text || '').trim(),
         duration: duration
       };
     } catch (error) {
       console.error('Transcription error:', error.message);
-      throw new Error(`Failed to transcribe audio: ${error.message}`);
+      throw upstreamError(`Failed to transcribe audio: ${error.message}`);
+    } finally {
+      if (tempPath && fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
     }
   }
 
@@ -104,7 +120,7 @@ class OpenAIService {
       };
     } catch (error) {
       console.error('TTS error:', error.message);
-      throw new Error(`Failed to synthesize speech: ${error.message}`);
+      throw upstreamError(`Failed to synthesize speech: ${error.message}`);
     }
   }
 
@@ -129,7 +145,7 @@ class OpenAIService {
       };
     } catch (error) {
       console.error('Chat completion error:', error.message);
-      throw new Error(`Failed to generate response: ${error.message}`);
+      throw upstreamError(`Failed to generate response: ${error.message}`);
     }
   }
 
@@ -284,7 +300,7 @@ class OpenAIService {
       };
     } catch (error) {
       console.error('Tool-calling completion error:', error.message);
-      throw new Error(`Failed to generate response with tools: ${error.message}`);
+      throw upstreamError(`Failed to generate response with tools: ${error.message}`);
     }
   }
 

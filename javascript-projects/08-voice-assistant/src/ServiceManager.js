@@ -8,6 +8,15 @@ const F1Service = require('./F1Service');
 const ConnectivityService = require('./ConnectivityService');
 
 /**
+ * An error for "this service is not available" - answered as 503 by the server
+ */
+function unavailable(message) {
+  const error = new Error(message);
+  error.status = 503;
+  return error;
+}
+
+/**
  * Service Manager - Handles switching between cloud and local AI services
  * Provides unified interface for STT and TTS regardless of backend
  */
@@ -101,17 +110,16 @@ class ServiceManager {
       console.warn('Failed to initialize local TTS:', error.message);
     }
 
-    // Local LLM service
-    if (this.mode === 'local' || this.mode === 'hybrid') {
-      try {
-        this.localLLMService = new LocalLLMService({
-          model: options.llmModel || 'llama3.2:3b',
-          baseURL: options.llmBaseURL || 'http://localhost:11434',
-          timeout: options.llmTimeout || 30000
-        });
-      } catch (error) {
-        console.warn('Failed to initialize local LLM:', error.message);
-      }
+    // Local LLM service - always built (not only in local/hybrid mode) so that
+    // switching the mode at runtime does not leave it missing
+    try {
+      this.localLLMService = new LocalLLMService({
+        model: options.llmModel || 'llama3.2:3b',
+        baseURL: options.llmBaseURL || 'http://localhost:11434',
+        timeout: options.llmTimeout || 30000
+      });
+    } catch (error) {
+      console.warn('Failed to initialize local LLM:', error.message);
     }
   }
 
@@ -130,7 +138,7 @@ class ServiceManager {
         console.log('Using local Whisper for transcription (local mode)');
         return await this.localWhisperService.transcribeAudio(audioInput, options);
       } else {
-        throw new Error('Local Whisper not available. Cannot transcribe in local mode.');
+        throw unavailable('Local speech recognition is not available. Check the Whisper setup, or switch modes.');
       }
     }
 
@@ -143,7 +151,7 @@ class ServiceManager {
         console.log('Using cloud (OpenAI) for transcription');
         return await this.cloudService.transcribeAudio(audioInput, options);
       } else {
-        throw new Error('No transcription service available');
+        throw unavailable('No speech recognition service is available');
       }
     } catch (error) {
       // Fallback to cloud if local fails (only in hybrid mode)
@@ -168,12 +176,9 @@ class ServiceManager {
     if (this.mode === 'local') {
       if (this.localTTSService && this.localTTSService.available()) {
         console.log('Using local TTS for synthesis (local mode)');
-        // Remove cloud-specific options (like OpenAI voice names) for local TTS
-        const localOptions = { ...options };
-        delete localOptions.voice; // espeak uses default voice
-        return await this.localTTSService.synthesizeSpeech(text, localOptions);
+        return await this.localTTSService.synthesizeSpeech(text, this.localTTSOptions(options));
       } else {
-        throw new Error('Local TTS not available. Cannot synthesize in local mode.');
+        throw unavailable('Local text-to-speech is not available. Check the TTS setup, or switch modes.');
       }
     }
 
@@ -181,15 +186,12 @@ class ServiceManager {
     try {
       if (useLocal && this.localTTSService && this.localTTSService.available()) {
         console.log('Using local TTS for synthesis');
-        // Remove cloud-specific options (like OpenAI voice names) for local TTS
-        const localOptions = { ...options };
-        delete localOptions.voice; // espeak uses default voice
-        return await this.localTTSService.synthesizeSpeech(text, localOptions);
+        return await this.localTTSService.synthesizeSpeech(text, this.localTTSOptions(options));
       } else if (this.cloudService) {
         console.log('Using cloud (OpenAI) for synthesis');
         return await this.cloudService.synthesizeSpeech(text, options);
       } else {
-        throw new Error('No TTS service available');
+        throw unavailable('No text-to-speech service is available');
       }
     } catch (error) {
       // Fallback to cloud if local fails (only in hybrid mode)
@@ -202,13 +204,29 @@ class ServiceManager {
   }
 
   /**
+   * Options for the local engine: a voice is only passed on if that engine has it
+   * (cloud voice names such as "alloy" mean nothing to espeak)
+   */
+  localTTSOptions(options = {}) {
+    const localOptions = { ...options };
+    if (localOptions.voice && !this.localTTSService.getAvailableVoices().includes(localOptions.voice)) {
+      delete localOptions.voice;
+    }
+    return localOptions;
+  }
+
+  /**
    * Generate chat response
    * @param {Array} messages - Chat messages
    * @param {Object} options - Generation options
    * @returns {Promise<Object>} - { response, usage }
    */
   async generateResponse(messages, options = {}) {
-    // Try local LLM first in local/hybrid mode
+    // Try local LLM first in local/hybrid mode. If Ollama was not running when the server
+    // started (or has come back since), look again instead of staying unavailable forever.
+    if ((this.mode === 'local' || this.mode === 'hybrid') && this.localLLMService) {
+      await this.localLLMService.refreshIfStale();
+    }
     if ((this.mode === 'local' || this.mode === 'hybrid') &&
         this.localLLMService &&
         this.localLLMService.available()) {
@@ -219,7 +237,7 @@ class ServiceManager {
         console.error('Local LLM failed:', error.message);
         // In pure local mode, don't fallback
         if (this.mode === 'local') {
-          throw new Error('Local LLM failed and no cloud fallback available in local mode');
+          throw unavailable('The local language model failed to answer. Check that Ollama is running.');
         }
       }
     }
@@ -230,7 +248,10 @@ class ServiceManager {
       return await this.cloudService.generateResponse(messages, options);
     }
 
-    throw new Error('No AI service available for response generation');
+    if (this.mode === 'local' || this.mode === 'hybrid') {
+      throw unavailable(`The local language model is not available. Start Ollama and pull ${this.localLLMService ? this.localLLMService.model : 'a model'}.`);
+    }
+    throw unavailable('No AI service is available. Set OPENAI_API_KEY, or switch to local mode.');
   }
 
   /**
@@ -245,7 +266,7 @@ class ServiceManager {
    */
   async generateResponseWithTools(messages, options = {}) {
     if (!this.cloudService) {
-      throw new Error('Cloud service not configured - AI fallback with tools requires OPENAI_API_KEY');
+      throw unavailable('Cloud service not configured - AI fallback with tools requires OPENAI_API_KEY');
     }
 
     console.log('Using cloud (OpenAI) with tools');
@@ -268,7 +289,9 @@ class ServiceManager {
    * @returns {boolean}
    */
   isInternetAvailable() {
-    return this.connectivityService ? this.connectivityService.available() : true;
+    if (!this.connectivityService) return true;
+    this.connectivityService.recheckIfStale(); // not awaited: the next request sees the result
+    return this.connectivityService.available();
   }
 
   /**
@@ -293,6 +316,29 @@ class ServiceManager {
       default:
         return false;
     }
+  }
+
+  /**
+   * Why a mode could not work right now, or null if it can. Used to refuse a switch that
+   * would otherwise make every later request fail.
+   * @param {string} mode - 'cloud', 'local', or 'hybrid'
+   * @returns {string|null}
+   */
+  modeProblem(mode) {
+    const whisper = !!(this.localWhisperService && this.localWhisperService.available());
+    const tts = !!(this.localTTSService && this.localTTSService.available());
+
+    if (mode === 'cloud' && !this.cloudService) {
+      return 'Cloud mode needs an OpenAI API key. Set OPENAI_API_KEY and restart the server.';
+    }
+    if (mode === 'local' && !(whisper && tts)) {
+      const missing = [!whisper && 'speech recognition (Whisper)', !tts && 'text-to-speech'].filter(Boolean).join(' and ');
+      return `Local mode needs local ${missing}, which ${!whisper && !tts ? 'are' : 'is'} not available.`;
+    }
+    if (mode === 'hybrid' && !this.cloudService && !(whisper && tts)) {
+      return 'Hybrid mode needs either an OpenAI API key or local Whisper and text-to-speech.';
+    }
+    return null;
   }
 
   /**

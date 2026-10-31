@@ -1,5 +1,17 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+/**
+ * Re-throw an error for the caller. Errors that already carry an HTTP status and a message
+ * meant for the user keep them; anything else is wrapped with context (and answered generically).
+ */
+function rethrow(prefix, error) {
+  if (error.status) {
+    return error;
+  }
+  return new Error(`${prefix}: ${error.message}`);
+}
 
 /**
  * Audio Processor - Coordinates audio input/output operations
@@ -31,11 +43,13 @@ class AudioProcessor {
       // Validate audio size
       const audioSizeMB = audioBlob.length / (1024 * 1024);
       if (audioSizeMB > this.maxAudioSizeMB) {
-        throw new Error(`Audio file too large (${audioSizeMB.toFixed(2)}MB). Max size: ${this.maxAudioSizeMB}MB`);
+        const tooLarge = new Error(`Audio file too large (${audioSizeMB.toFixed(2)}MB). Max size: ${this.maxAudioSizeMB}MB`);
+        tooLarge.status = 413;
+        throw tooLarge;
       }
 
-      // Save audio to temp file
-      const tempFilePath = path.join(this.tempDir, `audio_${Date.now()}.webm`);
+      // Save audio to temp file (the name is random: requests can arrive in the same millisecond)
+      const tempFilePath = path.join(this.tempDir, `audio_${crypto.randomBytes(8).toString('hex')}.webm`);
       fs.writeFileSync(tempFilePath, audioBlob);
 
       try {
@@ -45,10 +59,13 @@ class AudioProcessor {
         // Clean up temp file
         this.cleanupTempFile(tempFilePath);
 
+        const transcript = (result.text || '').trim();
+
         return {
-          transcript: result.text,
-          confidence: 1.0, // OpenAI Whisper doesn't return confidence scores
-          duration: result.duration
+          transcript,
+          confidence: transcript ? 1.0 : 0, // Whisper doesn't return confidence scores
+          duration: result.duration,
+          noSpeech: !transcript
         };
       } catch (error) {
         // Clean up temp file on error
@@ -57,7 +74,7 @@ class AudioProcessor {
       }
     } catch (error) {
       console.error('Audio processing error:', error.message);
-      throw new Error(`Failed to process audio: ${error.message}`);
+      throw rethrow('Failed to process audio', error);
     }
   }
 
@@ -69,8 +86,10 @@ class AudioProcessor {
    */
   async generateAudioResponse(text, voiceOptions = {}) {
     try {
-      if (!text || text.trim().length === 0) {
-        throw new Error('Text is required to generate audio response');
+      if (typeof text !== 'string' || text.trim().length === 0) {
+        const missing = new Error('Text is required to generate audio response');
+        missing.status = 400;
+        throw missing;
       }
 
       const startTime = Date.now();
@@ -87,7 +106,7 @@ class AudioProcessor {
       };
     } catch (error) {
       console.error('Audio generation error:', error.message);
-      throw new Error(`Failed to generate audio: ${error.message}`);
+      throw rethrow('Failed to generate audio', error);
     }
   }
 
