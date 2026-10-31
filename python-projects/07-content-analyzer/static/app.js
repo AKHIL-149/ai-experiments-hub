@@ -236,6 +236,7 @@ async function analyzeImage() {
                     </span>
                     ${metadata.preset ? `<span class="badge bg-warning badge-custom">Preset: ${metadata.preset}</span>` : ''}
                     ${data.cached ? '<span class="badge bg-secondary badge-custom">Cached</span>' : ''}
+                    ${data.truncated ? '<span class="badge bg-danger badge-custom" title="The model hit the max tokens limit; raise it to get the full answer">Cut off - raise max tokens</span>' : ''}
                 </div>
             `;
             document.getElementById('metadata').innerHTML = metadataHtml;
