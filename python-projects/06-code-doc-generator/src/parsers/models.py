@@ -10,6 +10,10 @@ class ParameterInfo:
     type_hint: Optional[str] = None
     default_value: Optional[str] = None
     description: Optional[str] = None  # AI-generated
+    # positional_only, positional_or_keyword, var_positional, keyword_only or var_keyword
+    kind: str = 'positional_or_keyword'
+    # False when the function body never uses the parameter; None when unknown (other languages, self/cls)
+    used: Optional[bool] = None
 
 
 @dataclass
@@ -22,6 +26,7 @@ class FunctionInfo:
     docstring: Optional[str] = None
     decorators: List[str] = field(default_factory=list)
     body_summary: Optional[str] = None  # First few lines or AI summary
+    body_lines: Optional[int] = None    # Non-blank body lines, docstring excluded (None: not known for this language)
     complexity: Optional[str] = None    # Simple/Medium/Complex
     ai_explanation: Optional[str] = None
     is_async: bool = False
@@ -81,7 +86,9 @@ class ParsedModule:
                     'name': p.name,
                     'type_hint': p.type_hint,
                     'default_value': p.default_value,
-                    'description': p.description
+                    'description': p.description,
+                    'kind': p.kind,
+                    'used': p.used
                 }
                 for p in func.parameters
             ],
@@ -89,6 +96,7 @@ class ParsedModule:
             'docstring': func.docstring,
             'decorators': func.decorators,
             'body_summary': func.body_summary,
+            'body_lines': func.body_lines,
             'complexity': func.complexity,
             'ai_explanation': func.ai_explanation,
             'is_async': func.is_async,

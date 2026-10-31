@@ -1,5 +1,8 @@
 """Abstract base class for code parsers"""
+import io
+import tokenize
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import List
 from .models import ParsedModule
 
@@ -67,7 +70,9 @@ class BaseParser(ABC):
         Returns:
             True if this parser supports the file extension
         """
-        return any(file_path.endswith(ext) for ext in self.supported_extensions)
+        # extensions are matched ignoring case (Foo.PY is Python), like file discovery does
+        name = file_path.lower()
+        return any(name.endswith(ext.lower()) for ext in self.supported_extensions)
 
 
 class ParseError(Exception):
@@ -85,3 +90,39 @@ class ParseError(Exception):
             error_msg += f" at line {line_number}"
 
         super().__init__(error_msg)
+
+
+def decode_source(data: bytes) -> str:
+    """Turn the bytes of a source file into text, whatever its encoding.
+
+    Honours a UTF-8 byte-order mark and a ``# -*- coding: ... -*-`` declaration, and falls back to
+    Windows-1252 and then Latin-1 instead of failing on a file that is not UTF-8. Bytes with nulls
+    are not source code and are refused.
+
+    Raises:
+        ParseError: the data looks binary
+    """
+    if b"\x00" in data:
+        raise ParseError("File looks like a binary file (it contains null bytes)", file_path=None)
+
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+    except (SyntaxError, LookupError):
+        encoding = "utf-8"
+
+    for candidate in (encoding, "cp1252", "latin-1"):
+        try:
+            return data.decode(candidate)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return data.decode("latin-1")  # cannot fail: kept for clarity
+
+
+def read_source_text(file_path: str) -> str:
+    """Read a source file as text (see decode_source).
+
+    Raises:
+        FileNotFoundError, OSError: the file cannot be read
+        ParseError: the file looks binary
+    """
+    return decode_source(Path(file_path).read_bytes())

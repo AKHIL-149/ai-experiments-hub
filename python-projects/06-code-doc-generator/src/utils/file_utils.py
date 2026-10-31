@@ -17,8 +17,12 @@ class FileDiscovery:
         '.py': 'python',
         '.js': 'javascript',
         '.jsx': 'javascript',
+        '.mjs': 'javascript',
+        '.cjs': 'javascript',
         '.ts': 'typescript',
         '.tsx': 'typescript',
+        '.mts': 'typescript',
+        '.cts': 'typescript',
         '.java': 'java'
     }
 
@@ -39,7 +43,15 @@ class FileDiscovery:
         '.vscode',
         'coverage',
         '.pytest_cache',
-        '.mypy_cache'
+        '.mypy_cache',
+        '.tox',
+        '.nox',
+        '.eggs',
+        'site-packages',
+        '__pypackages__',
+        '.next',
+        '.nuxt',
+        '.gradle'
     }
 
     def __init__(self, ignore_dirs: Optional[Set[str]] = None):
@@ -82,7 +94,7 @@ class FileDiscovery:
 
         # Single file
         if target_path.is_file():
-            if self._should_include_file(target_path, extensions):
+            if self._should_include_file(target_path, extensions, skip_generated=False):
                 return [str(target_path)]
             return []
 
@@ -98,38 +110,50 @@ class FileDiscovery:
         extensions: Optional[List[str]],
         recursive: bool
     ) -> List[str]:
-        """Discover files within a directory"""
-        files = []
+        """Discover files within a directory.
 
-        try:
-            for entry in directory.iterdir():
-                # Skip ignored directories
-                if entry.is_dir():
-                    if entry.name in self.ignore_dirs:
-                        continue
-                    if recursive:
-                        files.extend(
-                            self._discover_in_directory(entry, extensions, recursive)
-                        )
+        Directory symlinks are not followed (a link back to a parent would otherwise repeat the whole
+        tree until the path gets too long), and a file reachable by two names is listed once.
+        """
+        files: List[str] = []
+        seen: Set[str] = set()
 
-                # Check files
-                elif entry.is_file():
-                    if self._should_include_file(entry, extensions):
-                        files.append(str(entry))
+        def onerror(_error):
+            pass                                  # directories we cannot read are skipped
 
-        except PermissionError:
-            # Skip directories we can't read
-            pass
+        for root, dirnames, filenames in os.walk(directory, topdown=True, onerror=onerror, followlinks=False):
+            dirnames[:] = sorted(
+                d for d in dirnames if d not in self.ignore_dirs and not d.endswith('.egg-info')
+            ) if recursive else []
+
+            for name in sorted(filenames):
+                entry = Path(root) / name
+                if not entry.is_file() or not self._should_include_file(entry, extensions):
+                    continue
+                real = os.path.realpath(entry)
+                if real in seen:
+                    continue
+                seen.add(real)
+                files.append(str(entry))
 
         return sorted(files)
 
     def _should_include_file(
         self,
         file_path: Path,
-        extensions: Optional[List[str]]
+        extensions: Optional[List[str]],
+        skip_generated: bool = True
     ) -> bool:
-        """Check if file should be included based on extension"""
+        """Check if file should be included based on extension.
+
+        skip_generated: leave out minified bundles found while searching a directory (a file the
+        user names explicitly is always taken).
+        """
         file_ext = file_path.suffix.lower()
+
+        # Minified bundles are generated output, not code anybody wrote or reads
+        if skip_generated and '.min.' in file_path.name.lower():
+            return False
 
         # If no extensions specified, use all supported
         if extensions is None:
