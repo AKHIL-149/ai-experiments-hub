@@ -13,6 +13,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.core.doc_generator import DocGenerator
+from src.version import __version__
 from src.core import settings
 from src.core.llm_client import default_provider
 from src.utils.file_utils import FileDiscovery, get_file_stats, format_file_size
@@ -62,7 +63,7 @@ Examples:
         parser.add_argument(
             '--version',
             action='version',
-            version='%(prog)s 0.7.4'
+            version=f'%(prog)s {__version__}'
         )
 
         # Create subparsers for commands
@@ -254,10 +255,19 @@ Examples:
 
         return 0
 
+    @staticmethod
+    def _print_warnings(generator) -> None:
+        """Things that went wrong without stopping the run (skipped files, AI that went away)"""
+        if generator.warnings:
+            print(f"⚠️  {len(generator.warnings)} warning(s):")
+            for warning in generator.warnings:
+                print(f"   • {warning}")
+            print()
+
     def handle_generate(self, args) -> int:
         """Handle generate command"""
         try:
-            print(f"🚀 Code Documentation Generator v0.6.5\n")
+            print(f"🚀 Code Documentation Generator v{__version__}\n")
 
             # Validate input
             input_path = Path(args.input)
@@ -345,6 +355,7 @@ Examples:
             # Display results
             print()
             print("✅ Documentation generated successfully!\n")
+            self._print_warnings(generator)
             print("📁 Output files:")
             for file_path in output_files:
                 file_size = Path(file_path).stat().st_size
@@ -374,7 +385,7 @@ Examples:
     def handle_enhance(self, args) -> int:
         """Handle enhance command"""
         try:
-            print(f"🚀 Code Enhancement v0.6.5\n")
+            print(f"🚀 Code Enhancement v{__version__}\n")
 
             # Validate input
             input_path = Path(args.input)
@@ -425,6 +436,7 @@ Examples:
             # Display results
             print()
             print("✅ Code enhanced successfully!\n")
+            self._print_warnings(generator)
 
             # Show file info
             input_size = input_path.stat().st_size
@@ -456,7 +468,7 @@ Examples:
     def handle_analyze(self, args) -> int:
         """Handle analyze command"""
         try:
-            print(f"🔍 Code Structure Analyzer v0.6.5\n")
+            print(f"🔍 Code Structure Analyzer v{__version__}\n")
 
             # Validate input
             input_path = Path(args.input)
@@ -556,7 +568,7 @@ Examples:
                 print(f"Details: {str(e)}")
                 return 1
 
-            print(f"🚀 Code Documentation Generator v0.7.4\n")
+            print(f"🚀 Code Documentation Generator v{__version__}\n")
             print(f"Starting web server...")
             print(f"   Host: {args.host}")
             print(f"   Port: {args.port}\n")

@@ -3,11 +3,9 @@ from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime
 import json
-import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from parsers.models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
-from formatters.base_formatter import BaseFormatter
+from ..parsers.models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
+from .base_formatter import BaseFormatter
 
 
 class JSONFormatter(BaseFormatter):

@@ -16,7 +16,7 @@ from .formatters import (
 )
 from .utils import FileDiscovery
 
-__version__ = '0.7.4'
+from .version import __version__
 __author__ = 'AI Experiments Hub'
 
 __all__ = [

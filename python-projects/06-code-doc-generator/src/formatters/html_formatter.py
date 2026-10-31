@@ -3,11 +3,10 @@ from pathlib import Path
 from typing import List
 from datetime import datetime
 import html
-import sys
+import re
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from parsers.models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
-from formatters.base_formatter import BaseFormatter
+from ..parsers.models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
+from .base_formatter import BaseFormatter
 
 
 class HTMLFormatter(BaseFormatter):
@@ -219,7 +218,7 @@ class HTMLFormatter(BaseFormatter):
 
         for module in modules:
             module_name = Path(module.file_path).name
-            module_id = self._make_id(module_name)
+            module_id = self._make_id("module", module_name)
 
             toc_items.append(f'''
             <li class="nav-item">
@@ -231,7 +230,7 @@ class HTMLFormatter(BaseFormatter):
             # Add functions and classes
             if module.functions:
                 for func in module.functions[:5]:  # Limit to first 5
-                    func_id = self._make_id(f"{module_name}-{func.name}")
+                    func_id = self._make_id("func", module_name, func.name)
                     toc_items.append(f'''
                 <li class="nav-item ms-3">
                     <a class="nav-link text-muted" href="#{func_id}">
@@ -241,7 +240,7 @@ class HTMLFormatter(BaseFormatter):
 
             if module.classes:
                 for cls in module.classes[:5]:  # Limit to first 5
-                    cls_id = self._make_id(f"{module_name}-{cls.name}")
+                    cls_id = self._make_id("class", module_name, cls.name)
                     toc_items.append(f'''
                 <li class="nav-item ms-3">
                     <a class="nav-link text-muted" href="#{cls_id}">
@@ -261,7 +260,7 @@ class HTMLFormatter(BaseFormatter):
     def _format_module(self, module: ParsedModule) -> str:
         """Format module documentation"""
         module_name = Path(module.file_path).name
-        module_id = self._make_id(module_name)
+        module_id = self._make_id("module", module_name)
 
         parts = [f'<section id="{module_id}" class="mb-5">']
 
@@ -327,7 +326,7 @@ class HTMLFormatter(BaseFormatter):
 
     def _format_function(self, func: FunctionInfo, module_name: str) -> str:
         """Format function documentation"""
-        func_id = self._make_id(f"{module_name}-{func.name}")
+        func_id = self._make_id("func", module_name, func.name)
 
         # Build signature
         params = ", ".join([self._format_param_sig(p) for p in func.parameters])
@@ -370,7 +369,7 @@ class HTMLFormatter(BaseFormatter):
 
     def _format_class(self, cls: ClassInfo, module_name: str) -> str:
         """Format class documentation"""
-        cls_id = self._make_id(f"{module_name}-{cls.name}")
+        cls_id = self._make_id("class", module_name, cls.name)
 
         inheritance = ""
         if cls.base_classes:
@@ -533,6 +532,10 @@ class HTMLFormatter(BaseFormatter):
         }});
     </script>'''
 
-    def _make_id(self, text: str) -> str:
-        """Create HTML-safe ID from text"""
-        return text.lower().replace(' ', '-').replace('.', '-').replace('/', '-')
+    def _make_id(self, kind: str, *parts: str) -> str:
+        """Create an HTML id that is also safe in a CSS selector.
+
+        The kind prefix keeps a function and a class that differ only in case ("a" and "A") apart,
+        and anything but letters, digits, "_" and "-" (such as the "$" in JavaScript names) becomes "-".
+        """
+        return re.sub(r'[^a-z0-9_-]', '-', '-'.join((kind,) + parts).lower())

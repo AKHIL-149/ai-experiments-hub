@@ -1,13 +1,13 @@
 """Docstring formatter for enhancing source code with AI-generated documentation"""
+import ast
 from pathlib import Path
 from typing import List, Optional
 import re
-import sys
 import shutil
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from parsers.models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
-from formatters.base_formatter import BaseFormatter, FormatterError
+from ..parsers.base_parser import read_source_text
+from ..parsers.models import ParsedModule, FunctionInfo, ClassInfo, ParameterInfo
+from .base_formatter import BaseFormatter, FormatterError
 
 
 class DocstringFormatter(BaseFormatter):
@@ -53,7 +53,7 @@ class DocstringFormatter(BaseFormatter):
         if not source_path.exists():
             raise FormatterError(f"Source file not found: {source_path}")
 
-        original_code = source_path.read_text(encoding='utf-8')
+        original_code = read_source_text(str(source_path))
 
         # Create backup if requested
         if self.create_backup:
@@ -93,20 +93,30 @@ class DocstringFormatter(BaseFormatter):
         return style_map.get(language, "google")
 
     def _enhance_python(self, module: ParsedModule, original_code: str, style: str) -> str:
-        """Enhance Python code with docstrings"""
+        """Add docstrings to the functions, methods and classes that have none.
+
+        The place for each docstring comes from the syntax tree (right before the first statement of
+        the body), so multi-line signatures, annotations with colons and decorated nested
+        definitions are handled; a definition whose body is on the same line as its header
+        ("def f(x): return x") is left alone, because a docstring cannot be put there safely.
+        """
+        try:
+            tree = ast.parse(original_code)
+        except SyntaxError as error:
+            raise FormatterError(f"Cannot add docstrings to a file that does not parse: {error.msg} (line {error.lineno})")
+
+        definitions = {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                definitions.setdefault(node.lineno, node)
+
+        eol = '\r' if '\r\n' in original_code else ''
         lines = original_code.split('\n')
 
-        # Process functions and classes
-        # We need to insert docstrings right after function/class definition
-        # Work from bottom to top to preserve line numbers
-
-        # Collect all items to enhance with their line numbers
         items = []
-
         for func in module.functions:
             if func.ai_explanation:
                 items.append(('function', func.line_number, func))
-
         for cls in module.classes:
             if cls.ai_explanation:
                 items.append(('class', cls.line_number, cls))
@@ -114,32 +124,27 @@ class DocstringFormatter(BaseFormatter):
                 if method.ai_explanation:
                     items.append(('method', method.line_number, method))
 
-        # Sort by line number in reverse order (process from bottom to top)
+        # Bottom to top, so that inserting lines does not move the ones still to be handled
         items.sort(key=lambda x: x[1], reverse=True)
 
-        # Insert docstrings
         for item_type, line_num, item in items:
-            if item_type == 'function' or item_type == 'method':
-                docstring = self._generate_python_docstring(item, style)
-            else:  # class
+            node = definitions.get(line_num)
+            if node is None or ast.get_docstring(node, clean=False) is not None:
+                continue
+            first = node.body[0]
+            first_line = min([first.lineno] + [d.lineno for d in getattr(first, 'decorator_list', [])])
+            text = lines[first_line - 1]
+            if text[:first.col_offset].strip():
+                continue                                 # body shares the header's line
+            indent = text[:len(text) - len(text.lstrip())]
+
+            if item_type == 'class':
                 docstring = self._generate_python_class_docstring(item, style)
-
-            # Find the line after the definition (accounting for decorators)
-            insert_line = self._find_python_insertion_point(lines, line_num)
-
-            if insert_line is not None:
-                # Get indentation from the definition line
-                indent = self._get_indentation(lines[insert_line - 1])
-                # Add one more level of indentation for the docstring
-                docstring_indent = indent + "    "
-
-                # Check if docstring already exists
-                if not self._has_existing_docstring(lines, insert_line):
-                    # Format docstring lines
-                    docstring_lines = self._format_python_docstring_block(docstring, docstring_indent)
-                    # Insert docstring
-                    for i, line in enumerate(docstring_lines):
-                        lines.insert(insert_line + i, line)
+            else:
+                docstring = self._generate_python_docstring(item, style)
+            block = self._format_python_docstring_block(docstring, indent)
+            for i, line in enumerate(block):
+                lines.insert(first_line - 1 + i, line + eol)
 
         return '\n'.join(lines)
 
@@ -151,14 +156,14 @@ class DocstringFormatter(BaseFormatter):
         items = []
 
         for func in module.functions:
-            if func.ai_explanation:
+            if func.ai_explanation and not func.docstring:
                 items.append(('function', func.line_number, func))
 
         for cls in module.classes:
-            if cls.ai_explanation:
+            if cls.ai_explanation and not cls.docstring:
                 items.append(('class', cls.line_number, cls))
             for method in cls.methods:
-                if method.ai_explanation:
+                if method.ai_explanation and not method.docstring:
                     items.append(('method', method.line_number, method))
 
         # Sort by line number in reverse order
@@ -166,8 +171,8 @@ class DocstringFormatter(BaseFormatter):
 
         # Insert JSDoc comments
         for item_type, line_num, item in items:
-            # JSDoc goes BEFORE the definition
-            insert_line = line_num - 1  # Line numbers are 1-indexed
+            # JSDoc goes BEFORE the definition (and before its decorators)
+            insert_line = self._above_decorators(lines, line_num - 1, '@')
 
             if 0 <= insert_line < len(lines):
                 indent = self._get_indentation(lines[insert_line])
@@ -192,14 +197,14 @@ class DocstringFormatter(BaseFormatter):
         items = []
 
         for func in module.functions:
-            if func.ai_explanation:
+            if func.ai_explanation and not func.docstring:
                 items.append(('function', func.line_number, func))
 
         for cls in module.classes:
-            if cls.ai_explanation:
+            if cls.ai_explanation and not cls.docstring:
                 items.append(('class', cls.line_number, cls))
             for method in cls.methods:
-                if method.ai_explanation:
+                if method.ai_explanation and not method.docstring:
                     items.append(('method', method.line_number, method))
 
         # Sort by line number in reverse order
@@ -207,8 +212,8 @@ class DocstringFormatter(BaseFormatter):
 
         # Insert Javadoc comments
         for item_type, line_num, item in items:
-            # Javadoc goes BEFORE the definition
-            insert_line = line_num - 1  # Line numbers are 1-indexed
+            # Javadoc goes BEFORE the definition (and before its annotations)
+            insert_line = self._above_decorators(lines, line_num - 1, '@')
 
             if 0 <= insert_line < len(lines):
                 indent = self._get_indentation(lines[insert_line])
@@ -234,87 +239,62 @@ class DocstringFormatter(BaseFormatter):
         else:
             return self._generate_google_docstring(func)  # Default
 
+    @staticmethod
+    def _documented_parameters(func: FunctionInfo) -> List[ParameterInfo]:
+        """Parameters that have a real description (self and cls never need one)"""
+        return [p for p in func.parameters if p.description and p.name not in ('self', 'cls')]
+
+    @staticmethod
+    def _escape_docstring(text: str) -> str:
+        """Text that is safe inside a triple-quoted docstring: backslashes are doubled and triple quotes escaped"""
+        return text.replace('\\', '\\\\').replace('"""', '\\"\\"\\"').rstrip()
+
     def _generate_google_docstring(self, func: FunctionInfo) -> str:
-        """Generate Google-style Python docstring"""
-        parts = []
+        """Google-style docstring: the explanation, and the parameters that have a description"""
+        parts = [self._escape_docstring(func.ai_explanation or "")]
 
-        # Summary
-        parts.append(func.ai_explanation or "Function description.")
-
-        # Parameters
-        if func.parameters:
+        documented = self._documented_parameters(func)
+        if documented:
             parts.append("\nArgs:")
-            for param in func.parameters:
+            for param in documented:
                 type_str = f" ({param.type_hint})" if param.type_hint else ""
-                desc = param.description or "Parameter description"
-                parts.append(f"    {param.name}{type_str}: {desc}")
-
-        # Returns
-        if func.return_type:
-            parts.append(f"\nReturns:")
-            parts.append(f"    {func.return_type}: Return value description")
+                parts.append(f"    {param.name}{type_str}: {self._escape_docstring(param.description)}")
 
         return "\n".join(parts)
 
     def _generate_numpy_docstring(self, func: FunctionInfo) -> str:
-        """Generate NumPy-style Python docstring"""
-        parts = []
+        """NumPy-style docstring: the explanation, and the parameters that have a description"""
+        parts = [self._escape_docstring(func.ai_explanation or "")]
 
-        # Summary
-        parts.append(func.ai_explanation or "Function description.")
-        parts.append("")
-
-        # Parameters
-        if func.parameters:
+        documented = self._documented_parameters(func)
+        if documented:
+            parts.append("")
             parts.append("Parameters")
             parts.append("----------")
-            for param in func.parameters:
+            for param in documented:
                 type_str = f" : {param.type_hint}" if param.type_hint else ""
                 parts.append(f"{param.name}{type_str}")
-                desc = param.description or "Parameter description"
-                parts.append(f"    {desc}")
+                parts.append(f"    {self._escape_docstring(param.description)}")
                 parts.append("")
-
-        # Returns
-        if func.return_type:
-            parts.append("Returns")
-            parts.append("-------")
-            parts.append(func.return_type)
-            parts.append("    Return value description")
+            parts.pop()
 
         return "\n".join(parts)
 
     def _generate_python_class_docstring(self, cls: ClassInfo, style: str) -> str:
-        """Generate Python docstring for class"""
-        parts = []
-
-        # Summary
-        parts.append(cls.ai_explanation or "Class description.")
-
-        # Attributes
-        if cls.attributes:
-            parts.append("\nAttributes:")
-            for attr in cls.attributes[:5]:  # Limit to first 5
-                attr_type = attr.get('type', '')
-                type_str = f" ({attr_type})" if attr_type else ""
-                parts.append(f"    {attr['name']}{type_str}: Attribute description")
-
-        return "\n".join(parts)
+        """Class docstring: the explanation (attribute descriptions are not known, so none are made up)"""
+        return self._escape_docstring(cls.ai_explanation or "")
 
     def _generate_jsdoc_function(self, func: FunctionInfo, indent: str) -> str:
         """Generate JSDoc comment for function"""
         lines = [f"{indent}/**"]
-        lines.append(f"{indent} * {func.ai_explanation or 'Function description.'}")
+        lines.append(f"{indent} * {self._comment_text(func.ai_explanation)}")
 
-        # Parameters
+        # Parameters that have a description
         for param in func.parameters:
-            type_str = f"{{{param.type_hint}}}" if param.type_hint else "{*}"
-            desc = param.description or "Parameter description"
-            lines.append(f"{indent} * @param {type_str} {param.name} - {desc}")
-
-        # Returns
-        if func.return_type:
-            lines.append(f"{indent} * @returns {{{func.return_type}}} Return value description")
+            if not param.description:
+                continue
+            type_str = f" {{{param.type_hint}}}" if param.type_hint else ""
+            lines.append(f"{indent} * @param{type_str} {param.name} - {self._comment_text(param.description)}")
 
         lines.append(f"{indent} */")
         return "\n".join(lines)
@@ -322,29 +302,19 @@ class DocstringFormatter(BaseFormatter):
     def _generate_jsdoc_class(self, cls: ClassInfo, indent: str) -> str:
         """Generate JSDoc comment for class"""
         lines = [f"{indent}/**"]
-        lines.append(f"{indent} * {cls.ai_explanation or 'Class description.'}")
-
-        # Base classes
-        if cls.base_classes:
-            for base in cls.base_classes:
-                lines.append(f"{indent} * @extends {base}")
-
+        lines.append(f"{indent} * {self._comment_text(cls.ai_explanation)}")
         lines.append(f"{indent} */")
         return "\n".join(lines)
 
     def _generate_javadoc_function(self, func: FunctionInfo, indent: str) -> str:
         """Generate Javadoc comment for method"""
         lines = [f"{indent}/**"]
-        lines.append(f"{indent} * {func.ai_explanation or 'Method description.'}")
+        lines.append(f"{indent} * {self._comment_text(func.ai_explanation)}")
 
-        # Parameters
+        # Parameters that have a description
         for param in func.parameters:
-            desc = param.description or "Parameter description"
-            lines.append(f"{indent} * @param {param.name} {desc}")
-
-        # Returns
-        if func.return_type and func.return_type != "void":
-            lines.append(f"{indent} * @return Return value description")
+            if param.description:
+                lines.append(f"{indent} * @param {param.name} {self._comment_text(param.description)}")
 
         lines.append(f"{indent} */")
         return "\n".join(lines)
@@ -352,9 +322,7 @@ class DocstringFormatter(BaseFormatter):
     def _generate_javadoc_class(self, cls: ClassInfo, indent: str) -> str:
         """Generate Javadoc comment for class"""
         lines = [f"{indent}/**"]
-        lines.append(f"{indent} * {cls.ai_explanation or 'Class description.'}")
-
-        # Author and version tags could be added here
+        lines.append(f"{indent} * {self._comment_text(cls.ai_explanation)}")
         lines.append(f"{indent} */")
         return "\n".join(lines)
 
@@ -371,32 +339,19 @@ class DocstringFormatter(BaseFormatter):
         lines.append(f'{indent}"""')
         return lines
 
-    def _find_python_insertion_point(self, lines: List[str], def_line: int) -> Optional[int]:
-        """Find where to insert Python docstring (after def line, accounting for 1-indexed line numbers)"""
-        # def_line is 1-indexed, convert to 0-indexed
-        idx = def_line - 1
+    @staticmethod
+    def _comment_text(text: Optional[str]) -> str:
+        """Text for the inside of a /** */ comment: one line, and it cannot end the comment early"""
+        return " ".join((text or "").split()).replace("*/", "* /")
 
-        if idx < 0 or idx >= len(lines):
-            return None
-
-        # The docstring goes right after the def/class line
-        # Skip to the line after the colon
-        while idx < len(lines):
-            if ':' in lines[idx]:
-                return idx + 1
-            idx += 1
-
-        return None
+    @staticmethod
+    def _above_decorators(lines: List[str], index: int, marker: str) -> int:
+        """Index to insert a comment at: above the decorator/annotation lines that sit over the definition"""
+        while index > 0 and lines[index - 1].strip().startswith(marker):
+            index -= 1
+        return index
 
     def _get_indentation(self, line: str) -> str:
         """Get indentation from line"""
         match = re.match(r'^(\s*)', line)
         return match.group(1) if match else ""
-
-    def _has_existing_docstring(self, lines: List[str], start_line: int) -> bool:
-        """Check if docstring already exists at this position"""
-        if start_line >= len(lines):
-            return False
-
-        line = lines[start_line].strip()
-        return line.startswith('"""') or line.startswith("'''") or line.startswith('/*')

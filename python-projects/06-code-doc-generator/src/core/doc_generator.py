@@ -17,6 +17,10 @@ from ..formatters import (
 from ..utils.file_utils import FileDiscovery, validate_file_readable
 
 
+class AIUnavailableError(RuntimeError):
+    """The AI part of a job that cannot be done without it did not work (message says why)."""
+
+
 class DocGenerator:
     """
     Main orchestrator for code documentation generation.
@@ -46,6 +50,9 @@ class DocGenerator:
         if enable_cache is None:
             enable_cache = settings.cache_enabled()
         self.use_ai = use_ai
+        # Things that went wrong without stopping the run (a file that would not parse, AI that
+        # went away); callers show them to the user. Reset by each generate_docs / enhance_code.
+        self.warnings: List[str] = []
         self.parser_registry = ParserRegistry()
         self.file_discovery = FileDiscovery()
 
@@ -57,7 +64,7 @@ class DocGenerator:
                 cache_manager = CacheManager(cache_dir=cache_dir) if enable_cache else None
                 self.ai_explainer = AIExplainer(llm_client, cache_manager, enable_cache)
             except Exception as e:
-                print(f"Warning: AI features unavailable: {e}")
+                self.warnings.append(f"AI features unavailable: {e}")
                 self.use_ai = False
 
         # Initialize formatters
@@ -94,6 +101,7 @@ class DocGenerator:
         """
         # Normalize format(s)
         formats = self._parse_formats(output_format)
+        self._reset_warnings()
 
         # Set default output directory
         if output_dir is None:
@@ -115,18 +123,20 @@ class DocGenerator:
                 parsed = self._parse_file(file_path)
                 parsed_modules.append(parsed)
             except Exception as e:
-                print(f"Warning: Failed to parse {file_path}: {e}")
+                self.warnings.append(f"Skipped {Path(file_path).name}: {self._reason(e)}")
                 continue
 
         if not parsed_modules:
-            raise ValueError("No files were successfully parsed")
+            raise ValueError("No files could be parsed. " + " ".join(self.warnings))
 
         # Enhance with AI if enabled
         if self.use_ai and self.ai_explainer:
             parsed_modules = self._enhance_modules(parsed_modules)
+            self._collect_ai_warnings()
 
         # Generate output in requested formats
         output_files = []
+        format_errors = []
 
         for fmt in formats:
             try:
@@ -138,8 +148,11 @@ class DocGenerator:
                 )
                 output_files.extend(generated)
             except Exception as e:
-                print(f"Warning: Failed to generate {fmt} output: {e}")
+                format_errors.append(f"Could not write {fmt} output: {self._reason(e)}")
 
+        self.warnings.extend(format_errors)
+        if not output_files:
+            raise RuntimeError(" ".join(format_errors) or "No output was produced")
         return output_files
 
     def enhance_code(
@@ -162,18 +175,23 @@ class DocGenerator:
         Raises:
             FileNotFoundError: If input file doesn't exist
             ValueError: If AI features not available
+            AIUnavailableError: If the model could not explain anything (nothing is written)
         """
         if not validate_file_readable(input_path):
             raise FileNotFoundError(f"File not found or not readable: {input_path}")
 
         if not self.use_ai or not self.ai_explainer:
             raise ValueError("AI features must be enabled to enhance code")
+        self._reset_warnings()
 
         # Parse file
         parsed = self._parse_file(input_path)
 
         # Enhance with AI
         parsed = self._enhance_module(parsed)
+        self._collect_ai_warnings()
+        if not self.ai_explainer.answers and self.warnings:
+            raise AIUnavailableError("No AI explanations could be generated. " + " ".join(self.warnings))
 
         # Generate output path
         if output_path is None:
@@ -246,8 +264,7 @@ class DocGenerator:
                     lang_stats['files'].append(file_info)
 
                 except Exception as e:
-                    print(f"Warning: Failed to analyze {file_path}: {e}")
-                    analysis['failed_files'].append({'path': file_path, 'error': str(e)})
+                    analysis['failed_files'].append({'path': file_path, 'error': self._reason(e)})
 
             analysis['languages'][language] = lang_stats
             analysis['total_functions'] += lang_stats['functions']
@@ -267,20 +284,21 @@ class DocGenerator:
 
         try:
             # Module summary
-            module.ai_summary = self.ai_explainer.generate_module_summary(module)
+            module.ai_summary = self.ai_explainer.generate_module_summary(module) or None
 
             # Function explanations
             for func in module.functions:
                 func.ai_explanation = self.ai_explainer.explain_function(
                     func,
                     context=Path(module.file_path).stem
-                )
+                ) or None
 
                 # Parameter descriptions
                 if func.parameters:
                     func.parameters = self.ai_explainer.enhance_parameter_descriptions(
                         func.parameters,
-                        function_context=func.name
+                        function_context=func.name,
+                        func_info=func
                     )
 
             # Class explanations
@@ -288,17 +306,17 @@ class DocGenerator:
                 cls.ai_explanation = self.ai_explainer.explain_class(
                     cls,
                     context=Path(module.file_path).stem
-                )
+                ) or None
 
                 # Method explanations (every method, not just the first few)
                 for method in cls.methods:
                     method.ai_explanation = self.ai_explainer.explain_function(
                         method,
                         context=f"{cls.name}.{method.name}"
-                    )
+                    ) or None
 
         except Exception as e:
-            print(f"Warning: AI enhancement failed for {module.file_path}: {e}")
+            self.warnings.append(f"AI enhancement stopped early for {Path(module.file_path).name}: {self._reason(e)}")
 
         return module
 
@@ -361,13 +379,40 @@ class DocGenerator:
         return output_files
 
     def _parse_formats(self, output_format: Union[str, List[str]]) -> List[str]:
-        """Parse and validate output format(s)"""
-        if isinstance(output_format, str):
-            if output_format == 'all':
-                return ['markdown', 'html', 'json']
-            return [output_format]
+        """Parse and validate output format(s): names are case-insensitive, 'all' means markdown+html+json"""
+        requested = [output_format] if isinstance(output_format, str) else list(output_format)
+        formats: List[str] = []
+        for name in requested:
+            name = str(name).strip().lower()
+            if name == 'all':
+                names = ['markdown', 'html', 'json']
+            elif name in self.formatters:
+                names = [name]
+            else:
+                raise ValueError(
+                    f"Unsupported format: '{name}'. Choose from: {', '.join(self.formatters)}, all"
+                )
+            formats.extend(n for n in names if n not in formats)
+        if not formats:
+            raise ValueError("No output format given")
+        return formats
 
-        return output_format
+    def _reset_warnings(self) -> None:
+        """Start a run with only the warnings that belong to it (AI-setup warnings stay)"""
+        self.warnings = [w for w in self.warnings if w.startswith("AI features unavailable")]
+        if self.ai_explainer:
+            self.ai_explainer.reset()
+
+    def _collect_ai_warnings(self) -> None:
+        if self.ai_explainer:
+            for w in self.ai_explainer.warnings:
+                if w not in self.warnings:
+                    self.warnings.append(w)
+
+    @staticmethod
+    def _reason(error: Exception) -> str:
+        """One line describing an error (parser errors can span several)"""
+        return " ".join(str(error).split()) or type(error).__name__
 
     def get_available_parsers(self) -> List[str]:
         """Get list of available language parsers"""

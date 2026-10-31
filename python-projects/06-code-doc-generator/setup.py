@@ -7,9 +7,9 @@ from pathlib import Path
 readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
 
-# Read version from src/__init__.py
+# Read version from src/version.py
 version = {}
-version_file = Path(__file__).parent / "src" / "__init__.py"
+version_file = Path(__file__).parent / "src" / "version.py"
 with open(version_file, encoding="utf-8") as f:
     for line in f:
         if line.startswith("__version__"):
@@ -18,7 +18,7 @@ with open(version_file, encoding="utf-8") as f:
 
 setup(
     name="code-doc-generator",
-    version=version.get("__version__", "0.6.5.4"),
+    version=version["__version__"],
     author="AI Experiments Hub",
     description="AI-powered code documentation generator with multi-language support",
     long_description=long_description,
