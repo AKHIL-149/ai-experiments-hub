@@ -193,8 +193,18 @@ async function handleFormSubmit(e) {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Failed to generate documentation');
+            let message = 'Failed to generate documentation';
+            try {
+                const error = await response.json();
+                if (typeof error.detail === 'string') {
+                    message = error.detail;
+                } else if (Array.isArray(error.detail) && error.detail.length) {
+                    message = error.detail.map(d => d.msg).join('; ');
+                }
+            } catch (e) {
+                message = `The server answered with an error (${response.status})`;
+            }
+            throw new Error(message);
         }
 
         // Update progress
@@ -210,7 +220,7 @@ async function handleFormSubmit(e) {
             // Redirect to results page or display inline
             displayResults(result);
         } else {
-            throw new Error(result.message || 'Unknown error occurred');
+            throw new Error(result.error || result.message || 'Unknown error occurred');
         }
 
     } catch (error) {
@@ -243,13 +253,15 @@ function hideProgress() {
 }
 
 // ===== Error Handlers =====
+let errorTimer = null;
 function showError(message) {
     if (errorArea && errorText) {
         errorText.textContent = message;
         errorArea.classList.remove('d-none');
 
-        // Auto-hide after 5 seconds
-        setTimeout(hideError, 5000);
+        // Auto-hide after 12 seconds (long enough to read a one-line explanation)
+        clearTimeout(errorTimer);
+        errorTimer = setTimeout(hideError, 12000);
     }
 }
 
@@ -275,7 +287,8 @@ function displayResults(result) {
         language: result.language || 'python',
         ai_enhanced: result.ai_enhanced || false,
         stats: JSON.stringify(result.stats || {}),
-        metadata: JSON.stringify(result.metadata || {})
+        metadata: JSON.stringify(result.metadata || {}),
+        warnings: JSON.stringify(result.warnings || [])
     };
 
     for (const [key, value] of Object.entries(fields)) {

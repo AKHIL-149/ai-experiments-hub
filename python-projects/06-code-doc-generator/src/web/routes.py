@@ -1,12 +1,14 @@
 """API routes for code documentation generator web interface"""
+import os
 import tempfile
-import shutil
+import time
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional, Tuple
 
 try:
     from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-    from fastapi.responses import JSONResponse, FileResponse
     from pydantic import BaseModel
     FASTAPI_AVAILABLE = True
 except ImportError:
@@ -15,17 +17,57 @@ except ImportError:
     BaseModel = object
 
 from src.core import DocGenerator
+from src.core.doc_generator import AIUnavailableError
 from src.core.llm_client import default_provider
+from src.parsers.base_parser import ParseError, decode_source
+from src.parsers.parser_registry import ParserRegistry
+from src.version import __version__
 from starlette.concurrency import run_in_threadpool
-from src.utils import FileDiscovery
 
-# Language -> temp file extension (parsers pick the language from the extension)
+# Language -> extension used for pasted code (parsers pick the language from the extension)
 EXTENSION_MAP = {
     'python': '.py',
     'javascript': '.js',
     'typescript': '.ts',
     'java': '.java'
 }
+# File extension -> language, for uploads (the file name wins over the language field)
+LANGUAGE_BY_EXTENSION = {
+    '.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript',
+    '.ts': 'typescript', '.tsx': 'typescript', '.java': 'java',
+}
+WEB_FORMATS = ('markdown', 'html', 'json')
+PROVIDERS = ('ollama', 'anthropic', 'openai')
+
+
+def detect_language(code: str) -> str:
+    """Guess the language of pasted code (used for "auto"); Python when nothing else fits."""
+    import ast
+    import re
+    try:
+        ast.parse(code)
+        if not re.search(r'^\s*(?:public\s+|private\s+)?(?:class|interface)\s+\w+[^:\n]*\{', code, re.M):
+            return 'python'
+    except (SyntaxError, ValueError, RecursionError):
+        pass
+    if re.search(r'\b(?:public|private|protected)\s+(?:static\s+)?(?:final\s+)?[\w<>\[\],]+\s+\w+\s*\(', code) \
+            or re.search(r'^\s*(?:package|import)\s+[\w.]+\s*;', code, re.M) \
+            or 'System.out.' in code:
+        return 'java'
+    if re.search(r'\binterface\s+\w+\s*\{|\):\s*\w+\s*(?:\{|=>)|\b\w+\s*:\s*(?:string|number|boolean)\b|\benum\s+\w+\s*\{|\bas\s+(?:string|number|any)\b|\bimplements\b', code):
+        return 'typescript'
+    if re.search(r'\bfunction\b|=>|\b(?:const|let|var)\s+\w+|\bmodule\.exports\b|\brequire\(|^\s*import\s+.*\sfrom\s', code, re.M):
+        return 'javascript'
+    return 'python'
+
+
+def max_code_bytes() -> int:
+    """Largest source accepted (MAX_CODE_BYTES, default 1 MB): bigger input is not a single source file"""
+    try:
+        return int(os.getenv("MAX_CODE_BYTES", "1000000"))
+    except ValueError:
+        return 1000000
+
 
 # Create router
 if FASTAPI_AVAILABLE:
@@ -36,18 +78,9 @@ else:
 
 # Request/Response models
 if FASTAPI_AVAILABLE:
-    class GenerateRequest(BaseModel):
-        """Request model for generate endpoint"""
-        code: str
-        language: str = "python"
-        format: str = "markdown"
-        provider: str = default_provider()
-        model: Optional[str] = None
-        use_ai: bool = True
-        
     class GenerateResponse(BaseModel):
         """Response model for generate endpoint"""
-        status: str  # "success" or "error"
+        status: str  # "success"; failures are HTTP errors with a "detail" message
         code: str
         documentation: str
         raw_documentation: str
@@ -56,13 +89,9 @@ if FASTAPI_AVAILABLE:
         ai_enhanced: bool
         stats: dict
         metadata: dict
+        warnings: List[str] = []
         error: Optional[str] = None
-        
-    class AnalyzeRequest(BaseModel):
-        """Request model for analyze endpoint"""
-        code: str
-        language: str = "python"
-        
+
     class AnalyzeResponse(BaseModel):
         """Response model for analyze endpoint"""
         success: bool
@@ -72,36 +101,108 @@ if FASTAPI_AVAILABLE:
         classes: List[str]
         language: str
         error: Optional[str] = None
-        
-    class EnhanceRequest(BaseModel):
-        """Request model for enhance endpoint"""
-        code: str
-        language: str = "python"
-        style: str = "auto"
-        provider: str = default_provider()
-        model: Optional[str] = None
-        
+
     class EnhanceResponse(BaseModel):
         """Response model for enhance endpoint"""
         success: bool
         enhanced_code: str
         language: str
         style: str
+        warnings: List[str] = []
         error: Optional[str] = None
 
 
+def _one_line(text: object, limit: int = 300) -> str:
+    return " ".join(str(text).split())[:limit]
+
+
+def _fail(status_code: int, message: str):
+    raise HTTPException(status_code=status_code, detail=_one_line(message))
+
+
+async def read_input(file, code: Optional[str], language: str) -> Tuple[bytes, str, str, str, str]:
+    """The source to document: (bytes, text, language, display name, file suffix).
+
+    A file's own extension decides the language; pasted code uses the language field.
+    """
+    language = (language or "python").strip().lower()
+    if file is not None and file.filename:
+        data = await file.read()
+        name = Path(file.filename).name
+        suffix = Path(name).suffix.lower()
+        if suffix in LANGUAGE_BY_EXTENSION:
+            language = LANGUAGE_BY_EXTENSION[suffix]
+        elif suffix:
+            _fail(400, f"Unsupported file type '{suffix}'. Supported: {', '.join(sorted(LANGUAGE_BY_EXTENSION))}")
+        else:
+            if language == 'auto':
+                language = detect_language(data.decode('utf-8', errors='replace'))
+            if language not in EXTENSION_MAP:
+                _fail(400, f"Unsupported language '{language}'. Choose from: {', '.join(EXTENSION_MAP)}")
+        display = name
+        suffix = suffix or EXTENSION_MAP[language]
+    elif code is not None and code.strip():
+        if language == 'auto':
+            language = detect_language(code)
+        if language not in EXTENSION_MAP:
+            _fail(400, f"Unsupported language '{language}'. Choose from: {', '.join(EXTENSION_MAP)}")
+        data = code.encode("utf-8")
+        suffix = EXTENSION_MAP[language]
+        display = f"pasted_code{suffix}"
+    else:
+        _fail(400, "No code provided")
+
+    if not data.strip():
+        _fail(400, "The file is empty")
+    limit = max_code_bytes()
+    if len(data) > limit:
+        _fail(413, f"The source is {len(data):,} bytes; the limit is {limit:,} bytes")
+    try:
+        text = decode_source(data)
+    except ParseError as error:
+        _fail(400, error.message)
+    return data, text, language, display, suffix
+
+
+@contextmanager
+def temp_source(data: bytes, suffix: str):
+    """The source written to a temporary file (bytes as given, so the parser sees the real encoding)"""
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        path = tmp.name
+    try:
+        yield path
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def scrub(message: object, tmp_path: str, display: str) -> str:
+    """An error message as one line, without the server's temp path"""
+    text = _one_line(message)
+    for ref in (str(Path(tmp_path).resolve()), tmp_path, Path(tmp_path).name):
+        text = text.replace(ref, display)
+    return text
+
+
+def check_provider(provider: str) -> str:
+    provider = (provider or default_provider()).strip().lower()
+    if provider not in PROVIDERS:
+        _fail(400, f"Unsupported provider '{provider}'. Choose from: {', '.join(PROVIDERS)}")
+    return provider
+
+
 if FASTAPI_AVAILABLE:
-    
+
     @router.get("/health")
     async def health_check():
         """Health check endpoint"""
         return {
             "status": "healthy",
-            "version": "0.7.4",
+            "version": __version__,
             "service": "code-doc-generator"
         }
-    
-    
+
+
     @router.get("/formats")
     async def get_formats():
         """Get available output formats"""
@@ -144,8 +245,8 @@ if FASTAPI_AVAILABLE:
                 {"id": "openai", "name": "OpenAI GPT", "requires_key": True}
             ]
         }
-    
-    
+
+
     @router.post("/generate")
     async def generate_docs(
         file: Optional[UploadFile] = File(None),
@@ -159,64 +260,34 @@ if FASTAPI_AVAILABLE:
         """
         Generate documentation from code.
 
-        Accepts either file upload or direct code input.
+        Accepts either file upload or direct code input. Problems with the request are 4xx errors
+        with a one-line "detail"; things that went wrong along the way (a model that was down) are
+        returned as "warnings" next to the documentation.
         """
-        import time
-        from datetime import datetime
-
         start_time = time.time()
+        data, code_content, language, display, suffix = await read_input(file, code, language)
+        format = (format or "markdown").strip().lower()
+        if format not in WEB_FORMATS:
+            _fail(400, f"Unsupported format '{format}'. Choose from: {', '.join(WEB_FORMATS)}")
+        provider = check_provider(provider)
+        model = (model or "").strip() or None
 
-        try:
-            # Get code content
-            if file:
-                code_content = await file.read()
-                code_content = code_content.decode('utf-8')
-                # Detect language from extension if not provided
-                if file.filename:
-                    ext = Path(file.filename).suffix
-                    if ext == '.py':
-                        language = 'python'
-                    elif ext in ['.js', '.ts', '.jsx', '.tsx']:
-                        language = 'javascript'
-                    elif ext == '.java':
-                        language = 'java'
-            elif code:
-                code_content = code
-            else:
-                raise HTTPException(status_code=400, detail="No code provided")
-
-            file_extension = EXTENSION_MAP.get(language, '.py')
-
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix=file_extension, delete=False) as tmp_file:
-                tmp_file.write(code_content)
-                tmp_path = tmp_file.name
-
+        with temp_source(data, suffix) as tmp_path:
             try:
-                # Initialize generator
-                generator = DocGenerator(
-                    llm_provider=provider,
-                    model=model,
-                    use_ai=use_ai,
-                )
+                parsed = await run_in_threadpool(ParserRegistry().get_parser(tmp_path).parse_file, tmp_path)
+            except Exception as error:
+                _fail(422, f"Could not parse {display}: {scrub(error, tmp_path, display)}")
 
-                # First, analyze the code to get stats
-                from src.parsers.parser_registry import ParserRegistry
-                registry = ParserRegistry()
-                parser = registry.get_parser(tmp_path)
-                parsed = await run_in_threadpool(parser.parse_file, tmp_path)
+            stats = {
+                "language": parsed.language,
+                "functions": len(parsed.functions),
+                "classes": len(parsed.classes),
+                "lines": len(code_content.splitlines()),
+            }
 
-                # Calculate stats
-                stats = {
-                    "language": parsed.language,
-                    "functions": len(parsed.functions),
-                    "classes": len(parsed.classes),
-                    "lines": code_content.count('\n') + 1
-                }
-
-                # Create temporary output directory
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    # Generate documentation
+            generator = DocGenerator(llm_provider=provider, model=model, use_ai=use_ai)
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                try:
                     # Blocking LLM calls: keep them off the event loop
                     output_files = await run_in_threadpool(
                         generator.generate_docs,
@@ -225,67 +296,36 @@ if FASTAPI_AVAILABLE:
                         output_dir=tmp_dir,
                         recursive=False
                     )
+                except Exception as error:
+                    _fail(500, f"Could not generate documentation: {scrub(error, tmp_path, display)}")
+                doc_content = Path(output_files[0]).read_text(encoding="utf-8")
 
-                    if output_files:
-                        # Read generated documentation
-                        doc_content = Path(output_files[0]).read_text()
-                        # Don't expose the server's temp path / random file name
-                        display_name = (
-                            Path(file.filename).name if file and file.filename
-                            else f"pasted_code{file_extension}"
-                        )
-                        # Resolved path first: on macOS /var/... resolves to /private/var/...
-                        for temp_ref in (str(Path(tmp_path).resolve()), tmp_path, Path(tmp_path).name):
-                            doc_content = doc_content.replace(temp_ref, display_name)
-                        ai_active = generator.ai_explainer is not None
-                        used_model = (
-                            generator.ai_explainer.llm.model if ai_active else None
-                        )
+        # Don't expose the server's temp path / random file name
+        for temp_ref in (str(Path(tmp_path).resolve()), tmp_path, Path(tmp_path).name):
+            doc_content = doc_content.replace(temp_ref, display)
 
-                        # Calculate processing time
-                        processing_time = round(time.time() - start_time, 2)
+        explainer = generator.ai_explainer
+        ai_enhanced = bool(explainer and explainer.answers)
+        metadata = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "provider": provider.title(),
+            "model": explainer.llm.model if ai_enhanced else "n/a (AI off)",
+            "processing_time": round(time.time() - start_time, 2),
+        }
+        return GenerateResponse(
+            status="success",
+            code=code_content,
+            documentation=doc_content,
+            raw_documentation=doc_content,
+            format=format,
+            language=language,
+            ai_enhanced=ai_enhanced,
+            stats=stats,
+            metadata=metadata,
+            warnings=[scrub(w, tmp_path, display) for w in generator.warnings],
+        )
 
-                        # Create metadata
-                        metadata = {
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "provider": provider.title(),
-                            "model": used_model or "n/a (AI off)",
-                            "processing_time": processing_time
-                        }
 
-                        return GenerateResponse(
-                            status="success",
-                            code=code_content,
-                            documentation=doc_content,
-                            raw_documentation=doc_content,
-                            format=format,
-                            language=language,
-                            ai_enhanced=ai_active,
-                            stats=stats,
-                            metadata=metadata
-                        )
-                    else:
-                        raise Exception("No documentation generated")
-
-            finally:
-                # Clean up temporary file
-                Path(tmp_path).unlink(missing_ok=True)
-
-        except Exception as e:
-            return GenerateResponse(
-                status="error",
-                code=code or "",
-                documentation="",
-                raw_documentation="",
-                format=format,
-                language=language,
-                ai_enhanced=use_ai,
-                stats={},
-                metadata={},
-                error=str(e)
-            )
-    
-    
     @router.post("/analyze")
     async def analyze_code(
         file: Optional[UploadFile] = File(None),
@@ -295,70 +335,31 @@ if FASTAPI_AVAILABLE:
         """
         Analyze code structure without generating documentation.
         """
-        try:
-            # Get code content
-            if file:
-                code_content = await file.read()
-                code_content = code_content.decode('utf-8')
-                if file.filename:
-                    ext = Path(file.filename).suffix
-                    if ext == '.py':
-                        language = 'python'
-                    elif ext in ['.js', '.ts', '.jsx', '.tsx']:
-                        language = 'javascript'
-                    elif ext == '.java':
-                        language = 'java'
-            elif code:
-                code_content = code
-            else:
-                raise HTTPException(status_code=400, detail="No code provided")
-            
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix=EXTENSION_MAP.get(language, '.py'), delete=False) as tmp_file:
-                tmp_file.write(code_content)
-                tmp_path = tmp_file.name
-            
-            try:
-                # Initialize generator (no AI needed)
-                generator = DocGenerator(use_ai=False)
-                
-                # Analyze structure
-                analysis = generator.analyze_structure(tmp_path, show_details=True)
-                
-                # Extract function and class names
-                functions = []
-                classes = []
-                
-                for lang_stats in analysis.get('languages', {}).values():
-                    for file_info in lang_stats.get('files', []):
-                        functions.extend(file_info.get('function_names', []))
-                        classes.extend(file_info.get('class_names', []))
-                
-                return AnalyzeResponse(
-                    success=True,
-                    total_functions=analysis.get('total_functions', 0),
-                    total_classes=analysis.get('total_classes', 0),
-                    functions=functions,
-                    classes=classes,
-                    language=language
-                )
-                
-            finally:
-                # Clean up temporary file
-                Path(tmp_path).unlink(missing_ok=True)
-                
-        except Exception as e:
-            return AnalyzeResponse(
-                success=False,
-                total_functions=0,
-                total_classes=0,
-                functions=[],
-                classes=[],
-                language=language,
-                error=str(e)
-            )
-    
-    
+        data, _text, language, display, suffix = await read_input(file, code, language)
+        with temp_source(data, suffix) as tmp_path:
+            generator = DocGenerator(use_ai=False)
+            analysis = await run_in_threadpool(generator.analyze_structure, tmp_path, True)
+
+        if analysis.get('failed_files'):
+            _fail(422, f"Could not parse {display}: {scrub(analysis['failed_files'][0]['error'], tmp_path, display)}")
+
+        functions: List[str] = []
+        classes: List[str] = []
+        for lang_stats in analysis.get('languages', {}).values():
+            for file_info in lang_stats.get('files', []):
+                functions.extend(file_info.get('function_names', []))
+                classes.extend(file_info.get('class_names', []))
+
+        return AnalyzeResponse(
+            success=True,
+            total_functions=analysis.get('total_functions', 0),
+            total_classes=analysis.get('total_classes', 0),
+            functions=functions,
+            classes=classes,
+            language=language
+        )
+
+
     @router.post("/enhance")
     async def enhance_code(
         file: Optional[UploadFile] = File(None),
@@ -371,73 +372,41 @@ if FASTAPI_AVAILABLE:
         """
         Enhance code with AI-generated docstrings.
         """
-        try:
-            # Get code content
-            if file:
-                code_content = await file.read()
-                code_content = code_content.decode('utf-8')
-                if file.filename:
-                    ext = Path(file.filename).suffix
-                    if ext == '.py':
-                        language = 'python'
-                    elif ext in ['.js', '.ts', '.jsx', '.tsx']:
-                        language = 'javascript'
-                    elif ext == '.java':
-                        language = 'java'
-            elif code:
-                code_content = code
-            else:
-                raise HTTPException(status_code=400, detail="No code provided")
-            
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix=EXTENSION_MAP.get(language, '.py'), delete=False) as tmp_file:
-                tmp_file.write(code_content)
-                tmp_path = tmp_file.name
-            
+        data, _text, language, display, suffix = await read_input(file, code, language)
+        provider = check_provider(provider)
+        model = (model or "").strip() or None
+        style = (style or "auto").strip().lower()
+
+        generator = DocGenerator(llm_provider=provider, model=model, use_ai=True)
+        if not generator.use_ai:
+            _fail(503, "AI is not available: " + (generator.warnings[0] if generator.warnings else "no model configured"))
+
+        with temp_source(data, suffix) as tmp_path:
+            out_path = str(Path(tmp_path).with_name(Path(tmp_path).stem + "_documented" + suffix))
             try:
-                # Initialize generator with AI
-                generator = DocGenerator(
-                    llm_provider=provider,
-                    model=model,
-                    use_ai=True,
-                )
-                
-                # Create temporary output file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='_documented' + EXTENSION_MAP.get(language, '.py'), delete=False) as tmp_out:
-                    tmp_out_path = tmp_out.name
-                
                 try:
-                    # Enhance code
-                    output_path = await run_in_threadpool(
-                        generator.enhance_code,
-                        input_path=tmp_path,
-                        output_path=tmp_out_path,
-                        style=style
+                    await run_in_threadpool(
+                        generator.enhance_code, input_path=tmp_path, output_path=out_path, style=style
                     )
-                    
-                    # Read enhanced code
-                    enhanced_content = Path(output_path).read_text()
-                    
-                    return EnhanceResponse(
-                        success=True,
-                        enhanced_code=enhanced_content,
-                        language=language,
-                        style=style
-                    )
-                    
-                finally:
-                    # Clean up output file
-                    Path(tmp_out_path).unlink(missing_ok=True)
-                    
+                except ParseError as error:
+                    _fail(422, f"Could not parse {display}: {scrub(error, tmp_path, display)}")
+                except AIUnavailableError as error:
+                    _fail(503, scrub(error, tmp_path, display))
+                except ValueError as error:
+                    _fail(400, scrub(error, tmp_path, display))
+                except HTTPException:
+                    raise
+                except Exception as error:
+                    _fail(500, f"Could not enhance the code: {scrub(error, tmp_path, display)}")
+                enhanced = Path(out_path).read_text(encoding="utf-8")
             finally:
-                # Clean up input file
-                Path(tmp_path).unlink(missing_ok=True)
-                
-        except Exception as e:
-            return EnhanceResponse(
-                success=False,
-                enhanced_code="",
-                language=language,
-                style=style,
-                error=str(e)
-            )
+                Path(out_path).unlink(missing_ok=True)
+
+        warnings = [scrub(w, tmp_path, display) for w in generator.warnings]
+        return EnhanceResponse(
+            success=True,
+            enhanced_code=enhanced,
+            language=language,
+            style=style,
+            warnings=warnings,
+        )

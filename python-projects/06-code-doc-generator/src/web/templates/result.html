@@ -209,6 +209,15 @@
                 </a>
             </div>
 
+            {% if warnings %}
+            <div class="alert alert-warning" role="alert" id="runWarnings">
+                <strong><i class="bi bi-exclamation-triangle"></i> Some parts could not be completed:</strong>
+                <ul class="mb-0">
+                    {% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
             {% if stats %}
             <div class="stats-card">
                 <h5 class="mb-3">
@@ -324,9 +333,10 @@
                         {{ documentation|safe }}
                     </div>
                 {% elif format == 'html' %}
-                    <div class="docs-content" id="docsContent">
-                        {{ documentation|safe }}
-                    </div>
+                    <!-- The generated page runs in a sandbox: its own scripts may work, but it cannot reach this page -->
+                    <iframe id="docsContent" class="docs-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"
+                            style="width:100%; height:70vh; border:1px solid #dee2e6; border-radius:6px; background:#fff;"
+                            srcdoc="{{ documentation }}"></iframe>
                 {% elif format == 'json' %}
                     <pre class="json-viewer"><code class="language-json" id="docsContent">{{ documentation }}</code></pre>
                 {% else %}
@@ -394,12 +404,8 @@ async function copyToClipboard(type) {
         content = document.getElementById('codeContent').textContent;
         message = 'Code copied to clipboard!';
     } else if (type === 'docs') {
-        const format = document.getElementById('formatType').textContent;
-        if (format === 'json' || format === 'markdown') {
-            content = document.getElementById('rawDocs').textContent;
-        } else {
-            content = document.getElementById('docsContent').innerHTML;
-        }
+        // always the generated text itself, not what the page shows
+        content = document.getElementById('rawDocs').textContent;
         message = 'Documentation copied to clipboard!';
     }
 

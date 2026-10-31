@@ -1,4 +1,6 @@
 """FastAPI application for code documentation generator web interface"""
+import html
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -21,88 +23,76 @@ except ImportError:
     print("Warning: FastAPI not installed. Install with: pip install fastapi uvicorn")
 
 from src.core import DocGenerator
+from src.version import __version__
+from .sanitize import sanitize_html
 
 
 # Utility function for markdown to HTML conversion
 def markdown_to_html(markdown_text: str) -> str:
     """
-    Convert markdown text to HTML.
-    Uses a simple regex-based approach if markdown library is not available.
+    Convert markdown text to HTML that is safe to show in the page.
+
+    Raw HTML in the markdown (for instance inside a docstring) is not passed through, and the
+    result is cleaned with an allowlist sanitizer, because the text comes from user code.
     """
     try:
         import markdown
-        return markdown.markdown(
-            markdown_text,
-            extensions=['extra', 'codehilite', 'toc', 'tables']
-        )
     except ImportError:
-        # Fallback: simple regex-based conversion
-        import re
+        markdown = None
 
-        html = markdown_text
+    if markdown is not None:
+        md = markdown.Markdown(extensions=['extra', 'codehilite', 'toc', 'tables'])
+        # treat "<script>" typed in the source as text, not as HTML
+        md.preprocessors.deregister('html_block')
+        md.inlinePatterns.deregister('html')
+        return sanitize_html(md.convert(markdown_text or ''))
 
-        # Headers
-        html = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
-        html = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
-        html = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
-
-        # Bold and italic
-        html = re.sub(r'\*\*\*(.+?)\*\*\*', r'<strong><em>\1</em></strong>', html)
-        html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
-        html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
-        html = re.sub(r'__(.+?)__', r'<strong>\1</strong>', html)
-        html = re.sub(r'_(.+?)_', r'<em>\1</em>', html)
-
-        # Code blocks
-        html = re.sub(r'```(\w+)?\n(.*?)\n```', r'<pre><code class="language-\1">\2</code></pre>',
-                     html, flags=re.DOTALL)
-
-        # Inline code
-        html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
-
-        # Links
-        html = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', html)
-
-        # Lists
-        html = re.sub(r'^\- (.+?)$', r'<li>\1</li>', html, flags=re.MULTILINE)
-        html = re.sub(r'(<li>.*?</li>)', r'<ul>\1</ul>', html, flags=re.DOTALL)
-
-        # Paragraphs
-        html = re.sub(r'\n\n', r'</p><p>', html)
-        html = '<p>' + html + '</p>'
-
-        # Clean up
-        html = html.replace('<p></p>', '')
-        html = html.replace('<p><h', '<h').replace('</h1></p>', '</h1>')
-        html = html.replace('</h2></p>', '</h2>').replace('</h3></p>', '</h3>')
-        html = html.replace('<p><pre>', '<pre>').replace('</pre></p>', '</pre>')
-        html = html.replace('<p><ul>', '<ul>').replace('</ul></p>', '</ul>')
-
-        return html
+    # Fallback without the library: escape first, then apply a few simple rules
+    import re
+    from html import escape
+    html = escape(markdown_text or '', quote=False)
+    html = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
+    html = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
+    html = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+    html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+    html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
+    html = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', html)
+    html = re.sub(r'\n\n', r'</p><p>', html)
+    return sanitize_html('<p>' + html + '</p>')
 
 # Initialize FastAPI app
 if FASTAPI_AVAILABLE:
     app = FastAPI(
         title="Code Documentation Generator",
         description="AI-powered code documentation generator with multi-language support",
-        version="0.7.4",
+        version=__version__,
         docs_url="/api/docs",
         redoc_url="/api/redoc"
     )
 
-    # CORS middleware - allow all origins for development
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # The page and the API are served from the same origin, so no cross-origin access is needed.
+    # Set CORS_ORIGINS="https://a.example,https://b.example" to allow specific other origins.
+    allowed_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip() and o.strip() != "*"]
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["*"],
+        )
 
     # Templates directory
     templates_dir = Path(__file__).parent / "templates"
     templates_dir.mkdir(exist_ok=True)
     templates = Jinja2Templates(directory=str(templates_dir))
+
+    def static_version() -> str:
+        """Changes whenever a static file changes, so browsers do not keep serving an old script"""
+        try:
+            return str(int(max(f.stat().st_mtime for f in static_dir.rglob("*") if f.is_file())))
+        except ValueError:
+            return __version__
+    templates.env.globals["static_version"] = static_version
 
     # Static files directory
     static_dir = Path(__file__).parent / "static"
@@ -138,7 +128,7 @@ if FASTAPI_AVAILABLE:
                         <h1>Code Documentation Generator - Web Interface</h1>
                         <p>Template files are being set up...</p>
                         <p>API is available at <a href="/api/docs">/api/docs</a></p>
-                        <p>Error: {str(e)}</p>
+                        <p>Error: {html.escape(str(e))}</p>
                     </body>
                 </html>
                 """
@@ -154,7 +144,8 @@ if FASTAPI_AVAILABLE:
         language: str = Form("python"),
         ai_enhanced: bool = Form(False),
         stats: str = Form("{}"),
-        metadata: str = Form("{}")
+        metadata: str = Form("{}"),
+        warnings: str = Form("[]")
     ):
         """Display documentation results page"""
         import json
@@ -162,15 +153,21 @@ if FASTAPI_AVAILABLE:
         # Parse JSON fields
         try:
             stats_data = json.loads(stats) if stats else {}
-        except:
+        except ValueError:
             stats_data = {}
 
         try:
             metadata_data = json.loads(metadata) if metadata else {}
-        except:
+        except ValueError:
             metadata_data = {}
 
-        # Convert markdown to HTML if needed
+        try:
+            warnings_data = [str(w) for w in json.loads(warnings)] if warnings else []
+        except (ValueError, TypeError):
+            warnings_data = []
+
+        # Markdown is converted to cleaned HTML. HTML output is shown in a sandboxed frame and
+        # everything else as escaped text, so nothing from the form is ever trusted as markup.
         doc_html = documentation
         if format == "markdown":
             doc_html = markdown_to_html(documentation)
@@ -186,16 +183,15 @@ if FASTAPI_AVAILABLE:
                 "language": language,
                 "ai_enhanced": ai_enhanced,
                 "stats": stats_data,
-                "metadata": metadata_data
+                "metadata": metadata_data,
+                "warnings": warnings_data
             }
         )
 
     @app.on_event("startup")
     async def startup_event():
         """Run on application startup"""
-        print("🚀 Code Documentation Generator Web Interface")
-        print("📚 API Documentation: http://127.0.0.1:8000/api/docs")
-        print("🌐 Web Interface: http://127.0.0.1:8000/")
+        print(f"🚀 Code Documentation Generator Web Interface v{__version__}")
 
     @app.on_event("shutdown")
     async def shutdown_event():
