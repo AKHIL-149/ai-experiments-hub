@@ -1,6 +1,27 @@
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+const MIN_WPM = 80;   // espeak's slowest setting; anything lower is clamped to it
+const MAX_WPM = 450;
+
+/**
+ * Prepare model output for a speech engine: markdown marks and links are not words,
+ * and a leading "-" must not look like a command-line option.
+ * @param {string} text
+ * @returns {string}
+ */
+function cleanForSpeech(text) {
+  return String(text)
+    .replace(/https?:\/\/\S+/g, 'link')
+    .replace(/[*_`#>~]+/g, ' ')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/[\u0000-\u001f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 /**
  * Local TTS Service - Wrapper for local text-to-speech engines
@@ -11,7 +32,7 @@ class LocalTTSService {
     this.engine = options.engine || 'espeak'; // espeak, piper, festival
     this.voice = options.voice || 'en';
     this.speed = options.speed || 175; // words per minute for espeak
-    this.outputDir = options.outputDir || '/tmp';
+    this.outputDir = options.outputDir || os.tmpdir();
     this.isAvailable = false;
 
     // Engine-specific paths
@@ -55,20 +76,21 @@ class LocalTTSService {
   testEspeak() {
     return new Promise((resolve, reject) => {
       const process = spawn(this.espeakPath, ['--version']);
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error('espeak test timeout'));
+      }, 3000);
 
       process.on('error', () => {
+        clearTimeout(timer);
         reject(new Error('espeak not found. Install: apt-get install espeak'));
       });
 
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code === 0) resolve();
         else reject(new Error('espeak test failed'));
       });
-
-      setTimeout(() => {
-        process.kill();
-        reject(new Error('espeak test timeout'));
-      }, 3000);
     });
   }
 
@@ -78,20 +100,21 @@ class LocalTTSService {
   testPiper() {
     return new Promise((resolve, reject) => {
       const process = spawn(this.piperPath, ['--version']);
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error('piper test timeout'));
+      }, 3000);
 
       process.on('error', () => {
+        clearTimeout(timer);
         reject(new Error('piper not found'));
       });
 
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code === 0) resolve();
         else reject(new Error('piper test failed'));
       });
-
-      setTimeout(() => {
-        process.kill();
-        reject(new Error('piper test timeout'));
-      }, 3000);
     });
   }
 
@@ -101,20 +124,21 @@ class LocalTTSService {
   testFestival() {
     return new Promise((resolve, reject) => {
       const process = spawn(this.festivalPath, ['--version']);
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error('festival test timeout'));
+      }, 3000);
 
       process.on('error', () => {
+        clearTimeout(timer);
         reject(new Error('festival not found'));
       });
 
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code === 0 || code === null) resolve();
         else reject(new Error('festival test failed'));
       });
-
-      setTimeout(() => {
-        process.kill();
-        reject(new Error('festival test timeout'));
-      }, 3000);
     });
   }
 
@@ -129,9 +153,15 @@ class LocalTTSService {
       throw new Error(`Local TTS (${this.engine}) not available. Using cloud fallback.`);
     }
 
+    text = cleanForSpeech(text);
+    if (!text) {
+      throw new Error('There is nothing to say');
+    }
+
+    // Unique per request - two requests in the same millisecond must not share (and delete) a file
     const outputPath = path.join(
       this.outputDir,
-      `tts_${Date.now()}.wav`
+      `tts_${crypto.randomBytes(8).toString('hex')}.wav`
     );
 
     try {
@@ -176,17 +206,26 @@ class LocalTTSService {
    */
   generateWithEspeak(text, outputPath, options = {}) {
     return new Promise((resolve, reject) => {
-      const speed = options.speed || this.speed;
+      // options.speed is a multiplier (1.0 = normal, as in the settings panel and the OpenAI API);
+      // espeak wants words per minute
+      const multiplier = Number(options.speed) > 0 ? Number(options.speed) : 1;
+      const wpm = Math.max(MIN_WPM, Math.min(MAX_WPM, Math.round(this.speed * multiplier)));
       const voice = options.voice || this.voice;
 
+      // "--" ends the options, so the text can never be read as a flag
       const args = [
         '-v', voice,
-        '-s', String(speed),
+        '-s', String(wpm),
         '-w', outputPath,
+        '--',
         text
       ];
 
       const process = spawn(this.espeakPath, args);
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error('espeak timeout'));
+      }, 30000);
 
       let errorOutput = '';
 
@@ -195,10 +234,12 @@ class LocalTTSService {
       });
 
       process.on('error', (error) => {
+        clearTimeout(timer);
         reject(new Error(`espeak error: ${error.message}`));
       });
 
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code !== 0) {
           reject(new Error(`espeak failed (code ${code}): ${errorOutput}`));
           return;
@@ -211,12 +252,6 @@ class LocalTTSService {
 
         resolve();
       });
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        process.kill();
-        reject(new Error('espeak timeout'));
-      }, 30000);
     });
   }
 
@@ -234,6 +269,10 @@ class LocalTTSService {
       ];
 
       const process = spawn(this.piperPath, args);
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error('piper timeout'));
+      }, 30000);
 
       // Pipe text to stdin
       process.stdin.write(text);
@@ -246,10 +285,12 @@ class LocalTTSService {
       });
 
       process.on('error', (error) => {
+        clearTimeout(timer);
         reject(new Error(`piper error: ${error.message}`));
       });
 
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code !== 0) {
           reject(new Error(`piper failed (code ${code}): ${errorOutput}`));
           return;
@@ -262,11 +303,6 @@ class LocalTTSService {
 
         resolve();
       });
-
-      setTimeout(() => {
-        process.kill();
-        reject(new Error('piper timeout'));
-      }, 30000);
     });
   }
 
@@ -279,9 +315,16 @@ class LocalTTSService {
   generateWithFestival(text, outputPath, options = {}) {
     return new Promise((resolve, reject) => {
       // Festival uses scheme commands
-      const scheme = `(begin (utt.save.wave (utt.synth (Utterance Text "${text.replace(/"/g, '\\"')}")) "${outputPath}") (quit))`;
+      // The text sits inside a Scheme string literal: escape the backslash first, then the quote,
+      // or crafted text could close the string and run its own Scheme (which can run commands)
+      const quoted = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const scheme = `(begin (utt.save.wave (utt.synth (Utterance Text "${quoted}")) "${outputPath}") (quit))`;
 
       const process = spawn(this.festivalPath, ['--batch']);
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error('festival timeout'));
+      }, 30000);
 
       process.stdin.write(scheme);
       process.stdin.end();
@@ -293,10 +336,12 @@ class LocalTTSService {
       });
 
       process.on('error', (error) => {
+        clearTimeout(timer);
         reject(new Error(`festival error: ${error.message}`));
       });
 
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code !== 0 && code !== null) {
           reject(new Error(`festival failed (code ${code}): ${errorOutput}`));
           return;
@@ -309,11 +354,6 @@ class LocalTTSService {
 
         resolve();
       });
-
-      setTimeout(() => {
-        process.kill();
-        reject(new Error('festival timeout'));
-      }, 30000);
     });
   }
 
@@ -359,3 +399,4 @@ class LocalTTSService {
 }
 
 module.exports = LocalTTSService;
+module.exports.cleanForSpeech = cleanForSpeech;
