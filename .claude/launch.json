@@ -24,9 +24,9 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/08-voice-assistant && exec node server.js"
+        "cd /Users/akhil/Documents/Documents/GitHub/ai-experiments-hub/javascript-projects/08-voice-assistant && PORT=3008 exec node server.js"
       ],
-      "port": 3000
+      "port": 3008
     },
     {
       "name": "content-analyzer",
