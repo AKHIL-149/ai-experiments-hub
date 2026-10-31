@@ -1,5 +1,7 @@
 # Voice Assistant - Local Testing Guide
 
+> Automated tests: run `npm test` (about 7 seconds, no extra dependencies). This guide is for the manual, in-browser checks that need a real microphone. Numbers below such as "8 voice commands" and the default port predate later phases - the server now logs 9 commands and listens on `http://localhost:3000` unless `PORT` is set.
+
 ## 🚀 Quick Start
 
 ### 1. Configure Environment

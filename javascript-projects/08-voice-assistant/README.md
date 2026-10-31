@@ -112,15 +112,15 @@ The assistant recognizes these built-in commands (speak naturally - variations a
 **Utility Commands:**
 - 🕐 "What time is it?" - Get current time
 - 📅 "What's the date?" - Get current date
-- 🧮 "Calculate 25 times 4" - Perform math calculations
-- ⏲️ "Set a timer for 5 minutes" - Start countdown timer
+- 🧮 "Calculate 25 times 4" - Exact arithmetic: `+ - × ÷`, parentheses, "squared", "to the power of", "square root of", "15 percent of 200", "10 mod 3", number words ("five plus three"). Division by zero gets a plain answer, huge results are spoken as "1 times 10 to the 22". Anything that is not arithmetic ("what is Python 3") goes to the AI.
+- ⏲️ "Set a timer for 5 minutes" - Countdown timer: "1 hour 30 minutes", "1.5 hours", "an hour", "half an hour", "five minutes", "remind me in 10 minutes to call mom" (up to 24 hours). The page sounds the alarm (message, beep and spoken alert) and keeps running timers across a reload.
 
 **Information:**
-- 🌤️ "What's the weather in Austin?" - Real current conditions via OpenWeatherMap (requires `OPENWEATHER_API_KEY`; falls back to `DEFAULT_WEATHER_LOCATION` if no city is named)
+- 🌤️ "What's the weather in Austin?" / "What is the weather like in Austin today?" - Real current conditions via OpenWeatherMap (with `OPENWEATHER_API_KEY`) or wttr.in (no key); uses `DEFAULT_WEATHER_LOCATION` if no city is named. Only current conditions exist: asking about "tomorrow" or a forecast gets the current weather with a note saying so.
 - 🏎️ "When is the next F1 race?" - Next upcoming Formula 1 race via the free Jolpica-F1 API (no key required)
 
 **General Questions:**
-- Anything the local model doesn't know (news, schedules, current events) automatically escalates to a cloud web search (requires `OPENAI_API_KEY` + `TAVILY_API_KEY`) instead of returning a "check the official site" non-answer.
+- Anything the local model doesn't know (news, schedules, current events) automatically escalates to a cloud web search (requires `OPENAI_API_KEY`, optionally `TAVILY_API_KEY`) instead of returning a "check the official site" non-answer. **In `local` mode nothing is ever sent to the cloud**, even if a key is configured.
 
 **Entertainment:**
 - 😄 "Tell me a joke" - Random joke
@@ -134,6 +134,8 @@ The assistant recognizes these built-in commands (speak naturally - variations a
 - "Timer for 10 minutes"
 - "Calculate 100 divided by 4"
 - "Good morning"
+
+**How a phrase is matched.** Punctuation, "what's"/"what is" and filler words ("please", "can you", "now", "today") are ignored, so "What time is it, please?" and "what's the time" both work. A command only answers when the request is really *for that command*: "tell me a joke about cats", "help me with my homework", "what time is it in Tokyo" and "funny cat videos" are open-ended, so they go to the AI instead of getting a random joke, the help list, or the local time. Fragments such as "it", "the" or "what" never trigger a command.
 
 If a command isn't recognized, the assistant falls back to conversational AI mode.
 
@@ -161,6 +163,8 @@ bash ./models/download-ggml-model.sh base.en
 cp main /path/to/08-voice-assistant/whisper
 cp models/ggml-base.en.bin /path/to/08-voice-assistant/models/
 ```
+
+**Also needed: ffmpeg** (converts the browser's recording to the format Whisper reads): `brew install ffmpeg` / `apt-get install ffmpeg`. It is found on your `PATH`, or set `FFMPEG_PATH`.
 
 **2. Install Local TTS**
 
@@ -212,7 +216,7 @@ FALLBACK_TO_CLOUD=true
 ```
 
 ### Switching Modes at Runtime
-Use the settings panel (⚙️) in the UI to switch between cloud, local, and hybrid modes without restarting the server.
+Use the settings panel (⚙️) in the UI to switch between cloud, local, and hybrid modes without restarting the server. A mode that could not work is refused with the reason (HTTP 409): `cloud` needs `OPENAI_API_KEY`, `local` needs working local Whisper *and* text-to-speech. The voice list in the settings panel follows the active engine (espeak voices locally, OpenAI voices in the cloud), and the voice and speed you pick are used for every answer.
 
 ## Phase 6: Hands-free Mode
 
@@ -240,6 +244,8 @@ Instead of holding a button to talk (push-to-talk), hands-free mode automaticall
 - **Quiet environment**: 20-40% sensitivity works well
 - **Noisy environment**: 50-70% sensitivity to avoid false triggers
 - **Very noisy**: Consider using push-to-talk mode instead
+
+Hands-free always starts **off** after a page load (it needs the microphone, which the browser only grants on request). While the assistant is thinking or speaking, detected "speech" is ignored so it cannot answer its own voice.
 
 **Troubleshooting:**
 - **Not detecting speech**: Lower sensitivity
@@ -277,33 +283,38 @@ Instead of holding a button to talk (push-to-talk), hands-free mode automaticall
 
 ## API Endpoints
 
+### Errors and limits
+
+Every error is JSON, `{ "error": "<message>" }`, with a meaningful status: `400` bad input (missing/blank/oversized fields, malformed JSON, malformed conversation id, unreadable audio), `404` unknown conversation or route, `409` a service mode that cannot work, `413` upload or body too large, `429` rate limit (`Retry-After` is set), `502` the cloud provider failed, `503` a local service is unavailable (the message says how to fix it), `500` anything unexpected (logged in full, reported generically). Limits: transcript 2000 characters, speech text 4096 characters, `speed` 0.25-4, audio `MAX_AUDIO_SIZE_MB`, and by default 60 requests per minute per client on `/api/command`, `/api/transcribe` and `/api/synthesize`.
+
 ### Health Check
 ```
 GET /api/health
 ```
-Returns server status and OpenAI connection status.
+Returns server status and the state of every service.
 
 ### Transcribe Audio
 ```
 POST /api/transcribe
-Body: FormData with 'audio' field (audio/webm)
-Returns: { transcript, duration, confidence }
+Body: FormData with 'audio' field (webm, mp4, ogg, wav - anything ffmpeg reads), optional 'language' ("en", "auto", ...)
+Returns: { transcript, duration, confidence, noSpeech }
 ```
+Silence, background noise and non-speech sounds return `{ transcript: "", noSpeech: true }` (HTTP 200) rather than a made-up transcript - Whisper otherwise "hears" words like "you" in silence, or writes "(airplane engine roaring)".
 
 ### Synthesize Speech
 ```
 POST /api/synthesize
-Body: { text, voice?, speed? }
-Returns: Audio stream (audio/mpeg)
+Body: { text, voice?, speed? }   (speed is a multiplier: 1.0 normal, 0.25-4)
+Returns: Audio stream (audio/wav from local engines, audio/mpeg from OpenAI - the Content-Type says which)
 ```
 
 ### Process Voice Command
 ```
 POST /api/command
-Body: { transcript, conversationId? }
-Returns: { understood, commandRecognized, command, response, audio, audioFormat, conversationId }
+Body: { transcript, conversationId?, voice?, speed? }
+Returns: { understood, commandRecognized, command, response, audio, audioFormat, audioError, timer, conversationId }
 ```
-Processes transcribed text through command handler or AI fallback. Maintains conversation context if conversationId is provided.
+Processes transcribed text through command handler or AI fallback. Maintains conversation context if conversationId is provided (a well-formed id the server no longer has is recreated, so a chat survives cleanup). The exchange is saved only after it succeeds. If only the voice fails, you still get the text: `audio` is `null` and `audioError` says why. `timer` is set when a timer was started (`{ id, duration, endTime, label }`).
 
 ### Get Available Voices
 ```
@@ -326,6 +337,8 @@ POST /api/conversations
 Body: { userId? }
 Returns: { success, conversationId, createdAt }
 ```
+
+Conversation ids look like `conv_<timestamp>_<8 hex>`; anything else is a `400` (ids are file names, so a malformed one could otherwise reach files outside `data/conversations`). Unknown (well-formed) ids are `404`. Conversations are created when the first message is sent, not when the page opens.
 
 **Get Conversation History**
 ```
@@ -359,6 +372,12 @@ GET /api/conversations/stats
 Returns: { success, stats }
 ```
 
+### Service Mode
+```
+GET  /api/service/status
+POST /api/service/mode      Body: { mode: "cloud" | "local" | "hybrid" }   (409 if that mode cannot work)
+```
+
 ## Configuration
 
 Environment variables (`.env`):
@@ -366,6 +385,7 @@ Environment variables (`.env`):
 ```bash
 # Server
 PORT=3000
+HOST=127.0.0.1          # loopback only (default). Set 0.0.0.0 to expose it on your network - there is no login.
 NODE_ENV=development
 
 # OpenAI
@@ -384,8 +404,17 @@ MAX_AUDIO_SIZE_MB=25
 AUDIO_TEMP_DIR=./data/audio-cache
 CLEANUP_INTERVAL_MS=3600000
 
-# CORS
-ALLOWED_ORIGINS=http://localhost:3000
+# Rate limit (per client, on /api/command, /api/transcribe, /api/synthesize)
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX_REQUESTS=60
+
+# CORS - the page and API share an origin, so this is OFF unless you list origins
+# (comma-separated; "*" allows any website to call your assistant - only do that on purpose)
+ALLOWED_ORIGINS=
+
+# Local tools
+FFMPEG_PATH=ffmpeg      # converts recordings for Whisper
+WHISPER_CONCURRENCY=2   # transcriptions run at once; more wait their turn
 ```
 
 ## Browser Compatibility
@@ -403,10 +432,11 @@ ALLOWED_ORIGINS=http://localhost:3000
 ## Technical Details
 
 ### Audio Processing
-- **Input Format**: WebM (captured via MediaRecorder API)
-- **Sample Rate**: 16kHz (optimized for speech)
-- **Transcription**: OpenAI Whisper API
-- **Output Format**: MP3 (from TTS API)
+- **Input Format**: whatever the browser's MediaRecorder produces (WebM, or MP4 on Safari); ffmpeg converts it
+- **Sample Rate**: 16kHz mono (optimized for speech)
+- **Transcription**: OpenAI Whisper API, or local whisper.cpp
+- **Silence**: a recording whose loudest sample is below -50 dB is "no speech" and never reaches Whisper
+- **Output Format**: MP3 (OpenAI TTS) or WAV (local engines)
 
 ### Architecture
 - **Backend**: Node.js + Express.js
@@ -425,6 +455,18 @@ ALLOWED_ORIGINS=http://localhost:3000
 - Verify your OpenAI API key is correct
 - Check your API key has sufficient credits
 - Ensure you have access to Whisper and TTS models
+
+### "I didn't catch any speech"
+- The recording was silent or only noise. Check the microphone input level, and hold the button while speaking.
+
+### "ffmpeg is not installed" / "That recording could not be read as audio"
+- Install ffmpeg (`brew install ffmpeg`) or set `FFMPEG_PATH`. The second message means the upload was not valid audio.
+
+### Local mode won't switch / "Local mode needs ..."
+- Open the settings panel's Service Status: local mode needs both Local Whisper and Local TTS to be available (model file present, `espeak` installed).
+
+### Timers
+- Timers are sounded by the open page. If you close the tab they do not ring; reopening it rings any that ran out meanwhile.
 
 ### Audio Quality Issues
 - Minimize background noise
@@ -483,13 +525,26 @@ ALLOWED_ORIGINS=http://localhost:3000
 - [x] Automatic recording start/stop based on speech detection
 - [x] Visual feedback for hands-free mode active state
 
+## Testing
+
+```bash
+npm test        # Node's built-in test runner, no extra dependencies (~7 seconds)
+```
+
+The tests cover the command matcher, the arithmetic and duration parsers, conversation storage (including path-traversal attempts), every HTTP endpoint and status code, the ffmpeg/Whisper/espeak/festival wrappers (against fake executables, so failure paths are tested deterministically), the OpenAI tool-calling loop (SDK faked), and the page itself (the real `public/app.js` runs in a Node `vm` with a fake DOM, microphone and `fetch`: the press/release race, the Space key, timers, settings). They were checked by mutation: about 70 deliberate breakages of the source, each of which must make a test fail.
+
+Not covered by automated tests: real OpenAI calls (they need a key), real microphone capture and the browser's autoplay rules, and hands-free voice detection (needs live audio).
+
 ## Security Notes
 
 - API keys are server-side only (never exposed to client)
-- CORS configured for specific origins
-- Audio file size limits enforced
-- Temporary files automatically cleaned up
-- Rate limiting on API endpoints
+- The server listens on **127.0.0.1** by default and CORS is closed by default; there is no authentication, so only change `HOST`/`ALLOWED_ORIGINS` if you mean to
+- Conversation ids are validated as ids before they are used as file names
+- In `local` mode nothing leaves your machine, even with an OpenAI key set
+- External programs (ffmpeg, whisper, espeak) are run with an argument list, never through a shell; text for espeak follows `--`; text for festival is escaped before it goes into a Scheme string
+- Audio file size limits enforced; temporary files are uniquely named and removed
+- Rate limiting on the endpoints that call paid services (see Configuration)
+- Unexpected errors are logged in full and reported to the client generically (no paths or stack details)
 
 ## Contributing
 
@@ -508,4 +563,4 @@ MIT
 
 ---
 
-**Project 8** of AI Experiments Hub | Built with OpenAI APIs
+**Project 8** of AI Experiments Hub | OpenAI APIs or fully local (whisper.cpp, espeak, Ollama)
