@@ -52,7 +52,8 @@
     ],
     "handler": "getWeather",
     "description": "Gets current weather information",
-    "category": "information"
+    "category": "information",
+    "anywhere": true
   },
   "f1_schedule": {
     "name": "Next F1 Race",
@@ -62,11 +63,17 @@
       "when is the next race",
       "f1 race this week",
       "race schedule",
-      "formula one schedule"
+      "formula one schedule",
+      "next grand prix",
+      "next f1 grand prix",
+      "next formula 1 race",
+      "next formula one race",
+      "when is the next grand prix"
     ],
     "handler": "getF1Schedule",
     "description": "Gets the next upcoming Formula 1 race",
-    "category": "information"
+    "category": "information",
+    "anywhere": true
   },
   "calculate": {
     "name": "Calculate Math Expression",

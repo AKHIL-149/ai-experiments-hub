@@ -1,5 +1,65 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { solve, formatNumber } = require('./MathParser');
+const { parseDuration, formatDuration, MAX_SECONDS } = require('./DurationParser');
+
+// Words that say nothing about which command was meant. A fragment made only of these
+// ("it", "the", "what") must never trigger a command.
+const STOPWORDS = new Set([
+  'what', 'is', 'it', 'the', 'a', 'an', 'me', 'tell', 'how', 'who', 'where', 'when', 'do', 'you',
+  'can', 'i', 'to', 'of', 'in', 'on', 'at', 'for', 'and', 'now', 'there', 'this', 'that', 'so',
+  'ok', 'okay', 'are', 'am', 'my', 'your', 'be', 's'
+]);
+
+// Words that may surround a command without changing what it means ("hello there",
+// "what time is it please", "what is the date today")
+const FILLER_AROUND = /^(?:(?:hey|ok|okay|um|uh|so|please|kindly|can you|could you|would you|will you|i want to know|i would like to know|do you know|let me know)\s+)+/;
+const FILLER_TRAILING = /(?:\s+(?:please|now|right now|today|thanks|thank you|for me|currently))+$/;
+const IGNORABLE_EXTRA = new Set(['a', 'an', 'the', 'there', 'is', 'it', 'again']);
+
+const TIME_QUALIFIER = /\b(tomorrow|tonight|yesterday|weekend|next week|this week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|forecast|later)\b/i;
+
+/**
+ * Lower-case a spoken/typed phrase and strip what speech recognition adds and a command
+ * pattern does not care about: punctuation, "what's" vs "what is", extra spaces.
+ * @param {string} text
+ * @returns {string}
+ */
+function normalize(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/[‘’]/g, "'")
+    .replace(/\b(what|who|where|when|how|that|there|it|here|today)'s\b/g, (m, w) => (w === 'today' ? "today's" : `${w} is`))
+    .replace(/[?!,;:"“”()]/g, ' ')
+    .replace(/(?<!\d)\.|\.(?!\d)/g, ' ')                 // sentence periods, but not decimals
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * normalize() plus the filler words that can surround a command
+ */
+function clean(text) {
+  let s = normalize(text);
+  let previous;
+  do {
+    previous = s;
+    s = s.replace(FILLER_AROUND, '').replace(FILLER_TRAILING, '').trim();
+  } while (s !== previous);
+  return s;
+}
+
+/**
+ * Index of the first place `needle` appears as a run of whole words inside `haystack`, or -1
+ */
+function indexOfWords(haystack, needle) {
+  if (needle.length === 0 || needle.length > haystack.length) return -1;
+  for (let i = 0; i <= haystack.length - needle.length; i++) {
+    if (needle.every((word, k) => haystack[i + k] === word)) return i;
+  }
+  return -1;
+}
 
 /**
  * Voice Command Handler - Pattern matching and command execution
@@ -8,8 +68,8 @@ class VoiceCommandHandler {
   constructor(commandRegistryPath, options = {}) {
     this.commandRegistryPath = commandRegistryPath || path.join(__dirname, '../commands/commands.json');
     this.commands = this.loadCommands();
-    this.timers = new Map(); // Store active timers
-    this.llmService = options.llmService || null; // NEW: Inject LLM service
+    this.timers = new Map(); // Active timers by id
+    this.maxTimers = 50;
     this.weatherService = options.weatherService || null;
     this.f1Service = options.f1Service || null;
   }
@@ -33,27 +93,30 @@ class VoiceCommandHandler {
    * @returns {Promise<Object>} - { command, parameters, confidence }
    */
   async parseCommand(transcript) {
-    const normalizedTranscript = transcript.toLowerCase().trim();
+    const none = { command: null, handler: null, parameters: {}, confidence: 0 };
+    if (typeof transcript !== 'string' || transcript.trim().length === 0) {
+      return none;
+    }
+
+    const normalizedTranscript = normalize(transcript);
+    if (normalizedTranscript.length === 0) {
+      return none;
+    }
 
     // Evaluate every command/pattern and keep the highest-confidence
     // match across all of them, rather than returning the first match
-    // found in commands.json's key order. Word-overlap fuzzy matching
-    // means a phrase can legitimately match several commands at once
-    // (e.g. "what day is it" scores 75% against "time"'s pattern purely
-    // from shared stopwords, but 100% against "date"'s own pattern) -
-    // first-match-wins made the result depend on registry ordering
-    // instead of which command actually fits best.
+    // found in commands.json's key order.
     let bestMatch = null;
 
     for (const [commandId, commandConfig] of Object.entries(this.commands)) {
       for (const pattern of commandConfig.patterns) {
-        const match = this.matchPattern(normalizedTranscript, pattern);
+        const match = this.matchPattern(normalizedTranscript, pattern, commandConfig);
         if (!match.matched) continue;
 
-        // "what is {expression}" (and similar) is broad enough to match
-        // almost any "what is ___" question - only accept it as a real
-        // calculation if the captured text actually looks like math.
-        if (match.parameters.expression && !/\d/.test(match.parameters.expression)) {
+        // "what is {expression}" (and similar) is broad enough to match almost any
+        // "what is ___" question - only accept it as a calculation if the phrase really is
+        // arithmetic ("what is python 3" and "what is the capital of france" are not).
+        if (commandConfig.handler === 'calculate' && solve(normalizedTranscript).reason === 'not-math') {
           continue;
         }
 
@@ -64,7 +127,7 @@ class VoiceCommandHandler {
     }
 
     if (!bestMatch) {
-      return { command: null, handler: null, parameters: {}, confidence: 0 };
+      return none;
     }
 
     return {
@@ -80,11 +143,11 @@ class VoiceCommandHandler {
    * Match transcript against pattern
    * @param {string} transcript - Normalized transcript
    * @param {string} pattern - Command pattern
+   * @param {Object} commandConfig - The command the pattern belongs to
    * @returns {Object} - { matched, parameters, confidence }
    */
-  matchPattern(transcript, pattern) {
-    // Normalize pattern
-    const normalizedPattern = pattern.toLowerCase().trim();
+  matchPattern(transcript, pattern, commandConfig = {}) {
+    const normalizedPattern = normalize(pattern);
 
     // Exact match
     if (transcript === normalizedPattern) {
@@ -96,48 +159,51 @@ class VoiceCommandHandler {
       return this.matchParameterizedPattern(transcript, normalizedPattern);
     }
 
-    // Fuzzy match (contains check) - word-boundary aware, so a short
-    // pattern like "hi" only matches the actual word "hi", not a
-    // substring buried inside an unrelated word ("history", "high").
-    const escapedPattern = normalizedPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patternInTranscript = new RegExp(`\\b${escapedPattern}\\b`).test(transcript);
-    const transcriptInPattern = new RegExp(`\\b${transcript.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(normalizedPattern);
-    if (patternInTranscript || transcriptInPattern) {
+    const noMatch = { matched: false, parameters: {}, confidence: 0 };
+    const said = clean(transcript).split(' ').filter(Boolean);
+    const wanted = clean(pattern).split(' ').filter(Boolean);
+    if (said.length === 0 || wanted.length === 0) return noMatch;
+
+    if (said.join(' ') === wanted.join(' ')) {
+      return { matched: true, parameters: {}, confidence: 1.0 };
+    }
+
+    // The pattern appears as whole words inside what was said
+    const at = indexOfWords(said, wanted);
+    if (at !== -1) {
+      if (commandConfig.anywhere) {
+        // Commands that take free-form extras ("weather in Austin") match wherever the words are
+        return { matched: true, parameters: {}, confidence: 0.8 };
+      }
+      // Otherwise only harmless extras may surround it. "tell me a joke about cats",
+      // "help me with my homework" and "what time is it in tokyo" ask for something this
+      // command cannot do, so they go to the AI instead of being answered wrongly.
+      const extras = [...said.slice(0, at), ...said.slice(at + wanted.length)];
+      if (extras.every(word => IGNORABLE_EXTRA.has(word))) {
+        return { matched: true, parameters: {}, confidence: 0.9 };
+      }
+      return noMatch;
+    }
+
+    // Part of the pattern was said ("time" for "what time is it") - but only if something
+    // meaningful was said, not just "it", "the" or "what"
+    if (indexOfWords(wanted, said) !== -1 && said.some(word => !STOPWORDS.has(word))) {
       return { matched: true, parameters: {}, confidence: 0.8 };
     }
 
-    // Word-level similarity. Confidence scales with the actual overlap
-    // ratio (not a flat value) so that when a phrase matches multiple
-    // commands' patterns via shared stopwords (e.g. "what day is it"
-    // overlaps both "date"'s own pattern at 100% and "time"'s pattern at
-    // 75% purely from "what"/"is"/"it"), the more specific/complete match
-    // outranks the coincidental one instead of tying with it.
-    //
-    // Precision alone isn't enough: a short pattern like "what is today"
-    // can hit 100% precision against a much longer, unrelated sentence
-    // that merely happens to contain those words somewhere ("what is the
-    // latest news about the stock market today"). Also require recall -
-    // the matched words must account for a real share of what the user
-    // actually said - so a short pattern can't "find itself" buried
-    // inside an unrelated longer utterance.
-    const transcriptWords = transcript.split(/\s+/);
-    const patternWords = normalizedPattern.split(/\s+/);
-    const matchedWords = patternWords.filter(word => transcriptWords.includes(word));
-    const precision = matchedWords.length / patternWords.length;
-    const recall = matchedWords.length / transcriptWords.length;
-
-    // Recall threshold matches precision's - confirmed live that 0.5 was
-    // still loose enough for a short, mostly-stopword pattern like
-    // "when is the next race" to match "when is the next iphone release"
-    // (4/5 precision, 4/6=0.67 recall). A contiguous phrase with a few
-    // extra filler words is already caught by the substring check above,
-    // which doesn't have this issue - this tier is the scattered-word
-    // fallback, so it can afford to be conservative.
-    if (precision >= 0.7 && recall >= 0.7) {
-      return { matched: true, parameters: {}, confidence: precision };
+    // Word-level similarity for scattered words. Confidence scales with the actual overlap
+    // ratio, and recall is required too so a short pattern cannot "find itself" inside an
+    // unrelated longer sentence. Single-word patterns never get here.
+    if (wanted.length >= 2 && !commandConfig.anywhere) {
+      const matchedWords = wanted.filter(word => said.includes(word));
+      const precision = matchedWords.length / wanted.length;
+      const recall = matchedWords.length / said.length;
+      if (precision >= 0.7 && recall >= 0.7) {
+        return { matched: true, parameters: {}, confidence: Math.min(precision, 0.85) };
+      }
     }
 
-    return { matched: false, parameters: {}, confidence: 0 };
+    return noMatch;
   }
 
   /**
@@ -290,155 +356,90 @@ class VoiceCommandHandler {
   }
 
   /**
-   * Calculate math expression
+   * Calculate math expression. Arithmetic is evaluated exactly by MathParser; a question
+   * that is not arithmetic is handed back (fallThrough) so the AI can answer it.
    */
   async calculate(params, context) {
-    try {
-      const transcript = context.originalTranscript || '';
+    const outcome = solve(normalize(context.originalTranscript || ''));
 
-      // If LocalLLMService is available, use it for parsing
-      if (this.llmService && this.llmService.available()) {
-        console.log('Using LLM to parse math expression');
-        try {
-          const result = await this.llmService.parseMathExpression(transcript);
-
-          return {
-            success: true,
-            response: `The result is ${result.result}.`,
-            data: {
-              expression: result.expression,
-              result: result.result,
-              method: 'llm-parsed'
-            }
-          };
-        } catch (llmError) {
-          console.warn('LLM math parsing failed, falling back to pattern matching:', llmError.message);
-          // Fall through to pattern-based fallback
-        }
-      }
-
-      // Fallback to original pattern-based parsing
-      let expression = params.expression;
-
-      // Handle natural language math
-      if (params.num1 && params.num2) {
-        const num1 = parseFloat(params.num1);
-        const num2 = parseFloat(params.num2);
-
-        // Determine operation from original transcript
-        const transcriptLower = transcript.toLowerCase();
-
-        if (transcriptLower.includes('plus') || transcriptLower.includes('add')) {
-          expression = `${num1} + ${num2}`;
-        } else if (transcriptLower.includes('minus') || transcriptLower.includes('subtract')) {
-          expression = `${num1} - ${num2}`;
-        } else if (transcriptLower.includes('times') || transcriptLower.includes('multiply')) {
-          expression = `${num1} * ${num2}`;
-        } else if (transcriptLower.includes('divided by') || transcriptLower.includes('divide')) {
-          expression = `${num1} / ${num2}`;
-        }
-      }
-
-      // Clean expression
-      expression = expression
-        .replace(/[^\d+\-*/().\s]/g, '')
-        .replace(/\s+/g, '');
-
-      // Simple evaluation (safe for basic math)
-      const result = Function(`'use strict'; return (${expression})`)();
-
-      if (isNaN(result) || !isFinite(result)) {
-        throw new Error('Invalid calculation');
-      }
-
+    if (outcome.ok) {
       return {
         success: true,
-        response: `The result is ${result}.`,
-        data: { expression, result, method: 'pattern-matched' }
-      };
-
-    } catch (error) {
-      console.error('Calculate error:', error.message);
-      return {
-        success: false,
-        response: "I couldn't calculate that. Please try a simple math expression.",
-        data: null
+        response: `The result is ${formatNumber(outcome.value)}.`,
+        data: { expression: outcome.expression, result: outcome.value }
       };
     }
+
+    if (outcome.reason === 'divide-by-zero') {
+      return { success: true, response: "I can't divide by zero.", data: null };
+    }
+    if (outcome.reason === 'too-large') {
+      return { success: true, response: 'That number is too large for me to work out.', data: null };
+    }
+
+    return { success: false, fallThrough: true, response: '', data: null };
   }
 
   /**
-   * Set timer
+   * Set timer. The page is told about it (data.timer) and sounds the alarm when it ends;
+   * the server only keeps a short list of the timers that are still running.
    */
   async setTimer(params, context) {
-    try {
-      const duration = params.duration.toLowerCase();
+    const spoken = String(params.duration || '');
+    const parsed = parseDuration(spoken);
 
-      // Parse duration
-      let seconds = 0;
-
-      // Extract numbers and units
-      const minutesMatch = duration.match(/(\d+)\s*(minute|min)/);
-      const secondsMatch = duration.match(/(\d+)\s*(second|sec)/);
-      const hoursMatch = duration.match(/(\d+)\s*(hour|hr)/);
-
-      if (hoursMatch) seconds += parseInt(hoursMatch[1]) * 3600;
-      if (minutesMatch) seconds += parseInt(minutesMatch[1]) * 60;
-      if (secondsMatch) seconds += parseInt(secondsMatch[1]);
-
-      if (seconds === 0) {
-        // Try to extract just a number (assume minutes)
-        const numMatch = duration.match(/(\d+)/);
-        if (numMatch) {
-          seconds = parseInt(numMatch[1]) * 60;
-        }
-      }
-
-      if (seconds === 0) {
-        throw new Error('Could not parse duration');
-      }
-
-      const timerId = Date.now().toString();
-      const endTime = Date.now() + (seconds * 1000);
-
-      // Store timer (in a real app, you'd use a proper timer service)
-      this.timers.set(timerId, {
-        duration: seconds,
-        endTime: endTime,
-        started: Date.now()
-      });
-
-      // Format duration for response
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
-      let durationStr = '';
-      if (minutes > 0) durationStr += `${minutes} minute${minutes !== 1 ? 's' : ''}`;
-      if (remainingSeconds > 0) {
-        if (durationStr) durationStr += ' and ';
-        durationStr += `${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`;
-      }
-
-      return {
-        success: true,
-        response: `Timer set for ${durationStr}. I'll let you know when time is up!`,
-        data: { timerId, duration: seconds, endTime }
+    if (!parsed.ok) {
+      const reasons = {
+        'too-long': `I can only set timers up to ${MAX_SECONDS / 3600} hours.`,
+        zero: "A timer needs to be longer than zero. Try 'set a timer for 5 minutes'."
       };
-
-    } catch (error) {
       return {
         success: false,
-        response: "I couldn't set that timer. Try saying something like 'set a timer for 5 minutes'.",
+        response: reasons[parsed.reason] ||
+          "I couldn't set that timer. Try saying something like 'set a timer for 5 minutes'.",
         data: null
       };
     }
+
+    const now = Date.now();
+    for (const [id, timer] of this.timers) {
+      if (timer.endTime <= now) this.timers.delete(id); // finished - forget it
+    }
+    if (this.timers.size >= this.maxTimers) {
+      return {
+        success: false,
+        response: 'You already have a lot of timers running. Let a few finish first.',
+        data: null
+      };
+    }
+
+    // "remind me in 5 minutes to call mom" -> label "call mom"
+    const labelMatch = spoken.match(/\bto\s+(.+)$/i);
+    const label = labelMatch ? labelMatch[1].trim().slice(0, 80) : null;
+
+    const timer = {
+      id: crypto.randomBytes(6).toString('hex'),
+      duration: parsed.seconds,
+      endTime: now + parsed.seconds * 1000,
+      label
+    };
+    this.timers.set(timer.id, timer);
+
+    const durationText = formatDuration(parsed.seconds);
+    return {
+      success: true,
+      response: label
+        ? `OK, I'll remind you to ${label} in ${durationText}.`
+        : `Timer set for ${durationText}. I'll let you know when time is up!`,
+      data: { timer }
+    };
   }
 
   /**
-   * Get current weather via OpenWeatherMap
+   * Get current weather (OpenWeatherMap when configured, wttr.in otherwise)
    */
   async getWeather(params, context) {
-    // Always available in practice (OpenWeatherMap when configured,
-    // wttr.in with no key otherwise) - this only fires if the handler
+    // Always available in practice - this only fires if the handler
     // was somehow constructed without a weather service at all.
     if (!this.weatherService) {
       return {
@@ -450,14 +451,16 @@ class VoiceCommandHandler {
 
     try {
       const transcript = context.originalTranscript || '';
-      const locationMatch = transcript.match(/weather\s+(?:in|for|of)\s+(.+?)[.?!]?$/i);
-      const location = locationMatch ? locationMatch[1].trim() : null;
+      const location = this.extractWeatherLocation(transcript);
 
       const weather = await this.weatherService.getCurrentWeather(location);
 
+      // Only current conditions are available - say so rather than pass them off as a forecast
+      const caveat = TIME_QUALIFIER.test(transcript) ? 'I can only check current conditions. ' : '';
+
       return {
         success: true,
-        response: `It's currently ${weather.tempF}°F and ${weather.description} in ${weather.location}, feels like ${weather.feelsLikeF}°F, with ${weather.humidity}% humidity.`,
+        response: `${caveat}It's currently ${weather.tempF}°F and ${weather.description} in ${weather.location}, feels like ${weather.feelsLikeF}°F, with ${weather.humidity}% humidity.`,
         data: weather
       };
     } catch (error) {
@@ -468,6 +471,30 @@ class VoiceCommandHandler {
         data: null
       };
     }
+  }
+
+  /**
+   * The place named in a weather question, or null to use the default location:
+   * "weather in Austin", "what is the weather like in Austin today", "forecast for Boston"
+   * @param {string} transcript
+   * @returns {string|null}
+   */
+  extractWeatherLocation(transcript) {
+    const match = String(transcript).match(
+      /\b(?:weather|forecast|conditions)(?:\s+(?:forecast|report|conditions?|like|looking))?\s+(?:out\s+)?(?:in|for|at|of|near)\s+(.+)$/i
+    );
+    if (!match) return null;
+
+    let place = match[1].trim();
+    let previous;
+    do {
+      previous = place;
+      place = place
+        .replace(/[?!.,\s]+$/, '')
+        .replace(/\s+(?:today|right now|now|currently|tonight|tomorrow|this (?:morning|afternoon|evening)|please)$/i, '');
+    } while (place !== previous);
+
+    return place.length > 0 && place.length <= 80 ? place : null;
   }
 
   /**
@@ -562,3 +589,4 @@ class VoiceCommandHandler {
 }
 
 module.exports = VoiceCommandHandler;
+module.exports.normalize = normalize;
