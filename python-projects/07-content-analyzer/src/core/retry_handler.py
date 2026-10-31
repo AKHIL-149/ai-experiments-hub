@@ -59,6 +59,7 @@ class RetryHandler:
         *args,
         retryable_exceptions: Tuple[Type[Exception], ...] = (Exception,),
         on_retry: Optional[Callable[[int, Exception], None]] = None,
+        should_retry: Optional[Callable[[Exception], bool]] = None,
         **kwargs
     ) -> Any:
         """Execute function with retry logic.
@@ -68,6 +69,8 @@ class RetryHandler:
             *args: Positional arguments for function
             retryable_exceptions: Tuple of exception types to retry on
             on_retry: Optional callback called on each retry (attempt, exception)
+            should_retry: Optional test applied to a caught exception; when it returns False the
+                exception is raised at once (for example: a wrong API key is not worth retrying)
             **kwargs: Keyword arguments for function
 
         Returns:
@@ -84,6 +87,9 @@ class RetryHandler:
 
             except retryable_exceptions as e:
                 last_exception = e
+
+                if should_retry is not None and not should_retry(e):
+                    raise
 
                 # Don't retry on last attempt
                 if attempt >= self.max_retries:

@@ -2,6 +2,8 @@
 import os
 import json
 import hashlib
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -29,6 +31,9 @@ class CacheManager:
         self.max_cache_size_mb = max_cache_size_mb
 
         # Create cache directories
+        # Batch workers share one manager: counters and files are changed under this lock
+        self._lock = threading.RLock()
+
         self.response_cache_dir = self.cache_dir / "responses"
         self.image_cache_dir = self.cache_dir / "images"
         self.stats_file = self.cache_dir / "stats.json"
@@ -42,29 +47,55 @@ class CacheManager:
         self.response_cache_dir.mkdir(exist_ok=True)
         self.image_cache_dir.mkdir(exist_ok=True)
 
-    def _load_stats(self):
-        """Load cache statistics."""
-        if self.stats_file.exists():
-            with open(self.stats_file, 'r') as f:
-                self.stats = json.load(f)
-        else:
-            self.stats = {
-                'hits': 0,
-                'misses': 0,
-                'total_requests': 0,
-                'cache_saves': 0,
-                'last_cleanup': None,
-                'cost_savings': {
-                    'anthropic': 0.0,
-                    'openai': 0.0,
-                    'total': 0.0
-                }
+    @staticmethod
+    def _fresh_stats() -> Dict[str, Any]:
+        return {
+            'hits': 0,
+            'misses': 0,
+            'total_requests': 0,
+            'cache_saves': 0,
+            'last_cleanup': None,
+            'cost_savings': {
+                'anthropic': 0.0,
+                'openai': 0.0,
+                'total': 0.0
             }
+        }
+
+    def _load_stats(self):
+        """Load cache statistics (a missing, damaged or incomplete file starts the counters afresh)."""
+        self.stats = self._fresh_stats()
+        if self.stats_file.exists():
+            try:
+                with open(self.stats_file, 'r') as f:
+                    saved = json.load(f)
+                if isinstance(saved, dict):
+                    for key, value in saved.items():
+                        if key == 'cost_savings' and isinstance(value, dict):
+                            self.stats['cost_savings'].update(value)
+                        elif key in self.stats:
+                            self.stats[key] = value
+            except (OSError, ValueError):
+                pass        # damaged file: counters restart, the cached answers are still good
+
+    def _write_json(self, path: Path, data: Any, indent: Optional[int] = 2) -> None:
+        """Write JSON so that a reader never sees half a file (temp file, then rename)."""
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + '.', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(data, f, indent=indent)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def _save_stats(self):
         """Save cache statistics."""
-        with open(self.stats_file, 'w') as f:
-            json.dump(self.stats, f, indent=2)
+        with self._lock:
+            self._write_json(self.stats_file, self.stats)
 
     def _compute_hash(self, data: Any) -> str:
         """Compute SHA256 hash of data.
@@ -99,12 +130,30 @@ class CacheManager:
 
         return age_seconds > self.ttl_seconds
 
+    @staticmethod
+    def _cache_key(prompt, image_hash, provider, model, params) -> Dict[str, Any]:
+        """What identifies a response: everything that can change the answer.
+
+        params (max_tokens, temperature) are part of the key; without them a short, cut-off answer
+        would be served for a later request that allowed a longer one.
+        """
+        key = {
+            'prompt': prompt,
+            'image_hash': image_hash,
+            'provider': provider,
+            'model': model
+        }
+        if params:
+            key['params'] = params
+        return key
+
     def get_response(
         self,
         prompt: str,
         image_hash: str,
         provider: str,
-        model: str
+        model: str,
+        params: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
         """Get cached response.
 
@@ -118,41 +167,40 @@ class CacheManager:
             Cached response or None if not found/expired
         """
         # Create cache key
-        cache_key = {
-            'prompt': prompt,
-            'image_hash': image_hash,
-            'provider': provider,
-            'model': model
-        }
+        cache_key = self._cache_key(prompt, image_hash, provider, model, params)
         cache_hash = self._compute_hash(cache_key)
         cache_file = self.response_cache_dir / f"{cache_hash}.json"
 
-        self.stats['total_requests'] += 1
+        with self._lock:
+            self.stats['total_requests'] += 1
 
-        # Check if cache exists and is valid
-        if cache_file.exists() and not self._is_expired(cache_file):
-            try:
-                with open(cache_file, 'r') as f:
-                    cached_data = json.load(f)
+            # Check if cache exists and is valid
+            if cache_file.exists() and not self._is_expired(cache_file):
+                try:
+                    with open(cache_file, 'r') as f:
+                        cached_data = json.load(f)
+                    response = cached_data['response']
+                    if not response:
+                        raise ValueError("empty cached response")
 
-                self.stats['hits'] += 1
+                    self.stats['hits'] += 1
 
-                # Track cost savings
-                if provider in ['anthropic', 'openai']:
-                    estimated_cost = self._estimate_cost(provider, model, prompt)
-                    self.stats['cost_savings'][provider] += estimated_cost
-                    self.stats['cost_savings']['total'] += estimated_cost
+                    # Track cost savings
+                    if provider in ['anthropic', 'openai']:
+                        estimated_cost = self._estimate_cost(provider, model, prompt)
+                        self.stats['cost_savings'][provider] += estimated_cost
+                        self.stats['cost_savings']['total'] += estimated_cost
 
-                self._save_stats()
+                    self._save_stats()
 
-                return cached_data['response']
-            except Exception:
-                # Cache corrupted, treat as miss
-                pass
+                    return response
+                except Exception:
+                    # Cache corrupted, treat as miss
+                    pass
 
-        self.stats['misses'] += 1
-        self._save_stats()
-        return None
+            self.stats['misses'] += 1
+            self._save_stats()
+            return None
 
     def save_response(
         self,
@@ -160,7 +208,8 @@ class CacheManager:
         image_hash: str,
         provider: str,
         model: str,
-        response: str
+        response: str,
+        params: Optional[Dict[str, Any]] = None
     ):
         """Save response to cache.
 
@@ -172,12 +221,7 @@ class CacheManager:
             response: Response to cache
         """
         # Create cache key
-        cache_key = {
-            'prompt': prompt,
-            'image_hash': image_hash,
-            'provider': provider,
-            'model': model
-        }
+        cache_key = self._cache_key(prompt, image_hash, provider, model, params)
         cache_hash = self._compute_hash(cache_key)
         cache_file = self.response_cache_dir / f"{cache_hash}.json"
 
@@ -192,14 +236,17 @@ class CacheManager:
             'ttl_seconds': self.ttl_seconds
         }
 
-        with open(cache_file, 'w') as f:
-            json.dump(cache_data, f, indent=2)
+        if not response or not response.strip():
+            return                                   # an empty answer is not worth remembering
 
-        self.stats['cache_saves'] += 1
-        self._save_stats()
+        with self._lock:
+            self._write_json(cache_file, cache_data)
 
-        # Check cache size and cleanup if needed
-        self._cleanup_if_needed()
+            self.stats['cache_saves'] += 1
+            self._save_stats()
+
+            # Check cache size and cleanup if needed
+            self._cleanup_if_needed()
 
     def compute_image_hash(self, image_data: bytes) -> str:
         """Compute hash of image data.
@@ -244,6 +291,17 @@ class CacheManager:
 
         return 0.0
 
+    def _size_bytes(self) -> int:
+        """Total size of the cache folder (files that vanish while counting are ignored)"""
+        total = 0
+        for f in self.cache_dir.rglob('*'):
+            try:
+                if f.is_file():
+                    total += f.stat().st_size
+            except OSError:
+                continue
+        return total
+
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics.
 
@@ -255,12 +313,7 @@ class CacheManager:
             hit_rate = (self.stats['hits'] / self.stats['total_requests']) * 100
 
         # Calculate cache size
-        cache_size_bytes = sum(
-            f.stat().st_size
-            for f in self.cache_dir.rglob('*')
-            if f.is_file()
-        )
-        cache_size_mb = cache_size_bytes / (1024 * 1024)
+        cache_size_mb = self._size_bytes() / (1024 * 1024)
 
         return {
             'hits': self.stats['hits'],
@@ -275,12 +328,7 @@ class CacheManager:
 
     def _cleanup_if_needed(self):
         """Cleanup cache if it exceeds size limit."""
-        cache_size_bytes = sum(
-            f.stat().st_size
-            for f in self.cache_dir.rglob('*')
-            if f.is_file()
-        )
-        cache_size_mb = cache_size_bytes / (1024 * 1024)
+        cache_size_mb = self._size_bytes() / (1024 * 1024)
 
         if cache_size_mb > self.max_cache_size_mb:
             self.cleanup(keep_recent_hours=24)
@@ -291,40 +339,53 @@ class CacheManager:
         Args:
             keep_recent_hours: Keep entries newer than this many hours
         """
+        # 0 hours means "keep nothing newer than now", not "no age limit"
         cutoff_time = None
-        if keep_recent_hours:
+        if keep_recent_hours is not None:
             cutoff_time = time.time() - (keep_recent_hours * 3600)
 
+        removed_count = 0
+
+        with self._lock:
+            return self._cleanup_locked(cutoff_time, keep_recent_hours)
+
+    def _cleanup_locked(self, cutoff_time, keep_recent_hours) -> int:
         removed_count = 0
 
         # Clean response cache
         for cache_file in self.response_cache_dir.glob('*.json'):
             should_remove = False
 
-            if keep_recent_hours:
-                if cache_file.stat().st_mtime < cutoff_time:
-                    should_remove = True
-            else:
-                if self._is_expired(cache_file):
-                    should_remove = True
+            try:
+                if keep_recent_hours is not None:
+                    if cache_file.stat().st_mtime < cutoff_time:
+                        should_remove = True
+                else:
+                    if self._is_expired(cache_file):
+                        should_remove = True
+            except OSError:
+                continue
 
             if should_remove:
-                cache_file.unlink()
+                cache_file.unlink(missing_ok=True)
                 removed_count += 1
 
         # Clean image cache
         for cache_file in self.image_cache_dir.glob('*'):
             should_remove = False
 
-            if keep_recent_hours:
-                if cache_file.stat().st_mtime < cutoff_time:
-                    should_remove = True
-            else:
-                if self._is_expired(cache_file):
-                    should_remove = True
+            try:
+                if keep_recent_hours is not None:
+                    if cache_file.stat().st_mtime < cutoff_time:
+                        should_remove = True
+                else:
+                    if self._is_expired(cache_file):
+                        should_remove = True
+            except OSError:
+                continue
 
             if should_remove:
-                cache_file.unlink()
+                cache_file.unlink(missing_ok=True)
                 removed_count += 1
 
         self.stats['last_cleanup'] = datetime.now().isoformat()
@@ -334,24 +395,17 @@ class CacheManager:
 
     def clear(self):
         """Clear all cache entries."""
-        # Remove all cache files
+        with self._lock:
+            self._clear_locked()
+
+    def _clear_locked(self):
         for cache_file in self.response_cache_dir.glob('*.json'):
-            cache_file.unlink()
+            cache_file.unlink(missing_ok=True)
 
         for cache_file in self.image_cache_dir.glob('*'):
-            cache_file.unlink()
+            cache_file.unlink(missing_ok=True)
 
         # Reset stats
-        self.stats = {
-            'hits': 0,
-            'misses': 0,
-            'total_requests': 0,
-            'cache_saves': 0,
-            'last_cleanup': datetime.now().isoformat(),
-            'cost_savings': {
-                'anthropic': 0.0,
-                'openai': 0.0,
-                'total': 0.0
-            }
-        }
+        self.stats = self._fresh_stats()
+        self.stats['last_cleanup'] = datetime.now().isoformat()
         self._save_stats()

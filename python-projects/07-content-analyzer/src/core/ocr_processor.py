@@ -1,9 +1,33 @@
 """OCR processor for text extraction from images using Tesseract and vision models."""
+import io
 import os
+import re
 from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from PIL import Image
-import io
+
+from .image_processor import ImageProcessor
+
+# Language codes are letters, digits and underscores joined by "+" ("eng", "chi_sim", "eng+fra")
+_LANGUAGE_RE = re.compile(r'^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$')
+# Text a vision model puts around a transcription ("Here is the text:" ...)
+_VISION_PREAMBLE_RE = re.compile(
+    r"^\s*(?:sure[,!.]?\s*)?(?:here\s+(?:is|are)|below\s+(?:is|are)|the\s+(?:extracted\s+)?text\s+(?:in|from)\s+the\s+image)\b[^\n]*:\s*$",
+    re.IGNORECASE,
+)
+
+
+def clean_vision_text(text: str) -> str:
+    """A vision model's transcription without its introduction or surrounding code fence."""
+    text = (text or '').strip()
+    lines = text.split('\n')
+    if lines and _VISION_PREAMBLE_RE.match(lines[0]):
+        lines = lines[1:]
+    text = '\n'.join(lines).strip()
+    fence = re.match(r'^```[A-Za-z]*\n(.*)\n```$', text, re.S)
+    if fence:
+        text = fence.group(1).strip()
+    return text
 
 
 class OCRProcessor:
@@ -18,13 +42,16 @@ class OCRProcessor:
         """Initialize OCR processor.
 
         Args:
-            use_tesseract: Use Tesseract OCR (requires pytesseract)
+            use_tesseract: Use Tesseract OCR (requires pytesseract and the tesseract program)
             vision_client: VisionClient instance for fallback/enhancement
             tesseract_config: Custom Tesseract configuration string
         """
         self.use_tesseract = use_tesseract
         self.vision_client = vision_client
         self.tesseract_config = tesseract_config or '--psm 3'  # Auto page segmentation
+        self.images = ImageProcessor()
+        self.tesseract_problem: Optional[str] = None       # why Tesseract cannot be used, if it cannot
+        self._installed_languages: Optional[List[str]] = None
 
         # Lazy import of pytesseract
         self._pytesseract = None
@@ -33,8 +60,54 @@ class OCRProcessor:
                 import pytesseract
                 self._pytesseract = pytesseract
             except ImportError:
-                print("⚠️  Warning: pytesseract not installed. Falling back to vision model.")
+                self.tesseract_problem = "pytesseract is not installed (pip install pytesseract)"
+                print(f"⚠️  Warning: {self.tesseract_problem}. Falling back to vision model.")
                 self.use_tesseract = False
+
+    # ------------------------------------------------------------------ helpers
+
+    def _load(self, image: Union[str, bytes, Image.Image]) -> Image.Image:
+        """The image, upright and in an ordinary colour mode"""
+        if isinstance(image, str):
+            return self.images.load_image(image)
+        if isinstance(image, bytes):
+            return self.images.open_bytes(image)
+        return self.images.normalize(image)
+
+    def installed_languages(self) -> List[str]:
+        """Language data Tesseract has (cached); raises if the tesseract program is missing"""
+        if self._installed_languages is None:
+            try:
+                langs = self._pytesseract.get_languages(config='')
+            except Exception as error:
+                if type(error).__name__ == 'TesseractNotFoundError':
+                    raise RuntimeError("The tesseract program is not installed (macOS: brew install tesseract)")
+                raise
+            self._installed_languages = [l for l in langs if l != 'osd']
+        return self._installed_languages
+
+    def _check_language(self, language: str) -> None:
+        """Refuse a language Tesseract cannot use, with the fix in the message"""
+        if not _LANGUAGE_RE.match(language or ''):
+            raise ValueError(f"'{language}' is not a Tesseract language code (examples: eng, fra, chi_sim, eng+fra)")
+        installed = self.installed_languages()
+        missing = [l for l in language.split('+') if l not in installed]
+        if missing:
+            raise ValueError(
+                f"Tesseract has no language data for: {', '.join(missing)}. Installed: {', '.join(installed) or 'none'}. "
+                f"Install more with: brew install tesseract-lang (macOS) or apt install tesseract-ocr-{missing[0]}"
+            )
+
+    def _for_tesseract(self, image: Image.Image) -> Image.Image:
+        """Small images are enlarged: Tesseract reads text best at roughly 30+ pixel line height"""
+        if image.mode not in ('RGB', 'L'):
+            image = image.convert('RGB')
+        if max(image.size) < 1000 and min(image.size) >= 1:
+            factor = 2 if max(image.size) >= 500 else 3
+            image = image.resize((image.width * factor, image.height * factor), Image.Resampling.LANCZOS)
+        return image
+
+    # ------------------------------------------------------------------ extraction
 
     def extract_text(
         self,
@@ -54,18 +127,13 @@ class OCRProcessor:
         Returns:
             Dict with:
                 - text: Extracted text
-                - confidence: Confidence score (0-100)
+                - confidence: Confidence score (0-100). For the vision method this is a fixed
+                  estimate (details['confidence_estimated']), since models report none.
                 - method: 'tesseract' or 'vision'
                 - language: Detected/used language
                 - details: Additional metadata
         """
-        # Load image if needed
-        if isinstance(image, str):
-            img = Image.open(image)
-        elif isinstance(image, bytes):
-            img = Image.open(io.BytesIO(image))
-        else:
-            img = image
+        img = self._load(image)
 
         result = {
             'text': '',
@@ -80,8 +148,8 @@ class OCRProcessor:
             try:
                 tesseract_result = self._extract_with_tesseract(img, language)
 
-                # Check if result meets confidence threshold
-                if tesseract_result['confidence'] >= confidence_threshold:
+                # Empty output has confidence 0, so it always falls through to the vision model
+                if tesseract_result['confidence'] >= confidence_threshold and tesseract_result['text']:
                     return tesseract_result
 
                 # Store low-confidence result for potential fallback
@@ -89,20 +157,25 @@ class OCRProcessor:
 
             except Exception as e:
                 print(f"⚠️  Tesseract OCR failed: {str(e)}")
-                result['details']['tesseract_error'] = str(e)
+                result['details']['tesseract_error'] = ' '.join(str(e).split())
+        elif self.tesseract_problem:
+            result['details']['tesseract_error'] = self.tesseract_problem
 
         # Fallback to vision model if enabled
         if fallback_to_vision and self.vision_client:
             try:
-                vision_result = self._extract_with_vision(image, language)
+                vision_result = self._extract_with_vision(img, language)
 
                 # Use vision result if Tesseract failed or had low confidence
                 if result['method'] == 'none' or vision_result.get('confidence', 0) > result['confidence']:
+                    for key in ('tesseract_error',):
+                        if key in result['details']:
+                            vision_result['details'][key] = result['details'][key]
                     return vision_result
 
             except Exception as e:
                 print(f"⚠️  Vision model OCR failed: {str(e)}")
-                result['details']['vision_error'] = str(e)
+                result['details']['vision_error'] = ' '.join(str(e).split())
 
         return result
 
@@ -111,7 +184,7 @@ class OCRProcessor:
         image: Image.Image,
         language: str = 'eng'
     ) -> Dict[str, any]:
-        """Extract text using Tesseract OCR.
+        """Extract text using Tesseract OCR (one pass over the image).
 
         Args:
             image: PIL Image
@@ -120,27 +193,28 @@ class OCRProcessor:
         Returns:
             Dict with extraction results
         """
-        # Extract text with confidence data
+        self._check_language(language)
+        prepared = self._for_tesseract(image)
+        scale = prepared.width / image.width if image.width else 1
+
         data = self._pytesseract.image_to_data(
-            image,
+            prepared,
             lang=language,
             config=self.tesseract_config,
-            output_type=self._pytesseract.Output.DICT
+            output_type=self._pytesseract.Output.DICT,
+            timeout=int(os.getenv('TESSERACT_TIMEOUT', '90'))
         )
 
-        # Extract plain text
-        text = self._pytesseract.image_to_string(
-            image,
-            lang=language,
-            config=self.tesseract_config
-        ).strip()
-
-        # Calculate average confidence (filter out -1 values)
-        confidences = [int(conf) for conf in data['conf'] if int(conf) != -1]
+        # Confidence is the mean over real words only. Tesseract also reports empty "words" with a
+        # high score; counting them made a picture with no text come back as "95% sure: nothing".
+        confidences = [
+            float(data['conf'][i]) for i in range(len(data['text']))
+            if str(data['text'][i]).strip() and float(data['conf'][i]) >= 0
+        ]
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
-        # Extract word-level bounding boxes
-        boxes = self._extract_bounding_boxes(data)
+        text = self._text_from_data(data)
+        boxes = self._extract_bounding_boxes(data, scale)
 
         return {
             'text': text,
@@ -148,17 +222,42 @@ class OCRProcessor:
             'method': 'tesseract',
             'language': language,
             'details': {
-                'word_count': len([w for w in data['text'] if w.strip()]),
+                'word_count': len(boxes),
                 'bounding_boxes': boxes,
-                'tesseract_version': self._pytesseract.get_tesseract_version()
+                'tesseract_version': str(self._pytesseract.get_tesseract_version())
             }
         }
 
-    def _extract_bounding_boxes(self, data: Dict) -> List[Dict]:
-        """Extract word-level bounding boxes from Tesseract data.
+    @staticmethod
+    def _text_from_data(data: Dict) -> str:
+        """Plain text rebuilt from Tesseract's word table: words on a line, lines in a paragraph, blank line between paragraphs"""
+        lines: List[Tuple[Tuple[int, int], List[str]]] = []
+        index: Dict[Tuple[int, int, int], int] = {}
+        for i in range(len(data['text'])):
+            word = str(data['text'][i]).strip()
+            if not word or float(data['conf'][i]) < 0:
+                continue
+            key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+            if key not in index:
+                index[key] = len(lines)
+                lines.append(((key[0], key[1]), []))
+            lines[index[key]][1].append(word)
+
+        out: List[str] = []
+        previous = None
+        for paragraph, words in lines:
+            if previous is not None and paragraph != previous:
+                out.append('')
+            out.append(' '.join(words))
+            previous = paragraph
+        return '\n'.join(out).strip()
+
+    def _extract_bounding_boxes(self, data: Dict, scale: float = 1.0) -> List[Dict]:
+        """Extract word-level bounding boxes from Tesseract data (in the original image's pixels).
 
         Args:
             data: Tesseract output dictionary
+            scale: How much the image was enlarged before recognition
 
         Returns:
             List of bounding boxes with text and coordinates
@@ -172,17 +271,17 @@ class OCRProcessor:
                 continue
 
             # Skip low confidence
-            if int(data['conf'][i]) < 0:
+            if float(data['conf'][i]) < 0:
                 continue
 
             boxes.append({
                 'text': data['text'][i],
-                'confidence': int(data['conf'][i]),
+                'confidence': int(float(data['conf'][i])),
                 'bbox': {
-                    'x': data['left'][i],
-                    'y': data['top'][i],
-                    'width': data['width'][i],
-                    'height': data['height'][i]
+                    'x': round(data['left'][i] / scale),
+                    'y': round(data['top'][i] / scale),
+                    'width': round(data['width'][i] / scale),
+                    'height': round(data['height'][i] / scale)
                 }
             })
 
@@ -231,18 +330,31 @@ Return the extracted text with high accuracy."""
         )
 
         return {
-            'text': response.strip(),
-            'confidence': 85.0,  # Vision models don't provide confidence, use estimate
+            'text': clean_vision_text(response),
+            'confidence': 85.0,  # Vision models report no confidence: a fixed estimate, flagged below
             'method': 'vision',
             'language': language,
             'details': {
                 'provider': self.vision_client.backend,
-                'model': self.vision_client.model
+                'model': self.vision_client.model,
+                'confidence_estimated': True
             }
         }
 
+    # Scripts Tesseract's orientation detection reports, and the languages that use them
+    _SCRIPT_HINTS = {
+        'Latin': None, 'Han': 'Chinese or Japanese', 'Japanese': 'Japanese', 'Hangul': 'Korean', 'Korean': 'Korean',
+        'Cyrillic': 'Russian or another Cyrillic language', 'Arabic': 'Arabic', 'Devanagari': 'Hindi',
+        'Thai': 'Thai', 'Greek': 'Greek', 'Hebrew': 'Hebrew',
+    }
+
     def detect_language(self, image: Union[str, bytes, Image.Image]) -> Dict[str, any]:
         """Detect language(s) in image text.
+
+        With Tesseract this compares recognition quality across the *installed* languages and also
+        reports the writing system (script) it sees, so a Japanese sign is not mistaken for English
+        just because only English data is installed. A vision model is used when Tesseract is off
+        or finds nothing.
 
         Args:
             image: Image (path, bytes, or PIL Image)
@@ -250,13 +362,7 @@ Return the extracted text with high accuracy."""
         Returns:
             Dict with detected languages and confidence
         """
-        # Load image if needed
-        if isinstance(image, str):
-            img = Image.open(image)
-        elif isinstance(image, bytes):
-            img = Image.open(io.BytesIO(image))
-        else:
-            img = image
+        img = self._load(image)
 
         result = {
             'languages': [],
@@ -267,24 +373,35 @@ Return the extracted text with high accuracy."""
         # Try Tesseract language detection
         if self.use_tesseract and self._pytesseract:
             try:
-                # Try common languages
+                installed = self.installed_languages()
+                result['installed_languages'] = installed
+                prepared = self._for_tesseract(img)
+
+                script = None
+                try:
+                    osd = self._pytesseract.image_to_osd(prepared, output_type=self._pytesseract.Output.DICT)
+                    script = osd.get('script')
+                    result['script'] = script
+                    result['script_confidence'] = osd.get('script_conf')
+                except Exception:
+                    pass                          # OSD needs readable text; no script then
+
                 common_langs = ['eng', 'fra', 'deu', 'spa', 'ita', 'por', 'rus', 'ara', 'chi_sim', 'jpn']
+                candidates = [l for l in common_langs if l in installed] or installed[:3]
 
                 lang_scores = {}
-                for lang in common_langs:
-                    try:
-                        data = self._pytesseract.image_to_data(
-                            img,
-                            lang=lang,
-                            output_type=self._pytesseract.Output.DICT
-                        )
-                        confidences = [int(c) for c in data['conf'] if int(c) > 0]
-                        if confidences:
-                            lang_scores[lang] = sum(confidences) / len(confidences)
-                    except:
-                        continue
+                for lang in candidates:
+                    data = self._pytesseract.image_to_data(
+                        prepared, lang=lang, output_type=self._pytesseract.Output.DICT,
+                        timeout=int(os.getenv('TESSERACT_TIMEOUT', '90'))
+                    )
+                    confidences = [
+                        float(c) for c, t in zip(data['conf'], data['text'])
+                        if str(t).strip() and float(c) > 0
+                    ]
+                    if confidences:
+                        lang_scores[lang] = round(sum(confidences) / len(confidences), 2)
 
-                # Sort by confidence
                 if lang_scores:
                     sorted_langs = sorted(lang_scores.items(), key=lambda x: x[1], reverse=True)
                     result['languages'] = [
@@ -293,9 +410,22 @@ Return the extracted text with high accuracy."""
                     ]
                     result['primary_language'] = sorted_langs[0][0]
                     result['method'] = 'tesseract'
+                    if len(candidates) == 1:
+                        result['note'] = (
+                            f"Only {candidates[0]} is installed, so no other language could be compared. "
+                            "Install more with: brew install tesseract-lang"
+                        )
+
+                hint = self._SCRIPT_HINTS.get(script)
+                if hint and not any(l['code'] in ('chi_sim', 'chi_tra', 'jpn', 'kor', 'rus', 'ara', 'hin', 'tha')
+                                    for l in result['languages'][:1]):
+                    result['script_note'] = (
+                        f"The text looks like {script} script ({hint}), which the installed language data may not read. "
+                        "Install more with: brew install tesseract-lang"
+                    )
 
             except Exception as e:
-                result['error'] = f"Language detection failed: {str(e)}"
+                result['error'] = f"Language detection failed: {' '.join(str(e).split())}"
 
         # Fallback to vision model
         if not result['primary_language'] and self.vision_client:
@@ -309,16 +439,17 @@ If no text is visible, say "No text detected"."""
 
                 response = self.vision_client.analyze(
                     prompt=prompt,
-                    images=[image],
+                    images=[img],
                     temperature=0.2,
                     max_tokens=200
                 )
 
                 result['languages'] = [{'description': response}]
                 result['method'] = 'vision'
+                result.pop('error', None)
 
             except Exception as e:
-                result['error'] = f"Vision language detection failed: {str(e)}"
+                result['error'] = f"Vision language detection failed: {' '.join(str(e).split())}"
 
         return result
 

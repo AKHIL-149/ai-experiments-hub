@@ -9,6 +9,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 
+def csv_safe(value):
+    """A cell value that a spreadsheet will show as text, never run as a formula.
+
+    Text that starts with = + - @ (or a tab / carriage return) is read as a formula by Excel and
+    Sheets, and OCR output or model replies are untrusted: a receipt with "=HYPERLINK(...)" printed
+    on it must not become a live link in the exported file.
+    """
+    if isinstance(value, str) and value[:1] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + value
+    return value
+
+
 class BatchProcessor:
     """Process multiple images in batch for vision analysis or OCR."""
 
@@ -294,8 +306,8 @@ class BatchProcessor:
                 for result in results:
                     writer.writerow({
                         'index': result['index'],
-                        'name': result['name'],
-                        'result': result['result'],
+                        'name': csv_safe(result['name']),
+                        'result': csv_safe(result['result']),
                         'success': result['success']
                     })
 
@@ -307,8 +319,8 @@ class BatchProcessor:
                 for result in results:
                     writer.writerow({
                         'index': result['index'],
-                        'name': result['name'],
-                        'text': result['text'],
+                        'name': csv_safe(result['name']),
+                        'text': csv_safe(result['text']),
                         'method': result['method'],
                         'confidence': result['confidence'],
                         'language': result['language'],
@@ -326,8 +338,8 @@ class BatchProcessor:
                 for error in batch_results['errors']:
                     writer.writerow({
                         'index': error['index'],
-                        'name': error['name'],
-                        'error': error['error']
+                        'name': csv_safe(error['name']),
+                        'error': csv_safe(error['error'])
                     })
 
     def export_to_txt(

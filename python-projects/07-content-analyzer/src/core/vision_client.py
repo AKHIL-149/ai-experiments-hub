@@ -1,11 +1,38 @@
 """Vision API client for image analysis using various providers."""
 import os
 import base64
+import hashlib
+import io
 import requests
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 from PIL import Image
-import io
+
+from .image_processor import ImageProcessor
+from .rate_limiter import get_rate_limiter
+from .retry_handler import RetryHandler
+
+OLLAMA_TIMEOUT = 300   # CPU-only inference on a multi-image prompt really can take minutes
+
+
+class VisionError(Exception):
+    """A failed model call with a one-line, user-readable message.
+
+    kind: unavailable (backend not reachable), auth (key rejected), model (not installed/found),
+          bad_request (the provider refused the input), timeout, rate_limit, empty (no text came back)
+          or other.
+    transient: worth retrying (timeouts, rate limits, 5xx, dropped connections).
+    """
+
+    TRANSIENT = ("timeout", "rate_limit", "server", "connection")
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+
+    @property
+    def transient(self) -> bool:
+        return self.kind in self.TRANSIENT
 
 
 class VisionClient:
@@ -17,7 +44,9 @@ class VisionClient:
         model: Optional[str] = None,
         api_url: Optional[str] = None,
         cache_manager: Optional[object] = None,
-        enable_cache: bool = True
+        enable_cache: bool = True,
+        retry_handler: Optional[RetryHandler] = None,
+        rate_limit: bool = True
     ):
         """Initialize vision client.
 
@@ -27,19 +56,34 @@ class VisionClient:
             api_url: API URL (for Ollama, defaults to localhost:11434)
             cache_manager: CacheManager instance for response caching
             enable_cache: Enable caching for API responses
+            retry_handler: Retries transient failures (default: 2 retries with backoff for hosted
+                providers, 1 quick retry for Ollama)
+            rate_limit: Keep hosted-provider calls under the provider's request limits
         """
         self.backend = backend.lower()
+        if self.backend not in ('ollama', 'anthropic', 'openai'):
+            raise ValueError(f"Unsupported backend: {backend}. Choose from: ollama, anthropic, openai")
         self.model = model or self._get_default_model()
-        self.api_url = api_url or os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+        self.api_url = (api_url or os.getenv("OLLAMA_API_URL", "http://localhost:11434")).rstrip('/')
         self.cache_manager = cache_manager
         self.enable_cache = enable_cache and cache_manager is not None
+        self.images = ImageProcessor()
+        self.rate_limit = rate_limit and self.backend != 'ollama'
+        if retry_handler is None:
+            retry_handler = RetryHandler(max_retries=1, base_delay=1.0) if self.backend == 'ollama' \
+                else RetryHandler(max_retries=2, base_delay=2.0)
+        self.retry_handler = retry_handler
+        # True when the last reply was cut off by the token limit
+        self.truncated = False
+        # True when the last reply came from the cache
+        self.last_cached = False
 
     def _get_default_model(self) -> str:
         """Get default model for the backend."""
         defaults = {
             'ollama': os.getenv('OLLAMA_VISION_MODEL', 'llava'),
-            'anthropic': os.getenv('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022'),
-            'openai': os.getenv('OPENAI_MODEL', 'gpt-4-vision-preview')
+            'anthropic': os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5'),
+            'openai': os.getenv('OPENAI_MODEL', 'gpt-4o')
         }
         return defaults.get(self.backend, 'llava')
 
@@ -59,101 +103,106 @@ class VisionClient:
             temperature: Sampling temperature (0-2)
 
         Returns:
-            str: Model response
+            str: Model response (never empty: an empty reply raises VisionError)
+
+        Raises:
+            VisionError: the call failed (see VisionError.kind)
         """
-        # Convert all images to base64
-        encoded_images = self._prepare_images(images)
+        self.last_cached = False
+        encoded = self._prepare_images(images)          # [(base64, media_type)]
 
         # Compute image hash for caching
         image_hash = None
+        cache_params = {'max_tokens': max_tokens, 'temperature': round(float(temperature), 2)}
         if self.enable_cache:
-            # Combine all image data for hashing
-            combined_data = ''.join(encoded_images).encode('utf-8')
-            image_hash = self.cache_manager.compute_image_hash(combined_data)
+            digest = hashlib.sha256()
+            for data, media_type in encoded:
+                digest.update(media_type.encode())
+                digest.update(data.encode())
+            image_hash = digest.hexdigest()
 
-            # Check cache first
             cached_response = self.cache_manager.get_response(
                 prompt=prompt,
                 image_hash=image_hash,
                 provider=self.backend,
-                model=self.model
+                model=self.model,
+                params=cache_params
             )
 
             if cached_response:
+                self.last_cached = True
                 return cached_response
 
-        # Route to appropriate backend
-        if self.backend == 'ollama':
-            response = self._analyze_ollama(prompt, encoded_images, max_tokens, temperature)
-        elif self.backend == 'anthropic':
-            response = self._analyze_anthropic(prompt, encoded_images, max_tokens, temperature)
-        elif self.backend == 'openai':
-            response = self._analyze_openai(prompt, encoded_images, max_tokens, temperature)
-        else:
-            raise ValueError(f"Unsupported backend: {self.backend}")
+        self.truncated = False
+        response = self.retry_handler.retry(
+            self._call_backend, prompt, encoded, max_tokens, temperature,
+            retryable_exceptions=(VisionError,),
+            should_retry=lambda error: isinstance(error, VisionError) and error.transient
+        )
 
-        # Save to cache
-        if self.enable_cache and image_hash:
+        if not response or not response.strip():
+            raise VisionError("empty", f"{self.model} returned an empty reply")
+
+        # A reply that was cut off is shown, but not remembered: asking again with a bigger limit
+        # must not return the stump.
+        if self.enable_cache and image_hash and not self.truncated:
             self.cache_manager.save_response(
                 prompt=prompt,
                 image_hash=image_hash,
                 provider=self.backend,
                 model=self.model,
-                response=response
+                response=response,
+                params=cache_params
             )
 
         return response
 
+    def _call_backend(self, prompt, encoded, max_tokens, temperature) -> str:
+        if self.rate_limit:
+            try:
+                get_rate_limiter(self.backend).acquire(timeout=120)
+            except TimeoutError:
+                raise VisionError("rate_limit", f"Waited two minutes for a free {self.backend} request slot")
+        if self.backend == 'ollama':
+            return self._analyze_ollama(prompt, encoded, max_tokens, temperature)
+        if self.backend == 'anthropic':
+            return self._analyze_anthropic(prompt, encoded, max_tokens, temperature)
+        return self._analyze_openai(prompt, encoded, max_tokens, temperature)
+
     def _prepare_images(
         self,
         images: List[Union[str, bytes, Image.Image]]
-    ) -> List[str]:
-        """Convert images to base64 strings.
+    ) -> List[Tuple[str, str]]:
+        """Turn images into (base64, media type) pairs that match the bytes actually sent.
 
-        Args:
-            images: List of images in various formats
-
-        Returns:
-            List[str]: Base64-encoded images
+        Every image is opened safely, put upright, scaled to the configured maximum size and
+        encoded as PNG or JPEG; the media type says which.
         """
         encoded = []
         for img in images:
             if isinstance(img, str):
-                # File path
-                with open(img, 'rb') as f:
-                    img_bytes = f.read()
-                encoded.append(base64.b64encode(img_bytes).decode('utf-8'))
+                pil = self.images.load_image(img)
             elif isinstance(img, bytes):
-                # Raw bytes
-                encoded.append(base64.b64encode(img).decode('utf-8'))
+                pil = self.images.open_bytes(img)
             elif isinstance(img, Image.Image):
-                # PIL Image
-                buffer = io.BytesIO()
-                img.save(buffer, format='PNG')
-                encoded.append(base64.b64encode(buffer.getvalue()).decode('utf-8'))
+                pil = img
             else:
                 raise TypeError(f"Unsupported image type: {type(img)}")
+            data, media_type = self.images.encode_for_model(pil)
+            encoded.append((base64.b64encode(data).decode('utf-8'), media_type))
 
         return encoded
+
+    # ------------------------------------------------------------------ Ollama
 
     def _analyze_ollama(
         self,
         prompt: str,
-        images: List[str],
+        images: List[Tuple[str, str]],
         max_tokens: int,
         temperature: float
     ) -> str:
-        """Analyze images using Ollama/LLaVA.
-
-        Args:
-            prompt: Text prompt
-            images: Base64-encoded images
-            max_tokens: Maximum tokens
-            temperature: Sampling temperature
-
-        Returns:
-            str: Model response
-        """
+        """Analyze images using Ollama (LLaVA and other vision models)."""
         url = f"{self.api_url}/api/chat"
 
         payload = {
@@ -161,7 +210,7 @@ class VisionClient:
             "messages": [{
                 "role": "user",
                 "content": prompt,
-                "images": images
+                "images": [data for data, _ in images]
             }],
             "stream": False,
             "options": {
@@ -171,40 +220,70 @@ class VisionClient:
         }
 
         try:
-            # 120s wasn't enough for CPU-only Ollama inference on a
-            # multi-image prompt (e.g. image comparison) - confirmed live
-            # a real comparison request read-timed-out at exactly 120s
-            # with the model still genuinely working, not hung. A fuller
-            # response (raising max_tokens for /api/compare, see server.py)
-            # takes proportionally longer to generate, so this needs real
-            # headroom, not just enough to cover the old truncated case.
-            response = requests.post(url, json=payload, timeout=300)
-            response.raise_for_status()
+            response = requests.post(url, json=payload, timeout=(5, OLLAMA_TIMEOUT))
+        except requests.Timeout:
+            raise VisionError("timeout", f"{self.model} did not answer within {OLLAMA_TIMEOUT}s (large images are slow on CPU)")
+        except requests.ConnectionError:
+            raise VisionError("unavailable", f"Cannot reach Ollama at {self.api_url}. Is it running? Start it with: ollama serve")
+        except requests.RequestException as e:
+            raise VisionError("other", f"Ollama request failed: {' '.join(str(e).split())[:200]}")
 
-            result = response.json()
-            return result.get('message', {}).get('content', '')
+        if response.status_code >= 400:
+            raise self._ollama_error(response)
+        try:
+            data = response.json()
+        except ValueError:
+            raise VisionError("other", "Ollama sent an invalid reply (not JSON)")
+        self.truncated = data.get('done_reason') == 'length'
+        return (data.get('message') or {}).get('content', '') or ''
 
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Ollama API error: {str(e)}")
+    def _ollama_error(self, response) -> VisionError:
+        try:
+            detail = (response.json() or {}).get('error') or ''
+        except ValueError:
+            detail = ''
+        detail = ' '.join(str(detail).split()) or f"HTTP {response.status_code}"
+        low = detail.lower()
+        if response.status_code == 404 and 'not found' in low:
+            return VisionError("model", f"Model '{self.model}' is not installed. Install it with: ollama pull {self.model}")
+        if 'image' in low and ('support' in low or 'vision' in low or 'multimodal' in low):
+            return VisionError("bad_request", f"Model '{self.model}' cannot read images. Use a vision model such as llava")
+        if response.status_code >= 500:
+            return VisionError("server", f"Ollama error ({response.status_code}): {detail}")
+        return VisionError("bad_request", f"Ollama refused the request ({response.status_code}): {detail}")
+
+    # ------------------------------------------------------------------ hosted providers
+
+    @staticmethod
+    def _classify(error: Exception, provider: str) -> VisionError:
+        """Turn an SDK exception into a VisionError without depending on the SDK's own classes."""
+        status = getattr(error, 'status_code', None)
+        name = type(error).__name__
+        detail = ' '.join(str(error).split())[:200]
+        if status in (401, 403):
+            return VisionError("auth", f"{provider} rejected the API key ({status}). Check it in your .env file")
+        if status == 404:
+            return VisionError("model", f"{provider} does not know this model name")
+        if status == 429:
+            return VisionError("rate_limit", f"{provider} rate limit reached; try again in a moment")
+        if status is not None and status >= 500:
+            return VisionError("server", f"{provider} had a server error ({status})")
+        if status == 400 or status == 413 or status == 422:
+            return VisionError("bad_request", f"{provider} refused the request: {detail}")
+        if "Timeout" in name:
+            return VisionError("timeout", f"{provider} did not answer in time")
+        if "Connection" in name:
+            return VisionError("connection", f"Cannot reach {provider}. Check your network connection")
+        return VisionError("other", f"{provider} error: {detail or name}")
 
     def _analyze_anthropic(
         self,
         prompt: str,
-        images: List[str],
+        images: List[Tuple[str, str]],
         max_tokens: int,
         temperature: float
     ) -> str:
-        """Analyze images using Anthropic Claude 3.5 Sonnet.
-
-        Args:
-            prompt: Text prompt
-            images: Base64-encoded images
-            max_tokens: Maximum tokens
-            temperature: Sampling temperature
-
-        Returns:
-            str: Model response
-        """
+        """Analyze images using Anthropic Claude."""
         try:
             import anthropic
         except ImportError:
@@ -213,7 +292,6 @@ class VisionClient:
                 "Install with: pip install anthropic"
             )
 
-        # Check for API key
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             raise ValueError(
@@ -221,62 +299,37 @@ class VisionClient:
                 "Set it in .env file or export ANTHROPIC_API_KEY=your_key"
             )
 
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, max_retries=0)   # retries are ours
 
-        # Build content blocks (Claude requires specific structure)
         content_blocks = []
-
-        # Add images first
-        for img_base64 in images:
+        for data, media_type in images:
             content_blocks.append({
                 "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": img_base64
-                }
+                "source": {"type": "base64", "media_type": media_type, "data": data}
             })
-
-        # Add text prompt
-        content_blocks.append({
-            "type": "text",
-            "text": prompt
-        })
+        content_blocks.append({"type": "text", "text": prompt})
 
         try:
             message = client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
-                temperature=temperature,
-                messages=[{
-                    "role": "user",
-                    "content": content_blocks
-                }]
+                temperature=min(max(temperature, 0.0), 1.0),     # Anthropic accepts 0..1
+                messages=[{"role": "user", "content": content_blocks}]
             )
-
-            return message.content[0].text
-
         except Exception as e:
-            raise Exception(f"Anthropic API error: {str(e)}")
+            raise self._classify(e, "Anthropic")
+
+        self.truncated = getattr(message, 'stop_reason', None) == 'max_tokens'
+        return ''.join(b.text for b in message.content if getattr(b, 'type', 'text') == 'text')
 
     def _analyze_openai(
         self,
         prompt: str,
-        images: List[str],
+        images: List[Tuple[str, str]],
         max_tokens: int,
         temperature: float
     ) -> str:
-        """Analyze images using OpenAI GPT-4 Vision.
-
-        Args:
-            prompt: Text prompt
-            images: Base64-encoded images
-            max_tokens: Maximum tokens
-            temperature: Sampling temperature
-
-        Returns:
-            str: Model response
-        """
+        """Analyze images using OpenAI GPT vision models."""
         try:
             import openai
         except ImportError:
@@ -285,7 +338,6 @@ class VisionClient:
                 "Install with: pip install openai"
             )
 
-        # Check for API key
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
             raise ValueError(
@@ -293,18 +345,13 @@ class VisionClient:
                 "Set it in .env file or export OPENAI_API_KEY=your_key"
             )
 
-        client = openai.OpenAI(api_key=api_key)
+        client = openai.OpenAI(api_key=api_key, max_retries=0)
 
-        # Build content blocks (OpenAI format)
         content_blocks = [{"type": "text", "text": prompt}]
-
-        # Add images as data URIs
-        for img_base64 in images:
+        for data, media_type in images:
             content_blocks.append({
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{img_base64}"
-                }
+                "image_url": {"url": f"data:{media_type};base64,{data}"}
             })
 
         try:
@@ -312,13 +359,11 @@ class VisionClient:
                 model=self.model,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                messages=[{
-                    "role": "user",
-                    "content": content_blocks
-                }]
+                messages=[{"role": "user", "content": content_blocks}]
             )
-
-            return response.choices[0].message.content
-
         except Exception as e:
-            raise Exception(f"OpenAI API error: {str(e)}")
+            raise self._classify(e, "OpenAI")
+
+        choice = response.choices[0]
+        self.truncated = getattr(choice, 'finish_reason', None) == 'length'
+        return choice.message.content or ''

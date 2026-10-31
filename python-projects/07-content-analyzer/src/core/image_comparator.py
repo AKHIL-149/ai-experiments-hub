@@ -84,6 +84,9 @@ class ImageComparator:
         identical = (hash1 == hash2)
         same_dimensions = (size1 == size2)
         same_aspect_ratio = self._compare_aspect_ratio(size1, size2)
+        # How alike the two pictures look pixel-wise (0 = unrelated, 100 = same picture), robust to
+        # resizing and recompression. Dimensions alone say nothing about what is in the picture.
+        visual_similarity = 100 if identical else self._visual_similarity(image1, image2)
 
         return {
             'image1': {
@@ -101,6 +104,7 @@ class ImageComparator:
             'identical': identical,
             'same_dimensions': same_dimensions,
             'same_aspect_ratio': same_aspect_ratio,
+            'visual_similarity': visual_similarity,
             'dimension_diff': {
                 'width_diff': abs(size1[0] - size2[0]),
                 'height_diff': abs(size1[1] - size2[1]),
@@ -251,17 +255,37 @@ class ImageComparator:
         )
 
     def _calculate_image_hash(self, image: Image.Image) -> str:
-        """Calculate hash of image for exact comparison.
+        """Hash of the picture's pixels (exact comparison), read in bands to keep memory flat.
 
-        Args:
-            image: Image to hash
-
-        Returns:
-            Hash string
+        The same pixels give the same hash whatever the colour mode or file format they came from.
         """
-        # Convert to bytes and hash
-        img_bytes = image.tobytes()
-        return hashlib.sha256(img_bytes).hexdigest()
+        rgb = image if image.mode == 'RGB' else image.convert('RGB')
+        digest = hashlib.sha256()
+        digest.update(f"{rgb.width}x{rgb.height}".encode())
+        band = 256
+        for top in range(0, rgb.height, band):
+            digest.update(rgb.crop((0, top, rgb.width, min(top + band, rgb.height))).tobytes())
+        return digest.hexdigest()
+
+    @staticmethod
+    def _difference_hash(image: Image.Image, size: int = 16) -> int:
+        """dHash: one bit per neighbouring-pixel brightness step on a size x size grid."""
+        gray = image.convert('L').resize((size + 1, size), Image.Resampling.LANCZOS)
+        pixels = gray.tobytes()
+        bits = 0
+        for row in range(size):
+            for col in range(size):
+                left = pixels[row * (size + 1) + col]
+                right = pixels[row * (size + 1) + col + 1]
+                bits = (bits << 1) | (1 if left > right else 0)
+        return bits
+
+    def _visual_similarity(self, image1: Image.Image, image2: Image.Image) -> int:
+        """0-100: how many of the 256 dHash bits agree, rescaled so that unrelated pictures
+        (about half the bits agree by chance) score about 0."""
+        total = 16 * 16
+        differing = bin(self._difference_hash(image1) ^ self._difference_hash(image2)).count('1')
+        return int(round(max(0.0, 1 - 2 * differing / total) * 100))
 
     def _compare_aspect_ratio(
         self,
@@ -337,6 +361,11 @@ class ImageComparator:
     ) -> int:
         """Calculate overall similarity score.
 
+        Identical pixels score 100. With an AI rating, the rating is the score (it judges what is in
+        the pictures), but never below how alike the pixels look: near-duplicates cannot be rated
+        "different". Without AI, the score is the pixel-level visual similarity. (Matching dimensions
+        used to be worth 20 points, so two unrelated photos of the same size scored 20.)
+
         Args:
             structural: Structural comparison results
             ai_comparison: AI comparison results
@@ -344,28 +373,18 @@ class ImageComparator:
         Returns:
             Similarity score (0-100)
         """
-        # If images are identical, return 100
         if structural['identical']:
             return 100
 
-        # Start with structural similarity
-        score = 0
+        visual = structural.get('visual_similarity', 0)
 
-        # Same dimensions adds 20 points
-        if structural['same_dimensions']:
-            score += 20
-        # Similar aspect ratio adds 10 points
-        elif structural['same_aspect_ratio']:
-            score += 10
-
-        # If AI comparison available and has similarity score, use it (weighted)
         # `is not None`, not truthiness: an AI rating of 0% is a real answer
         if ai_comparison and ai_comparison.get('extracted_similarity') is not None:
-            ai_score = ai_comparison['extracted_similarity']
-            # Weighted average: 30% structural, 70% AI
-            score = int(score * 0.3 + ai_score * 0.7)
+            score = max(visual, ai_comparison['extracted_similarity'])
+        else:
+            score = visual
 
-        return min(100, max(0, score))
+        return min(100, max(0, int(score)))
 
     def find_duplicates(
         self,
