@@ -128,8 +128,9 @@ Start the web server for an interactive, user-friendly experience:
 # Start the web server
 python server.py
 
-# Or with custom host/port
-uvicorn server:app --host 0.0.0.0 --port 8000
+# Or with a custom port (the server listens on 127.0.0.1 only; HOST=0.0.0.0 opens it to your network,
+# but the API has no login)
+PORT=8010 python server.py
 ```
 
 **Access the interface:**
@@ -451,9 +452,13 @@ python analyze.py ocr tax_form.pdf \
 ### How Caching Works
 
 Content Analyzer automatically caches API responses based on:
-- Image content (SHA256 hash)
+- Image content (SHA256 hash of the image as sent to the model)
 - Text prompt
 - Provider and model
+- `max_tokens` and `temperature` (a longer limit is a new request; it never gets a cut-off answer back)
+
+An answer that was cut off by the token limit, and an empty answer, are not cached. Cache files are written
+atomically and the counters are thread-safe, so batch workers can share one cache.
 
 **Benefits:**
 - ⚡ Instant responses for repeated queries
@@ -583,6 +588,11 @@ python analyze.py compare original.jpg edited.jpg \
 | **content** | Subject matter, what changed | Product photos, documents |
 | **visual** | Colors, lighting, composition | Design reviews, photo editing |
 | **detailed** | Comprehensive analysis | Quality control, forensics |
+
+**How the similarity score is made:** identical pixels score 100. The structural part is a perceptual
+(difference-hash) similarity of the pixels, robust to resizing and recompression: unrelated pictures score about
+0 even when their dimensions match, a resized copy scores 90+. With `--use-ai` the model's rating is the score,
+but never lower than the pixel similarity, so a near-duplicate cannot be rated "different".
 
 ### API Endpoint
 
@@ -738,6 +748,7 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 ```
 07-content-analyzer/
 ├── analyze.py              # CLI entry point
+├── tests/                  # pytest suite
 ├── server.py               # Web server (FastAPI)
 ├── requirements.txt        # Dependencies
 ├── .env.example           # Configuration template
@@ -751,8 +762,8 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 │       ├── prompt_templates.py   # Enhanced prompt templates
 │       ├── ocr_processor.py      # OCR text extraction
 │       ├── cache_manager.py      # Response caching
-│       ├── retry_handler.py      # Retry logic with backoff
-│       ├── rate_limiter.py       # API rate limiting
+│       ├── retry_handler.py      # Retry logic with backoff (used by VisionClient)
+│       ├── rate_limiter.py       # API rate limiting (used for hosted providers)
 │       ├── image_comparator.py   # Image comparison (Phase 6)
 │       └── batch_processor.py    # Batch processing (Phase 6)
 ├── templates/
@@ -769,7 +780,7 @@ python analyze.py describe https://picsum.photos/800/600 --save-image --prompt "
 
 ## Configuration
 
-Edit `.env` file to customize:
+Edit `.env` file to customize (see `.env.example` for the full list):
 
 ```bash
 # Ollama settings
@@ -780,6 +791,36 @@ OLLAMA_VISION_MODEL=llava
 DEFAULT_PROVIDER=ollama
 ```
 
+| Variable | Effect | Default |
+|---|---|---|
+| `ANTHROPIC_MODEL`, `OPENAI_MODEL` | Hosted models (older names such as `claude-3-5-sonnet-20241022` and `gpt-4-vision-preview` have been retired; update an old `.env`) | `claude-sonnet-5-5`, `gpt-4o` |
+| `MAX_UPLOAD_MB` | Largest image file accepted (web: HTTP 413) | `25` |
+| `MAX_IMAGE_PIXELS` | Most pixels accepted (protects memory from "decompression bombs") | `80000000` |
+| `MAX_IMAGE_DIMENSION`, `MAX_IMAGE_SIZE_MB` | Images are scaled/compressed to this before being sent to a model | `2048`, `3.75` |
+| `MAX_BATCH_FILES` | Files per batch request | `50` |
+| `TESSERACT_TIMEOUT` | Seconds before Tesseract is stopped on one image | `90` |
+| `HOST`, `PORT` | Web server address | `127.0.0.1`, `8000` |
+| `CORS_ORIGINS` | Comma-separated origins allowed to call the API from a browser (`*` is ignored) | none |
+| `DEBUG` | Show Python tracebacks on CLI errors | off |
+
+## How images, errors and results are handled
+
+- **Every image is opened safely first**: size and pixel limits are checked before decoding, a damaged or cut-off file is reported as such, phone photos are turned upright (EXIF orientation), animated GIFs use their first frame, and palette / CMYK / 16-bit / transparent images are converted (transparency becomes white, not black). MPO (many phone JPEGs) and TIFF are accepted.
+- **Models get what the bytes really are**: small images go as PNG, larger ones as JPEG, and the media type sent to Anthropic/OpenAI matches (it used to say JPEG for PNG data).
+- **Failures say what to do**: Ollama not running -> `ollama serve`; model missing -> `ollama pull <model>`; a bad key, rate limit, timeout are named. Transient failures (timeouts, 429, 5xx) are retried with backoff; hosted calls respect per-provider request limits.
+- **Web API statuses**: `400` bad input (not an image, unsupported provider/preset/method/mode, bad language code), `413` too large, `422` out-of-range numbers, `429/502/503/504` for model problems, always with a one-line `detail` and `"success": false`. A batch reports every file it could not use (name, position, reason) instead of silently skipping it.
+- **OCR**: Tesseract confidence is the mean over real words; a picture with no recognised text has confidence 0 and goes to the vision model (it used to be reported as 95% confident empty text). A vision result's confidence (85) is a fixed estimate, flagged in `details.confidence_estimated`. Languages are checked against what Tesseract has installed. Language detection compares the *installed* languages and reports the script; with only `eng` installed it says so.
+- **CSV exports** neutralise cells that start with `=`, `+`, `-` or `@` so OCR text or a model reply cannot run as a spreadsheet formula.
+
+## Testing
+
+```bash
+python -m pytest tests -q
+```
+
+About 300 tests, no model or network needed (the model is replaced by a fake). The Tesseract tests run when the
+`tesseract` program is installed. Mutation checks (breaking the code on purpose to see the tests fail) were used while writing them.
+
 ## Troubleshooting
 
 ### Ollama Issues
@@ -788,11 +829,20 @@ DEFAULT_PROVIDER=ollama
 - Make sure Ollama is running: `ollama serve`
 - Check Ollama is accessible: `curl http://localhost:11434/api/tags`
 
-**Error: "Model not found"**
+**Error: "Cannot reach Ollama ... ollama serve"**
+- Same fix as above; the web page and CLI both print it.
+
+**Error: "Model ... is not installed"**
 - Pull LLaVA model: `ollama pull llava`
 - Verify: `ollama list`
 
 ### Image Issues
+
+**Error: "The image is ... megapixels; the limit is ..." / "The file is ... MB"**
+- Raise `MAX_IMAGE_PIXELS` / `MAX_UPLOAD_MB` in `.env`, or shrink the image first.
+
+**`batch-* --directory` finds nothing**
+- Without `--pattern` every image file is used. A pattern is a glob such as `"*.png"`; brace patterns like `*.{jpg,png}` are not glob syntax and match nothing.
 
 **Error: "Image file not found"**
 - Check the file path is correct
