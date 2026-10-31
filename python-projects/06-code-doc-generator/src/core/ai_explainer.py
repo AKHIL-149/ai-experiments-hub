@@ -2,14 +2,32 @@
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
-from .llm_client import LLMClient
+from .llm_client import LLMClient, LLMError
 from .cache_manager import CacheManager
 from ..parsers.models import FunctionInfo, ClassInfo, ParsedModule, ParameterInfo
 
 
 # Bump when prompts or response cleaning change so stale cache entries
 # (e.g. ones containing "Here is a summary of...") are not served again.
-CACHE_VERSION = "v2"
+CACHE_VERSION = "v3"
+
+# Shared by every prompt: the model describes the code it is shown, not what the names suggest.
+_GROUNDING_RULES = (
+    "Describe only what the code shown actually does.\n"
+    "- Base every statement on the signature, docstring and code given, never on a name alone.\n"
+    "- If the body is trivial (returns a constant or its own input, does nothing, only prints), say exactly "
+    "that in plain words, even when the name suggests more.\n"
+    "- Do not mention networks, files, databases, security, retries or any other behaviour unless the code does it.\n"
+    "- Never describe a parameter as used when it is listed as unused.\n"
+    "- Write plain sentences with no introduction, no headings and no advice."
+)
+SYSTEM_FUNCTION = "You document source code. " + _GROUNDING_RULES + "\nAnswer in 1 or 2 sentences."
+SYSTEM_CLASS = ("You document source code. " + _GROUNDING_RULES +
+                "\nSay what the class holds and what it offers, using its attributes and methods. Answer in 2 or 3 sentences.")
+SYSTEM_MODULE = ("You document source code. " + _GROUNDING_RULES +
+                 "\nSummarise what the module contains. Do not guess what application it belongs to. Answer in 2 or 3 sentences.")
+SYSTEM_PARAMETERS = ("You document source code. " + _GROUNDING_RULES +
+                     "\nOutput only lines in the form `name: description`, one per parameter, with no introduction.")
 
 _PREAMBLE_RE = re.compile(
     r"^\s*(here\s+(is|are)|sure|certainly|of course|okay|below (is|are))\b[^\n]*:\s*$",
@@ -72,18 +90,60 @@ def parse_parameter_descriptions(response: str, names: List[str]) -> Dict[str, s
     return found
 
 
+def trim_to_last_sentence(text: str) -> str:
+    """Cut a reply that hit the token limit back to its last complete sentence."""
+    text = text.rstrip()
+    if re.search(r"[.!?][\"')\]`]*$", text):
+        return text
+    match = re.match(r"(?s)^(.*[.!?][\"')\]`]*)(?:\s|$)", text)
+    if match and len(match.group(1)) >= 8:      # a shorter fragment is not worth keeping on its own
+        return match.group(1)
+    return text + "\u2026"
+
+
+def _first_line(text: Optional[str]) -> str:
+    return (text or "").strip().split("\n")[0].strip()
+
+
+def _render_parameter(p: ParameterInfo) -> str:
+    text = f"{p.name}: {p.type_hint}" if p.type_hint else p.name
+    return f"{text} = {p.default_value}" if p.default_value is not None else text
+
+
+def _render_signature(func: FunctionInfo) -> str:
+    params = ", ".join(_render_parameter(p) for p in func.parameters)
+    ret = f" -> {func.return_type}" if func.return_type else ""
+    return f"{'async ' if func.is_async else ''}def {func.name}({params}){ret}"
+
+
+def _body_block(func: FunctionInfo) -> str:
+    """The function body as the model should see it, saying whether it is the whole body."""
+    if func.body_summary:
+        shown = len(func.body_summary.split("\n"))
+        total = func.body_lines if func.body_lines else shown
+        if total <= shown:
+            return "Body (complete):\n" + func.body_summary
+        return f"Body (first {shown} of {total} lines):\n{func.body_summary}"
+    if func.body_lines == 0:
+        return "Body: empty (it has no statements besides a docstring)"
+    return "Body: not available. Describe only from the signature and docstring, and say what is not known."
+
+
 class AIExplainer:
     """
     Generates human-friendly explanations for code elements using LLMs.
 
-    Uses a two-level caching strategy to minimize API calls.
+    Prompts are built from what the code really contains, and a failing backend is reported once
+    (see ``warnings``) instead of once per function. Explanations that cannot be produced come
+    back as an empty string, never as an error message pretending to be documentation.
     """
 
     def __init__(
         self,
         llm_client: Optional[LLMClient] = None,
         cache_manager: Optional[CacheManager] = None,
-        enable_cache: bool = True
+        enable_cache: bool = True,
+        max_failures: int = 3
     ):
         """
         Initialize AI explainer.
@@ -92,291 +152,215 @@ class AIExplainer:
             llm_client: LLM client instance (creates default Ollama client if None)
             cache_manager: Cache manager instance (creates default if None)
             enable_cache: Whether to use caching
+            max_failures: Failures in a row (not counting permanent ones) before AI is switched off
         """
         self.llm = llm_client or LLMClient(backend="ollama")
-        self.cache = cache_manager or CacheManager() if enable_cache else None
+        self.cache = (cache_manager or CacheManager()) if enable_cache else None
         self.enable_cache = enable_cache
+        self.max_failures = max_failures
+        self.warnings: List[str] = []
+        self.available = True
+        self.answers = 0        # explanations delivered in this run (fresh or from the cache)
+        self._failures = 0
 
-    def explain_function(
-        self,
-        func_info: FunctionInfo,
-        context: str = "",
-        max_tokens: int = 200
-    ) -> str:
-        """
-        Generate explanation for a function.
+    def reset(self) -> None:
+        """Start a new run: forget old warnings and give AI that was switched off a fresh chance."""
+        self.warnings.clear()
+        self.available = True
+        self.answers = 0
+        self._failures = 0
 
-        Args:
-            func_info: Function information
-            context: Additional context (module name, class name, etc.)
-            max_tokens: Maximum tokens for explanation
+    # ------------------------------------------------------------------ talking to the model
 
-        Returns:
-            Human-friendly explanation
-        """
-        # Build prompt; it carries the signature, context, docstring and body
-        # preview, so keying on it keeps same-named methods in different
-        # classes apart and invalidates the entry when the code changes.
-        prompt = self._build_function_prompt(func_info, context)
-        signature = f"{CACHE_VERSION}:function:{prompt}"
+    def _warn(self, message: str) -> None:
+        if message not in self.warnings:
+            self.warnings.append(message)
 
-        # Check cache
-        if self.enable_cache and self.cache:
-            cached = self.cache.get_ai_cache(signature, self.llm.model)
-            if cached:
-                return cached
-
-        # Generate explanation
+    def _ask(self, prompt: str, system: str, max_tokens: int) -> Optional[str]:
+        """One model call. None when AI is off or the call failed (the reason is recorded in warnings)."""
+        if not self.available:
+            return None
         try:
-            explanation = self.llm.generate(
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=0.3,  # Lower temperature for more focused explanations
-                system="You are a code documentation expert. Provide clear, concise explanations of code functions. Focus on WHAT the function does and WHY, not HOW (the code shows that). Be technical but accessible."
-            )
+            text = self.llm.generate(prompt=prompt, max_tokens=max_tokens, temperature=0.2, system=system)
+        except LLMError as error:
+            self._failures += 1
+            if error.permanent or self._failures >= self.max_failures:
+                self.available = False
+                self._warn(f"AI explanations were switched off: {error}")
+            else:
+                self._warn(f"An AI explanation could not be generated: {error}")
+            return None
+        except Exception as error:  # an unexpected client bug must not take the whole run down
+            self._failures += 1
+            self._warn(f"An AI explanation could not be generated: {' '.join(str(error).split())[:200]}")
+            if self._failures >= self.max_failures:
+                self.available = False
+                self._warn("AI explanations were switched off after repeated failures")
+            return None
 
-            explanation = clean_llm_text(explanation)
+        self._failures = 0
+        text = clean_llm_text(text)
+        if getattr(self.llm, "truncated", False):
+            text = trim_to_last_sentence(text)
+        return text or None
 
-            # Cache the result
-            if self.enable_cache and self.cache:
-                self.cache.set_ai_cache(signature, self.llm.model, explanation)
-
-            return explanation
-
-        except Exception as e:
-            return f"[AI explanation unavailable: {str(e)}]"
-
-    def explain_class(
-        self,
-        class_info: ClassInfo,
-        context: str = "",
-        max_tokens: int = 250
-    ) -> str:
-        """
-        Generate explanation for a class.
-
-        Args:
-            class_info: Class information
-            context: Additional context (module name, etc.)
-            max_tokens: Maximum tokens for explanation
-
-        Returns:
-            Human-friendly explanation
-        """
-        prompt = self._build_class_prompt(class_info, context)
-        signature = f"{CACHE_VERSION}:class:{prompt}"
-
-        # Check cache
+    def _cached(self, key: str) -> Optional[str]:
         if self.enable_cache and self.cache:
-            cached = self.cache.get_ai_cache(signature, self.llm.model)
-            if cached:
-                return cached
+            return self.cache.get_ai_cache(key, self.llm.model) or None
+        return None
 
-        # Generate explanation
-        try:
-            explanation = self.llm.generate(
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=0.3,
-                system="You are a code documentation expert. Explain what this class represents and its main responsibilities. Focus on the purpose and design, not implementation details."
-            )
+    def _remember(self, key: str, text: str) -> None:
+        if self.enable_cache and self.cache and text:
+            self.cache.set_ai_cache(key, self.llm.model, text)
 
-            explanation = clean_llm_text(explanation)
+    def _generate(self, kind: str, prompt: str, system: str, max_tokens: int) -> str:
+        key = f"{CACHE_VERSION}:{kind}:{prompt}"
+        cached = self._cached(key)
+        if cached:
+            self.answers += 1
+            return cached
+        text = self._ask(prompt, system, max_tokens)
+        if not text:
+            return ""
+        self.answers += 1
+        self._remember(key, text)
+        return text
 
-            # Cache the result
-            if self.enable_cache and self.cache:
-                self.cache.set_ai_cache(signature, self.llm.model, explanation)
+    # ------------------------------------------------------------------ public API
 
-            return explanation
+    def explain_function(self, func_info: FunctionInfo, context: str = "", max_tokens: int = 200) -> str:
+        """Explain a function in 1-2 sentences ("" if no explanation could be produced)."""
+        return self._generate("function", self._build_function_prompt(func_info, context), SYSTEM_FUNCTION, max_tokens)
 
-        except Exception as e:
-            return f"[AI explanation unavailable: {str(e)}]"
+    def explain_class(self, class_info: ClassInfo, context: str = "", max_tokens: int = 250) -> str:
+        """Explain a class in 2-3 sentences ("" if no explanation could be produced)."""
+        return self._generate("class", self._build_class_prompt(class_info, context), SYSTEM_CLASS, max_tokens)
 
-    def generate_module_summary(
-        self,
-        parsed_module: ParsedModule,
-        max_tokens: int = 300
-    ) -> str:
-        """
-        Generate high-level module summary.
-
-        Args:
-            parsed_module: Parsed module data
-            max_tokens: Maximum tokens for summary
-
-        Returns:
-            Module-level summary
-        """
+    def generate_module_summary(self, parsed_module: ParsedModule, max_tokens: int = 300) -> str:
+        """Summarise a module. An empty module (no docstring, functions or classes) gets no summary."""
+        if not (parsed_module.module_docstring or parsed_module.functions or parsed_module.classes):
+            return ""
         prompt = self._build_module_prompt(parsed_module)
-        cache_key = f"{CACHE_VERSION}:module:{parsed_module.file_path}:{prompt}"
-
-        # Check cache
-        if self.enable_cache and self.cache:
-            cached = self.cache.get_ai_cache(cache_key, self.llm.model)
-            if cached:
-                return cached
-
-        # Generate summary
-        try:
-            summary = self.llm.generate(
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=0.3,
-                system="You are a code documentation expert. Provide a high-level summary of what this module does. Explain its purpose and main components in 2-3 sentences."
-            )
-
-            summary = clean_llm_text(summary)
-
-            # Cache the result
-            if self.enable_cache and self.cache:
-                self.cache.set_ai_cache(cache_key, self.llm.model, summary)
-
-            return summary
-
-        except Exception as e:
-            return f"[AI summary unavailable: {str(e)}]"
+        return self._generate(f"module:{parsed_module.file_path}", prompt, SYSTEM_MODULE, max_tokens)
 
     def enhance_parameter_descriptions(
         self,
         parameters: List[ParameterInfo],
-        function_context: str = ""
+        function_context: str = "",
+        func_info: Optional[FunctionInfo] = None
     ) -> List[ParameterInfo]:
         """
-        Add descriptions to parameters using AI.
+        Add descriptions to parameters.
 
-        Args:
-            parameters: List of parameters
-            function_context: Context about the function
-
-        Returns:
-            Parameters with AI-generated descriptions
+        A parameter the body never uses is described as such directly (no model needed, and no
+        chance of it being invented). The rest are described by the model from the function's code.
         """
         if not parameters:
             return parameters
 
-        prompt = self._build_parameter_prompt(parameters, function_context)
-        cache_key = f"{CACHE_VERSION}:params:{prompt}"
-        names = [p.name for p in parameters]
-
-        response = None
-        if self.enable_cache and self.cache:
-            response = self.cache.get_ai_cache(cache_key, self.llm.model)
-
-        if not response:
-            try:
-                response = self.llm.generate(
-                    prompt=prompt,
-                    max_tokens=50 * len(parameters),  # ~50 tokens per parameter
-                    temperature=0.3,
-                    system="You are a code documentation expert. Provide brief descriptions for function parameters. Output only lines in the form `name: description`, one per parameter, with no introduction."
-                )
-            except Exception:
-                # If AI fails, return original parameters
-                return parameters
-
-            response = response.strip()
-            if self.enable_cache and self.cache:
-                self.cache.set_ai_cache(cache_key, self.llm.model, response)
-
-        # Apply descriptions by parameter name so preambles or reordering
-        # cannot attach text to the wrong parameter
-        descriptions = parse_parameter_descriptions(response, names)
         for param in parameters:
+            if param.used is False and not param.description:
+                param.description = "Not used by the current implementation."
+
+        pending = [p for p in parameters if not p.description and p.used is not None]
+        if not pending:
+            return parameters
+
+        prompt = self._build_parameter_prompt(pending, function_context, func_info)
+        names = [p.name for p in pending]
+        response = self._generate("params", prompt, SYSTEM_PARAMETERS, 50 * len(pending) + 50)
+        if not response:
+            return parameters
+
+        descriptions = parse_parameter_descriptions(response, names)
+        for param in pending:
             if param.name in descriptions:
                 param.description = descriptions[param.name]
-
         return parameters
 
+    # ------------------------------------------------------------------ prompts
+
     def _build_function_prompt(self, func_info: FunctionInfo, context: str) -> str:
-        """Build prompt for function explanation."""
-        params = ", ".join([
-            f"{p.name}: {p.type_hint}" if p.type_hint else p.name
-            for p in func_info.parameters
-        ])
-
-        return_type = f" -> {func_info.return_type}" if func_info.return_type else ""
-        async_marker = "async " if func_info.is_async else ""
-
-        prompt_parts = []
-
+        """Prompt for a function: signature, docstring, the real body and which parameters are unused."""
+        parts = []
         if context:
-            prompt_parts.append(f"Context: {context}")
-
-        prompt_parts.append(f"Function: {async_marker}def {func_info.name}({params}){return_type}")
-
-        if func_info.docstring:
-            prompt_parts.append(f"Existing docstring: {func_info.docstring[:200]}")
-
+            parts.append(f"Context: {context}")
+        parts.append(f"Signature: {_render_signature(func_info)}")
         if func_info.decorators:
-            prompt_parts.append(f"Decorators: {', '.join(func_info.decorators)}")
-
-        if func_info.body_summary:
-            prompt_parts.append(f"Code preview:\n{func_info.body_summary[:300]}")
-
-        prompt_parts.append("\nExplain what this function does in 1-2 clear sentences:")
-
-        return "\n".join(prompt_parts)
+            parts.append(f"Decorators: {', '.join(func_info.decorators)}")
+        if func_info.docstring:
+            parts.append(f"Docstring: {func_info.docstring[:300]}")
+        parts.append(_body_block(func_info))
+        unused = [p.name for p in func_info.parameters if p.used is False]
+        if unused:
+            parts.append(f"Parameters not used in the body: {', '.join(unused)}")
+        parts.append("\nIn 1 or 2 sentences, say what this function does, using only the information above:")
+        return "\n".join(parts)
 
     def _build_class_prompt(self, class_info: ClassInfo, context: str) -> str:
-        """Build prompt for class explanation."""
-        prompt_parts = []
-
+        """Prompt for a class: docstring, attributes and what each method's body does."""
+        parts = []
         if context:
-            prompt_parts.append(f"Context: {context}")
-
-        inheritance = ""
-        if class_info.base_classes:
-            inheritance = f"({', '.join(class_info.base_classes)})"
-
-        prompt_parts.append(f"Class: {class_info.name}{inheritance}")
-
+            parts.append(f"Context: {context}")
+        inheritance = f"({', '.join(class_info.base_classes)})" if class_info.base_classes else ""
+        kind = next((k for k in ("interface", "enum") if k in {d.lstrip("@") for d in class_info.decorators}), "class")
+        parts.append(f"{kind.capitalize()}: {class_info.name}{inheritance}")
         if class_info.docstring:
-            prompt_parts.append(f"Existing docstring: {class_info.docstring[:200]}")
-
-        if class_info.methods:
-            method_names = [m.name for m in class_info.methods[:5]]  # First 5 methods
-            prompt_parts.append(f"Methods: {', '.join(method_names)}")
+            parts.append(f"Docstring: {class_info.docstring[:300]}")
 
         if class_info.attributes:
-            attr_names = [a['name'] for a in class_info.attributes[:5]]  # First 5 attributes
-            prompt_parts.append(f"Attributes: {', '.join(attr_names)}")
+            lines = []
+            for a in class_info.attributes[:12]:
+                detail = f": {a['type']}" if a.get("type") else ""
+                value = f" = {a['default_value']}" if a.get("default_value") else ""
+                where = {"instance": " (set in __init__)", "class": " (class attribute)"}.get(a.get("scope"), "")
+                lines.append(f"  - {a['name']}{detail}{value}{where}")
+            parts.append("Attributes:\n" + "\n".join(lines))
 
-        prompt_parts.append("\nExplain what this class represents and its main purpose in 2-3 sentences:")
+        if class_info.methods:
+            lines = []
+            for m in class_info.methods[:12]:
+                doc = _first_line(m.docstring)
+                body = "; ".join((m.body_summary or "").split("\n")[:3])[:160]
+                detail = doc or (f"body: {body}" if body else ("body: empty" if m.body_lines == 0 else ""))
+                lines.append(f"  - {_render_signature(m)}" + (f"  [{detail}]" if detail else ""))
+            more = f"\n  (and {len(class_info.methods) - 12} more methods)" if len(class_info.methods) > 12 else ""
+            parts.append("Methods:\n" + "\n".join(lines) + more)
 
-        return "\n".join(prompt_parts)
+        parts.append(f"\nIn 2 or 3 sentences, say what this {kind} holds and offers, using only the information above:")
+        return "\n".join(parts)
 
     def _build_module_prompt(self, parsed_module: ParsedModule) -> str:
-        """Build prompt for module summary."""
-        prompt_parts = [f"Module: {Path(parsed_module.file_path).name}"]
-
+        """Prompt for a module: its docstring, imports and what it defines."""
+        parts = [f"Module: {Path(parsed_module.file_path).name}"]
         if parsed_module.module_docstring:
-            prompt_parts.append(f"Existing docstring: {parsed_module.module_docstring[:200]}")
-
+            parts.append(f"Docstring: {parsed_module.module_docstring[:300]}")
+        if parsed_module.imports:
+            parts.append(f"Imports: {', '.join(parsed_module.imports[:8])}")
         if parsed_module.functions:
-            func_names = [f.name for f in parsed_module.functions[:5]]
-            prompt_parts.append(f"Functions: {', '.join(func_names)}")
-
+            lines = [f"  - {_render_signature(f)}" + (f"  [{_first_line(f.docstring)}]" if f.docstring else "")
+                     for f in parsed_module.functions[:10]]
+            parts.append("Functions:\n" + "\n".join(lines))
         if parsed_module.classes:
-            class_names = [c.name for c in parsed_module.classes[:5]]
-            prompt_parts.append(f"Classes: {', '.join(class_names)}")
-
-        prompt_parts.append("\nProvide a brief summary of what this module does:")
-
-        return "\n".join(prompt_parts)
+            lines = [f"  - {c.name}" + (f"  [{_first_line(c.docstring)}]" if c.docstring else "")
+                     for c in parsed_module.classes[:10]]
+            parts.append("Classes:\n" + "\n".join(lines))
+        parts.append("\nIn 2 or 3 sentences, say what this module contains, using only the information above:")
+        return "\n".join(parts)
 
     def _build_parameter_prompt(
         self,
         parameters: List[ParameterInfo],
-        function_context: str
+        function_context: str,
+        func_info: Optional[FunctionInfo] = None
     ) -> str:
-        """Build prompt for parameter descriptions."""
-        param_list = []
-        for p in parameters:
-            type_info = f": {p.type_hint}" if p.type_hint else ""
-            default = f" = {p.default_value}" if p.default_value else ""
-            param_list.append(f"  - {p.name}{type_info}{default}")
-
-        prompt = f"Function context: {function_context}\n\nParameters:\n" + "\n".join(param_list)
-        prompt += "\n\nProvide a brief description for each parameter, formatted as `name: description`, one per line:"
-
-        return prompt
+        """Prompt for parameter descriptions, with the function's code so they come from real usage."""
+        parts = [f"Function: {function_context}"]
+        if func_info is not None:
+            parts.append(f"Signature: {_render_signature(func_info)}")
+            if func_info.docstring:
+                parts.append(f"Docstring: {func_info.docstring[:300]}")
+            parts.append(_body_block(func_info))
+        parts.append("\nDescribe these parameters, one per line, as `name: description` (what it is for, judging by the code):")
+        parts.extend(f"  - {_render_parameter(p)}" for p in parameters)
+        return "\n".join(parts)
