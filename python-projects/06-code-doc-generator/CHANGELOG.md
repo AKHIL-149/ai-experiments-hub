@@ -5,6 +5,27 @@ All notable changes to the Code Documentation Generator will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- Results page: documentation text from user code is no longer trusted as HTML. Markdown is rendered with raw HTML disabled and cleaned by an allowlist sanitiser; HTML-format output is shown in a sandboxed iframe (a `<img onerror>` in a docstring used to run script).
+- CORS is closed by default (was `*`); set `CORS_ORIGINS` to allow specific origins.
+
+### Fixed
+- Python parser: wrong encodings (BOM, coding cookie, cp1252) and binary files; imports order; positional-only / keyword-only parameters; class vs instance attributes.
+- AI documentation: prompts are built from the real code and say whether the body shown is complete; unused parameters are described deterministically; truncated replies are trimmed to the last full sentence; a failing model produces one warning and the code's own docstrings instead of "Error: ..." text inside the documentation; permanent failures (server down, bad key, missing model) stop further calls at once. Cache version bumped.
+- LLM client: context window sized to the prompt (Ollama silently dropped the start of long prompts), thinking models no longer burn the token budget, one retry on 5xx, friendly messages (`ollama serve`, `ollama pull <model>`).
+- Markdown formatter: table-of-contents links pointed at anchors that did not exist; same names no longer collide. HTML formatter: ids were not unique (`a` and `A`) and unsafe in selectors.
+- Docstring formatter: output could be invalid Python (multi-line signatures, one-line definitions, quotes/backslashes in text); JS/Java definitions that already had a comment got a second one; filler text ("Parameter description") is no longer written into code.
+- JavaScript: class fields, private members and `export default` made files unparseable; arrow functions and `exports.x =` were missed; TypeScript did not parse at all. Parser switched from esprima to @babel/parser (run `npm install` again).
+- Java: constructors were named `<init>`, enum members and nested types were lost, interface default methods were marked abstract, `// }` in a body is handled, parse errors had an empty message and are now explained (including "Java 8 only").
+- File discovery: a symlink loop repeated the tree dozens of times; symlinked files were listed twice; minified bundles are skipped.
+- Web API: errors are HTTP statuses (were 200 with an error field), language `auto` (the form default) is detected instead of treated as Python, size limit, temp paths never appear in messages, warnings shown on the results page, scripts are re-fetched when they change.
+- Version number lives in `src/version.py` (CLI banner said 0.6.5, server 0.7.4).
+
+### Changed
+- `tests/`: replaced the print-only scripts (no assertions, some called a real model) with about 430 real tests.
+
 ## [0.7.4] - 2024-01-06
 
 ### Added

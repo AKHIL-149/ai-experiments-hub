@@ -20,7 +20,7 @@ An AI-powered code documentation generator that analyzes source code in multiple
 - ✅ Class inheritance and attribute extraction
 
 **Phase 2 - Multi-Language Support:**
-- ✅ JavaScript/TypeScript parser (via esprima + Node.js)
+- ✅ JavaScript/TypeScript parser (via @babel/parser + Node.js: modern JS, JSX, TypeScript)
 - ✅ Java parser (via javalang)
 - ✅ Node.js bridge for JavaScript parsing
 - ✅ Test fixtures for all three languages
@@ -199,16 +199,13 @@ export OPENAI_API_KEY="your-key-here"
 
 ### Testing
 
-Run the test suite to verify functionality:
-
 ```bash
-# Test all components
-python tests/test_all_parsers.py
-python tests/test_ai_enhancement.py
-python tests/test_formatters.py
-python tests/test_cli_generate.py
-python tests/test_cli_commands.py
+python -m pytest tests -q
 ```
+
+The suite (about 430 tests, ~10 seconds) needs no model and no network: the language model is replaced by a
+fake, and the CLI tests point Ollama at a closed port. The JavaScript/TypeScript tests skip themselves when
+Node.js or `npm install` is missing.
 
 ## Programmatic API Usage
 
@@ -406,10 +403,17 @@ docstring_formatter.format(parsed, 'mycode_documented.py')
 │   │   ├── sample.py              # Test Python file ✅
 │   │   ├── sample.js              # Test JavaScript file ✅
 │   │   └── Sample.java            # Test Java file ✅
-│   ├── test_python_parser.py      # Python parser tests ✅
-│   ├── test_all_parsers.py        # Multi-language tests ✅
-│   ├── test_ai_enhancement.py     # AI enhancement tests ✅
-│   └── test_formatters.py         # Formatter tests ✅
+│   ├── test_python_parser.py      # Python parser
+│   ├── test_js_parser.py          # JavaScript / TypeScript parser
+│   ├── test_java_parser.py        # Java parser
+│   ├── test_ai_explainer.py       # Prompts, caching, circuit breaker (fake model)
+│   ├── test_llm_client.py         # Backends, errors, truncation (fake HTTP / SDKs)
+│   ├── test_doc_generator_pipeline.py  # Orchestrator: formats, bad files, warnings
+│   ├── test_markdown_formatter.py / test_html_formatter.py / test_docstring_formatter.py
+│   ├── test_file_discovery.py     # Finding source files (symlinks, ignored folders)
+│   ├── test_sanitize.py / test_web_results.py  # XSS defences of the web page
+│   ├── test_web_api.py            # REST API status codes, warnings, limits
+│   └── test_cli.py                # The command line, run as a subprocess
 ├── data/
 │   ├── cache/
 │   │   ├── ast/                   # Parsed AST cache ✅
@@ -569,7 +573,7 @@ python doc_gen.py serve [options]
 - Parser registry system
 
 ### Phase 2: Multi-Language Support ✅
-- JavaScript/TypeScript parser (via Node.js + esprima)
+- JavaScript/TypeScript parser (via Node.js + @babel/parser)
 - Java parser (via javalang)
 - Test fixtures for all languages
 - Graceful dependency handling
@@ -608,19 +612,33 @@ python doc_gen.py serve [options]
 
 ## Testing
 
-Run the test suite to verify the parser works correctly:
-
 ```bash
-python3 tests/test_python_parser.py
+python3 -m pytest tests -q
 ```
 
-Expected output includes:
-- Parsed module information
-- List of imports
-- Global variables
-- Functions with full details
-- Classes with methods and attributes
-- Parser registry functionality
+See [Testing](#testing) above for what is covered.
+
+## Language support and known limits
+
+| Language | Parser | Notes |
+|---|---|---|
+| Python | `ast` | Everything the running Python can parse. Files in other encodings (UTF-8 BOM, `# coding:` cookie, Windows-1252/Latin-1) are read; binary files are refused. |
+| JavaScript / JSX | `@babel/parser` | Class fields, private members, optional chaining, top-level await, arrow functions assigned to names, `exports.x = ...`. |
+| TypeScript / TSX | `@babel/parser` | Parameter and return types, generics shown as written, interfaces, enums, type aliases, decorators, parameter properties. Types are shown as source text, not resolved. |
+| Java | `javalang` | **Java 8 syntax only.** A file using records, sealed types, text blocks, switch expressions or pattern matching is reported as unparseable and the message names the feature. |
+
+- A file that cannot be parsed is skipped and reported (CLI: "warning(s)", web page: a yellow box, API: `warnings`); the other files are still documented.
+- Generated documentation never contains error text. When the model is unreachable the run continues with the code's own docstrings and one warning says why; `enhance` fails instead (it has nothing to add without the model) and writes nothing.
+- The model only sees the code it is asked about. Small local models can still misread a detail (for instance calling a cap of 50 currency units "50%"), so treat generated explanations as a draft to review.
+- Docstring insertion (`enhance`, `-f docstring`) adds docstrings only where none exist, never edits the original (output goes to a new file, the input is copied to `<file>.backup`), and skips Python definitions whose body is on the same line as the header (`def f(x): return x`).
+- Table-of-contents links in the Markdown output use GitHub's heading anchors. In the web page, headings repeated in one document get `_1`, `_2` suffixes from the Markdown renderer instead of GitHub's `-1`, `-2`, so a link to the second of two same-named headings can miss there.
+- Directory symlinks are not followed, and minified files (`*.min.js`) found while scanning a directory are skipped.
+
+### Web server and REST API
+
+- Errors are real HTTP statuses with a one-line `detail`: `400` (no code, empty or binary file, unsupported language/format/provider), `413` (source larger than `MAX_CODE_BYTES`, default 1,000,000), `422` (code does not parse), `503` (`/api/enhance` without a working model). A successful `/api/generate` response can carry `warnings`.
+- The language field accepts `auto`; an uploaded file's extension always decides the language.
+- Documentation shown on the results page is sanitised (allowlist), HTML-format output is shown in a sandboxed frame, and CORS is closed unless you set `CORS_ORIGINS="https://a.example,https://b.example"`.
 
 ## Configuration
 
@@ -636,6 +654,9 @@ Copy [.env.example](.env.example) to `.env` in the project root; it is loaded au
 | `DEFAULT_FORMAT`, `DEFAULT_OUTPUT_DIR` | Default `--format` and output directory | `markdown`, `./data/output` |
 | `WEB_HOST`, `WEB_PORT` | Defaults for `serve --host/--port` | `127.0.0.1`, `8000` |
 | `NODEJS_PATH` | Node.js executable used for JavaScript parsing | `node` |
+| `MAX_CODE_BYTES` | Largest source the web API accepts | `1000000` |
+| `CORS_ORIGINS` | Comma-separated origins allowed to call the API from a browser (`*` is ignored) | none |
+| `LLM_TIMEOUT`, `OLLAMA_THINK`, `OLLAMA_MAX_CTX` | Seconds to wait for a reply, let thinking models think, upper bound for the context window | `120`, `false`, `32768` |
 
 Relative paths resolve against the directory you run the command from. JavaScript/TypeScript parsing also needs `npm install` once in the project root.
 
