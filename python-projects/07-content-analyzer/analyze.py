@@ -25,6 +25,42 @@ from src.core.image_comparator import ImageComparator
 from src.core.batch_processor import BatchProcessor
 
 
+IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tif', '.tiff'}
+
+
+def find_images(directory: str, pattern=None, recursive: bool = False) -> list:
+    """Image files in a directory, sorted.
+
+    Without a pattern: every file with an image extension (any case). With one: files matching
+    the glob (a name pattern such as "*.png"; braces like "*.{jpg,png}" are not glob syntax and
+    match nothing). Hidden files are skipped; --recursive also searches sub-folders.
+    """
+    folder = Path(directory).expanduser()
+    if not folder.is_dir():
+        raise FileNotFoundError(f"Directory not found: {directory}")
+    candidates = folder.rglob(pattern or '*') if recursive else folder.glob(pattern or '*')
+    found = [
+        str(path) for path in candidates
+        if path.is_file() and not path.name.startswith('.')
+        and (pattern is not None or path.suffix.lower() in IMAGE_SUFFIXES)
+    ]
+    return sorted(found)
+
+
+def merge_load_failures(results: dict, indexes: list, load_errors: list, total: int) -> dict:
+    """Put the files that could not be opened into the results as failures, in their original positions.
+
+    They used to be dropped after a warning, so totals and exports silently left them out.
+    """
+    for item in results['results'] + results['errors']:
+        item['index'] = indexes[item['index']]
+    results['errors'] = sorted(results['errors'] + load_errors, key=lambda e: e['index'])
+    results['total_images'] = total
+    results['failed'] = len(results['errors'])
+    results['avg_time_per_image'] = results['elapsed_time'] / total if total else 0
+    return results
+
+
 def describe_image(args):
     """Describe an image using vision AI.
 
@@ -107,8 +143,9 @@ def describe_image(args):
         return 1
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if getattr(args, 'verbose', False) or os.getenv('DEBUG'):
+            import traceback
+            traceback.print_exc()
         return 1
 
 
@@ -216,8 +253,9 @@ def ocr_text(args):
         return 1
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if getattr(args, 'verbose', False) or os.getenv('DEBUG'):
+            import traceback
+            traceback.print_exc()
         return 1
 
 
@@ -276,8 +314,9 @@ def detect_language(args):
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if getattr(args, 'verbose', False) or os.getenv('DEBUG'):
+            import traceback
+            traceback.print_exc()
         return 1
 
 
@@ -460,8 +499,9 @@ def compare_images(args):
         return 1
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if getattr(args, 'verbose', False) or os.getenv('DEBUG'):
+            import traceback
+            traceback.print_exc()
         return 1
 
 
@@ -479,10 +519,7 @@ def batch_describe(args):
             image_paths = args.images
         elif args.directory:
             # Directory specified
-            from glob import glob
-            pattern = args.pattern or "*.{jpg,jpeg,png,webp,gif,bmp}"
-            search_path = Path(args.directory) / pattern
-            image_paths = glob(str(search_path), recursive=args.recursive)
+            image_paths = find_images(args.directory, args.pattern, args.recursive)
 
         if not image_paths:
             print("❌ No images found")
@@ -510,13 +547,17 @@ def batch_describe(args):
         images = []
         image_names = []
 
-        for path in image_paths:
+        indexes = []
+        load_errors = []
+        for position, path in enumerate(image_paths):
             try:
                 img = image_processor.load_image(path)
                 images.append(img)
                 image_names.append(Path(path).name)
+                indexes.append(position)
             except Exception as e:
                 print(f"⚠️  Failed to load {path}: {e}")
+                load_errors.append({'index': position, 'name': Path(path).name, 'success': False, 'error': str(e)})
 
         if not images:
             print("❌ No valid images loaded")
@@ -552,6 +593,7 @@ def batch_describe(args):
             max_tokens=args.max_tokens,
             progress_callback=progress
         )
+        results = merge_load_failures(results, indexes, load_errors, len(image_paths))
 
         # Display summary
         print(f"\n✨ Batch Processing Complete:")
@@ -583,8 +625,9 @@ def batch_describe(args):
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if getattr(args, 'verbose', False) or os.getenv('DEBUG'):
+            import traceback
+            traceback.print_exc()
         return 1
 
 
@@ -600,10 +643,7 @@ def batch_ocr(args):
         if args.images:
             image_paths = args.images
         elif args.directory:
-            from glob import glob
-            pattern = args.pattern or "*.{jpg,jpeg,png,webp,gif,bmp}"
-            search_path = Path(args.directory) / pattern
-            image_paths = glob(str(search_path), recursive=args.recursive)
+            image_paths = find_images(args.directory, args.pattern, args.recursive)
 
         if not image_paths:
             print("❌ No images found")
@@ -632,13 +672,17 @@ def batch_ocr(args):
         images = []
         image_names = []
 
-        for path in image_paths:
+        indexes = []
+        load_errors = []
+        for position, path in enumerate(image_paths):
             try:
                 img = image_processor.load_image(path)
                 images.append(img)
                 image_names.append(Path(path).name)
+                indexes.append(position)
             except Exception as e:
                 print(f"⚠️  Failed to load {path}: {e}")
+                load_errors.append({'index': position, 'name': Path(path).name, 'success': False, 'error': str(e)})
 
         if not images:
             print("❌ No valid images loaded")
@@ -669,6 +713,7 @@ def batch_ocr(args):
             confidence_threshold=args.confidence,
             progress_callback=progress
         )
+        results = merge_load_failures(results, indexes, load_errors, len(image_paths))
 
         # Display summary
         print(f"\n✨ Batch OCR Complete:")
@@ -700,8 +745,9 @@ def batch_ocr(args):
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if getattr(args, 'verbose', False) or os.getenv('DEBUG'):
+            import traceback
+            traceback.print_exc()
         return 1
 
 
@@ -1007,7 +1053,7 @@ Examples:
         '--pattern',
         type=str,
         default=None,
-        help='Glob pattern for image files (default: *.{jpg,jpeg,png,webp,gif,bmp})'
+        help='Glob pattern for image files, e.g. "*.png" (default: every JPG, PNG, WebP, GIF, BMP and TIFF file)'
     )
     batch_describe_parser.add_argument(
         '--recursive',
@@ -1102,7 +1148,7 @@ Examples:
         '--pattern',
         type=str,
         default=None,
-        help='Glob pattern for image files (default: *.{jpg,jpeg,png,webp,gif,bmp})'
+        help='Glob pattern for image files, e.g. "*.png" (default: every JPG, PNG, WebP, GIF, BMP and TIFF file)'
     )
     batch_ocr_parser.add_argument(
         '--recursive',
