@@ -192,20 +192,34 @@ class ConversationManagerUI {
     const dateStr = this.formatDate(date);
     const timeStr = this.formatTime(date);
 
-    item.innerHTML = `
-      <div class="conversation-item-header">
-        <span class="conversation-id">${conversation.conversationId.substring(0, 16)}...</span>
-        <span class="conversation-date">${dateStr}</span>
-      </div>
-      <div class="conversation-item-details">
-        <span class="conversation-time">${timeStr}</span>
-        <span class="conversation-messages">${conversation.messageCount} messages</span>
-      </div>
-      <div class="conversation-item-actions">
-        <button class="btn-small" data-action="load" data-id="${conversation.conversationId}">Load</button>
-        <button class="btn-small btn-danger" data-action="delete" data-id="${conversation.conversationId}">Delete</button>
-      </div>
-    `;
+    const part = (tag, className, text) => {
+      const el = document.createElement(tag);
+      el.className = className;
+      el.textContent = text;
+      return el;
+    };
+    const row = (className, ...children) => {
+      const el = document.createElement('div');
+      el.className = className;
+      children.forEach(child => el.appendChild(child));
+      return el;
+    };
+    const button = (action, label, extraClass = '') => {
+      const el = part('button', `btn-small ${extraClass}`.trim(), label);
+      el.dataset.action = action;
+      el.dataset.id = conversation.conversationId;
+      return el;
+    };
+
+    item.appendChild(row('conversation-item-header',
+      part('span', 'conversation-id', `${conversation.conversationId.substring(0, 16)}...`),
+      part('span', 'conversation-date', dateStr)));
+    item.appendChild(row('conversation-item-details',
+      part('span', 'conversation-time', timeStr),
+      part('span', 'conversation-messages', `${conversation.messageCount} messages`)));
+    item.appendChild(row('conversation-item-actions',
+      button('load', 'Load'),
+      button('delete', 'Delete', 'btn-danger')));
 
     // Attach action listeners
     item.querySelector('[data-action="load"]').addEventListener('click', (e) => {

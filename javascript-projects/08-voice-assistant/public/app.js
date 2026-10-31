@@ -29,6 +29,10 @@ class VoiceAssistant {
         this.audioChunks = [];
         this.audioStream = null;
         this.conversationId = null;
+        this.wantRecording = false;   // the user is holding the button / key (may precede the mic being ready)
+        this.isProcessing = false;    // transcribing, thinking or speaking
+        this.isPlaying = false;
+        this.timers = [];             // running timers: { id, endTime, label, handle }
 
         // Phase 4: Audio visualization
         this.audioContext = null;
@@ -76,11 +80,11 @@ class VoiceAssistant {
         // Check server health
         await this.checkHealth();
 
-        // Create conversation session
-        await this.createConversation();
-
-        // Load saved settings
+        // Load saved settings. The conversation itself is created on the first message,
+        // so just opening the page does not leave an empty conversation behind.
+        await this.loadVoices();
         this.loadSettings();
+        this.restoreTimers();
 
         // Clear placeholder
         this.clearPlaceholder();
@@ -95,11 +99,12 @@ class VoiceAssistant {
         this.recordBtn.addEventListener('mousedown', () => {
             if (!this.isHandsfreeMode) this.startRecording();
         });
+        // Releasing always counts, even if the microphone is still being opened
         this.recordBtn.addEventListener('mouseup', () => {
-            if (!this.isHandsfreeMode && this.isRecording) this.stopRecording();
+            if (!this.isHandsfreeMode) this.stopRecording();
         });
         this.recordBtn.addEventListener('mouseleave', () => {
-            if (!this.isHandsfreeMode && this.isRecording) this.stopRecording();
+            if (!this.isHandsfreeMode) this.stopRecording();
         });
 
         // Touch support for mobile
@@ -109,7 +114,7 @@ class VoiceAssistant {
         });
         this.recordBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
-            if (!this.isHandsfreeMode && this.isRecording) this.stopRecording();
+            if (!this.isHandsfreeMode) this.stopRecording();
         });
 
         // Phase 4: Conversations button
@@ -192,12 +197,14 @@ class VoiceAssistant {
      * Phase 4: Handle keyboard shortcuts
      */
     handleKeyDown(e) {
-        // Spacebar for push-to-talk (when not in input field and not in hands-free mode)
-        if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT' && !this.isHandsfreeMode) {
+        // Spacebar for push-to-talk - but not while a control has focus (Space operates
+        // buttons, checkboxes and dropdowns) and not in hands-free mode
+        if (e.code === 'Space' && !e.repeat && !this.isHandsfreeMode && !this.spaceBelongsToFocusedControl()) {
             e.preventDefault();
-            if (!this.isRecording && !this.loadingOverlay.classList.contains('hidden')) {
+            if (this.isProcessing) {
                 return; // Don't start recording while processing
             }
+            this.keyHeld = true;
             this.startRecording();
         }
 
@@ -215,10 +222,20 @@ class VoiceAssistant {
      */
     handleKeyUp(e) {
         // Phase 6: Don't stop recording on spacebar if in hands-free mode
-        if (e.code === 'Space' && this.isRecording && !this.isHandsfreeMode) {
+        if (e.code === 'Space' && this.keyHeld && !this.isHandsfreeMode) {
             e.preventDefault();
+            this.keyHeld = false;
             this.stopRecording();
         }
+    }
+
+    /**
+     * Whether the focused element uses the Space key itself
+     */
+    spaceBelongsToFocusedControl() {
+        const el = document.activeElement;
+        if (!el || el === document.body) return false;
+        return ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'SUMMARY'].includes(el.tagName) || el.isContentEditable;
     }
 
     /**
@@ -309,12 +326,14 @@ class VoiceAssistant {
                 this.updateServiceStatus(data.status);
                 this.updateStatus(`Mode: ${mode}`, 'ready');
                 setTimeout(() => this.updateStatus('Ready', 'ready'), 2000);
+                await this.loadVoices(); // the voices on offer depend on the mode
             } else {
-                throw new Error('Failed to change service mode');
+                throw new Error(await this.readError(response, 'Failed to change service mode'));
             }
         } catch (error) {
             console.error('Error changing service mode:', error);
-            this.showError('Failed to change service mode: ' + error.message);
+            this.showError(error.message);
+            await this.checkHealth(); // puts the selector back on the mode that is really active
         }
     }
 
@@ -349,7 +368,10 @@ class VoiceAssistant {
                     });
                 }
 
-                await this.vad.initialize(this.vadStream);
+                const initialized = await this.vad.initialize(this.vadStream);
+                if (!initialized) {
+                    throw new Error('Could not start listening for speech');
+                }
                 this.vad.start();
 
                 // Update UI
@@ -364,6 +386,12 @@ class VoiceAssistant {
                 this.showError('Failed to enable hands-free mode: ' + error.message);
                 this.handsfreeToggle.checked = false;
                 this.isHandsfreeMode = false;
+                this.settings.handsfree = false;
+                this.saveSettings();
+                if (this.vadStream) {
+                    this.vadStream.getTracks().forEach(track => track.stop());
+                    this.vadStream = null;
+                }
             }
         } else {
             // Disable hands-free mode
@@ -390,7 +418,11 @@ class VoiceAssistant {
      * Phase 6: Handle VAD speech start
      */
     handleVADSpeechStart() {
+        // Ignore "speech" while the assistant is working or talking - its own voice coming
+        // out of the speakers would otherwise be picked up and answered, forever
+        if (this.isProcessing || this.isPlaying) return;
         console.log('VAD: Speech detected, starting recording');
+        this.wantRecording = true;
         this.startRecording();
     }
 
@@ -421,7 +453,9 @@ class VoiceAssistant {
      * Start recording audio
      */
     async startRecording() {
-        if (this.isRecording) return;
+        this.wantRecording = true;
+        if (this.isRecording || this.isStarting) return;
+        this.isStarting = true;
 
         try {
             // Request microphone access
@@ -433,10 +467,11 @@ class VoiceAssistant {
                 }
             });
 
-            // Create media recorder
-            this.mediaRecorder = new MediaRecorder(this.audioStream, {
-                mimeType: 'audio/webm'
-            });
+            // Create media recorder (Safari records mp4, not webm - use what the browser supports;
+            // the server's ffmpeg reads either)
+            const mimeType = ['audio/webm', 'audio/mp4', 'audio/ogg'].find(type => MediaRecorder.isTypeSupported(type));
+            this.mediaRecorder = new MediaRecorder(this.audioStream, mimeType ? { mimeType } : undefined);
+            this.recordingMimeType = this.mediaRecorder.mimeType || mimeType || 'audio/webm';
 
             this.audioChunks = [];
 
@@ -455,6 +490,16 @@ class VoiceAssistant {
             // Phase 4: Setup real-time audio visualization
             this.setupAudioVisualization(this.audioStream);
 
+            // The button/key may already have been released while the microphone was being
+            // opened - then there is nothing to record, and the microphone must not stay on
+            if (!this.wantRecording) {
+                this.stopAudioVisualization();
+                this.audioStream.getTracks().forEach(track => track.stop());
+                this.audioStream = null;
+                this.mediaRecorder = null;
+                return;
+            }
+
             // Start recording
             this.mediaRecorder.start();
             this.isRecording = true;
@@ -472,6 +517,8 @@ class VoiceAssistant {
             } else {
                 this.showError('Failed to access microphone: ' + error.message);
             }
+        } finally {
+            this.isStarting = false;
         }
     }
 
@@ -479,6 +526,7 @@ class VoiceAssistant {
      * Stop recording audio
      */
     stopRecording() {
+        this.wantRecording = false;
         if (!this.isRecording || !this.mediaRecorder) return;
 
         this.mediaRecorder.stop();
@@ -589,7 +637,7 @@ class VoiceAssistant {
         }
 
         // Create audio blob
-        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        const audioBlob = new Blob(this.audioChunks, { type: this.recordingMimeType || 'audio/webm' });
         const recordingDuration = this.recordingStartTime ? Date.now() - this.recordingStartTime : null;
         console.log(`Audio recorded: ${(audioBlob.size / 1024).toFixed(2)} KB, ${recordingDuration}ms`);
 
@@ -608,6 +656,7 @@ class VoiceAssistant {
         }
 
         // Show loading
+        this.isProcessing = true;
         this.showLoading('Transcribing audio...');
 
         try {
@@ -615,7 +664,11 @@ class VoiceAssistant {
             const transcript = await this.transcribeAudio(audioBlob);
 
             if (!transcript || transcript.trim().length === 0) {
-                throw new Error('No speech detected');
+                this.hideLoading();
+                this.updateStatus('No speech detected', 'error');
+                this.showError("I didn't catch any speech. Try again a little closer to the microphone.");
+                setTimeout(() => this.updateStatus('Ready', 'ready'), 2500);
+                return;
             }
 
             // Add user message to conversation
@@ -628,9 +681,18 @@ class VoiceAssistant {
             // Add assistant message to conversation
             this.addMessage('assistant', response.response);
 
-            // Step 3: Play audio response
-            this.showLoading('Generating voice...');
-            await this.playAudioResponse(response.audio);
+            // A timer was set: this page will sound the alarm
+            if (response.timer) {
+                this.startTimer(response.timer);
+            }
+
+            // Step 3: Play audio response (text-only if the server could not make the voice)
+            if (response.audio) {
+                this.showLoading('Generating voice...');
+                await this.playAudioResponse(response.audio, response.audioFormat);
+            } else if (response.audioError) {
+                this.addMessage('assistant', `(${response.audioError})`);
+            }
 
             // Done
             this.hideLoading();
@@ -642,6 +704,8 @@ class VoiceAssistant {
             this.updateStatus('Error', 'error');
             this.showError(error.message);
             setTimeout(() => this.updateStatus('Ready', 'ready'), 3000);
+        } finally {
+            this.isProcessing = false;
         }
     }
 
@@ -658,8 +722,7 @@ class VoiceAssistant {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Transcription failed');
+            throw new Error(await this.readError(response, 'Transcription failed'));
         }
 
         const data = await response.json();
@@ -669,6 +732,12 @@ class VoiceAssistant {
     /**
      * Create conversation session
      */
+    async ensureConversation() {
+        if (!this.conversationId) {
+            await this.createConversation();
+        }
+    }
+
     async createConversation() {
         try {
             const response = await fetch('/api/conversations', {
@@ -700,6 +769,8 @@ class VoiceAssistant {
      * Get response from assistant
      */
     async getResponse(transcript) {
+        await this.ensureConversation();
+
         const response = await fetch('/api/command', {
             method: 'POST',
             headers: {
@@ -707,13 +778,14 @@ class VoiceAssistant {
             },
             body: JSON.stringify({
                 transcript: transcript,
-                conversationId: this.conversationId
+                conversationId: this.conversationId || undefined,
+                voice: this.settings.voice,
+                speed: this.settings.speed
             })
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get response');
+            throw new Error(await this.readError(response, 'Failed to get response'));
         }
 
         return await response.json();
@@ -722,7 +794,9 @@ class VoiceAssistant {
     /**
      * Play audio response
      */
-    async playAudioResponse(base64Audio) {
+    async playAudioResponse(base64Audio, format = 'mp3') {
+        const mimeTypes = { mp3: 'audio/mpeg', wav: 'audio/wav' };
+
         return new Promise((resolve, reject) => {
             try {
                 // Convert base64 to blob
@@ -731,29 +805,162 @@ class VoiceAssistant {
                 for (let i = 0; i < binaryString.length; i++) {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
-                const audioBlob = new Blob([bytes], { type: 'audio/mpeg' });
+                const audioBlob = new Blob([bytes], { type: mimeTypes[format] || 'audio/mpeg' });
 
                 // Create audio element
                 const audio = new Audio();
                 audio.src = URL.createObjectURL(audioBlob);
+                this.isPlaying = true;
 
                 audio.onended = () => {
+                    this.isPlaying = false;
                     URL.revokeObjectURL(audio.src);
                     resolve();
                 };
 
                 audio.onerror = (error) => {
+                    this.isPlaying = false;
                     URL.revokeObjectURL(audio.src);
                     reject(new Error('Audio playback failed'));
                 };
 
                 // Play audio
-                audio.play().catch(reject);
+                audio.play().catch((error) => {
+                    this.isPlaying = false;
+                    reject(error.name === 'NotAllowedError'
+                        ? new Error('The browser blocked audio playback. Click the page once and try again.')
+                        : error);
+                });
 
             } catch (error) {
+                this.isPlaying = false;
                 reject(error);
             }
         });
+    }
+
+    /**
+     * The message from a failed API response, whatever shape the body has
+     */
+    async readError(response, fallback) {
+        try {
+            const body = await response.json();
+            return body.error || fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Fill the voice list from the server - which voices exist depends on the service mode
+     */
+    async loadVoices() {
+        try {
+            const response = await fetch('/api/voices');
+            const { voices } = await response.json();
+            if (!Array.isArray(voices) || voices.length === 0) return;
+
+            const previous = this.voiceSelect.value;
+            this.voiceSelect.innerHTML = '';
+            voices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice;
+                option.textContent = voice.charAt(0).toUpperCase() + voice.slice(1);
+                this.voiceSelect.appendChild(option);
+            });
+
+            const preferred = [this.settings.voice, previous].find(v => voices.includes(v)) || voices[0];
+            this.voiceSelect.value = preferred;
+            this.settings.voice = preferred;
+        } catch (error) {
+            console.error('Failed to load voices:', error);
+        }
+    }
+
+    // ---------------------------------------------------------------- timers
+
+    /**
+     * Run a timer set by voice. It is kept in localStorage so it survives a reload.
+     */
+    startTimer(timer, { announce = true } = {}) {
+        if (this.timers.some(t => t.id === timer.id)) return;
+
+        const entry = { id: timer.id, endTime: timer.endTime, label: timer.label || null, handle: null };
+        entry.handle = setTimeout(() => this.timerFinished(entry), Math.max(0, timer.endTime - Date.now()));
+        this.timers.push(entry);
+        this.saveTimers();
+    }
+
+    async timerFinished(entry) {
+        this.timers = this.timers.filter(t => t.id !== entry.id);
+        this.saveTimers();
+
+        const text = entry.label ? `Time to ${entry.label}!` : "Time's up! Your timer has finished.";
+        this.addMessage('assistant', `⏰ ${text}`);
+        this.beep();
+
+        // Say it out loud too (best effort)
+        try {
+            const response = await fetch('/api/synthesize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, speed: this.settings.speed })
+            });
+            if (response.ok) {
+                const blob = await response.blob();
+                const audio = new Audio(URL.createObjectURL(blob));
+                audio.onended = () => URL.revokeObjectURL(audio.src);
+                await audio.play();
+            }
+        } catch (error) {
+            console.error('Could not speak the timer alert:', error);
+        }
+    }
+
+    /**
+     * A short beep, so the alarm is heard even when speech is unavailable
+     */
+    beep() {
+        try {
+            const context = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.frequency.value = 880;
+            gain.gain.value = 0.15;
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start();
+            oscillator.stop(context.currentTime + 0.4);
+            oscillator.onended = () => context.close();
+        } catch (error) {
+            console.error('Could not play the timer beep:', error);
+        }
+    }
+
+    saveTimers() {
+        try {
+            localStorage.setItem('voiceAssistantTimers',
+                JSON.stringify(this.timers.map(({ id, endTime, label }) => ({ id, endTime, label }))));
+        } catch (error) {
+            console.error('Failed to save timers:', error);
+        }
+    }
+
+    /**
+     * Pick up timers that were running when the page was closed or reloaded
+     */
+    restoreTimers() {
+        try {
+            const saved = JSON.parse(localStorage.getItem('voiceAssistantTimers') || '[]');
+            if (!Array.isArray(saved)) return;
+            saved.forEach(timer => {
+                if (timer && typeof timer.id === 'string' && Number.isFinite(timer.endTime)) {
+                    this.startTimer(timer);
+                }
+            });
+        } catch (error) {
+            console.error('Failed to restore timers:', error);
+        }
     }
 
     /**
@@ -844,16 +1051,27 @@ class VoiceAssistant {
      * Load settings from localStorage
      */
     loadSettings() {
-        const saved = localStorage.getItem('voiceAssistantSettings');
+        let saved = null;
+        try {
+            saved = localStorage.getItem('voiceAssistantSettings');
+        } catch (error) {
+            console.error('Failed to read settings:', error);
+        }
         if (saved) {
             try {
-                this.settings = JSON.parse(saved);
-                this.voiceSelect.value = this.settings.voice;
+                this.settings = { ...this.settings, ...JSON.parse(saved) };
+                if ([...this.voiceSelect.options].some(o => o.value === this.settings.voice)) {
+                    this.voiceSelect.value = this.settings.voice;
+                } else {
+                    this.settings.voice = this.voiceSelect.value;
+                }
                 this.speedSelect.value = this.settings.speed;
 
-                // Phase 6: Load hands-free settings
-                if (this.handsfreeToggle && this.settings.handsfree !== undefined) {
-                    this.handsfreeToggle.checked = this.settings.handsfree;
+                // Hands-free needs the microphone, which the browser only grants on request
+                // (and a prompt on page load would be unwelcome) - so it always starts off.
+                this.settings.handsfree = false;
+                if (this.handsfreeToggle) {
+                    this.handsfreeToggle.checked = false;
                 }
                 if (this.sensitivitySlider && this.settings.vadSensitivity !== undefined) {
                     this.sensitivitySlider.value = this.settings.vadSensitivity;
@@ -869,7 +1087,11 @@ class VoiceAssistant {
      * Save settings to localStorage
      */
     saveSettings() {
-        localStorage.setItem('voiceAssistantSettings', JSON.stringify(this.settings));
+        try {
+            localStorage.setItem('voiceAssistantSettings', JSON.stringify(this.settings));
+        } catch (error) {
+            console.error('Failed to save settings:', error);
+        }
     }
 }
 
