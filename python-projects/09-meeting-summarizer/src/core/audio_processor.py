@@ -9,6 +9,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# A recording whose loudest moment is quieter than this is treated as silence (dBFS).
+# Speech peaks far above it; digital silence reads about -inf / -90.
+SILENCE_THRESHOLD_DBFS = -50.0
+
+
+class AudioError(ValueError):
+    """An audio file that cannot be used; the message is short and safe to show a user."""
+
 
 class AudioProcessor:
     """
@@ -65,7 +73,13 @@ class AudioProcessor:
             return audio
 
         except Exception as e:
-            raise ValueError(f"Failed to load audio file: {str(e)}")
+            # pydub's message is ffmpeg's whole banner and an internal path: log it,
+            # but give the user one readable line.
+            logger.error(f"Could not decode {file_path}: {e}")
+            raise AudioError(
+                f"This file could not be read as {file_format.upper()} audio. "
+                f"It may be empty, damaged, or not really {file_format.upper()}."
+            )
 
     def validate_audio(self, audio_path: str) -> Dict:
         """
@@ -139,9 +153,13 @@ class AudioProcessor:
                     f"Audio is very long ({duration/60:.1f}min). Processing will be slow."
                 )
 
-        except Exception as e:
+        except AudioError as e:
             result["valid"] = False
-            result["errors"].append(f"Failed to load audio: {str(e)}")
+            result["errors"].append(str(e))
+        except Exception as e:
+            logger.error(f"Audio validation failed for {audio_path}: {e}")
+            result["valid"] = False
+            result["errors"].append("This file could not be read as audio.")
 
         return result
 
@@ -224,6 +242,11 @@ class AudioProcessor:
             logger.info("Audio is shorter than chunk duration, returning single chunk")
             return [audio]
 
+        # The overlap has to leave each chunk a real step forward: at most half the chunk.
+        # (An overlap as long as the chunk would advance by nothing - or by a millisecond,
+        # which is hundreds of thousands of chunks.)
+        overlap_ms = max(0, min(overlap_ms, chunk_duration_ms // 2))
+
         chunks = []
         start_ms = 0
 
@@ -240,12 +263,13 @@ class AudioProcessor:
                 f"({len(chunk)/1000:.1f}s duration)"
             )
 
+            # The last chunk reaches the end of the audio: stop. (Stepping back by the
+            # overlap from here used to start yet another chunk, forever.)
+            if end_ms >= total_duration_ms:
+                break
+
             # Move to next chunk with overlap
             start_ms = end_ms - overlap_ms
-
-            # Prevent infinite loop if overlap is too large
-            if start_ms >= end_ms:
-                break
 
         logger.info(f"Split audio into {len(chunks)} chunks")
         return chunks
@@ -290,6 +314,14 @@ class AudioProcessor:
         audio.export(output_path, format=format)
 
         return str(path)
+
+    @staticmethod
+    def is_silent(audio: AudioSegment, threshold_dbfs: float = SILENCE_THRESHOLD_DBFS) -> bool:
+        """Whether the loudest part of the audio is below the silence threshold"""
+        if len(audio) == 0:
+            return True
+        peak = audio.max_dBFS            # -inf for digital silence
+        return peak < threshold_dbfs
 
     @staticmethod
     def get_duration(audio: AudioSegment) -> float:

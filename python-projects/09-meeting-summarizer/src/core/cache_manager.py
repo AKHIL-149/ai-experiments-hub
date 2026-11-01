@@ -2,6 +2,8 @@
 
 import json
 import hashlib
+import os
+import re
 from pathlib import Path
 from typing import Optional, Dict
 from datetime import datetime, timedelta
@@ -55,17 +57,38 @@ class CacheManager:
         logger.info(f"Transcription TTL: {transcription_ttl_days} days")
         logger.info(f"Summary TTL: {summary_ttl_days} days")
 
-    def get_transcription(self, audio_hash: str) -> Optional[Dict]:
+    @staticmethod
+    def _transcription_key(audio_hash: str, variant: str = "") -> str:
+        """
+        Cache key for a transcription. The same audio transcribed with a different
+        backend, model or language is a different result, so those are part of the key
+        (otherwise "language=es" would be answered with the English transcript cached
+        earlier, and switching to a better model would change nothing).
+        """
+        if not variant:
+            return audio_hash
+        return f"{audio_hash}_{re.sub(r'[^A-Za-z0-9._-]+', '_', variant)}"
+
+    @staticmethod
+    def _write_json(cache_file: Path, data: Dict) -> None:
+        """Write a cache file atomically, so a crash cannot leave half a file behind"""
+        temp_file = cache_file.with_name(f"{cache_file.name}.{os.getpid()}.tmp")
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(temp_file, cache_file)
+
+    def get_transcription(self, audio_hash: str, variant: str = "") -> Optional[Dict]:
         """
         Get cached transcription for audio file
 
         Args:
             audio_hash: SHA256 hash of audio file
+            variant: Backend/model/language the transcription was made with
 
         Returns:
             Cached transcription dict or None if not found/expired
         """
-        cache_file = self.transcription_cache_dir / f"{audio_hash}.json"
+        cache_file = self.transcription_cache_dir / f"{self._transcription_key(audio_hash, variant)}.json"
 
         if not cache_file.exists():
             self.stats["transcription_misses"] += 1
@@ -95,15 +118,16 @@ class CacheManager:
             self.stats["transcription_misses"] += 1
             return None
 
-    def set_transcription(self, audio_hash: str, transcription: Dict) -> None:
+    def set_transcription(self, audio_hash: str, transcription: Dict, variant: str = "") -> None:
         """
         Cache transcription result
 
         Args:
             audio_hash: SHA256 hash of audio file
             transcription: Transcription result to cache
+            variant: Backend/model/language the transcription was made with
         """
-        cache_file = self.transcription_cache_dir / f"{audio_hash}.json"
+        cache_file = self.transcription_cache_dir / f"{self._transcription_key(audio_hash, variant)}.json"
 
         # Add metadata
         cache_data = {
@@ -113,8 +137,7 @@ class CacheManager:
         }
 
         try:
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, indent=2, ensure_ascii=False)
+            self._write_json(cache_file, cache_data)
 
             logger.info(f"Cached transcription: {audio_hash}")
 
@@ -193,8 +216,7 @@ class CacheManager:
         }
 
         try:
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, indent=2, ensure_ascii=False)
+            self._write_json(cache_file, cache_data)
 
             logger.info(f"Cached summary: {cache_key}")
 
@@ -302,7 +324,10 @@ class CacheManager:
     @staticmethod
     def _is_fresh(cache_file: Path, ttl: timedelta) -> bool:
         """Check if cache file is still fresh (within TTL)"""
-        file_age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
+        try:
+            file_age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
+        except OSError:
+            return False              # vanished between the check and now
         return file_age < ttl
 
     @staticmethod
