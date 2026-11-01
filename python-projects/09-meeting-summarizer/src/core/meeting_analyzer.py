@@ -1,5 +1,6 @@
 """Meeting Analyzer - Main orchestrator for full meeting analysis pipeline"""
 
+import html
 import json
 import logging
 from pathlib import Path
@@ -218,6 +219,19 @@ class MeetingAnalyzer:
             logger.info("Step 5: Extracting key topics")
             topics = self.summarizer.extract_key_topics(transcript_text)
 
+        # Things the reader should know about the quality of this result
+        warnings = []
+        if actions_result and actions_result.get("parse_failed"):
+            warnings.append(
+                "The language model's action-item answer could not be read, so the action items, "
+                "decisions and follow-ups may be missing. Running the analysis again usually fixes it."
+            )
+        if actions_result and actions_result.get("truncated"):
+            warnings.append(
+                "The model's context window was filled while extracting action items; "
+                "raise OLLAMA_NUM_CTX if items from long meetings are missing."
+            )
+
         # Calculate processing time
         end_time = datetime.now()
         statistics["processing_time_seconds"] = (end_time - start_time).total_seconds()
@@ -232,6 +246,8 @@ class MeetingAnalyzer:
             },
             "transcript": {
                 "text": transcript_text,
+                # {"start", "end", "text"} per segment (seconds) - what speaker labels are matched against
+                "segments": transcript_result.get("segments") or [],
                 "language": transcript_result.get("language", "unknown"),
                 "backend": transcript_result.get("backend", "unknown"),
                 "cached": transcript_result.get("cached", False)
@@ -244,7 +260,8 @@ class MeetingAnalyzer:
             },
             "actions": actions_result,
             "topics": topics,
-            "statistics": statistics
+            "statistics": statistics,
+            "warnings": warnings
         }
 
         if summary_levels:
@@ -388,6 +405,13 @@ class MeetingAnalyzer:
             report.append(result['summary']['text'])
             report.append("")
 
+        if result.get('warnings'):
+            report.append("## Notes")
+            report.append("")
+            for warning in result['warnings']:
+                report.append(f"- {warning}")
+            report.append("")
+
         # Key Topics
         if result.get('topics'):
             report.append("## Key Topics")
@@ -411,14 +435,36 @@ class MeetingAnalyzer:
         report.append(f"- **Cache Misses:** {stats['cache_misses']}")
         report.append("")
 
+        # Speakers (only when "identify speakers" was used)
+        diarization = result.get('speaker_diarization')
+        if diarization and diarization.get('statistics'):
+            report.append("## Speakers")
+            report.append("")
+            key_points = diarization.get('key_points') or {}
+            speakers = diarization['statistics'].get('speakers', {})
+            for name, info in sorted(speakers.items(), key=lambda kv: -kv[1].get('percentage', 0)):
+                report.append(f"- **{name}**: {info.get('percentage', 0):.1f}% of speaking time "
+                              f"({info.get('total_time', 0) / 60:.1f} min)")
+                for point in key_points.get(name, []):
+                    report.append(f"  - {point}")
+            report.append("")
+
         # Transcript
         report.append("## Full Transcript")
         report.append("")
         report.append(f"**Language:** {result['transcript']['language']}")
         report.append(f"**Backend:** {result['transcript']['backend']}")
         report.append("")
-        report.append(result['transcript']['text'])
-        report.append("")
+        if diarization and diarization.get('speaker_transcript'):
+            if diarization.get('approximate'):
+                report.append("_Speaker labels are approximate: no timing was available to match them to the words._")
+                report.append("")
+            for segment in diarization['speaker_transcript']:
+                report.append(f"**{segment['speaker']}:** {segment['text']}")
+                report.append("")
+        else:
+            report.append(result['transcript']['text'])
+            report.append("")
 
         return "\n".join(report)
 
@@ -458,14 +504,20 @@ class MeetingAnalyzer:
             report.append(result['summary']['text'])
             report.append("")
 
-        if result.get('actions') and result['actions']['action_items']:
+        if result.get('warnings'):
+            report.append("NOTES")
+            for warning in result['warnings']:
+                report.append(f"- {warning}")
+            report.append("")
+
+        if result.get('actions') and result['actions'].get('action_items'):
             report.append("-"*60)
             report.append("ACTION ITEMS")
             report.append("-"*60)
             report.append("")
 
             for action in result['actions']['action_items']:
-                report.append(f"[{action['id']}] {action['description']}")
+                report.append(f"[{action.get('id', '?')}] {action.get('description', 'N/A')}")
                 report.append(f"    Assignee: {action.get('assignee', 'Unassigned')}")
                 report.append(f"    Due: {action.get('due_date', 'Not specified')}")
                 report.append("")
@@ -480,17 +532,25 @@ class MeetingAnalyzer:
         return "\n".join(report)
 
     def _generate_html_report(self, result: Dict) -> str:
-        """Generate HTML report"""
+        """Generate HTML report. Everything that came from the recording or the language
+        model is escaped: a transcript containing "<script>" must stay text."""
+        esc = lambda value: html.escape(str(value if value is not None else ''))
+        paragraphs = lambda text: esc(text).replace("\n", "<br>")
+
         if result.get('summary_levels'):
             summary_html = ''.join(
-                f"<h2>Summary ({lvl.capitalize()})</h2><p>{result['summary_levels'][lvl]['text']}</p>"
+                f"<h2>Summary ({lvl.capitalize()})</h2><p>{paragraphs(result['summary_levels'][lvl]['text'])}</p>"
                 for lvl in ("brief", "standard", "detailed")
                 if lvl in result['summary_levels']
             )
         else:
-            summary_html = f"<h2>Summary</h2><p>{result['summary']['text']}</p>"
+            summary_html = f"<h2>Summary</h2><p>{paragraphs(result['summary']['text'])}</p>"
 
-        html = f"""<!DOCTYPE html>
+        topics = result.get('topics') or []
+        topics_html = ('<h2>Key Topics</h2><ul>' + ''.join(f'<li>{esc(topic)}</li>' for topic in topics) + '</ul>') if topics else ''
+        notes_html = ('<h2>Notes</h2><ul>' + ''.join(f'<li>{esc(w)}</li>' for w in result['warnings']) + '</ul>') if result.get('warnings') else ''
+
+        html_doc = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -511,14 +571,16 @@ class MeetingAnalyzer:
     <h1>Meeting Analysis Report</h1>
 
     <div class="metadata">
-        <p><strong>File:</strong> {(result['metadata'].get('source_file') or result['metadata']['audio_file'])}</p>
-        <p><strong>Analyzed:</strong> {result['metadata']['analyzed_at']}</p>
+        <p><strong>File:</strong> {esc(result['metadata'].get('source_file') or result['metadata']['audio_file'])}</p>
+        <p><strong>Analyzed:</strong> {esc(result['metadata']['analyzed_at'])}</p>
         <p><strong>Duration:</strong> {result['metadata']['duration_seconds']:.1f}s</p>
     </div>
 
+    {notes_html}
+
     {summary_html}
 
-    {'<h2>Key Topics</h2><ul>' + ''.join(f'<li>{topic}</li>' for topic in result.get('topics', [])) + '</ul>' if result.get('topics') else ''}
+    {topics_html}
 
     {self._generate_actions_html(result.get('actions')) if result.get('actions') else ''}
 
@@ -539,32 +601,33 @@ class MeetingAnalyzer:
     </div>
 
     <h2>Full Transcript</h2>
-    <div class="transcript">{result['transcript']['text']}</div>
+    <div class="transcript">{esc(result['transcript']['text'])}</div>
 </body>
 </html>"""
 
-        return html
+        return html_doc
 
     def _generate_actions_html(self, actions: Dict) -> str:
-        """Generate HTML for actions section"""
-        html = []
+        """Generate HTML for actions section (all text escaped)"""
+        esc = lambda value: html.escape(str(value if value is not None else ''))
+        parts = []
 
         if actions.get('action_items'):
-            html.append("<h2>Action Items</h2>")
+            parts.append("<h2>Action Items</h2>")
             for action in actions['action_items']:
-                html.append(f"""<div class="action-item">
-    <strong>{action['id']}. {action['description']}</strong><br>
-    Assignee: {action.get('assignee', 'Unassigned')} |
-    Due: {action.get('due_date', 'Not specified')} |
-    Priority: {action.get('priority', 'medium')}
+                parts.append(f"""<div class="action-item">
+    <strong>{esc(action.get('id'))}. {esc(action.get('description'))}</strong><br>
+    Assignee: {esc(action.get('assignee', 'Unassigned'))} |
+    Due: {esc(action.get('due_date', 'Not specified'))} |
+    Priority: {esc(action.get('priority', 'medium'))}
 </div>""")
 
         if actions.get('decisions'):
-            html.append("<h2>Decisions Made</h2>")
+            parts.append("<h2>Decisions Made</h2>")
             for decision in actions['decisions']:
-                html.append(f"""<div class="decision">
-    <strong>{decision['id']}. {decision['decision']}</strong><br>
-    Context: {decision.get('context', 'N/A')}
+                parts.append(f"""<div class="decision">
+    <strong>{esc(decision.get('id'))}. {esc(decision.get('decision'))}</strong><br>
+    Context: {esc(decision.get('context', 'N/A'))}
 </div>""")
 
-        return "\n".join(html)
+        return "\n".join(parts)

@@ -7,6 +7,17 @@ from .llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
+# Rules every prompt shares. Small local models happily fill gaps: they describe a
+# "meeting" for an audiobook, add participants, and invent decisions or owners.
+GROUNDING_RULES = """Rules:
+- Use ONLY what is in the transcript. Never invent participants, names, decisions, owners, numbers or dates.
+- If something is not stated, leave it out (or say it was not discussed).
+- If the recording is not a meeting (a story, lecture, interview or monologue), say what it actually is and summarize its content - do not describe a meeting that did not happen.
+- Speech recognition makes mistakes; do not build conclusions on a single odd-looking word."""
+
+# Lines that introduce a list rather than being an item of it ("Here are the 10 main topics:")
+_PREAMBLE = re.compile(r'^(here (are|is)|sure|okay|certainly|the (main|key|most important) topics|topics?\b.*:$)', re.I)
+
 
 class Summarizer:
     """
@@ -56,6 +67,11 @@ class Summarizer:
                     "estimated_cost": float
                 }
         """
+        if not transcript or not transcript.strip():
+            raise ValueError("There is no transcript to summarize")
+        if level not in ("brief", "standard", "detailed"):
+            raise ValueError(f"Unknown summary level '{level}'. Use brief, standard or detailed.")
+
         word_count = len(transcript.split())
         logger.info(f"Summarizing transcript: {word_count} words, level={level}")
 
@@ -133,11 +149,13 @@ class Summarizer:
         for i, chunk in enumerate(chunks):
             logger.info(f"Summarizing chunk {i+1}/{len(chunks)}")
 
-            system_prompt = """You are summarizing a section of a meeting transcript.
+            system_prompt = f"""You are summarizing a section of a longer recording's transcript.
 Focus on key points, decisions, and important discussions.
-Be concise but don't lose critical information."""
+Be concise but don't lose critical information.
 
-            user_prompt = f"""Summarize this portion of a meeting transcript:
+{GROUNDING_RULES}"""
+
+            user_prompt = f"""Summarize this portion of a transcript:
 
 {chunk}
 
@@ -198,9 +216,9 @@ Provide a {level} summary of the entire meeting."""
 
     def _split_into_chunks(self, text: str) -> List[str]:
         """
-        Split text into chunks by word count
-
-        Tries to split on paragraph boundaries when possible.
+        Split text into chunks of at most chunk_size_words words, breaking between lines
+        (the transcript has one segment per line) so a sentence is not cut in half.
+        A single line longer than a chunk is split by words.
 
         Args:
             text: Text to split
@@ -208,45 +226,40 @@ Provide a {level} summary of the entire meeting."""
         Returns:
             List of text chunks
         """
-        words = text.split()
-        chunks = []
+        chunks: List[str] = []
+        current: List[str] = []
+        size = 0
 
-        current_chunk = []
-        current_size = 0
+        def flush():
+            nonlocal current, size
+            if current:
+                chunks.append("\n".join(current))
+            current, size = [], 0
 
-        for word in words:
-            current_chunk.append(word)
-            current_size += 1
+        for line in text.split("\n"):
+            words = line.split()
+            if not words:
+                continue
 
-            if current_size >= self.chunk_size_words:
-                # Try to split on paragraph boundary (double newline)
-                chunk_text = " ".join(current_chunk)
+            if len(words) > self.chunk_size_words:
+                flush()
+                for i in range(0, len(words), self.chunk_size_words):
+                    chunks.append(" ".join(words[i:i + self.chunk_size_words]))
+                continue
 
-                # Look for paragraph break near the end
-                last_paragraph = chunk_text.rfind("\n\n", -500)  # Look in last 500 chars
+            if size + len(words) > self.chunk_size_words:
+                flush()
+            current.append(line.strip())
+            size += len(words)
 
-                if last_paragraph > len(chunk_text) * 0.7:  # If found in last 30%
-                    # Split at paragraph
-                    chunks.append(chunk_text[:last_paragraph])
-                    # Start next chunk with remainder
-                    remainder = chunk_text[last_paragraph:].strip()
-                    current_chunk = remainder.split() if remainder else []
-                    current_size = len(current_chunk)
-                else:
-                    # No good break point, split at chunk size
-                    chunks.append(chunk_text)
-                    current_chunk = []
-                    current_size = 0
-
-        # Add remaining text
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
-
+        flush()
         return chunks
 
     def _get_system_prompt(self, level: str) -> str:
         """Get system prompt based on summary level"""
-        base = """You are an expert meeting summarizer. Your task is to create clear, accurate summaries of meeting transcripts."""
+        base = f"""You are an expert meeting summarizer. Your task is to create clear, accurate summaries of meeting transcripts.
+
+{GROUNDING_RULES}"""
 
         if level == "brief":
             return base + """
@@ -335,6 +348,9 @@ Provide a clear, well-structured summary."""
         """
         Extract key topics discussed in meeting
 
+        A transcript longer than one prompt can hold is handled a chunk at a time (the
+        model only ever sees what fits) and the per-chunk topics are merged.
+
         Args:
             transcript: Meeting transcript
             max_topics: Maximum number of topics to extract
@@ -342,14 +358,36 @@ Provide a clear, well-structured summary."""
         Returns:
             List of topic strings
         """
-        system_prompt = """You are an expert at identifying key topics in meeting transcripts."""
+        chunks = self._split_into_chunks(transcript)
+        if not chunks:
+            return []
 
-        user_prompt = f"""Analyze this meeting transcript and extract the main topics discussed.
+        if len(chunks) == 1:
+            return self._topics_from_text(chunks[0], max_topics)
 
-{transcript}
+        per_chunk = max(3, -(-max_topics * 2 // len(chunks)))   # ceil: a fair share, at least 3
+        merged: List[str] = []
+        seen = set()
+        for chunk in chunks:
+            for topic in self._topics_from_text(chunk, per_chunk):
+                key = re.sub(r'\W+', ' ', topic.lower()).strip()
+                if key and key not in seen:
+                    seen.add(key)
+                    merged.append(topic)
+
+        return merged[:max_topics]
+
+    def _topics_from_text(self, text: str, max_topics: int) -> List[str]:
+        system_prompt = f"""You are an expert at identifying key topics in transcripts.
+
+{GROUNDING_RULES}"""
+
+        user_prompt = f"""Analyze this transcript and extract the main topics discussed.
+
+{text}
 
 List the {max_topics} most important topics discussed, one per line.
-Format: Just the topic name, no numbers or bullets."""
+Format: Just the topic name, no numbers or bullets, no introduction."""
 
         response = self.llm_client.generate(
             prompt=user_prompt,
@@ -358,13 +396,22 @@ Format: Just the topic name, no numbers or bullets."""
             system_prompt=system_prompt
         )
 
-        # Parse topics from response
-        topics = [
-            line.strip()
-            for line in response["text"].split("\n")
-            if line.strip() and not line.strip().startswith(("#", "-", "*"))
-        ]
+        return self._parse_topic_lines(response["text"], max_topics)
 
+    @staticmethod
+    def _parse_topic_lines(text: str, max_topics: int) -> List[str]:
+        """
+        One topic per line. Models add bullets or numbers ("- topic", "1. topic") and an
+        introduction ("Here are the main topics:") despite being told not to: strip the
+        first, drop the second. (Bulleted lines used to be thrown away, leaving no topics.)
+        """
+        topics = []
+        for line in text.split("\n"):
+            line = re.sub(r'\*\*(.+?)\*\*', r'\1', line.strip())                  # **bold**
+            line = re.sub(r'^(?:[-*#\u2022]+\s+|\d+[.)]\s+)', '', line).strip(' "\'')   # bullets, numbers
+            if not line or _PREAMBLE.match(line) or line.endswith(':'):
+                continue
+            topics.append(line)
         return topics[:max_topics]
 
     def extract_speaker_key_points(
@@ -413,12 +460,8 @@ Format: just the point itself, no numbering or bullets. If they made fewer than 
                 system_prompt=system_prompt
             )
 
-            points = [
-                re.sub(r'^[-*\d.)\s]+', '', line).strip()
-                for line in response["text"].split("\n")
-                if line.strip()
-            ]
-            points = [p for p in points if p and p.upper() != 'NONE']
+            # Same clean-up as topics: bullets and numbers stripped, "Here are the points:" dropped
+            points = [p for p in self._parse_topic_lines(response["text"], max_points + 5) if p.upper() != 'NONE']
 
             if points:
                 key_points[speaker] = points[:max_points]

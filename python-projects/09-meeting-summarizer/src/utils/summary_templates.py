@@ -183,7 +183,7 @@ Cache: {{cache_hits}} hits
 ```python
 topics = [
 {% for topic in topics %}
-    "{{topic}}"{{ "," if not loop.last }}
+    {{ topic|tojson }}{{ "," if not loop.last }}
 {% endfor %}
 ]
 ```
@@ -196,11 +196,11 @@ topics = [
 {% for action in action_items %}
     {
       "id": {{loop.index}},
-      "description": "{{action.description}}",
-      "assignee": "{{action.assignee}}",
-      "priority": "{{action.priority}}",
-      "due_date": "{{action.due_date}}",
-      "category": "{{action.category}}"
+      "description": {{ action.description|tojson }},
+      "assignee": {{ action.assignee|tojson }},
+      "priority": {{ action.priority|tojson }},
+      "due_date": {{ action.due_date|tojson }},
+      "category": {{ action.category|tojson }}
     }{{ "," if not loop.last }}
 {% endfor %}
   ]
@@ -284,10 +284,11 @@ topics = [
     def _prepare_context(self, analysis_result: Dict) -> Dict:
         """Prepare template context from analysis result"""
         # Extract data from analysis result
-        summary = analysis_result.get('summary', {})
-        actions = analysis_result.get('actions', {})
-        metadata = analysis_result.get('metadata', {})
-        stats = analysis_result.get('statistics', {})
+        # Each of these is None (not missing) when its step was switched off, e.g. no action items
+        summary = analysis_result.get('summary') or {}
+        actions = analysis_result.get('actions') or {}
+        metadata = analysis_result.get('metadata') or {}
+        stats = analysis_result.get('statistics') or {}
 
         context = {
             # Metadata - analyze_meeting() stores the name under
@@ -300,23 +301,23 @@ topics = [
             'duration_seconds': metadata.get('duration_seconds', 0),
             'duration_minutes': round(metadata.get('duration_seconds', 0) / 60, 1),
             'audio_format': metadata.get('format', 'unknown'),
-            'language': analysis_result.get('transcript', {}).get('language', 'en'),
+            'language': (analysis_result.get('transcript') or {}).get('language', 'en'),
 
             # Summary
             'summary': summary.get('text', 'No summary available'),
             'summary_level': summary.get('level', 'standard'),
 
             # Topics
-            'topics': analysis_result.get('topics', []),
+            'topics': analysis_result.get('topics') or [],
 
             # Actions
-            'action_items': actions.get('action_items', []),
-            'decisions': actions.get('decisions', []),
-            'follow_ups': actions.get('follow_ups', []),
+            'action_items': actions.get('action_items') or [],
+            'decisions': actions.get('decisions') or [],
+            'follow_ups': actions.get('follow_ups') or [],
 
             # Statistics
-            'processing_time': round(stats.get('processing_time_seconds', 0), 1),
-            'cost': format(stats.get('total_cost_usd', 0), '.4f'),
+            'processing_time': round(stats.get('processing_time_seconds') or 0, 1),
+            'cost': format(stats.get('total_cost_usd') or 0, '.4f'),
             'cache_hits': stats.get('cache_hits', 0),
             'transcription_backend': stats.get('transcription_backend', 'unknown'),
             'llm_provider': stats.get('llm_provider', 'unknown'),
@@ -330,9 +331,9 @@ topics = [
 
     def _generate_fallback_summary(self, analysis_result: Dict) -> str:
         """Generate simple fallback summary if template rendering fails"""
-        summary = analysis_result.get('summary', {}).get('text', 'No summary available')
-        topics = analysis_result.get('topics', [])
-        actions = analysis_result.get('actions', {}).get('action_items', [])
+        summary = (analysis_result.get('summary') or {}).get('text', 'No summary available')
+        topics = analysis_result.get('topics') or []
+        actions = (analysis_result.get('actions') or {}).get('action_items') or []
 
         fallback = f"""# Meeting Summary
 

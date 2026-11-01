@@ -2,11 +2,30 @@
 
 import json
 import logging
+import re
 from typing import Dict, List, Optional
 from datetime import datetime
 from .llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """You are an expert at identifying action items from meeting transcripts.
+
+Your task is to extract:
+1. Action items (tasks, TODOs, commitments)
+2. Decisions made
+3. Follow-up items
+
+Be thorough but only extract items that are explicitly mentioned or clearly implied.
+If the recording is not a meeting (a story, lecture or monologue), there are usually no action items or decisions - return empty arrays rather than inventing some."""
+
+# Text from the prompt's own example that models sometimes hand back when there is nothing to report
+PLACEHOLDERS = {
+    "Clear description of the action",
+    "Clear statement of what was decided",
+    "Follow-up item 1",
+    "Follow-up item 2",
+}
 
 
 class ActionExtractor:
@@ -21,14 +40,16 @@ class ActionExtractor:
     - Priorities
     """
 
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, chunk_size_words: int = 3000):
         """
         Initialize Action Extractor
 
         Args:
             llm_client: LLM client instance
+            chunk_size_words: Most transcript words sent to the model in one request
         """
         self.llm_client = llm_client
+        self.chunk_size_words = chunk_size_words
 
     def extract_actions(self, transcript: str, summary: Optional[str] = None) -> Dict:
         """
@@ -67,22 +88,107 @@ class ActionExtractor:
         """
         logger.info("Extracting action items from transcript")
 
-        # Prepare context
-        context = ""
-        if summary:
-            context = f"Meeting Summary:\n{summary}\n\n"
+        if not transcript or not transcript.strip():
+            raise ValueError("There is no transcript to extract action items from")
 
-        # Build prompt for action extraction
-        system_prompt = """You are an expert at identifying action items from meeting transcripts.
+        # Only as much transcript as one prompt can hold goes in at a time - a model that is
+        # handed more silently reads just part of it. Longer meetings are extracted a chunk
+        # at a time and merged.
+        chunks = self._split_transcript(transcript)
+        tokens_used = {"prompt": 0, "completion": 0, "total": 0}
+        merged = {"action_items": [], "decisions": [], "follow_ups": []}
+        parse_failures = 0
+        truncated = False
 
-Your task is to extract:
-1. Action items (tasks, TODOs, commitments)
-2. Decisions made
-3. Follow-up items
+        for index, chunk in enumerate(chunks):
+            # The summary is context for a single-pass extraction; with several chunks it
+            # would describe the wrong part of the meeting for most of them.
+            context = f"Meeting Summary:\n{summary}\n\n" if (summary and len(chunks) == 1) else ""
+            response = self.llm_client.generate(
+                prompt=self._build_prompt(chunk, context),
+                max_tokens=2500,
+                temperature=0.0,          # extraction should not vary from run to run
+                system_prompt=SYSTEM_PROMPT,
+                json_mode=True
+            )
 
-Be thorough but only extract items that are explicitly mentioned or clearly implied."""
+            for key in tokens_used:
+                tokens_used[key] += (response.get("tokens") or {}).get(key, 0)
+            truncated = truncated or bool(response.get("truncated"))
 
-        user_prompt = f"""{context}Meeting Transcript:
+            try:
+                extracted = self._normalize(self._parse_json_response(response["text"]))
+            except Exception as e:
+                parse_failures += 1
+                logger.error(f"Failed to parse action extraction response (part {index + 1}): {e}")
+                continue
+
+            for key in merged:
+                merged[key].extend(extracted[key])
+
+        # Same item found in two chunks (or repeated by the model) is one item
+        merged["action_items"] = self._dedupe(merged["action_items"], "description")
+        merged["decisions"] = self._dedupe(merged["decisions"], "decision")
+        merged["follow_ups"] = self._dedupe_text(merged["follow_ups"])
+
+        # Add IDs and status to action items
+        for i, action in enumerate(merged["action_items"], 1):
+            action["id"] = i
+            action["status"] = "pending"
+
+        # Add IDs to decisions
+        for i, decision in enumerate(merged["decisions"], 1):
+            decision["id"] = i
+
+        # Compile final result
+        result = {
+            "action_items": merged["action_items"],
+            "decisions": merged["decisions"],
+            "follow_ups": merged["follow_ups"],
+            "total_actions": len(merged["action_items"]),
+            "tokens_used": tokens_used,
+            # Zero results because the model's answer could not be read is not the same as
+            # "nothing was decided" - say so instead of reporting an empty meeting.
+            "parse_failed": parse_failures == len(chunks),
+            "truncated": truncated
+        }
+
+        logger.info(
+            f"Extracted {result['total_actions']} actions, "
+            f"{len(result['decisions'])} decisions, "
+            f"{len(result['follow_ups'])} follow-ups"
+        )
+
+        return result
+
+    # ------------------------------------------------------------------ helpers
+
+    def _split_transcript(self, transcript: str) -> List[str]:
+        """Chunks of at most chunk_size_words words, split between lines"""
+        chunks, current, size = [], [], 0
+        for line in transcript.split("\n"):
+            words = line.split()
+            if not words:
+                continue
+            if len(words) > self.chunk_size_words:
+                if current:
+                    chunks.append("\n".join(current))
+                    current, size = [], 0
+                chunks.extend(" ".join(words[i:i + self.chunk_size_words])
+                              for i in range(0, len(words), self.chunk_size_words))
+                continue
+            if size + len(words) > self.chunk_size_words:
+                chunks.append("\n".join(current))
+                current, size = [], 0
+            current.append(line.strip())
+            size += len(words)
+        if current:
+            chunks.append("\n".join(current))
+        return chunks
+
+    @staticmethod
+    def _build_prompt(transcript: str, context: str) -> str:
+        return f"""{context}Meeting Transcript:
 {transcript}
 
 Extract all action items, decisions, and follow-ups from this meeting.
@@ -111,53 +217,91 @@ Respond with valid JSON in this exact format:
   ]
 }}
 
-Only include items that are actually present in the transcript. If no items of a certain type exist, use an empty array."""
+Only include items that are actually present in the transcript. Do not invent owners, dates or decisions. If no items of a certain type exist, use an empty array."""
 
-        # Generate action extraction
-        response = self.llm_client.generate(
-            prompt=user_prompt,
-            max_tokens=2500,
-            temperature=0.2,  # Low temperature for structured extraction
-            system_prompt=system_prompt
-        )
+    @staticmethod
+    def _text(value, default: str) -> str:
+        """A field as clean text; null / numbers / empty become the default"""
+        if value is None:
+            return default
+        text = str(value).strip()
+        return text if text else default
 
-        # Parse JSON response
-        try:
-            extracted = self._parse_json_response(response["text"])
-        except Exception as e:
-            logger.error(f"Failed to parse action extraction response: {str(e)}")
-            # Return empty structure
-            extracted = {
-                "action_items": [],
-                "decisions": [],
-                "follow_ups": []
-            }
+    def _normalize(self, extracted) -> Dict:
+        """
+        Whatever the model returned, as {"action_items": [dict], "decisions": [dict],
+        "follow_ups": [str]} with every field present. Models return strings where
+        objects were asked for, null for missing owners, a priority of "urgent", or
+        simply the example text from the prompt - none of which should crash a report.
+        """
+        if not isinstance(extracted, dict):
+            raise ValueError("The extraction response is not a JSON object")
 
-        # Add IDs and status to action items
-        for i, action in enumerate(extracted.get("action_items", []), 1):
-            action["id"] = i
-            action["status"] = "pending"
+        def as_list(value):
+            return value if isinstance(value, list) else []
 
-        # Add IDs to decisions
-        for i, decision in enumerate(extracted.get("decisions", []), 1):
-            decision["id"] = i
+        actions = []
+        for item in as_list(extracted.get("action_items")):
+            if isinstance(item, str):
+                item = {"description": item}
+            if not isinstance(item, dict):
+                continue
+            description = self._text(item.get("description"), "")
+            if not description or description in PLACEHOLDERS:
+                continue
+            priority = self._text(item.get("priority"), "medium").lower()
+            actions.append({
+                "description": description,
+                "assignee": self._text(item.get("assignee"), "Unassigned"),
+                "due_date": self._text(item.get("due_date"), "Not specified"),
+                "priority": priority if priority in ("high", "medium", "low") else "medium",
+                "category": self._text(item.get("category"), "General"),
+            })
 
-        # Compile final result
-        result = {
-            "action_items": extracted.get("action_items", []),
-            "decisions": extracted.get("decisions", []),
-            "follow_ups": extracted.get("follow_ups", []),
-            "total_actions": len(extracted.get("action_items", [])),
-            "tokens_used": response["tokens"]
-        }
+        decisions = []
+        for item in as_list(extracted.get("decisions")):
+            if isinstance(item, str):
+                item = {"decision": item}
+            if not isinstance(item, dict):
+                continue
+            decision = self._text(item.get("decision"), "")
+            if not decision or decision in PLACEHOLDERS:
+                continue
+            decisions.append({
+                "decision": decision,
+                "context": self._text(item.get("context"), "Not specified"),
+                "impact": self._text(item.get("impact"), "Not specified"),
+            })
 
-        logger.info(
-            f"Extracted {result['total_actions']} actions, "
-            f"{len(result['decisions'])} decisions, "
-            f"{len(result['follow_ups'])} follow-ups"
-        )
+        follow_ups = []
+        for item in as_list(extracted.get("follow_ups")):
+            text = self._text(item if not isinstance(item, dict) else item.get("description") or item.get("item"), "")
+            if text and text not in PLACEHOLDERS:
+                follow_ups.append(text)
 
-        return result
+        return {"action_items": actions, "decisions": decisions, "follow_ups": follow_ups}
+
+    @staticmethod
+    def _key(text: str) -> str:
+        return re.sub(r'\W+', ' ', text.lower()).strip()
+
+    def _dedupe(self, items: List[Dict], field: str) -> List[Dict]:
+        seen, unique = set(), []
+        for item in items:
+            key = self._key(item[field])
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        return unique
+
+    def _dedupe_text(self, items: List[str]) -> List[str]:
+        seen, unique = set(), []
+        for item in items:
+            key = self._key(item)
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        return unique
 
     def extract_assignees(self, transcript: str) -> List[str]:
         """
@@ -208,7 +352,7 @@ If a person is mentioned multiple times, list them only once."""
 
         return sorted(
             actions,
-            key=lambda x: priority_order.get(x.get("priority", "medium").lower(), 1)
+            key=lambda x: priority_order.get(str(x.get("priority") or "medium").lower(), 1)
         )
 
     def generate_action_report(self, actions_data: Dict) -> str:
@@ -226,18 +370,22 @@ If a person is mentioned multiple times, list them only once."""
         # Header
         report.append("# Action Items & Decisions")
         report.append("")
-        report.append(f"**Total Actions:** {actions_data['total_actions']}")
-        report.append(f"**Decisions:** {len(actions_data['decisions'])}")
-        report.append(f"**Follow-ups:** {len(actions_data['follow_ups'])}")
+        report.append(f"**Total Actions:** {actions_data.get('total_actions', 0)}")
+        report.append(f"**Decisions:** {len(actions_data.get('decisions') or [])}")
+        report.append(f"**Follow-ups:** {len(actions_data.get('follow_ups') or [])}")
         report.append("")
 
+        if actions_data.get("parse_failed"):
+            report.append("> **Note:** the model's answer could not be read, so these results may be incomplete. Try again.")
+            report.append("")
+
         # Action Items
-        if actions_data["action_items"]:
+        if actions_data.get("action_items"):
             report.append("## Action Items")
             report.append("")
 
             for action in actions_data["action_items"]:
-                report.append(f"### {action['id']}. {action['description']}")
+                report.append(f"### {action.get('id', '?')}. {action.get('description', 'N/A')}")
                 report.append(f"- **Assignee:** {action.get('assignee', 'Unassigned')}")
                 report.append(f"- **Due Date:** {action.get('due_date', 'Not specified')}")
                 report.append(f"- **Priority:** {action.get('priority', 'medium')}")
@@ -246,18 +394,18 @@ If a person is mentioned multiple times, list them only once."""
                 report.append("")
 
         # Decisions
-        if actions_data["decisions"]:
+        if actions_data.get("decisions"):
             report.append("## Decisions Made")
             report.append("")
 
             for decision in actions_data["decisions"]:
-                report.append(f"### {decision['id']}. {decision['decision']}")
+                report.append(f"### {decision.get('id', '?')}. {decision.get('decision', 'N/A')}")
                 report.append(f"**Context:** {decision.get('context', 'N/A')}")
                 report.append(f"**Impact:** {decision.get('impact', 'Not specified')}")
                 report.append("")
 
         # Follow-ups
-        if actions_data["follow_ups"]:
+        if actions_data.get("follow_ups"):
             report.append("## Follow-up Items")
             report.append("")
 
@@ -331,8 +479,8 @@ If a person is mentioned multiple times, list them only once."""
         issues = []
 
         for action in actions:
-            has_description = bool(action.get("description", "").strip())
-            has_assignee = action.get("assignee", "").lower() != "unassigned"
+            has_description = bool(str(action.get("description") or "").strip())
+            has_assignee = str(action.get("assignee") or "unassigned").lower() != "unassigned"
 
             if has_description and has_assignee:
                 valid += 1

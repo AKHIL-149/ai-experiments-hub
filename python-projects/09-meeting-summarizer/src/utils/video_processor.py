@@ -10,6 +10,16 @@ import tempfile
 logger = logging.getLogger(__name__)
 
 
+class VideoError(RuntimeError):
+    """A video that cannot be used; the message is short and safe to show a user."""
+
+
+def _last_ffmpeg_line(stderr: str) -> str:
+    """ffmpeg prints its version banner and build options first; the reason is the last line."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    return lines[-1] if lines else "unknown error"
+
+
 class VideoProcessor:
     """
     Process video files and extract audio for transcription.
@@ -84,7 +94,11 @@ class VideoProcessor:
 
         # Check if ffmpeg is available
         if not self._check_ffmpeg():
-            raise RuntimeError("ffmpeg not found. Please install ffmpeg to extract audio from videos.")
+            raise VideoError("ffmpeg is not installed, so audio cannot be extracted from videos.")
+
+        # A silent video would otherwise fail inside ffmpeg with a wall of build options
+        if self.get_video_info(str(video_path)).get('has_audio') is False:
+            raise VideoError("This video has no audio track, so there is nothing to transcribe.")
 
         try:
             # ffmpeg command to extract audio
@@ -111,10 +125,11 @@ class VideoProcessor:
 
             if result.returncode != 0:
                 error_msg = result.stderr.decode('utf-8', errors='ignore')
-                raise RuntimeError(f"ffmpeg failed: {error_msg}")
+                logger.error(f"ffmpeg failed for {video_path.name}: {error_msg[-1000:]}")
+                raise VideoError(f"Audio could not be extracted from this video ({_last_ffmpeg_line(error_msg)}).")
 
             if not output_path.exists():
-                raise RuntimeError(f"Audio extraction failed: output file not created")
+                raise VideoError("Audio could not be extracted from this video (no output was produced).")
 
             file_size_mb = output_path.stat().st_size / (1024 * 1024)
             logger.info(f"Audio extracted successfully: {output_path.name} ({file_size_mb:.2f} MB)")
@@ -122,12 +137,19 @@ class VideoProcessor:
             return str(output_path)
 
         except subprocess.TimeoutExpired:
-            raise RuntimeError("Audio extraction timed out (max 10 minutes)")
+            if output_path.exists():
+                output_path.unlink()
+            raise VideoError("Audio extraction timed out (max 10 minutes).")
+        except VideoError:
+            if output_path.exists():
+                output_path.unlink()
+            raise
         except Exception as e:
             # Cleanup on error
             if output_path and output_path.exists():
                 output_path.unlink()
-            raise RuntimeError(f"Audio extraction failed: {str(e)}")
+            logger.error(f"Audio extraction failed: {e}")
+            raise VideoError("Audio extraction failed.")
 
     def get_video_info(self, video_path: str) -> Dict:
         """
