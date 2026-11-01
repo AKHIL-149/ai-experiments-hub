@@ -10,6 +10,7 @@ A production-ready full-stack chat application with user authentication, real-ti
 - **Database Persistence**: SQLAlchemy ORM with SQLite (default) and PostgreSQL support
 - **Multi-Provider LLM**: Ollama (local), OpenAI, and Anthropic support
 - **Responsive UI**: Clean vanilla JavaScript frontend with no build step
+- **Copy replies**: A Copy button under every finished assistant reply (hover, or Tab to it; always visible on touch screens) puts the reply on the clipboard exactly as the model wrote it - markdown, code and tables intact. It also works when the app is opened over plain `http://` on a network address, where browsers disable the clipboard API
 
 ## Tech Stack
 

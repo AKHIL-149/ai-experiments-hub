@@ -33,6 +33,89 @@ if (typeof DOMPurify !== 'undefined' && DOMPurify.addHook) {
     });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Copy button for assistant replies
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Put text on the clipboard. Resolves true if it worked.
+ * navigator.clipboard only exists on https:// pages and on localhost; anywhere else (the app
+ * opened by its network address over http://) it is undefined, so fall back to the old
+ * select-and-copy-a-textarea method, which works there.
+ */
+async function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (error) {
+            // permission denied, or the page is not focused: try the fallback
+        }
+    }
+
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position: fixed; top: 0; left: -9999px; opacity: 0;';
+    document.body.appendChild(area);
+    area.select();
+
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch (error) {
+        copied = false;
+    }
+    area.remove();
+    return copied;
+}
+
+const COPY_LABELS = {
+    idle: '\u{1F4CB} Copy',
+    copied: '\u2713 Copied',
+    failed: '\u26A0 Could not copy'
+};
+const COPY_FEEDBACK_MS = 1800;
+
+/**
+ * Add a "Copy" button under an assistant message. It copies the reply as the model wrote it
+ * (the markdown source, kept in dataset.raw), not the rendered HTML, so code and tables paste
+ * as they were written. Does nothing for an empty reply, and never adds a second button.
+ */
+function attachCopyButton(messageDiv, copy = copyToClipboard) {
+    if (!messageDiv || messageDiv.querySelector('.copy-btn')) return null;
+    if (!(messageDiv.dataset.raw || '').trim()) return null;
+
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    actions.setAttribute('aria-live', 'polite');       // "Copied" is announced to screen readers
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-btn';
+    button.title = 'Copy this response';
+    button.setAttribute('aria-label', 'Copy this response to the clipboard');
+    button.textContent = COPY_LABELS.idle;
+
+    let resetTimer = null;
+    button.addEventListener('click', async () => {
+        const ok = await copy(messageDiv.dataset.raw || '');
+        button.textContent = ok ? COPY_LABELS.copied : COPY_LABELS.failed;
+        button.classList.toggle('copied', ok);
+        button.classList.toggle('failed', !ok);
+
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+            button.textContent = COPY_LABELS.idle;
+            button.classList.remove('copied', 'failed');
+        }, COPY_FEEDBACK_MS);
+    });
+
+    actions.appendChild(button);
+    messageDiv.appendChild(actions);
+    return button;
+}
+
 // Enhanced message rendering
 class MessageRenderer {
     constructor() {
@@ -69,6 +152,12 @@ class MessageRenderer {
                 <div class="message-role">${roleLabel}</div>
                 <div class="message-content">${renderedContent}</div>
             `;
+
+            // The reply as written, for the Copy button (a streaming reply fills it in when it ends)
+            if (role === 'assistant') {
+                messageDiv.dataset.raw = content || '';
+                if (!streaming) attachCopyButton(messageDiv);
+            }
 
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
@@ -113,6 +202,10 @@ class MessageRenderer {
 
                 // Remove streaming class
                 streamingMessage.classList.remove('streaming');
+
+                // The reply is complete: it can be copied now
+                streamingMessage.dataset.raw = rawContent;
+                attachCopyButton(streamingMessage);
 
                 // Clean up raw content
                 delete contentDiv.dataset.rawContent;
