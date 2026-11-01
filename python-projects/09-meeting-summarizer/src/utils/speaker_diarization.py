@@ -28,6 +28,7 @@ class SpeakerDiarization:
         self.hf_token = hf_token
         self.pipeline = None
         self.is_available = False
+        self.last_error: Optional[str] = None   # why the last diarize() returned None
 
         self._initialize_pipeline()
 
@@ -163,6 +164,7 @@ class SpeakerDiarization:
 
         except Exception as e:
             logger.error(f"Speaker diarization failed: {str(e)}")
+            self.last_error = str(e)
             return None
 
     @staticmethod
@@ -187,6 +189,60 @@ class SpeakerDiarization:
 
         return [{**seg, 'speaker': label_map[seg['speaker']]} for seg in segments]
 
+    def assign_segments_to_speakers(
+        self,
+        transcript_segments: List[Dict],
+        speaker_segments: List[Dict]
+    ) -> List[Dict]:
+        """
+        Label timestamped transcript segments with who was speaking while they were said.
+
+        Each transcript segment goes to the speaker whose diarization turns overlap it for
+        the longest time (a segment straddling two speakers goes to the one it overlaps
+        more); a segment that falls in a gap is given to the nearest turn.
+
+        Args:
+            transcript_segments: [{"start", "end", "text"}] in seconds, from the transcriber
+            speaker_segments: Diarization turns from diarize(), sorted by start
+
+        Returns:
+            [{"speaker", "text", "start", "end"}], one per transcript segment
+        """
+        turns = sorted(speaker_segments, key=lambda t: t['start'])
+        labelled = []
+
+        for segment in transcript_segments:
+            text = (segment.get('text') or '').strip()
+            if not text:
+                continue
+            labelled.append({
+                'speaker': self._speaker_for_span(turns, segment['start'], segment['end']),
+                'text': text,
+                'start': segment['start'],
+                'end': segment['end']
+            })
+
+        return labelled
+
+    @staticmethod
+    def _speaker_for_span(turns: List[Dict], start: float, end: float) -> str:
+        """The speaker with the most overlap with [start, end]; nearest turn if none overlap"""
+        overlap_by_speaker: Dict[str, float] = {}
+        for turn in turns:
+            if turn['start'] >= end:
+                break                          # sorted: nothing later can overlap
+            overlap = min(end, turn['end']) - max(start, turn['start'])
+            if overlap > 0:
+                overlap_by_speaker[turn['speaker']] = overlap_by_speaker.get(turn['speaker'], 0) + overlap
+
+        if overlap_by_speaker:
+            return max(overlap_by_speaker, key=overlap_by_speaker.get)
+
+        if not turns:
+            return "Speaker 1"
+        middle = (start + end) / 2
+        return min(turns, key=lambda t: abs((t['start'] + t['end']) / 2 - middle))['speaker']
+
     def assign_transcript_to_speakers(
         self,
         transcript: str,
@@ -194,7 +250,11 @@ class SpeakerDiarization:
         timestamps: Optional[List[Tuple[float, float]]] = None
     ) -> List[Dict]:
         """
-        Assign transcript segments to speakers
+        Assign transcript text to speakers WITHOUT real timing - a rough fallback.
+
+        Only for transcripts that have no timestamps (spreads the sentences evenly over the
+        recording, so the labels are a guess; wrong for most lines in practice). Prefer
+        assign_segments_to_speakers() whenever the transcriber supplied segment times.
 
         Args:
             transcript: Full transcript text

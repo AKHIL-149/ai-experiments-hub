@@ -40,14 +40,15 @@ from colorama import Fore, Style, init as colorama_init
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from core.audio_processor import AudioProcessor
-from core.transcription_service import TranscriptionService
+from core.audio_processor import AudioProcessor, AudioError
+from core.transcription_service import TranscriptionService, NoSpeechError
 from core.cache_manager import CacheManager
 from core.llm_client import LLMClient
 from core.meeting_analyzer import MeetingAnalyzer
 from utils.batch_processor import BatchProcessor
 from utils.progress_tracker import ProgressTracker, ProcessingStage
 from utils.speaker_diarization import create_speaker_diarization
+from utils.video_processor import VideoError
 
 # Initialize colorama
 colorama_init(autoreset=True)
@@ -58,6 +59,15 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Problems with the input (not bugs): the message says it all, a traceback would only bury it.
+EXPECTED_ERRORS = (NoSpeechError, AudioError, VideoError, ValueError)
+
+
+def log_unexpected(error, message):
+    """Print a traceback only for a failure nobody could have predicted from the input"""
+    if not isinstance(error, EXPECTED_ERRORS):
+        logger.exception(message)
 
 
 def load_config():
@@ -244,7 +254,7 @@ def cmd_transcribe(args, config):
 
     except Exception as e:
         print_error(f"Transcription failed: {str(e)}")
-        logger.exception("Transcription error")
+        log_unexpected(e, "Transcription error")
         return 1
 
 
@@ -549,15 +559,17 @@ def cmd_analyze(args, config):
                             f"({info['total_time']/60:.1f} min, {info['num_segments']} segments)"
                         )
 
-                    # assign_transcript_to_speakers has no real per-word
-                    # timestamps to work with (whisper.cpp's --output-txt
-                    # here doesn't return them) - it estimates each
-                    # sentence's position by evenly dividing the total
-                    # duration, so the speaker labels below are
-                    # approximate, not word-accurate.
-                    speaker_transcript = diarizer.assign_transcript_to_speakers(
-                        result['transcript']['text'], segments
-                    )
+                    # With timestamped transcript segments each line goes to the speaker
+                    # whose turn it overlaps; without them the lines can only be spread
+                    # evenly over the recording, and the labels are a rough guess.
+                    transcript_segments = result['transcript'].get('segments') or []
+                    approximate = not transcript_segments
+                    if transcript_segments:
+                        speaker_transcript = diarizer.assign_segments_to_speakers(transcript_segments, segments)
+                    else:
+                        speaker_transcript = diarizer.assign_transcript_to_speakers(
+                            result['transcript']['text'], segments
+                        )
                     print_info("Extracting each speaker's key points...")
                     key_points = meeting_analyzer.summarizer.extract_speaker_key_points(
                         speaker_transcript
@@ -566,6 +578,7 @@ def cmd_analyze(args, config):
                         'segments': segments,
                         'statistics': spk_stats,
                         'speaker_transcript': speaker_transcript,
+                        'approximate': approximate,
                         'key_points': key_points
                     }
                     if key_points:
@@ -576,7 +589,7 @@ def cmd_analyze(args, config):
                             for point in points:
                                 print(f"    - {point}")
                     print()
-                    print(f"{Fore.YELLOW}Speaker-Attributed Transcript (approximate):{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Speaker-Attributed Transcript{' (approximate - no timing available)' if approximate else ''}:{Style.RESET_ALL}")
                     formatted = diarizer.format_speaker_transcript(speaker_transcript)
                     print(formatted[:2000] + ('...' if len(formatted) > 2000 else ''))
                 else:
@@ -617,7 +630,7 @@ def cmd_analyze(args, config):
 
     except Exception as e:
         print_error(f"Analysis failed: {str(e)}")
-        logger.exception("Analysis error")
+        log_unexpected(e, "Analysis error")
         return 1
 
 
