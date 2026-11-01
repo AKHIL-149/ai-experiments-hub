@@ -74,7 +74,7 @@ Edit [.env](.env) to configure the application:
 ```bash
 # Server
 PORT=8000
-HOST=0.0.0.0
+HOST=127.0.0.1          # 0.0.0.0 serves other machines on your network (see Security)
 
 # Database
 DATABASE_URL=sqlite:///./data/database.db
@@ -84,11 +84,25 @@ DATABASE_URL=sqlite:///./data/database.db
 SESSION_TTL_DAYS=30
 COOKIE_SECURE=false  # Set to true in production with HTTPS
 
+# CORS and WebSocket origins besides the page's own address
+ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+
+# Limits
+MAX_MESSAGE_CHARS=20000
+MAX_SYSTEM_PROMPT_CHARS=8000
+LOGIN_MAX_FAILURES=10      # failed logins per username and client ...
+LOGIN_WINDOW_SECONDS=300   # ... within this window, then HTTP 429 until it passes
+
 # LLM Providers
 OLLAMA_API_URL=http://localhost:11434
+OLLAMA_NUM_CTX=8192        # context window asked from Ollama (its own default is 4096)
 OPENAI_API_KEY=your_openai_key_here  # Optional
 ANTHROPIC_API_KEY=your_anthropic_key_here  # Optional
 ```
+
+Without `OLLAMA_NUM_CTX`, Ollama answers with a 4096-token window and silently drops the oldest text of a longer
+conversation (the system prompt included). The server also sends the model only as much history as fits that
+window (the newest messages; at most the last 20), so a long chat forgets its start on purpose rather than at random.
 
 ## Usage
 
@@ -96,7 +110,7 @@ ANTHROPIC_API_KEY=your_anthropic_key_here  # Optional
 
 1. Open http://localhost:8000
 2. Click "Register" to create a new account
-3. Enter username (3-50 chars), email, and password (min 8 chars)
+3. Enter username (3-50 chars, spaces around it are dropped; "Alice" and "alice" are the same name), email, and password (8 to 72 bytes: bcrypt ignores everything past byte 72, so longer passwords are refused rather than silently cut)
 4. You'll be automatically logged in after registration
 
 ### Creating Conversations
@@ -131,12 +145,27 @@ Click the "Logout" button in the sidebar footer to log out.
 - `PATCH /api/conversations/{id}` - Update conversation
 - `DELETE /api/conversations/{id}` - Delete conversation
 
+List endpoints take `limit` (1-200 for conversations, 1-500 for messages) and `offset` (>= 0). A provider must be
+`ollama`, `openai` or `anthropic`; titles are at most 200 characters, model names 100, system prompts
+`MAX_SYSTEM_PROMPT_CHARS`. Invalid input returns HTTP 422 with `detail` as one readable sentence
+(`"llm_provider: Input should be 'ollama', 'openai' or 'anthropic'"`).
+
 ### Messages
 - `POST /api/conversations/{id}/messages` - Create message
 - `GET /api/conversations/{id}/messages` - List messages
 
 ### WebSocket
 - `WS /ws/{conversation_id}` - Real-time chat streaming
+
+Send `{"type": "message", "content": "..."}`; receive `token` events, then `done` (or `error`). A blank message,
+one over `MAX_MESSAGE_CHARS`, or a frame that is not a JSON object gets an `error` event and the socket stays open.
+The socket is closed (code 1008) when the session ends or the conversation is deleted, and it is refused to a page
+whose origin is neither the app's own address nor in `ALLOWED_ORIGINS`.
+
+### Image generation
+- `POST /api/generate-image` - `{"prompt", "provider": "stable-diffusion" | "dall-e", "width", "height"}`; sizes are
+  64-1024 in steps of 8 (DALL-E gets the closest size it supports: 1024x1024, 1792x1024 or 1024x1792). One image is
+  generated at a time, in a worker thread, so chats keep streaming meanwhile.
 
 ### Health
 - `GET /api/health` - Health check and provider availability
@@ -173,6 +202,13 @@ Click the "Logout" button in the sidebar footer to log out.
 pytest tests/ -v
 ```
 
+The suite (about 160 tests) covers the Ollama error handling, the chat flow, reply rendering and the Copy
+button, accounts and limits, the throttle, WebSocket safety (origin, malformed frames, ending the connection,
+history budget), and the page's behaviour when the socket drops. The front-end tests run the real `static/*.js`
+in Node with a small fake DOM, so they need `node` on the PATH (they are skipped without it); they check the
+scripts' logic, not how the page looks. Image generation itself (the Stable Diffusion model) and the cloud
+providers are not exercised by the tests.
+
 ### PostgreSQL Setup
 
 For production, use PostgreSQL instead of SQLite:
@@ -187,9 +223,14 @@ For production, use PostgreSQL instead of SQLite:
 - Passwords are hashed with bcrypt (12 rounds)
 - Session tokens are 32-byte cryptographically secure strings
 - HTTPOnly cookies prevent XSS attacks
-- SameSite=Strict prevents CSRF attacks
+- SameSite=Strict prevents CSRF attacks on the REST API. It does not stop a page on another port of `localhost`
+  (which counts as the same site) from opening the WebSocket, so the socket checks the `Origin` header itself
 - CORS restricted to allowed origins
-- Input validation with Pydantic models
+- Input validation with Pydantic models, with size limits on every free-text field
+- Failed logins are throttled per username and client (HTTP 429 with `Retry-After`), and an unknown username
+  takes as long to reject as a wrong password, so login time does not reveal which usernames exist
+- The server listens on `127.0.0.1` unless `HOST` says otherwise. The sign-in is a cookie over plain HTTP: if you
+  set `HOST=0.0.0.0`, anyone on the network can reach the app and the model behind it
 - SQLAlchemy ORM prevents SQL injection
 
 ## Multi-Provider LLM Support

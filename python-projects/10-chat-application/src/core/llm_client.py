@@ -13,6 +13,9 @@ class LLMClient:
     def __init__(self):
         """Initialize LLM client with available providers"""
         self.ollama_url = os.getenv('OLLAMA_API_URL', 'http://localhost:11434')
+        # Ollama answers with a 4096-token window unless asked for more, and silently drops the
+        # oldest text of a longer conversation (including its opening instructions)
+        self.num_ctx = int(os.getenv('OLLAMA_NUM_CTX', 8192))
         self.openai_client = None
         self.anthropic_client = None
 
@@ -94,7 +97,8 @@ class LLMClient:
             'messages': messages,
             'stream': True,
             'options': {
-                'temperature': temperature
+                'temperature': temperature,
+                'num_ctx': self.num_ctx
             }
         }
 

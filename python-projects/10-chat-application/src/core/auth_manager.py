@@ -4,8 +4,17 @@ import bcrypt
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .database import User, Session as SessionModel
+
+# bcrypt only uses the first 72 bytes of a password. Longer ones used to be accepted and then
+# silently truncated, so a password and the same password plus any suffix both logged in.
+MAX_PASSWORD_BYTES = 72
+
+# Hash of a throwaway password, checked when the username does not exist so that an unknown
+# user and a wrong password take equally long (login timing otherwise tells which usernames exist).
+_DUMMY_HASH = bcrypt.hashpw(b"not-a-real-password", bcrypt.gensalt(rounds=12))
 
 
 def _generate_guest_credentials() -> Tuple[str, str, str]:
@@ -50,19 +59,30 @@ class AuthManager:
         Returns:
             Tuple of (success, user, error_message)
         """
-        # Validate input
+        # Validate input. Surrounding spaces are never part of a name ("   " used to be a valid
+        # username, and "alice " a second account that looks like "alice").
+        username = username.strip()
+        email = email.strip()
+
         if len(username) < 3 or len(username) > 50:
             return False, None, "Username must be 3-50 characters"
+
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in username):
+            return False, None, "Username cannot contain control characters"
 
         if len(password) < 8:
             return False, None, "Password must be at least 8 characters"
 
-        if '@' not in email or '.' not in email:
+        if len(password.encode('utf-8')) > MAX_PASSWORD_BYTES:
+            return False, None, f"Password must be at most {MAX_PASSWORD_BYTES} bytes (fewer characters if it has accents or emoji)"
+
+        if '@' not in email or '.' not in email or len(email) > 100:
             return False, None, "Invalid email format"
 
-        # Check if username/email exists
+        # Check if username/email exists. Case-insensitive: "ALICE" next to "alice" is
+        # indistinguishable from the real one to anyone reading a conversation list.
         existing = self.db.query(User).filter(
-            (User.username == username) | (User.email == email)
+            (func.lower(User.username) == username.lower()) | (func.lower(User.email) == email.lower())
         ).first()
 
         if existing:
@@ -121,15 +141,15 @@ class AuthManager:
             User object if successful, None otherwise
         """
         user = self.db.query(User).filter(User.username == username).first()
+        password_bytes = password.encode('utf-8')[:MAX_PASSWORD_BYTES]
 
         if not user:
+            bcrypt.checkpw(password_bytes, _DUMMY_HASH)  # same work as a real check
             return None
 
-        # Verify password with bcrypt
-        if bcrypt.checkpw(
-            password.encode('utf-8'),
-            user.password_hash.encode('utf-8')
-        ):
+        # Verify password with bcrypt (truncated like bcrypt itself did when the hash was made,
+        # so accounts created before the length limit still log in)
+        if bcrypt.checkpw(password_bytes, user.password_hash.encode('utf-8')):
             return user
 
         return None
