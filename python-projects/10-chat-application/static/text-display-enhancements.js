@@ -13,6 +13,26 @@ if (typeof marked !== 'undefined') {
     });
 }
 
+// What a model's reply may contain once it has been turned from markdown into HTML.
+// A reply is untrusted text (a model can be talked into writing anything, and replies are
+// saved and shown again), so it is always run through DOMPurify: scripts, on* handlers and
+// javascript: links are removed. Images, styles and forms are not allowed at all - a remote
+// image is the usual way a prompt-injected reply leaks data (the address carries it out).
+const SANITIZE_OPTIONS = {
+    FORBID_TAGS: ['img', 'style', 'form', 'input', 'button', 'textarea', 'select'],
+    FORBID_ATTR: ['style']
+};
+
+if (typeof DOMPurify !== 'undefined' && DOMPurify.addHook) {
+    // Links leave the chat in a new tab and cannot reach back into it
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+        if (node.tagName === 'A') {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
+        }
+    });
+}
+
 // Enhanced message rendering
 class MessageRenderer {
     constructor() {
@@ -110,8 +130,9 @@ class MessageRenderer {
             return this.escapeHtml(content).replace(/\n/g, '<br>');
         }
 
-        // For assistant messages, render markdown
-        if (typeof marked !== 'undefined') {
+        // For assistant messages, render markdown - but only ever hand back sanitised HTML.
+        // If either library failed to load, show the reply as plain text rather than as markup.
+        if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
             try {
                 // Render markdown
                 let html = marked.parse(content);
@@ -120,14 +141,14 @@ class MessageRenderer {
                 html = html.replace(/<pre><code class="language-(\w+)">/g,
                     '<pre><code class="language-$1 hljs">');
 
-                return html;
+                return DOMPurify.sanitize(html, SANITIZE_OPTIONS);
             } catch (error) {
                 console.error('Markdown rendering error:', error);
                 return this.escapeHtml(content).replace(/\n/g, '<br>');
             }
         }
 
-        // Fallback if marked.js not loaded
+        // Fallback if marked.js or DOMPurify did not load
         return this.escapeHtml(content).replace(/\n/g, '<br>');
     }
 

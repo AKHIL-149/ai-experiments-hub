@@ -254,13 +254,27 @@ class ImageGenerationManager {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant-message';
 
-        messageDiv.innerHTML = `
-            <div class="message-role">Assistant</div>
-            <div class="message-content">
-                <p><strong>Generated image:</strong> ${this.escapeHtml(prompt)}</p>
-                <img src="${imageUrl}" alt="${this.escapeHtml(prompt)}" class="generated-image">
-            </div>
-        `;
+        // Built with DOM calls: the prompt is typed text and escaping it for an HTML *body* does not
+        // escape quotes, so putting it in an attribute (alt="...") let it break out of the attribute.
+        const role = document.createElement('div');
+        role.className = 'message-role';
+        role.textContent = 'Assistant';
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
+
+        const caption = document.createElement('p');
+        const label = document.createElement('strong');
+        label.textContent = 'Generated image:';
+        caption.append(label, ' ', prompt);
+
+        const image = document.createElement('img');
+        image.src = imageUrl;
+        image.alt = prompt;
+        image.className = 'generated-image';
+
+        content.append(caption, image);
+        messageDiv.append(role, content);
 
         container.appendChild(messageDiv);
         container.scrollTop = container.scrollHeight;
