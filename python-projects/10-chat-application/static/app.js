@@ -3,6 +3,9 @@
  * Vanilla JavaScript with class-based architecture
  */
 
+const WS_OPEN = 1;  // WebSocket.OPEN
+
+
 class ChatApp {
     constructor() {
         this.currentUser = null;
@@ -183,10 +186,17 @@ class ConversationManager {
             return;
         }
 
-        await fetch(`/api/conversations/${conversationId}`, {
+        const response = await fetch(`/api/conversations/${conversationId}`, {
             method: 'DELETE',
             credentials: 'include'
         });
+
+        // 404 means it is already gone; anything else (signed out, server error) means it is not,
+        // and removing it from the list anyway made it reappear on the next reload
+        if (!response.ok && response.status !== 404) {
+            alert('Could not delete the conversation. Try again.');
+            return;
+        }
 
         this.conversations = this.conversations.filter(c => c.id !== conversationId);
         this.renderConversationList();
@@ -276,26 +286,52 @@ class ChatView {
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.app.websocket = new WebSocket(
+        const socket = new WebSocket(
             `${protocol}//${window.location.host}/ws/${this.app.currentConversation.id}`
         );
+        this.app.websocket = socket;
 
-        this.app.websocket.onopen = () => {
+        socket.onopen = () => {
             console.log('WebSocket connected');
         };
 
-        this.app.websocket.onmessage = (event) => {
+        socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             this.handleWebSocketMessage(data);
         };
 
-        this.app.websocket.onerror = (error) => {
+        socket.onerror = (error) => {
             console.error('WebSocket error:', error);
         };
 
-        this.app.websocket.onclose = () => {
+        socket.onclose = (event) => {
             console.log('WebSocket closed');
+            // Closed on purpose (another conversation was opened, or logout): nothing to report
+            if (this.app.websocket !== socket) return;
+            this.app.websocket = null;
+            this.connectionLost(event);
         };
+    }
+
+    /** The socket dropped (server restarted, network gone, session ended) */
+    connectionLost(event) {
+        const sessionEnded = event && event.code === 1008 && /authenticated|expired/i.test(event.reason || '');
+        if (sessionEnded) {
+            this.app.currentUser = null;
+            this.app.showAuthInterface();
+            return;
+        }
+
+        // A reply that was streaming will never finish: it used to stay "typing" forever
+        if (this.isStreaming()) {
+            this.discardEmptyStreamingMessage();
+            this.showError('Connection lost while the assistant was answering. Send your message again.');
+            this.finishStreaming();
+        }
+    }
+
+    isStreaming() {
+        return !!document.getElementById('message-container').querySelector('.message.streaming');
     }
 
     handleWebSocketMessage(data) {
@@ -316,7 +352,32 @@ class ChatView {
         const input = document.getElementById('user-input');
         const content = input.value.trim();
 
-        if (!content || !this.app.websocket || !this.app.currentConversation) {
+        if (!content || !this.app.currentConversation) {
+            return;
+        }
+
+        // One reply at a time: a second message sent mid-stream created a second placeholder
+        // that tokens never reached
+        if (this.isStreaming()) {
+            return;
+        }
+
+        const socket = this.app.websocket;
+        if (!socket || socket.readyState !== WS_OPEN) {
+            // Keep what was typed. Reconnect unless a connection attempt is already running.
+            if (!socket) this.connectWebSocket();
+            this.showError(socket ? 'Still connecting. Try again in a moment.' : 'Connection lost. Reconnecting - send your message again.');
+            return;
+        }
+
+        // Send first, so a failure does not leave a question with a reply bubble that never fills
+        try {
+            socket.send(JSON.stringify({
+                type: 'message',
+                content: content
+            }));
+        } catch (error) {
+            this.showError('Could not send the message. Try again.');
             return;
         }
 
@@ -326,12 +387,6 @@ class ChatView {
 
         // Create placeholder for assistant response
         this.addMessage('assistant', '', true);
-
-        // Send via WebSocket
-        this.app.websocket.send(JSON.stringify({
-            type: 'message',
-            content: content
-        }));
     }
 
     renderMessages() {

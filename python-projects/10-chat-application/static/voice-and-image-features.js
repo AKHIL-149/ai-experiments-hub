@@ -217,9 +217,17 @@ class ImageGenerationManager {
     async generateImage(prompt) {
         console.log('Generating image for prompt:', prompt);
 
+        // The model renders one image at a time; a second request just queues behind it
+        if (this.generating) {
+            this.showImageError('An image is already being generated. Wait for it to finish.');
+            return;
+        }
+        this.generating = true;
+
         // Show loading message
+        let loading = null;
         if (window.chatApp && window.chatApp.chatView) {
-            window.chatApp.chatView.addMessage('assistant', '🎨 Generating image...', false);
+            loading = window.chatApp.chatView.addMessage('assistant', '🎨 Generating image...', false);
         }
 
         try {
@@ -244,6 +252,10 @@ class ImageGenerationManager {
         } catch (error) {
             console.error('Image generation error:', error);
             this.showImageError('Image generation service not available. This feature requires local Stable Diffusion setup.');
+        } finally {
+            // The "Generating..." bubble stayed above the finished image (it was only removed on errors)
+            if (loading) loading.remove();
+            this.generating = false;
         }
     }
 
@@ -283,22 +295,8 @@ class ImageGenerationManager {
     showImageError(errorMessage) {
         if (!window.chatApp || !window.chatApp.chatView) return;
 
-        const container = document.getElementById('message-container');
-        // Remove loading message
-        const messages = container.querySelectorAll('.message');
-        const lastMessage = messages[messages.length - 1];
-        if (lastMessage && lastMessage.textContent.includes('Generating image')) {
-            lastMessage.remove();
-        }
-
-        // Show error
-        window.chatApp.chatView.addMessage('assistant',
-            `⚠️ ${errorMessage}\n\n**To enable image generation:**\n` +
-            `1. Install Stable Diffusion WebUI or ComfyUI\n` +
-            `2. Configure the API endpoint in .env\n` +
-            `3. Or use cloud providers (DALL-E, Midjourney)`,
-            false
-        );
+        // The server's message already says what to do (install the library, set the key ...)
+        window.chatApp.chatView.addMessage('assistant', `⚠️ ${errorMessage}`, false);
     }
 
     escapeHtml(text) {
