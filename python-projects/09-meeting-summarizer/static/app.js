@@ -12,6 +12,41 @@ class MeetingSummarizer {
     init() {
         this.setupElements();
         this.setupEventListeners();
+        this.loadTemplates();
+    }
+
+    /**
+     * The report templates come from the server, so custom ones (templates/custom/*.md)
+     * can be picked too - the list used to be fixed in the page.
+     */
+    async loadTemplates() {
+        try {
+            const response = await fetch('/api/templates');
+            if (!response.ok) return;
+            const { templates } = await response.json();
+            const known = new Set([...this.summaryTemplate.options].map(o => o.value));
+            Object.keys(templates || {}).forEach(name => {
+                if (known.has(name)) return;
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                this.summaryTemplate.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Could not load templates:', error);   // the built-in ones still work
+        }
+    }
+
+    /** The server's one-line reason for a failed request (FastAPI puts it in "detail") */
+    async errorFrom(response, fallback) {
+        try {
+            const body = await response.json();
+            if (typeof body.detail === 'string') return body.detail;
+            if (Array.isArray(body.detail) && body.detail.length) {
+                return body.detail.map(d => d.msg).join('; ');
+            }
+        } catch (error) { /* not JSON */ }
+        return fallback;
     }
 
     setupElements() {
@@ -146,7 +181,7 @@ class MeetingSummarizer {
             });
 
             if (!uploadResponse.ok) {
-                throw new Error('Upload failed');
+                throw new Error(await this.errorFrom(uploadResponse, 'Upload failed'));
             }
 
             const uploadData = await uploadResponse.json();
@@ -171,7 +206,7 @@ class MeetingSummarizer {
             const analyzeResponse = await fetch(analyzeUrl, { method: 'POST' });
 
             if (!analyzeResponse.ok) {
-                throw new Error('Failed to start analysis');
+                throw new Error(await this.errorFrom(analyzeResponse, 'Failed to start analysis'));
             }
 
             // Show progress section
@@ -323,7 +358,14 @@ class MeetingSummarizer {
         const poll = async () => {
             try {
                 const response = await fetch(`/api/jobs/${jobId}`);
-                if (!response.ok) return;
+                if (response.status === 404) {
+                    this.showError('This job no longer exists.');
+                    return;
+                }
+                if (!response.ok) {          // a hiccup on the server: keep waiting
+                    setTimeout(poll, interval);
+                    return;
+                }
 
                 const data = await response.json();
 
@@ -395,10 +437,31 @@ class MeetingSummarizer {
                     .map(t => `<li>${this.escapeHtml(t)}</li>`)
                     .join('');
 
-                // Update actions
+                // Notes about this result (a step failed, labels are approximate, ...)
+                const warnings = data.result.warnings || [];
+                const warningsSection = document.getElementById('warningsSection');
+                if (warnings.length) {
+                    warningsSection.innerHTML = warnings.map(w => `<p>${this.escapeHtml(w)}</p>`).join('');
+                    warningsSection.style.display = 'block';
+                } else {
+                    warningsSection.style.display = 'none';
+                }
+
+                // Update actions: the count, and the items themselves
                 const actionCount = data.result.action_items_count || 0;
                 this.actionsCount.textContent =
                     `${actionCount} action ${actionCount === 1 ? 'item' : 'items'} extracted`;
+                const actions = data.result.actions || {};
+                document.getElementById('actionsList').innerHTML = (actions.action_items || []).map(a =>
+                    `<li>${this.escapeHtml(a.description)}<br><span class="action-meta">` +
+                    `${this.escapeHtml(a.assignee || 'Unassigned')} · due ${this.escapeHtml(a.due_date || 'not specified')}` +
+                    ` · ${this.escapeHtml(a.priority || 'medium')} priority</span></li>`
+                ).join('');
+                const decisions = actions.decisions || [];
+                document.getElementById('decisionsList').innerHTML = decisions.map(d =>
+                    `<li>${this.escapeHtml(d.decision)}</li>`
+                ).join('');
+                document.getElementById('decisionsSection').style.display = decisions.length ? 'block' : 'none';
 
                 // Speaker diarization (only present if "Identify speakers"
                 // was checked and the server has pyannote.audio installed).
@@ -421,6 +484,13 @@ class MeetingSummarizer {
                                    `(${mins} min, ${info.num_segments} segments)${pointsHtml}</li>`;
                         })
                         .join('');
+                    const note = document.getElementById('speakersNote');
+                    if (diarization.approximate) {
+                        note.textContent = 'These speaker labels are approximate: the transcript had no timing to match them to.';
+                        note.style.display = 'block';
+                    } else {
+                        note.style.display = 'none';
+                    }
                     speakersSection.style.display = 'block';
                 } else {
                     speakersSection.style.display = 'none';

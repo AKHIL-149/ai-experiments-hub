@@ -504,3 +504,17 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+
+/* Notes about the quality of a result (a step failed, speaker labels are approximate, ...) */
+.notice {
+    background: #fff8e1;
+    border-left: 4px solid #f5a623;
+    border-radius: 6px;
+    color: #5d4037;
+    font-size: 0.95rem;
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+}
+.notice p { margin: 0.25rem 0; }
+.action-meta { color: #666; font-size: 0.85rem; }

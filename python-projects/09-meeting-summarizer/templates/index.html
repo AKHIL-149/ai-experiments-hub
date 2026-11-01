@@ -170,6 +170,8 @@
                 </div>
 
                 <div class="result-preview">
+                    <div id="warningsSection" class="notice" style="display: none;"></div>
+
                     <h3>Summary</h3>
                     <div id="summaryPreview" class="preview-text"></div>
 
@@ -178,9 +180,16 @@
 
                     <h3>Action Items</h3>
                     <div id="actionsCount" class="actions-count"></div>
+                    <ul id="actionsList" class="topics-list"></ul>
+
+                    <div id="decisionsSection" style="display: none;">
+                        <h3>Decisions</h3>
+                        <ul id="decisionsList" class="topics-list"></ul>
+                    </div>
 
                     <div id="speakersSection" style="display: none;">
                         <h3>Speakers</h3>
+                        <p id="speakersNote" class="notice" style="display: none;"></p>
                         <ul id="speakersList" class="topics-list"></ul>
                     </div>
 
