@@ -432,6 +432,14 @@ OPENAI_API_KEY=sk-...your-key-here...
 pip install -r requirements.txt
 ```
 
+### Issue: "No speech was detected in this recording"
+The audio is silent, or only noise/music. Check the file plays and that the microphone was on.
+
+### Issue: speaker identification did nothing
+Look at the "Notes" box on the results page: it says whether the model could not be loaded (needs
+`pip install pyannote.audio torch` and access to `pyannote/speaker-diarization-3.1`), found no speakers, or
+failed. The first request loads the model, which takes about 25 seconds.
+
 ### Issue: "ffmpeg not found"
 
 **Solution:** Install ffmpeg:
@@ -609,10 +617,13 @@ $ python server.py
 INFO:     Started server process
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 
 # Open browser to http://localhost:8000
 ```
+
+The server listens on **127.0.0.1** (this computer only) and starts in about a second. There is no
+login, so set `HOST=0.0.0.0` only if you mean to expose it to your network.
 
 ### Example 2: Using the Web Interface
 
@@ -725,8 +736,10 @@ export DYLD_LIBRARY_PATH=/opt/homebrew/lib
 $ python summarize.py analyze meeting.mp3 --speakers
 ```
 
-CPU-only diarization is slow - budget roughly the audio's own duration
-(a 10-minute meeting took ~7 minutes on an M-series Mac with no GPU).
+CPU-only diarization is slow - budget roughly the audio's own duration. With Apple-silicon
+acceleration (MPS, used automatically) a 10-minute meeting takes well under a minute. The model
+is loaded the first time someone asks for speaker identification, not at startup (loading takes
+~25 seconds and several network requests).
 
 ```
 Speaker Diarization:
@@ -735,7 +748,7 @@ Speaker Diarization:
     SPEAKER_01: 32.1% (5.9 min, 8 segments)
     SPEAKER_02: 22.7% (4.2 min, 6 segments)
 
-Speaker-Attributed Transcript (approximate):
+Speaker-Attributed Transcript:
 
 SPEAKER_00:
   Good morning everyone. Let's start with the sprint review.
@@ -747,17 +760,17 @@ SPEAKER_02:
   Great work! I'll review it this afternoon.
 ```
 
-**"Approximate" is not a hedge - read it literally.** Whisper.cpp's
-plain-text output here carries no per-word or per-segment timestamps, so
-`assign_transcript_to_speakers()` estimates each sentence's position by
-evenly dividing the transcript across the audio's total duration, then
-looks up whichever speaker was talking at that estimated midpoint. On
-a meeting with uneven pacing (long pauses, a few word answers, a
-rambling section) the sentence-to-speaker attribution can drift
-noticeably from the true speaker turns. The percentages and segment
-counts in the statistics table above are exact (they come straight
-from the diarization model); only the transcript text's speaker labels
-are estimated.
+**How speaker labels are matched.** Whisper.cpp is run with timestamped output, so every transcript
+segment (a short phrase, usually under 10 seconds) has a start and end time. Each segment is given to
+the speaker whose diarization turns overlap it the longest; a segment that falls in a pause goes to the
+nearest turn. Pace, pauses and one-word answers therefore no longer matter. (The previous version had no
+timing and spread the sentences evenly over the recording: on a 10-minute press conference **63% of the
+lines were attributed to the wrong speaker**, by 38 seconds on average.)
+
+Labels are still only as good as the diarization model: two similar voices can be merged, one voice can be
+split in two, and a phrase spoken across a change of speaker goes to whoever spoke most of it.
+`speaker_diarization.approximate` is `true` only for a transcript that has no timing at all (the OpenAI
+backend always has it; so does whisper.cpp now); the page and reports then say the labels are a rough guess.
 
 ### Example 4: Database-Persisted Jobs via Web UI
 
@@ -850,12 +863,83 @@ python-projects/09-meeting-summarizer/
 │   │   └── summaries/              ✅
 │   ├── uploads/                    ✅
 │   └── output/                     ✅
-└── tests/
-    ├── __init__.py                 ✅
-    ├── fixtures/
-    │   └── sample.py.backup        ✅
-    └── test_*.py                   # Test suite ready
+└── tests/                          # pytest suite (see "Testing")
+    ├── conftest.py / helpers.py    # scratch directories, fake LLM
+    └── test_*.py
+
+## Reliability, limits and testing
+
+### What the server checks
+
+Every value that ends up in a prompt, a file name or a command line is checked before a job is queued
+(HTTP 400 with the reason), and a bad value never starts any work:
+
+| Input | Accepted |
+|---|---|
+| job id | a UUID, as returned by `/api/upload` (anything else: 400; ids are never used in file searches) |
+| `summary_level` | `brief`, `standard`, `detailed` |
+| `output_format` | `markdown` (or `md`), `json`, `html`, `txt` - the report is always written to `<job id>_analysis.<ext>` in the output directory |
+| `template` | `GET /api/templates` lists them (built-in plus `templates/custom/*.md`) |
+| `language` | `en`-style code or `auto`; an English-only whisper model (`ggml-base.en`) refuses other languages with a message saying so |
+| upload | audio or video extension, not empty, at most `MAX_AUDIO_SIZE_MB` (streamed to disk and refused as soon as it passes the limit: `413`) |
+
+A job cannot be started twice at the same time (`409`), and finished jobs keep their full result in memory
+only for the newest `MAX_FINISHED_JOBS_IN_MEMORY` (default 50); older ones are answered from the database.
+
+### What a failed job says
+
+Failures are one readable line, never a command's whole output:
+
+- unreadable or damaged file: "This file could not be read as MP3 audio. It may be empty, damaged, or not really MP3."
+- silent recording, or noise that Whisper turns into words: "No speech was detected in this recording."
+  (A recording whose loudest moment is below -50 dBFS is rejected before transcription; a transcript of
+  fewer than 3 words after removing `[BLANK_AUDIO]`, `[ Inaudible ]`, `(applause)` ... is rejected after it.)
+- video without a sound track: "This video has no audio track, so there is nothing to transcribe."
+- Ollama not running / model missing: "Could not reach Ollama at ... Start it with: ollama serve" /
+  "Ollama does not have the model 'x'. Install it with: ollama pull x"
+
+Things that did not fail the job but you should know about are listed in `result.warnings`, shown at the top
+of the results page and in a "Notes" section of every report: the model's action-item answer could not be read,
+the model's context window was filled, speaker identification was requested but unavailable or failed.
+
+### Long recordings
+
+- **Context window.** Ollama's own default is 4096 tokens and it silently drops what does not fit - about a
+  20-minute meeting. The client now asks for `OLLAMA_NUM_CTX` (default 8192) and logs a warning if the prompt
+  still fills it. Summaries, topics and action items are all produced a chunk at a time (3000 words) and merged,
+  so no single request holds the whole meeting.
+- **OpenAI uploads** over 24 MB (the API limit is 25 MB) are cut into overlapping 16 kHz mono chunks and merged.
+- The whisper.cpp timeout grows with the recording (1.5x its length, at least 10 minutes).
+
+### Configuration added in this version
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HOST` | `127.0.0.1` | interface to listen on |
+| `ALLOWED_ORIGINS` | the app's own origin | other pages allowed to call the API (comma-separated) |
+| `OLLAMA_NUM_CTX` | `8192` | context window requested from Ollama |
+| `DATA_DIR` | `./data` | base for uploads, output, cache, temp and progress files |
+| `MAX_FINISHED_JOBS_IN_MEMORY` | `50` | finished jobs kept fully in memory |
+
+### Testing
+
+```bash
+venv/bin/python -m pytest tests          # about 15 seconds, no network, nothing written to data/
 ```
+
+The suite uses a fake whisper binary (a script that writes real whisper.cpp-format JSON), a scripted fake
+LLM, a fake analyzer for the server tests, and generated audio/video (needs ffmpeg). It covers the audio
+helpers (including chunking), cache keys, the transcription service (timestamps, annotation stripping,
+silence, language rules, caching, chunk merging, the OpenAI size limit), the LLM client (context window,
+truncation detection, error messages, pricing), summaries, topics and action extraction (messy model output,
+long transcripts), every report format (with actions/topics switched off, and HTML escaping), the templates,
+video handling, speaker attribution, and every endpoint of the server including its failure paths. About 65
+deliberate breakages of the source were each caught by at least one test.
+
+Not covered: real OpenAI/Anthropic calls (they need keys), the real pyannote model, real WebSocket
+progress timing, and what the language model writes - a 3B local model is still the weakest link: it can
+phrase an action item loosely or miss one. The action-item extraction is deterministic (temperature 0, JSON
+mode) so the same transcript gives the same items, but not necessarily the right ones.
 
 ## Phase 2 Components
 
