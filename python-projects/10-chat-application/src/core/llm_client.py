@@ -78,8 +78,15 @@ class LLMClient:
         model: str,
         temperature: float
     ) -> AsyncIterator[str]:
-        """Stream from Ollama API"""
+        """
+        Stream from Ollama API.
+
+        Ollama reports a missing model as HTTP 404 with {"error": "model 'x' not found"}, and
+        errors that happen mid-stream as an {"error": ...} line. Both used to be ignored (only
+        "message" lines were read), so the chat saw a successful reply with no text in it.
+        """
         import aiohttp
+        import json
 
         url = f"{self.ollama_url}/api/chat"
         payload = {
@@ -91,16 +98,66 @@ class LLMClient:
             }
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as response:
-                async for line in response.content:
-                    if line:
-                        import json
-                        data = json.loads(line)
-                        if 'message' in data:
-                            token = data['message'].get('content', '')
-                            if token:
-                                yield token
+        got_text = False
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as response:
+                    if response.status != 200:
+                        detail = ''
+                        try:
+                            detail = (await response.json()).get('error', '')
+                        except Exception:
+                            pass
+                        raise RuntimeError(self._ollama_error_message(detail or f"HTTP {response.status}", model))
+
+                    async for raw in response.content:
+                        line = raw.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                        except ValueError:
+                            continue
+                        if 'error' in data:
+                            raise RuntimeError(self._ollama_error_message(str(data['error']), model))
+                        token = (data.get('message') or {}).get('content', '')
+                        if token:
+                            got_text = True
+                            yield token
+        except aiohttp.ClientConnectorError:
+            raise RuntimeError(
+                f"Could not reach Ollama at {self.ollama_url}. Is it running? Start it with: ollama serve"
+            )
+
+        if not got_text:
+            raise RuntimeError(f"The model '{model}' returned an empty response. Try again, or pick another model.")
+
+    @staticmethod
+    def _ollama_error_message(detail: str, model: str) -> str:
+        """Ollama's own wording, plus what to do about the common case"""
+        if 'not found' in detail.lower():
+            return f"Ollama does not have the model '{model}'. Install it with: ollama pull {model}"
+        return f"Ollama error: {detail}"
+
+    async def list_ollama_models(self) -> List[str]:
+        """Names of the models Ollama has installed (empty if it cannot be reached)"""
+        import aiohttp
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(f"{self.ollama_url}/api/tags") as response:
+                    if response.status != 200:
+                        return []
+                    data = await response.json()
+            # Embedding models (nomic-embed-text ...) are installed too but cannot chat
+            return sorted(
+                m['name'] for m in data.get('models', [])
+                if m.get('name') and 'embed' not in m['name'].lower()
+                and 'bert' not in (m.get('details') or {}).get('family', '').lower()
+            )
+        except Exception:
+            return []
 
     async def _stream_openai(
         self,

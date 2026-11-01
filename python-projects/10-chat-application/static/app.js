@@ -306,6 +306,7 @@ class ChatView {
             // Reload conversation title if it was updated
             this.app.conversationManager.loadConversations();
         } else if (data.type === 'error') {
+            this.discardEmptyStreamingMessage();
             this.showError(data.error);
             this.finishStreaming();
         }
@@ -367,6 +368,15 @@ class ChatView {
             const contentDiv = lastMessage.querySelector('.message-content');
             contentDiv.textContent += token;
             container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    /** A reply that failed before any text arrived leaves an empty "Assistant" bubble: remove it */
+    discardEmptyStreamingMessage() {
+        const container = document.getElementById('message-container');
+        const streamingMessage = container.querySelector('.message.streaming');
+        if (streamingMessage && !streamingMessage.querySelector('.message-content').textContent.trim()) {
+            streamingMessage.remove();
         }
     }
 

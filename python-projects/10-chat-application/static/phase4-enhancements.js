@@ -25,7 +25,22 @@ const PROVIDER_MODELS = {
 // Modal Manager
 class ModalManager {
     constructor() {
+        // Models Ollama really has (null until loaded; the list above is only a fallback).
+        // Offering models that are not installed gave a conversation that never answered.
+        this.ollamaModels = null;
         this.setupModals();
+    }
+
+    /** Ask the server which Ollama models are installed */
+    async loadOllamaModels() {
+        try {
+            const response = await fetch('/api/models', { credentials: 'include' });
+            if (!response.ok) return;
+            const { ollama } = await response.json();
+            this.ollamaModels = Array.isArray(ollama) && ollama.length ? ollama : null;
+        } catch (error) {
+            console.error('Could not load the installed models:', error);   // keep the fallback list
+        }
     }
 
     setupModals() {
@@ -100,7 +115,10 @@ class ModalManager {
     }
 
     updateModelOptions(provider, modelSelect) {
-        const models = PROVIDER_MODELS[provider] || [];
+        let models = PROVIDER_MODELS[provider] || [];
+        if (provider === 'ollama' && this.ollamaModels) {
+            models = this.ollamaModels.map(name => ({ value: name, label: name }));
+        }
         modelSelect.innerHTML = '';
 
         models.forEach(model => {
@@ -111,7 +129,14 @@ class ModalManager {
         });
     }
 
-    openModal(modalId) {
+    async openModal(modalId) {
+        if (modalId === 'new-conversation-modal') {
+            await this.loadOllamaModels();
+            this.updateModelOptions(
+                document.getElementById('new-conv-provider').value,
+                document.getElementById('new-conv-model')
+            );
+        }
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.style.display = 'flex';
@@ -169,18 +194,28 @@ class ModalManager {
         }
     }
 
-    openSettingsModal(conversation) {
+    async openSettingsModal(conversation) {
+        await this.loadOllamaModels();
+
         // Populate current values
         document.getElementById('settings-title').value = conversation.title || '';
         document.getElementById('settings-provider').value = conversation.llm_provider || 'ollama';
 
         // Update model options for selected provider
-        this.updateModelOptions(
-            conversation.llm_provider || 'ollama',
-            document.getElementById('settings-model')
-        );
+        const provider = conversation.llm_provider || 'ollama';
+        const modelSelect = document.getElementById('settings-model');
+        this.updateModelOptions(provider, modelSelect);
 
-        document.getElementById('settings-model').value = conversation.llm_model || '';
+        // The model the conversation really uses (the server's default when none was chosen)
+        const current = conversation.llm_model || (provider === 'ollama' ? 'llama3.2:3b' : '');
+        if (current && ![...modelSelect.options].some(o => o.value === current)) {
+            // Say so, instead of silently showing some other model as if it were selected
+            const missing = document.createElement('option');
+            missing.value = current;
+            missing.textContent = provider === 'ollama' ? `${current} (not installed)` : current;
+            modelSelect.insertBefore(missing, modelSelect.firstChild);
+        }
+        modelSelect.value = current;
         document.getElementById('settings-system-prompt').value = conversation.system_prompt || '';
 
         this.openModal('settings-modal');

@@ -135,6 +135,12 @@ async def health_check():
     }
 
 
+@app.get("/api/models")
+async def list_models(user: User = Depends(get_current_user)):
+    """Models that can really be used: what Ollama has installed (the cloud lists are fixed)"""
+    return {"ollama": await llm_client.list_ollama_models()}
+
+
 # Authentication endpoints
 
 @app.post("/api/auth/register")
@@ -497,6 +503,11 @@ async def websocket_endpoint(
                         'type': 'token',
                         'token': token
                     })
+
+                # A provider that produced nothing is a failure, not an empty answer: saving
+                # it left a blank assistant message in the history of every later request.
+                if not assistant_content.strip():
+                    raise RuntimeError("The model returned an empty response. Try again, or pick another model.")
 
                 # Save assistant message
                 with db_manager.get_session() as db:
