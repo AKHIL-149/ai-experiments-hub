@@ -5,6 +5,8 @@ Manages job creation, status tracking, and queue routing for classification task
 """
 
 import logging
+import time
+import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime
 from celery.result import AsyncResult
@@ -54,29 +56,9 @@ class QueueManager:
         if queue_name is None:
             queue_name = self._get_queue_by_priority(priority)
 
-        # Submit Celery task
-        task = classify_text_task.apply_async(
-            args=[content_id, text_content, priority],
-            queue=queue_name,
-            priority=priority
+        return self._enqueue(
+            classify_text_task, [content_id, text_content, priority], content_id, queue_name, priority, 'text'
         )
-
-        # Create moderation job record
-        with self.db_manager.get_session() as db:
-            job = ModerationJob(
-                content_id=content_id,
-                status=JobStatus.QUEUED,
-                queue_name=queue_name,
-                celery_task_id=task.id,
-                retry_count=0
-            )
-
-            db.add(job)
-            db.commit()
-            db.refresh(job)
-
-            logging.info(f"Created text job {job.id} for content {content_id} (queue: {queue_name}, task: {task.id})")
-            return job
 
     def create_image_job(
         self,
@@ -103,29 +85,9 @@ class QueueManager:
         if queue_name is None:
             queue_name = self._get_queue_by_priority(priority, default_high=True)
 
-        # Submit Celery task
-        task = classify_image_task.apply_async(
-            args=[content_id, file_path, use_vision, priority],
-            queue=queue_name,
-            priority=priority
+        return self._enqueue(
+            classify_image_task, [content_id, file_path, use_vision, priority], content_id, queue_name, priority, 'image'
         )
-
-        # Create moderation job record
-        with self.db_manager.get_session() as db:
-            job = ModerationJob(
-                content_id=content_id,
-                status=JobStatus.QUEUED,
-                queue_name=queue_name,
-                celery_task_id=task.id,
-                retry_count=0
-            )
-
-            db.add(job)
-            db.commit()
-            db.refresh(job)
-
-            logging.info(f"Created image job {job.id} for content {content_id} (queue: {queue_name}, task: {task.id})")
-            return job
 
     def create_video_job(
         self,
@@ -154,29 +116,72 @@ class QueueManager:
         if queue_name is None:
             queue_name = self._get_queue_by_priority(priority, default_high=True)
 
-        # Submit Celery task
-        task = classify_video_task.apply_async(
-            args=[content_id, file_path, max_frames, use_vision, priority],
-            queue=queue_name,
-            priority=priority
+        return self._enqueue(
+            classify_video_task, [content_id, file_path, max_frames, use_vision, priority],
+            content_id, queue_name, priority, 'video'
         )
 
-        # Create moderation job record
+    def _enqueue(self, task, args, content_id: str, queue_name: str, priority: int, kind: str) -> ModerationJob:
+        """
+        Record the job, then send the task.
+
+        The job row used to be written after the task was sent, so a worker that finished first
+        found no job to update (and the content status written by the caller afterwards could
+        overwrite the worker's result). The task id is chosen here so the row can exist first.
+        """
+        task_id = str(uuid.uuid4())
+
         with self.db_manager.get_session() as db:
             job = ModerationJob(
                 content_id=content_id,
                 status=JobStatus.QUEUED,
                 queue_name=queue_name,
-                celery_task_id=task.id,
+                celery_task_id=task_id,
                 retry_count=0
             )
-
             db.add(job)
             db.commit()
             db.refresh(job)
+            job_id = job.id
 
-            logging.info(f"Created video job {job.id} for content {content_id} (queue: {queue_name}, task: {task.id})")
+        try:
+            task.apply_async(args=args, queue=queue_name, priority=priority, task_id=task_id)
+        except Exception as e:
+            # Redis is down, for instance: nothing will ever run this job
+            with self.db_manager.get_session() as db:
+                failed = db.query(ModerationJob).filter(ModerationJob.id == job_id).first()
+                if failed:
+                    failed.status = JobStatus.FAILED
+                    failed.last_error = str(e)[:2000]
+                    failed.completed_at = datetime.utcnow()
+                    db.commit()
+            raise
+
+        with self.db_manager.get_session() as db:
+            job = db.query(ModerationJob).filter(ModerationJob.id == job_id).first()
+            logging.info(f"Created {kind} job {job.id} for content {content_id} (queue: {queue_name}, task: {task_id})")
+            db.expunge(job)
             return job
+
+    def worker_status(self, max_age_seconds: float = 10.0) -> Dict[str, Any]:
+        """
+        Whether any Celery worker answers. Without one, every submission stays "processing" for ever,
+        and nothing said so.
+        """
+        now = time.time()
+        cached = getattr(self, '_worker_cache', None)
+        if cached and now - cached[0] < max_age_seconds:
+            return cached[1]
+
+        try:
+            from celery_app import app as celery_app
+            replies = celery_app.control.inspect(timeout=1.0).ping() or {}
+            status = {'available': bool(replies), 'workers': len(replies)}
+        except Exception as e:
+            status = {'available': False, 'workers': 0, 'error': str(e)[:200]}
+
+        self._worker_cache = (now, status)
+        return status
 
     def get_job_status(self, job_id: str) -> Dict[str, Any]:
         """

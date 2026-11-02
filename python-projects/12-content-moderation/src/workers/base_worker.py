@@ -12,6 +12,9 @@ import logging
 from celery import Task
 from typing import Dict, Any
 
+from ..core.database import JobStatus
+from .job_tracker import mark_job, flag_for_review
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -25,6 +28,10 @@ class BaseClassificationTask(Task):
     retry_backoff_max = 600  # 10 minutes max
     retry_jitter = True  # Add randomness
 
+    def before_start(self, task_id, args, kwargs):
+        """A worker picked the task up: the job is now being processed"""
+        mark_job(task_id, JobStatus.PROCESSING)
+
     def on_retry(self, exc, task_id, args, kwargs, einfo):
         """
         Handler called when task is retried.
@@ -37,6 +44,7 @@ class BaseClassificationTask(Task):
             einfo: Exception info
         """
         logging.warning(f"Task {task_id} retrying due to {exc.__class__.__name__}: {exc}")
+        mark_job(task_id, JobStatus.RETRYING, error=str(exc), retry_count=self.request.retries + 1)
 
         # Update task state to show retry
         self.update_state(
@@ -61,6 +69,10 @@ class BaseClassificationTask(Task):
             einfo: Exception info
         """
         logging.error(f"Task {task_id} failed after {self.request.retries} retries: {exc}")
+        mark_job(task_id, JobStatus.FAILED, error=str(exc), retry_count=self.request.retries)
+        # The content would stay "processing" for ever: hand it to the moderators
+        if args:
+            flag_for_review(args[0])
 
         # Update task state
         self.update_state(
@@ -84,6 +96,7 @@ class BaseClassificationTask(Task):
             kwargs: Original task kwargs
         """
         logging.info(f"Task {task_id} completed successfully")
+        mark_job(task_id, JobStatus.COMPLETED, result_data=retval if isinstance(retval, dict) else None)
 
     def update_progress(self, task_id: str, progress: int, message: str, **kwargs):
         """
