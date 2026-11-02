@@ -5,6 +5,7 @@ Handles file uploads, storage, thumbnail generation, and validation.
 """
 
 import hashlib
+import io
 import logging
 import os
 import uuid
@@ -25,6 +26,9 @@ class FileHandler:
 
     # Size limits (in bytes)
     MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB default
+
+    # An image is decoded for its thumbnail and for the vision model: a tiny PNG can claim billions of pixels
+    MAX_IMAGE_PIXELS = 50_000_000
 
     # Thumbnail settings
     THUMBNAIL_SIZE = (300, 300)  # Max dimensions
@@ -93,6 +97,13 @@ class FileHandler:
         else:
             return False, None, None, f"Unsupported content type: {content_type}"
 
+        # The extension is only a name: a text or executable file called x.png was accepted and
+        # sent on to the image classifier
+        if content_type == 'image':
+            problem = self._check_image(file_data)
+            if problem:
+                return False, None, None, problem
+
         # Calculate file hash
         file_hash = hashlib.sha256(file_data).hexdigest()
 
@@ -111,6 +122,20 @@ class FileHandler:
         except Exception as e:
             logging.error(f"Failed to save file: {e}")
             return False, None, None, f"Failed to save file: {str(e)}"
+
+    def _check_image(self, file_data: bytes) -> Optional[str]:
+        """An error message if the bytes are not a readable image of a sane size"""
+        try:
+            with Image.open(io.BytesIO(file_data)) as image:
+                width, height = image.size
+                image.verify()
+        except Image.DecompressionBombError:
+            return "Image is too large (too many pixels)"
+        except Exception:
+            return "The file is not a valid image"
+        if width * height > self.MAX_IMAGE_PIXELS:
+            return f"Image is too large ({width}x{height} pixels)"
+        return None
 
     def generate_thumbnail(
         self,

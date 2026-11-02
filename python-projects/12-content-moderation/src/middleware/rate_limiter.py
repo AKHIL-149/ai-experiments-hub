@@ -38,6 +38,25 @@ import redis
 import os
 
 
+def client_ip(request: Request) -> str:
+    """
+    The caller's address.
+
+    X-Forwarded-For and X-Real-IP are headers any client can set. They were believed unconditionally,
+    so sending a different one with each request gave every request its own rate-limit budget: the
+    login limit (5 a minute) and the account-creation limits did not limit anything. They are only
+    read when TRUST_PROXY=true, i.e. when a reverse proxy you run overwrites them.
+    """
+    if os.getenv('TRUST_PROXY', 'false').lower() == 'true':
+        forwarded = request.headers.get('X-Forwarded-For')
+        if forwarded:
+            return forwarded.split(',')[0].strip()
+        real_ip = request.headers.get('X-Real-IP')
+        if real_ip:
+            return real_ip.strip()
+    return request.client.host if request.client else 'unknown'
+
+
 class RateLimiter:
     """Redis-based rate limiter"""
 
@@ -210,14 +229,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return f"user:{request.state.user.id}"
 
         # Fall back to IP address
-        forwarded_for = request.headers.get('X-Forwarded-For')
-        if forwarded_for:
-            # Get first IP from X-Forwarded-For
-            ip = forwarded_for.split(',')[0].strip()
-        else:
-            ip = request.client.host if request.client else 'unknown'
-
-        return f"ip:{ip}"
+        return f"ip:{client_ip(request)}"
 
     def _get_rate_limit_config(self, path: str) -> dict:
         """Get rate limit configuration for endpoint"""

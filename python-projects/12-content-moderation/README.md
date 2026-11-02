@@ -401,13 +401,19 @@ python test_phase1.py
 
 ## Usage
 
-### Start the Server
+### Start the Server and a Worker
+
+Submissions are classified by a Celery worker, not by the web server. Start both (and Redis):
 
 ```bash
 python server.py
+celery -A celery_app worker -Q critical,high,default,batch -l info
 ```
 
 Server runs at: http://localhost:7000
+
+Without a worker every submission stays "processing". The page says so (a notice above "My Content",
+from the `worker` field of `GET /api/health`), and the list refreshes itself while anything is waiting.
 
 ### Using the Web UI
 
@@ -637,7 +643,14 @@ See [.env.example](.env.example) for all available options.
 ```bash
 # Server
 PORT=7000
-HOST=0.0.0.0
+HOST=127.0.0.1             # loopback by default; 0.0.0.0 serves your whole network
+TRUST_PROXY=false          # true only behind a reverse proxy you run (then X-Forwarded-For is believed)
+
+# Limits
+MAX_TEXT_CHARS=10000       # longest text submission
+MAX_UPLOAD_SIZE_MB=100
+LOGIN_MAX_FAILURES=10      # failed logins per username and client ... (the middleware also allows 5 logins a minute per address)
+LOGIN_WINDOW_SECONDS=300   # ... within this window, then HTTP 429
 ENVIRONMENT=development
 
 # Database
@@ -843,6 +856,20 @@ The system classifies content into 10 categories:
 - Monitoring and alerting
 
 ## Testing
+
+### Run the whole pytest suite (about 300 tests, under a minute)
+
+```bash
+pytest tests/ --ignore=tests/integration -q
+```
+
+It uses a scratch database (never `data/database.db`), fakes the workers and the model, and needs neither
+Redis nor Ollama. The files added in the last pass: `test_classification_parsing.py` (reading the model's
+answer, the prompt), `test_job_tracking.py` (job rows, worker hooks, worker detection),
+`test_server_moderation.py` (accounts, rate-limit addresses, submissions, files, reviews, appeals, policies,
+the job WebSocket, start-up) and `test_frontend.py` (`static/js/app.js` in Node with a fake DOM: needs `node`,
+skipped without it; it checks the script's logic, not how the page looks). Not covered: the real model's
+judgement, the vision and NSFW detectors, video processing, and the admin dashboard page itself.
 
 ### Run Phase 1 Tests (Core Foundation)
 
@@ -1072,12 +1099,19 @@ curl -X POST http://localhost:8001/api/content \
 - ✅ SameSite=Strict (CSRF protection)
 - ✅ SQLAlchemy ORM (SQL injection protection)
 - ✅ File size limits
-- ✅ File hash deduplication
+- ✅ File hash deduplication (per user: one user's duplicate check never returns another user's record)
 - ✅ Role-based access control
+- ✅ **Output escaping**: text users type, file names, user names and e-mails are escaped wherever they are shown (the user's own list, the moderators' queue, the admin dashboard). User names are limited to letters, digits and `. _ -`
+- ✅ **Rate limits keyed by the real address**: `X-Forwarded-For` / `X-Real-IP` are believed only with `TRUST_PROXY=true`. Failed logins are also throttled per username and client (HTTP 429)
+- ✅ **Accounts**: unique ignoring case, passwords 8-72 bytes (bcrypt ignores the rest), an unknown user takes as long to reject as a wrong password, a deactivated account is only revealed to someone who has its password
+- ✅ **Uploads**: read in pieces up to the size limit; an "image" must really be an image of a sane size (a tiny PNG can claim billions of pixels); uploaded files are served only to their owner and to moderators, from the upload directory only (`GET /api/content/{id}/file`)
+- ✅ **Priority**: users may choose normal or high; the critical queue is for moderators
+- ✅ **Job WebSocket**: needs the session cookie, only the submitter or a moderator may watch a job, and the page's origin is checked
+- ✅ **Review rules**: content still being classified cannot be reviewed; an appeal is decided once; a manual review also settles an open appeal; policy thresholds must be confidences (0-1) with the flag threshold not above the reject threshold
+- ✅ Loopback by default (`HOST=127.0.0.1`)
+- ✅ Model answers are read defensively: the user's text is marked as untrusted data in the prompt, a reply that cannot be read, names an unknown category or has an impossible confidence goes to a human (confidence 0) instead of being guessed from its wording
 
 ### Planned (Future Phases)
-- Rate limiting (Phase 6)
-- Input sanitization (Phase 5)
 - Content Security Policy headers (Phase 6)
 - Audit logging (Phase 5)
 

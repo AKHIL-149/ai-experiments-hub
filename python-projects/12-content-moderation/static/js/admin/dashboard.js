@@ -263,7 +263,7 @@ function renderReviewQueue() {
         if (item.content_type === 'text') {
             preview = `<div class="content-text">${escapeHtml(item.text_content || '')}</div>`;
         } else if (item.content_type === 'image') {
-            preview = `<img src="${item.file_path}" alt="Content image">`;
+            preview = `<img src="/api/content/${item.id}/file" alt="Content image">`;
         } else if (item.content_type === 'video') {
             preview = `<div class="content-text">Video content</div>`;
         }
@@ -274,12 +274,12 @@ function renderReviewQueue() {
                     <h4>${item.content_type.toUpperCase()} - ${item.id.substring(0, 8)}</h4>
                     ${preview}
                     <div class="queue-item-meta">
-                        <span class="meta-badge">Status: ${item.status}</span>
+                        <span class="meta-badge">Status: ${escapeHtml(item.status)}</span>
                         <span class="meta-badge ${priorityClass}">Priority: ${item.priority}</span>
                         <span class="meta-badge">User: ${item.user_id.substring(0, 8)}</span>
                         ${latestClassification ? `
                             <span class="meta-badge">
-                                ${latestClassification.category}: ${(latestClassification.confidence * 100).toFixed(1)}%
+                                ${escapeHtml(latestClassification.category)}: ${(Number(latestClassification.confidence) * 100).toFixed(1)}%
                             </span>
                         ` : ''}
                     </div>
@@ -343,9 +343,9 @@ async function openReviewModal(contentId) {
         if (content.content_type === 'text') {
             contentHtml = `<div class="content-text"><strong>Text:</strong><br>${escapeHtml(content.text_content || '')}</div>`;
         } else if (content.content_type === 'image') {
-            contentHtml = `<img src="${content.file_path}" alt="Content" style="max-width: 100%; border-radius: 4px;">`;
+            contentHtml = `<img src="/api/content/${content.id}/file" alt="Content" style="max-width: 100%; border-radius: 4px;">`;
         } else if (content.content_type === 'video') {
-            contentHtml = `<video src="${content.file_path}" controls style="max-width: 100%; border-radius: 4px;"></video>`;
+            contentHtml = `<video src="/api/content/${content.id}/file" controls style="max-width: 100%; border-radius: 4px;"></video>`;
         }
 
         display.innerHTML = contentHtml;
@@ -358,7 +358,7 @@ async function openReviewModal(contentId) {
                 const confClass = c.confidence > 0.8 ? 'high' : c.confidence > 0.5 ? 'medium' : 'low';
                 return `
                     <div class="classification-result">
-                        <span class="classification-category">${c.category}</span>
+                        <span class="classification-category">${escapeHtml(c.category)}</span>
                         <div class="classification-confidence">
                             <div class="confidence-bar">
                                 <div class="confidence-fill ${confClass}" style="width: ${confidence}%"></div>
@@ -592,13 +592,13 @@ function renderPolicies(policies) {
         return `
             <div class="policy-item ${statusClass}">
                 <div class="policy-header">
-                    <h4>${policy.name}</h4>
+                    <h4>${escapeHtml(policy.name)}</h4>
                     <span class="policy-badge ${statusClass}">${statusClass}</span>
                 </div>
                 <div class="policy-details">
                     <div class="policy-detail-item">
                         <label>Category</label>
-                        <span>${policy.category}</span>
+                        <span>${escapeHtml(policy.category)}</span>
                     </div>
                     <div class="policy-detail-item">
                         <label>Auto-Reject Threshold</label>
@@ -830,7 +830,7 @@ async function loadCategoryBreakdown() {
 
         container.innerHTML = breakdown.categories.map(cat => `
             <div class="category-bar">
-                <div class="category-label">${cat.category}</div>
+                <div class="category-label">${escapeHtml(cat.category)}</div>
                 <div class="category-progress">
                     <div class="category-fill" style="width: ${cat.percentage}%"></div>
                 </div>
@@ -988,8 +988,8 @@ async function loadModeratorPerformance() {
                 <tbody>
                     ${moderators.map(mod => `
                         <tr>
-                            <td>${mod.username}</td>
-                            <td>${mod.role.toUpperCase()}</td>
+                            <td>${escapeHtml(mod.username)}</td>
+                            <td>${escapeHtml(String(mod.role).toUpperCase())}</td>
                             <td>${mod.total_reviews}</td>
                             <td>${mod.approvals}</td>
                             <td>${mod.rejections}</td>

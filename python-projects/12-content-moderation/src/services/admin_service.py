@@ -15,6 +15,36 @@ from ..core.database import (
 
 logging.basicConfig(level=logging.INFO)
 
+MAX_NOTES_CHARS = 2000
+MAX_APPEAL_REASON_CHARS = 1000
+APPEAL_OPEN = 'appeal_submitted'
+
+
+def validate_policy_values(
+    auto_reject_threshold: Optional[float] = None,
+    auto_approve_threshold: Optional[float] = None,
+    flag_review_threshold: Optional[float] = None,
+    severity: Optional[int] = None,
+) -> Optional[str]:
+    """
+    An error message for policy numbers that cannot work, else None.
+
+    Nothing was checked: a live policy had auto_approve 0.75 above auto_reject 0.5, and a threshold
+    of 7 or -1 is accepted as readily as 0.7. Thresholds are confidences (0 to 1) and the flag
+    threshold cannot be above the reject one.
+    """
+    for name, value in (('auto_reject_threshold', auto_reject_threshold),
+                        ('auto_approve_threshold', auto_approve_threshold),
+                        ('flag_review_threshold', flag_review_threshold)):
+        if value is not None and not (0.0 <= value <= 1.0):
+            return f"{name} must be between 0 and 1"
+    if severity is not None and not (1 <= severity <= 10):
+        return "severity must be between 1 and 10"
+    if (auto_reject_threshold is not None and flag_review_threshold is not None
+            and flag_review_threshold > auto_reject_threshold):
+        return "flag_review_threshold cannot be above auto_reject_threshold"
+    return None
+
 
 class AdminService:
     """Service for admin and moderator operations."""
@@ -115,6 +145,26 @@ class AdminService:
                 if not content:
                     return False, None, "Content not found"
 
+                notes = (notes or '').strip()
+                if len(notes) > MAX_NOTES_CHARS:
+                    return False, None, f"Notes are too long (the limit is {MAX_NOTES_CHARS} characters)"
+
+                # Still being classified: the worker would overwrite this decision when it finishes
+                if content.status in (ContentStatus.PENDING, ContentStatus.PROCESSING):
+                    return False, None, "Content is still being classified; review it once it is flagged"
+
+                # An open appeal on this content is settled by the same decision. It used to stay
+                # open, and could later be "reviewed" into the opposite outcome.
+                open_appeal = db.query(Review).filter(
+                    Review.content_id == content_id,
+                    Review.is_appeal_review == True,
+                    Review.action == APPEAL_OPEN
+                ).first()
+                if open_appeal:
+                    open_appeal.moderator_id = moderator.id
+                    open_appeal.action = 'appeal_approved' if approved else 'appeal_rejected'
+                    open_appeal.approved = approved
+
                 # Create review record
                 review = Review(
                     content_id=content_id,
@@ -122,7 +172,7 @@ class AdminService:
                     action='manual_approve' if approved else 'manual_reject',
                     approved=approved,
                     category=ViolationCategory(category) if category else None,
-                    notes=notes or '',
+                    notes=notes,
                     is_appeal_review=False
                 )
 
@@ -184,6 +234,12 @@ class AdminService:
         """
         try:
             with self.db_manager.get_session() as db:
+                reason = (reason or '').strip()
+                if not reason:
+                    return False, None, "Please say why the decision was wrong"
+                if len(reason) > MAX_APPEAL_REASON_CHARS:
+                    return False, None, f"The reason is too long (the limit is {MAX_APPEAL_REASON_CHARS} characters)"
+
                 # Get content item
                 content = db.query(ContentItem).filter(ContentItem.id == content_id).first()
 
@@ -276,6 +332,15 @@ class AdminService:
 
                 if not appeal or not appeal.is_appeal_review:
                     return False, None, "Appeal not found"
+
+                # An appeal is decided once. It could be "reviewed" again and again, flipping the
+                # outcome each time.
+                if appeal.action != APPEAL_OPEN:
+                    return False, None, "This appeal has already been reviewed"
+
+                notes = (notes or '').strip() or None
+                if notes and len(notes) > MAX_NOTES_CHARS:
+                    return False, None, f"Notes are too long (the limit is {MAX_NOTES_CHARS} characters)"
 
                 # Get content
                 content = db.query(ContentItem).filter(
@@ -386,6 +451,15 @@ class AdminService:
         Returns:
             Tuple of (success, policy, error_message)
         """
+        name = (name or '').strip()
+        if not name or len(name) > 100:
+            return False, None, "Policy name must be 1-100 characters"
+        problem = validate_policy_values(
+            auto_reject_threshold, auto_approve_threshold, flag_review_threshold, severity
+        )
+        if problem:
+            return False, None, problem
+
         try:
             with self.db_manager.get_session() as db:
                 # Check if policy already exists
@@ -470,6 +544,18 @@ class AdminService:
 
                 if not policy:
                     return False, None, "Policy not found"
+
+                # Validate the values the policy will have after this change, not only the new ones
+                changing_numbers = any(v is not None for v in (
+                    auto_reject_threshold, auto_approve_threshold, flag_review_threshold, severity))
+                problem = validate_policy_values(
+                    auto_reject_threshold if auto_reject_threshold is not None else policy.auto_reject_threshold,
+                    auto_approve_threshold,
+                    flag_review_threshold if flag_review_threshold is not None else policy.flag_review_threshold,
+                    severity,
+                ) if changing_numbers else None  # switching a policy on or off needs no numbers to be valid
+                if problem:
+                    return False, None, problem
 
                 # Track changes
                 changes = {}

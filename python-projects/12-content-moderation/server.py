@@ -1,11 +1,14 @@
 """Content Moderation System FastAPI Server"""
 
-from fastapi import FastAPI, HTTPException, Depends, Cookie, Response, Request, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Cookie, Response, Request, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
+from urllib.parse import urlparse
 import uvicorn
 import os
 import hashlib
@@ -25,6 +28,8 @@ from src.services.admin_service import get_admin_service
 from src.services.analytics_service import get_analytics_service
 from src.utils.file_handler import get_file_handler
 from src.utils.cost_tracker import get_cost_tracker
+from src.utils.rate_limit import FailureThrottle
+from src.middleware.rate_limiter import client_ip
 
 # Load environment
 load_dotenv()
@@ -94,18 +99,32 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', '100'))
 UPLOAD_DIR = Path(os.getenv('UPLOAD_DIR', './data/uploads'))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# Limits
+MAX_TEXT_CHARS = int(os.getenv('MAX_TEXT_CHARS', 10000))
+# Priorities a regular user may pick: 0 normal, 5 high. 10 (the critical queue) is for moderators:
+# the form offered it to everyone, so any user could put their submissions ahead of everyone else's.
+USER_MAX_PRIORITY = 5
+MAX_PRIORITY = 10
+
+# Failed logins allowed per username and client before further attempts get a 429. The per-IP
+# limit in the middleware is separate; this one follows the username across addresses.
+login_throttle = FailureThrottle(
+    max_failures=int(os.getenv('LOGIN_MAX_FAILURES', 10)),
+    window_seconds=int(os.getenv('LOGIN_WINDOW_SECONDS', 300)),
+)
+
 
 # Pydantic models
 
 class RegisterRequest(BaseModel):
-    username: str
-    email: str
-    password: str
+    username: str = Field(max_length=200)
+    email: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
 
 
 class ContentSubmitText(BaseModel):
@@ -122,25 +141,25 @@ class UserRoleUpdate(BaseModel):
 
 
 class ReviewSubmitRequest(BaseModel):
-    content_id: str
+    content_id: str = Field(max_length=100)
     approved: bool
-    category: Optional[str] = None
-    notes: Optional[str] = None
+    category: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = Field(None, max_length=5000)
 
 
 class AppealCreateRequest(BaseModel):
-    content_id: str
-    reason: str
+    content_id: str = Field(max_length=100)
+    reason: str = Field(max_length=5000)
 
 
 class AppealReviewRequest(BaseModel):
     approved: bool
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=5000)
 
 
 class PolicyCreateRequest(BaseModel):
-    name: str
-    category: str
+    name: str = Field(max_length=200)
+    category: str = Field(max_length=50)
     auto_reject_threshold: float = 0.9
     auto_approve_threshold: float = 0.95
     flag_review_threshold: float = 0.5
@@ -154,6 +173,20 @@ class PolicyUpdateRequest(BaseModel):
     flag_review_threshold: Optional[float] = None
     severity: Optional[int] = None
     enabled: Optional[bool] = None
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    """`detail` as one sentence: the page shows it, and FastAPI's list of objects displayed as [object Object]"""
+    problems = []
+    for err in exc.errors():
+        loc = list(err.get("loc", ()))
+        if loc and loc[0] in ("body", "query", "path", "form"):
+            loc = loc[1:]
+        field = ".".join(str(part) for part in loc)
+        message = str(err.get("msg", "Invalid value")).removeprefix("Value error, ")
+        problems.append(f"{field}: {message}" if field else message)
+    return JSONResponse(status_code=422, content={"detail": "; ".join(problems) or "Invalid request"})
 
 
 # Dependency: Get current user from session cookie
@@ -200,19 +233,8 @@ async def get_current_moderator(
 # Helper functions
 
 def get_client_ip(request: Request) -> str:
-    """Extract client IP address from request"""
-    # Check for forwarded IP (behind proxy)
-    forwarded = request.headers.get('X-Forwarded-For')
-    if forwarded:
-        return forwarded.split(',')[0].strip()
-
-    # Check for real IP (behind proxy)
-    real_ip = request.headers.get('X-Real-IP')
-    if real_ip:
-        return real_ip
-
-    # Fall back to client host
-    return request.client.host if request.client else 'unknown'
+    """The caller's address (forwarding headers only when TRUST_PROXY=true, see client_ip)"""
+    return client_ip(request)
 
 
 def calculate_file_hash(file_path: Path) -> str:
@@ -253,10 +275,18 @@ async def health_check():
                 "error": str(e)
             }
 
+    # Without a worker every submission stays "processing" for ever, so say whether one is running
+    try:
+        from src.core.queue_manager import get_queue_manager
+        worker = get_queue_manager().worker_status()
+    except Exception as e:
+        worker = {"available": False, "workers": 0, "error": str(e)[:200]}
+
     return {
         "status": "ok",
         "database": "connected",
         "version": "1.0.0",
+        "worker": worker,
         "stats": {
             "users": user_count,
             "content_items": content_count
@@ -264,10 +294,12 @@ async def health_check():
     }
 
 
-# Authentication endpoints
+# Authentication endpoints. register, guest_login and login are plain `def` on purpose: FastAPI
+# runs those in a worker thread, and bcrypt (~0.25 s of CPU per hash) froze every other request
+# when they were `async def`.
 
 @app.post("/api/auth/register")
-async def register(data: RegisterRequest, response: Response, request: Request):
+def register(data: RegisterRequest, response: Response, request: Request):
     """Register new user"""
     with db_manager.get_session() as db:
         auth_manager = AuthManager(db, SESSION_TTL_DAYS)
@@ -299,7 +331,7 @@ async def register(data: RegisterRequest, response: Response, request: Request):
 
 
 @app.post("/api/auth/guest")
-async def guest_login(response: Response, request: Request):
+def guest_login(response: Response, request: Request):
     """Create a temporary guest account and log in as it - no signup
     form required. Mirrors /api/auth/register's session/cookie setup."""
     with db_manager.get_session() as db:
@@ -328,14 +360,26 @@ async def guest_login(response: Response, request: Request):
 
 
 @app.post("/api/auth/login")
-async def login(data: LoginRequest, response: Response, request: Request):
+def login(data: LoginRequest, response: Response, request: Request):
     """Login user"""
+    throttle_key = f"{get_client_ip(request)}|{data.username.strip().lower()}"
+    wait = login_throttle.retry_after(throttle_key)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed logins. Try again in {wait} seconds.",
+            headers={"Retry-After": str(wait)},
+        )
+
     with db_manager.get_session() as db:
         auth_manager = AuthManager(db, SESSION_TTL_DAYS)
         success, user, error = auth_manager.authenticate(data.username, data.password)
 
         if not success:
+            login_throttle.record_failure(throttle_key)
             raise HTTPException(status_code=401, detail=error or "Invalid credentials")
+
+        login_throttle.reset(throttle_key)
 
         # Create session with IP tracking
         ip_address = get_client_ip(request)
@@ -404,7 +448,15 @@ async def submit_content(
 
     Returns immediately with job ID for status tracking.
     """
+    # Priority: 0-5 for users, up to 10 for moderators
+    priority = priority or 0
+    if priority < 0 or priority > MAX_PRIORITY:
+        raise HTTPException(status_code=400, detail=f"priority must be between 0 and {MAX_PRIORITY}")
+
     with db_manager.get_session() as db:
+        if priority > USER_MAX_PRIORITY and not AuthManager(db, SESSION_TTL_DAYS).is_moderator(user):
+            raise HTTPException(status_code=403, detail="Critical priority is reserved for moderators")
+
         # Validate content type
         try:
             content_type_enum = ContentType(content_type)
@@ -427,13 +479,30 @@ async def submit_content(
         if content_type_enum == ContentType.TEXT:
             if not text_content or not text_content.strip():
                 raise HTTPException(status_code=400, detail="text_content is required for text submissions")
+            if len(text_content) > MAX_TEXT_CHARS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Text is too long ({len(text_content)} characters, the limit is {MAX_TEXT_CHARS})"
+                )
 
         elif content_type_enum in [ContentType.IMAGE, ContentType.VIDEO]:
             if not file:
                 raise HTTPException(status_code=400, detail="file is required for image/video submissions")
 
-            # Read file data
-            file_data = await file.read()
+            # Read the file in pieces and stop at the limit: the whole upload (any size) was read
+            # into memory before its size was looked at
+            file_data = bytearray()
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                file_data += chunk
+                if len(file_data) > file_handler.max_upload_size:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File too large. Maximum size: {file_handler.max_upload_size // (1024 * 1024)}MB"
+                    )
+            file_data = bytes(file_data)
 
             # Save file using file handler
             success, saved_path, saved_hash, error = file_handler.save_upload(
@@ -449,9 +518,12 @@ async def submit_content(
             file_path = saved_path
             file_hash = saved_hash
 
-            # Check for duplicate
+            # Check for duplicate - among this user's own submissions. It looked at everyone's: a user
+            # uploading a file somebody else had submitted was handed that person's content record
+            # (owner id, status, path) instead of getting their own file moderated.
             existing = db.query(ContentItem).filter(
-                ContentItem.file_hash == file_hash
+                ContentItem.file_hash == file_hash,
+                ContentItem.user_id == user.id
             ).first()
 
             if existing:
@@ -491,12 +563,17 @@ async def submit_content(
             file_path=file_path,
             file_hash=file_hash,
             status=ContentStatus.PENDING,  # Pending until job is queued
-            priority=priority or 0
+            priority=priority
         )
 
         db.add(content_item)
         db.commit()
         db.refresh(content_item)
+
+        # Processing before the job is sent. It was set afterwards, so a worker that finished first
+        # had its decision overwritten and the item stayed "processing" for ever.
+        content_item.status = ContentStatus.PROCESSING
+        db.commit()
 
         # Phase 4: Asynchronous classification with Celery
         try:
@@ -505,14 +582,14 @@ async def submit_content(
                 job = queue_manager.create_text_job(
                     content_id=content_item.id,
                     text_content=text_content,
-                    priority=priority or 0
+                    priority=priority
                 )
             elif content_type_enum == ContentType.IMAGE:
                 job = queue_manager.create_image_job(
                     content_id=content_item.id,
                     file_path=file_path,
                     use_vision=True,
-                    priority=priority or 0
+                    priority=priority
                 )
             elif content_type_enum == ContentType.VIDEO:
                 job = queue_manager.create_video_job(
@@ -520,14 +597,11 @@ async def submit_content(
                     file_path=file_path,
                     max_frames=10,
                     use_vision=True,
-                    priority=priority or 0
+                    priority=priority
                 )
             else:
                 raise ValueError(f"Unsupported content type: {content_type_enum}")
 
-            # Update content status to processing
-            content_item.status = ContentStatus.PROCESSING
-            db.commit()
             db.refresh(content_item)
 
             # Prepare response with job information
@@ -594,11 +668,51 @@ async def get_content(
         return content_dict
 
 
+MEDIA_TYPES = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp',
+    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo', '.webm': 'video/webm',
+}
+
+
+@app.get("/api/content/{content_id}/file")
+async def get_content_file(
+    content_id: str,
+    user: User = Depends(get_current_user)
+):
+    """
+    The uploaded image or video, for its owner and for moderators.
+
+    Nothing served the upload directory, so the review queue's <img src="data/uploads/..."> was a 404:
+    moderators could not see the picture or video they were asked to judge.
+    """
+    with db_manager.get_session() as db:
+        content = db.query(ContentItem).filter(ContentItem.id == content_id).first()
+
+        if not content or not content.file_path:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if content.user_id != user.id and not AuthManager(db, SESSION_TTL_DAYS).is_moderator(user):
+            # the same answer as for a missing file: no probing for ids
+            raise HTTPException(status_code=404, detail="File not found")
+
+        file_path = Path(content.file_path).resolve()
+
+    # Only ever from the upload directory, whatever the database row says
+    if UPLOAD_DIR.resolve() not in file_path.parents or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(
+        str(file_path),
+        media_type=MEDIA_TYPES.get(file_path.suffix.lower(), 'application/octet-stream'),
+        headers={'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline'}
+    )
+
+
 @app.get("/api/content")
 async def list_user_content(
     status: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     user: User = Depends(get_current_user)
 ):
     """List user's submitted content"""
@@ -661,8 +775,8 @@ async def delete_content(
 
 @app.get("/api/admin/users")
 async def list_users(
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     admin: User = Depends(get_current_admin)
 ):
     """List all users (admin only)"""
@@ -748,8 +862,8 @@ async def reactivate_user(
 async def get_moderation_queue(
     status: Optional[str] = None,
     priority: Optional[int] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     moderator: User = Depends(get_current_moderator)
 ):
     """Get moderation queue (moderator only)"""
@@ -1046,7 +1160,7 @@ async def get_analytics_overview(
 
 @app.get("/api/analytics/trends")
 async def get_analytics_trends(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=365),
     moderator: User = Depends(get_current_moderator)
 ):
     """Get time-series trends (moderator only)"""
@@ -1131,7 +1245,7 @@ async def get_performance_metrics(
 
 @app.get("/api/analytics/export")
 async def export_analytics(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=365),
     format: str = 'json',
     moderator: User = Depends(get_current_moderator)
 ):
@@ -1210,43 +1324,70 @@ async def get_queue_stats(
 
 # WebSocket endpoint for real-time job updates
 
+def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
+    """
+    Browsers send no CORS preflight for a WebSocket, and SameSite=Strict is "same site", not "same
+    origin": another port of localhost is the same site, so the session cookie went along. Accept
+    the page's own origin (Origin host == Host header) and ALLOWED_ORIGINS; clients that send no
+    Origin are not browsers and cannot ride a cookie.
+    """
+    if not origin:
+        return True
+    if origin in [o.strip() for o in os.getenv('ALLOWED_ORIGINS', 'http://localhost:8000').split(',')]:
+        return True
+    return bool(host) and urlparse(origin).netloc == host
+
+
 @app.websocket("/ws/jobs/{job_id}")
-async def websocket_job_updates(websocket: WebSocket, job_id: str):
+async def websocket_job_updates(
+    websocket: WebSocket,
+    job_id: str,
+    session_token: Optional[str] = Cookie(None)
+):
     """
     WebSocket endpoint for real-time job progress updates.
 
-    Client connects with job_id and receives progress updates every 1 second.
+    Client connects with job_id and receives progress updates every 1 second. Only the person who
+    submitted the content (or a moderator) may watch a job: the socket used to accept anyone and
+    answer with the job's classification, reasoning included.
     """
+    if not origin_allowed(websocket.headers.get('origin'), websocket.headers.get('host')):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
+    from src.core.database import ModerationJob
+
+    with db_manager.get_session() as db:
+        success, user, _ = AuthManager(db, SESSION_TTL_DAYS).validate_session(session_token or '')
+        if not success:
+            await websocket.close(code=1008, reason="Not authenticated")
+            return
+
+        job = db.query(ModerationJob).filter(ModerationJob.id == job_id).first()
+        content = db.query(ContentItem).filter(ContentItem.id == job.content_id).first() if job else None
+        # The same answer for "no such job" and "not yours": no probing for job ids
+        if not job or not content or (
+            content.user_id != user.id and not AuthManager(db, SESSION_TTL_DAYS).is_moderator(user)
+        ):
+            await websocket.close(code=1008, reason="Job not found")
+            return
+
     await websocket.accept()
 
     try:
         from src.core.queue_manager import get_queue_manager
-        from src.core.database import ModerationJob
-
         queue_manager = get_queue_manager()
 
-        # Verify job exists
-        with db_manager.get_session() as db:
-            job = db.query(ModerationJob).filter(ModerationJob.id == job_id).first()
-
-            if not job:
-                await websocket.send_json({
-                    "error": "Job not found"
-                })
-                await websocket.close()
-                return
-
-        # Send updates until task completes
+        # Send updates until the job is over
         while True:
             status = queue_manager.get_job_status(job_id)
 
-            # Send status update
             await websocket.send_json(status)
 
-            # Check if task is done
+            # Done: the task finished, or the job row says so (a job can be over without Celery
+            # reporting it, e.g. when its result has expired from Redis)
             celery_state = status.get('celery_state')
-            if celery_state in ['SUCCESS', 'FAILURE', 'REVOKED']:
-                # Send final update and close
+            if celery_state in ['SUCCESS', 'FAILURE', 'REVOKED'] or status.get('status') in ('completed', 'failed'):
                 await asyncio.sleep(1)
                 await websocket.send_json({
                     **status,
@@ -1257,24 +1398,45 @@ async def websocket_job_updates(websocket: WebSocket, job_id: str):
             # Wait 1 second before next update
             await asyncio.sleep(1)
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         logging.info(f"WebSocket disconnected for job {job_id}")
     except Exception as e:
         logging.error(f"WebSocket error for job {job_id}: {e}")
         try:
             await websocket.send_json({
-                "error": str(e)
+                "error": "Could not read the job status"
             })
-        except:
+        except Exception:
             pass
     finally:
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Close jobs left open by workers that never reported, and drop expired sessions"""
+    try:
+        from src.workers.job_tracker import reconcile_jobs
+        closed = reconcile_jobs(db_manager)
+        if closed:
+            logging.info(f"Closed {closed} moderation job(s) whose content was already moderated")
+    except Exception as e:
+        logging.warning(f"Could not reconcile moderation jobs: {e}")
+
+    with db_manager.get_session() as db:
+        AuthManager(db, SESSION_TTL_DAYS).cleanup_expired_sessions()
 
 
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 7000))
-    host = os.getenv('HOST', '0.0.0.0')
-    uvicorn.run(app, host=host, port=port)
+    # Loopback unless HOST says otherwise: the app holds sign-ins and moderation decisions
+    # (it listened on every interface whatever HOST said elsewhere)
+    host = os.getenv('HOST', '127.0.0.1')
+    # uvicorn itself rewrites the client address from X-Forwarded-For when the request comes from
+    # 127.0.0.1 (its default), which let a local client choose its own address for every rate limit.
+    # Only behind a reverse proxy you run (TRUST_PROXY=true) are those headers believed.
+    trust_proxy = os.getenv('TRUST_PROXY', 'false').lower() == 'true'
+    uvicorn.run(app, host=host, port=port, proxy_headers=trust_proxy)

@@ -17,6 +17,7 @@ class ContentModerationApp {
         this.setupAuthListeners();
         this.setupNavigationListeners();
         this.setupSubmitListeners();
+        this.setupListFilterListeners();
         this.setupModalListeners();
     }
 
@@ -202,6 +203,13 @@ class ContentModerationApp {
         roleBadge.textContent = this.currentUser.is_guest ? 'guest' : this.currentUser.role;
         roleBadge.className = `role-badge ${this.currentUser.is_guest ? 'guest' : this.currentUser.role}`;
 
+        // Critical priority (the queue that jumps every other) is for moderators; the server refuses it
+        // from anyone else, so do not offer it
+        if (this.currentUser.role !== 'admin' && this.currentUser.role !== 'moderator') {
+            document.querySelectorAll('#text-priority option[value="10"], #image-priority option[value="10"], #video-priority option[value="10"]')
+                .forEach(option => option.remove());
+        }
+
         // Show/hide role-specific navigation
         if (this.currentUser.role === 'admin' || this.currentUser.role === 'moderator') {
             document.querySelectorAll('.moderator-only').forEach(el => {
@@ -306,10 +314,11 @@ class ContentModerationApp {
         formData.append('text_content', textContent);
         formData.append('priority', priority);
 
-        await this.submitContent(formData);
-
-        // Clear form on success
-        document.getElementById('text-content').value = '';
+        // Clear the form only when the submission was accepted: it was cleared either way, so a
+        // refused text (too long, rate limited, a network error) was lost
+        if (await this.submitContent(formData)) {
+            document.getElementById('text-content').value = '';
+        }
     }
 
     async submitImage() {
@@ -326,11 +335,10 @@ class ContentModerationApp {
         formData.append('file', fileInput.files[0]);
         formData.append('priority', priority);
 
-        await this.submitContent(formData);
-
-        // Clear form on success
-        fileInput.value = '';
-        document.getElementById('image-preview').style.display = 'none';
+        if (await this.submitContent(formData)) {
+            fileInput.value = '';
+            document.getElementById('image-preview').style.display = 'none';
+        }
     }
 
     async submitVideo() {
@@ -347,11 +355,10 @@ class ContentModerationApp {
         formData.append('file', fileInput.files[0]);
         formData.append('priority', priority);
 
-        await this.submitContent(formData);
-
-        // Clear form on success
-        fileInput.value = '';
-        document.getElementById('video-preview').style.display = 'none';
+        if (await this.submitContent(formData)) {
+            fileInput.value = '';
+            document.getElementById('video-preview').style.display = 'none';
+        }
     }
 
     async submitContent(formData) {
@@ -370,12 +377,20 @@ class ContentModerationApp {
             if (response.ok) {
                 this.showSuccess('submit-success', data.message || 'Content submitted successfully!');
                 setTimeout(() => this.clearError('submit-success'), 3000);
-            } else {
-                this.showError('submit-error', data.detail || 'Submission failed');
+                return true;
             }
+            this.showError('submit-error', this.errorText(data, 'Submission failed'));
         } catch (error) {
             this.showError('submit-error', 'Network error. Please try again.');
         }
+        return false;
+    }
+
+    /** The server's message as one string (a 429 from the rate limiter has `detail` too) */
+    errorText(data, fallback) {
+        if (data && typeof data.detail === 'string') return data.detail;
+        if (data && typeof data.error === 'string') return data.error;
+        return fallback;
     }
 
     previewImage(event) {
@@ -405,6 +420,9 @@ class ContentModerationApp {
         const listEl = document.getElementById('content-list');
         listEl.innerHTML = '<div class="loading">Loading content...</div>';
 
+        clearTimeout(this.contentRefreshTimer);
+        let waiting = false;
+
         try {
             const statusFilter = document.getElementById('content-status-filter').value;
             const url = statusFilter ? `/api/content?status=${statusFilter}` : '/api/content';
@@ -414,6 +432,7 @@ class ContentModerationApp {
 
             if (response.ok && data.content.length > 0) {
                 listEl.innerHTML = data.content.map(item => this.renderContentItem(item)).join('');
+                waiting = data.content.some(item => item.status === 'pending' || item.status === 'processing');
             } else {
                 listEl.innerHTML = '<p class="loading">No content found</p>';
             }
@@ -421,7 +440,40 @@ class ContentModerationApp {
             listEl.innerHTML = '<p class="error-message">Failed to load content</p>';
         }
 
-        // Setup filter listeners
+        // Results arrive a few seconds after submitting: look again while something is still being
+        // classified (the list showed "processing" until the user pressed Refresh), and say when no
+        // worker is running at all, in which case it never changes
+        if (waiting && this.currentView === 'my-content') {
+            this.contentRefreshTimer = setTimeout(() => this.loadMyContent(), 4000);
+        }
+        await this.showWorkerNotice(waiting);
+    }
+
+    async showWorkerNotice(waiting) {
+        let notice = document.getElementById('worker-notice');
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.id = 'worker-notice';
+            notice.className = 'error-message';
+            document.getElementById('content-list').before(notice);
+        }
+        notice.style.display = 'none';
+        if (!waiting) return;
+
+        try {
+            const health = await (await fetch('/api/health')).json();
+            if (health.worker && health.worker.available === false) {
+                notice.textContent = 'No moderation worker is running, so submissions will stay "processing" until one is started.';
+                notice.style.display = 'block';
+            }
+        } catch (error) {
+            // no notice: the list itself is what matters
+        }
+    }
+
+    setupListFilterListeners() {
+        // Once, here. They were added inside loadMyContent(), so every visit to the page added
+        // another copy and one change of the filter fetched the list several times.
         document.getElementById('content-status-filter').addEventListener('change', () => this.loadMyContent());
         document.getElementById('refresh-content-btn').addEventListener('click', () => this.loadMyContent());
     }
@@ -485,9 +537,10 @@ class ContentModerationApp {
 
         let preview = '';
         if (item.content_type === 'text') {
-            preview = `<div class="content-preview">${this.truncate(item.text_content, 150)}</div>`;
+            // Escaped: this is text a user typed, shown in their list AND in the moderators' queue
+            preview = `<div class="content-preview">${this.escapeHtml(this.truncate(item.text_content, 150))}</div>`;
         } else if (item.file_path) {
-            preview = `<div class="content-preview">File: ${item.file_path.split('/').pop()}</div>`;
+            preview = `<div class="content-preview">File: ${this.escapeHtml(item.file_path.split('/').pop())}</div>`;
         }
 
         let classificationsHtml = '';
@@ -496,8 +549,8 @@ class ContentModerationApp {
             item.classifications.forEach(c => {
                 classificationsHtml += `
                     <div class="classification-item">
-                        <strong>${c.category}</strong>: ${(c.confidence * 100).toFixed(1)}%
-                        (${c.provider})
+                        <strong>${this.escapeHtml(c.category)}</strong>: ${(Number(c.confidence) * 100).toFixed(1)}%
+                        (${this.escapeHtml(c.provider)})
                     </div>
                 `;
             });
@@ -511,7 +564,7 @@ class ContentModerationApp {
         const appealHtml = !showClassifications && item.status === 'rejected'
             ? `
                 <div class="content-actions">
-                    <button class="btn-secondary" onclick="app.appealContent('${item.id}')">
+                    <button class="btn-secondary" onclick="app.appealContent('${this.escapeHtml(item.id)}')">
                         Appeal Rejection
                     </button>
                 </div>
@@ -519,15 +572,15 @@ class ContentModerationApp {
             : '';
 
         return `
-            <div class="content-item" data-id="${item.id}">
+            <div class="content-item" data-id="${this.escapeHtml(item.id)}">
                 <div class="content-item-header">
-                    <span class="content-type-badge ${item.content_type}">${item.content_type}</span>
-                    <span class="content-status-badge ${item.status}">${item.status}</span>
+                    <span class="content-type-badge ${this.escapeHtml(item.content_type)}">${this.escapeHtml(item.content_type)}</span>
+                    <span class="content-status-badge ${this.escapeHtml(item.status)}">${this.escapeHtml(item.status)}</span>
                 </div>
                 ${preview}
                 ${classificationsHtml}
                 <div class="content-meta">
-                    <span>Priority: ${item.priority}</span>
+                    <span>Priority: ${Number(item.priority) || 0}</span>
                     <span>Submitted: ${date}</span>
                 </div>
                 ${appealHtml}
@@ -540,15 +593,15 @@ class ContentModerationApp {
             <div class="user-item">
                 <div class="user-item-info">
                     <div class="user-item-name">
-                        ${user.username}
-                        <span class="role-badge ${user.role}">${user.role}</span>
+                        ${this.escapeHtml(user.username)}
+                        <span class="role-badge ${this.escapeHtml(user.role)}">${this.escapeHtml(user.role)}</span>
                     </div>
-                    <div class="user-item-email">${user.email}</div>
+                    <div class="user-item-email">${this.escapeHtml(user.email)}</div>
                 </div>
                 <div class="user-item-actions">
                     ${user.is_active ?
-                        `<button class="btn-secondary" onclick="app.deactivateUser('${user.id}')">Deactivate</button>` :
-                        `<button class="btn-primary" onclick="app.reactivateUser('${user.id}')">Reactivate</button>`
+                        `<button class="btn-secondary" onclick="app.deactivateUser('${this.escapeHtml(user.id)}')">Deactivate</button>` :
+                        `<button class="btn-primary" onclick="app.reactivateUser('${this.escapeHtml(user.id)}')">Reactivate</button>`
                     }
                 </div>
             </div>
@@ -651,6 +704,16 @@ class ContentModerationApp {
         const el = document.getElementById(elementId);
         el.textContent = '';
         el.style.display = 'none';
+    }
+
+    /** Text for HTML, quotes included so it is also safe inside an attribute value */
+    escapeHtml(text) {
+        return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     truncate(text, length) {
