@@ -11,6 +11,7 @@ Generates research reports in multiple formats:
 
 import logging
 import json
+from urllib.parse import urlparse
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,58 @@ from pathlib import Path
 
 class ReportGenerator:
     """Generates research reports in multiple formats."""
+
+    FORMAT_ALIASES = {
+        'markdown': 'markdown', 'md': 'markdown', 'html': 'html', 'json': 'json',
+        'pdf': 'pdf', 'docx': 'docx', 'doc': 'docx',
+    }
+
+    @staticmethod
+    def _normalize(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Accept a research result in either shape: as just computed (`text`, `type`, `sources`) or
+        as loaded from the database (`finding_text`, `finding_type`, `num_sources`, `source_type`).
+        Every download comes from the saved one, and the generators only read the first, so reports
+        had no findings and every source was "unknown".
+        """
+        data = dict(data)
+
+        findings = []
+        for f in data.get('findings') or []:
+            findings.append({
+                'text': f.get('text') or f.get('finding_text') or '',
+                'type': f.get('type') or f.get('finding_type') or 'finding',
+                'confidence': float(f.get('confidence') or 0),
+                'sources': f.get('sources') if isinstance(f.get('sources'), int) else f.get('num_sources', 0) or 0,
+            })
+        data['findings'] = findings
+
+        sources = []
+        for s in data.get('sources') or []:
+            item = dict(s)
+            item['type'] = s.get('type') or s.get('source_type') or 'unknown'
+            sources.append(item)
+        data['sources'] = sources
+
+        data['citations'] = [c for c in (data.get('citations') or []) if c]
+        data['summary'] = data.get('summary') or 'No summary available.'
+
+        if 'stats' not in data:
+            processing = data.get('processing_time') or 0
+            data['stats'] = {
+                'used_sources': len(sources),
+                'findings': len(findings),
+                'avg_confidence': float(data.get('avg_confidence') or data.get('confidence') or 0),
+                'processing_time': float(processing),
+            }
+        return data
+
+    @staticmethod
+    def _safe_url(url: Optional[str]) -> Optional[str]:
+        """The URL if it is a web address; "javascript:" and the like are not links"""
+        if url and urlparse(url.strip()).scheme in ('http', 'https'):
+            return url.strip()
+        return None
 
     def __init__(self, output_dir: str = './data/output'):
         """
@@ -48,7 +101,10 @@ class ReportGenerator:
         Returns:
             Path to generated report file
         """
-        format = format.lower()
+        format = (format or '').lower()
+        if format not in self.FORMAT_ALIASES:
+            raise ValueError(f"Unsupported format: {format}")
+        research_data = self._normalize(research_data)
 
         # Generate filename if not provided
         if not filename:
@@ -60,18 +116,16 @@ class ReportGenerator:
         filename = self._sanitize_filename(filename)
 
         # Generate report based on format
-        if format == 'markdown' or format == 'md':
+        kind = self.FORMAT_ALIASES[format]
+        if kind == 'markdown':
             return self._generate_markdown(research_data, filename)
-        elif format == 'html':
+        elif kind == 'html':
             return self._generate_html(research_data, filename)
-        elif format == 'json':
+        elif kind == 'json':
             return self._generate_json(research_data, filename)
-        elif format == 'pdf':
+        elif kind == 'pdf':
             return self._generate_pdf(research_data, filename)
-        elif format == 'docx' or format == 'doc':
-            return self._generate_docx(research_data, filename)
-        else:
-            raise ValueError(f"Unsupported format: {format}")
+        return self._generate_docx(research_data, filename)
 
     def _generate_markdown(
         self,
@@ -119,10 +173,11 @@ class ReportGenerator:
             content.append("## Sources\n")
             for i, source in enumerate(data['sources'], 1):
                 content.append(f"{i}. **{source.get('title', 'Untitled')}**")
-                if source.get('url'):
-                    content.append(f" - [{source['url']}]({source['url']})")
+                url = self._safe_url(source.get('url'))
+                if url:
+                    content.append(f" - [{url}](<{url}>)")
                 content.append(f" (*{source.get('type', 'unknown')}*)")
-                if 'composite_score' in source:
+                if isinstance(source.get('composite_score'), (int, float)):
                     content.append(f" - Score: {source['composite_score']:.2f}")
                 content.append("")
 
@@ -167,7 +222,7 @@ class ReportGenerator:
 
         # Metadata
         html.append("  <div class='metadata'>")
-        html.append(f"    <p><strong>Query ID:</strong> {data.get('query_id', 'N/A')}</p>")
+        html.append(f"    <p><strong>Query ID:</strong> {self._escape_html(data.get('query_id', 'N/A'))}</p>")
         html.append(f"    <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>")
 
         if 'stats' in data:
@@ -203,10 +258,15 @@ class ReportGenerator:
             for source in data['sources']:
                 html.append("    <li>")
                 html.append(f"      <strong>{self._escape_html(source.get('title', 'Untitled'))}</strong>")
-                if source.get('url'):
-                    html.append(f" - <a href='{source['url']}' target='_blank'>{source['url']}</a>")
-                html.append(f" <em>({source.get('type', 'unknown')})</em>")
-                if 'composite_score' in source:
+                # The URL comes from a web search result: unescaped, a quote in it ended the attribute
+                # and "javascript:..." ran when the report was opened and the link clicked
+                url = self._safe_url(source.get('url'))
+                if url:
+                    html.append(f" - <a href=\"{self._escape_html(url)}\" target='_blank' rel='noopener noreferrer'>{self._escape_html(url)}</a>")
+                elif source.get('url'):
+                    html.append(f" - {self._escape_html(source['url'])}")
+                html.append(f" <em>({self._escape_html(source.get('type', 'unknown'))})</em>")
+                if isinstance(source.get('composite_score'), (int, float)):
                     html.append(f" - Score: {source['composite_score']:.2f}")
                 html.append("    </li>")
             html.append("  </ol>")
@@ -268,6 +328,10 @@ class ReportGenerator:
         except ImportError:
             logging.error("PDF generation requires weasyprint: pip install weasyprint")
             raise ValueError("PDF generation not available (install weasyprint)")
+        except OSError as e:
+            # weasyprint imports fine without pango/cairo and then fails here, with OSError
+            logging.error(f"PDF generation unavailable: {e}")
+            raise ValueError("PDF generation not available: weasyprint needs the pango library (brew install pango)")
 
         # Generate HTML first
         html_path = self._generate_html(data, f"{filename}_temp")
@@ -359,7 +423,7 @@ class ReportGenerator:
 
                 source_para.add_run(f" ({source.get('type', 'unknown')})")
 
-                if 'composite_score' in source:
+                if isinstance(source.get('composite_score'), (int, float)):
                     source_para.add_run(f" - Score: {source['composite_score']:.2f}")
 
         # Citations
@@ -502,7 +566,7 @@ class ReportGenerator:
         try:
             import weasyprint
             pdf_available = True
-        except ImportError:
+        except (ImportError, OSError):  # OSError: installed, but pango/cairo is not
             pass
 
         # Check if DOCX generation is available

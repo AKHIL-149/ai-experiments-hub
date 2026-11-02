@@ -26,6 +26,10 @@ except ImportError:
     logging.warning("PyMuPDF not installed. PDF extraction will not work.")
 
 
+class ArXivSearchError(RuntimeError):
+    """ArXiv could not be searched (unreachable, rate limited, or the query was refused)"""
+
+
 @dataclass
 class ArXivPaper:
     """ArXiv paper metadata and content."""
@@ -71,7 +75,8 @@ class ArXivClient:
         query: str,
         max_results: int = 10,
         sort_by = None,  # arxiv.SortCriterion, defaults to Relevance
-        extract_text: bool = True
+        extract_text: bool = True,
+        raise_on_error: bool = False
     ) -> List[ArXivPaper]:
         """
         Search ArXiv for papers matching query.
@@ -81,6 +86,8 @@ class ArXivClient:
             max_results: Maximum number of results
             sort_by: Sort criterion (Relevance, LastUpdatedDate, SubmittedDate)
             extract_text: Whether to download PDFs and extract text
+            raise_on_error: Raise ArXivSearchError when ArXiv cannot be searched, instead of
+                returning an empty list (which looks the same as "no papers match")
 
         Returns:
             List of ArXivPaper objects
@@ -119,6 +126,8 @@ class ArXivClient:
 
         except Exception as e:
             logging.error(f"ArXiv search failed: {e}")
+            if raise_on_error:
+                raise ArXivSearchError(f"ArXiv search failed: {e}") from e
 
         return papers
 

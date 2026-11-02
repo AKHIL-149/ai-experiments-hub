@@ -7,6 +7,8 @@ Integrates with caching for cost/performance optimization.
 
 import hashlib
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,6 +33,17 @@ except ImportError:
     logging.warning("trafilatura not installed. Will use basic content extraction.")
 
 
+class WebSearchError(RuntimeError):
+    """The search provider could not be reached or refused the query"""
+
+
+# Pages are read up to this much; an article never needs more, and a link to a huge download
+# used to be read into memory whole
+MAX_PAGE_BYTES = 1_000_000
+# How many pages are fetched at once while extracting content
+FETCH_WORKERS = 5
+
+
 @dataclass
 class SearchResult:
     """Search result from web search."""
@@ -50,8 +63,8 @@ class WebSearchClient:
         self,
         provider: str = 'duckduckgo',
         cache_manager=None,
-        max_retries: int = 3,
-        timeout: int = 30
+        max_retries: int = 1,
+        timeout: int = 10
     ):
         """
         Initialize web search client.
@@ -87,7 +100,8 @@ class WebSearchClient:
         self,
         query: str,
         max_results: int = 10,
-        extract_content: bool = True
+        extract_content: bool = True,
+        raise_on_error: bool = False
     ) -> List[SearchResult]:
         """
         Search the web and return results.
@@ -96,6 +110,8 @@ class WebSearchClient:
             query: Search query
             max_results: Maximum number of results to return
             extract_content: Whether to extract full content from URLs
+            raise_on_error: Raise WebSearchError when the provider fails, instead of returning
+                an empty list (which looks the same as "nothing found")
 
         Returns:
             List of SearchResult objects
@@ -110,7 +126,7 @@ class WebSearchClient:
 
         # Perform search based on provider
         if self.provider == 'duckduckgo':
-            results = self._search_duckduckgo(query, max_results)
+            results = self._search_duckduckgo(query, max_results, raise_on_error)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
@@ -118,14 +134,15 @@ class WebSearchClient:
         if extract_content:
             results = self._extract_content(results)
 
-        # Cache results
-        if self.cache_manager:
+        # Cache results. Not an empty list: a failed search returns one, and caching it made a
+        # one-minute outage answer "no results" for this query for a week.
+        if self.cache_manager and results:
             cache_key = self._get_cache_key(query, max_results)
             self.cache_manager.set(cache_key, results, category='search', ttl_days=7)
 
         return results
 
-    def _search_duckduckgo(self, query: str, max_results: int) -> List[SearchResult]:
+    def _search_duckduckgo(self, query: str, max_results: int, raise_on_error: bool = False) -> List[SearchResult]:
         """
         Search using DuckDuckGo.
 
@@ -148,7 +165,7 @@ class WebSearchClient:
                         url=result.get('href', ''),
                         snippet=result.get('body', ''),
                         source_domain=self._extract_domain(result.get('href', '')),
-                        relevance_score=1.0 - (idx / max_results)  # Simple ranking
+                        relevance_score=1.0 - (idx / max(max_results, 1))  # Simple ranking
                     )
                     results.append(search_result)
 
@@ -156,28 +173,35 @@ class WebSearchClient:
 
         except Exception as e:
             logging.error(f"DuckDuckGo search failed: {e}")
-            # Return empty results rather than raising
+            if raise_on_error:
+                raise WebSearchError(f"Web search failed: {e}") from e
 
         return results
+
+    def fetch_contents(self, results: List[SearchResult]) -> List[SearchResult]:
+        """Download and extract the page text of results found with extract_content=False"""
+        return self._extract_content(results)
 
     def _extract_content(self, results: List[SearchResult]) -> List[SearchResult]:
         """
         Extract full content from search result URLs.
 
-        Args:
-            results: List of search results
-
-        Returns:
-            Updated list with content extracted
+        Pages are fetched in parallel: one after another, a few slow or dead sites kept a search
+        busy for minutes (a timeout and a retry each).
         """
-        for result in results:
+        if not results:
+            return results
+
+        def fetch(result: SearchResult) -> None:
             try:
-                content = self._fetch_and_extract_content(result.url)
-                result.content = content
+                result.content = self._fetch_and_extract_content(result.url)
             except Exception as e:
                 logging.warning(f"Failed to extract content from {result.url}: {e}")
                 # Keep snippet as fallback content
                 result.content = result.snippet
+
+        with ThreadPoolExecutor(max_workers=min(FETCH_WORKERS, len(results))) as pool:
+            list(pool.map(fetch, results))
 
         return results
 
@@ -191,14 +215,27 @@ class WebSearchClient:
         Returns:
             Extracted text content
         """
+        if urlparse(url).scheme not in ('http', 'https'):
+            raise ValueError(f"Not a web page: {url}")
+
         # Fetch HTML
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ResearchBot/1.0; +https://research-assistant.example)'
         }
-        response = self.session.get(url, headers=headers, timeout=self.timeout)
-        response.raise_for_status()
+        with self.session.get(url, headers=headers, timeout=self.timeout, stream=True) as response:
+            response.raise_for_status()
 
-        html = response.text
+            content_type = response.headers.get('Content-Type', '').lower()
+            if content_type and not any(kind in content_type for kind in ('html', 'text/plain', 'xml')):
+                # A PDF or image decoded as text is noise, and would be sent to the model as such
+                raise ValueError(f"Not a text page ({content_type})")
+
+            body = b''
+            for chunk in response.iter_content(chunk_size=65536):
+                body += chunk
+                if len(body) >= MAX_PAGE_BYTES:
+                    break
+            html = body.decode(response.encoding or response.apparent_encoding or 'utf-8', errors='replace')
 
         # Use trafilatura for better content extraction
         if TRAFILATURA_AVAILABLE:
@@ -225,7 +262,6 @@ class WebSearchClient:
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL."""
         try:
-            from urllib.parse import urlparse
             parsed = urlparse(url)
             return parsed.netloc
         except Exception:

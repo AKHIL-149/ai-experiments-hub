@@ -27,6 +27,9 @@ class Finding:
 class SynthesisEngine:
     """Synthesizes research findings from multiple sources."""
 
+    NEGATION_WORDS = frozenset({'does', 'will', 'true', 'false', 'higher', 'lower', 'more', 'less',
+                                'increase', 'decrease', 'cannot', 'with', 'that', 'this', 'have', 'from'})
+
     # Minimum sources required for high-confidence findings
     MIN_SOURCES_FOR_HIGH_CONFIDENCE = 3
 
@@ -55,6 +58,9 @@ class SynthesisEngine:
         self.min_sources = min_sources
         self.confidence_threshold = confidence_threshold
         self.detect_contradictions = detect_contradictions
+
+        # Why sources could not be read (model unreachable, ...), for the caller to report
+        self.errors: List[str] = []
 
         self.stats = {
             'total_sources': 0,
@@ -86,6 +92,7 @@ class SynthesisEngine:
             Tuple of (summary_text, findings_list)
         """
         self.stats['total_sources'] = len(ranked_sources)
+        self.errors = []
 
         if not ranked_sources:
             return "No sources found for the query.", []
@@ -108,8 +115,12 @@ class SynthesisEngine:
             logging.info("Detecting contradictions")
             self._detect_contradictions(findings, ranked_sources)
 
-        # Step 4: Filter by confidence
-        findings = [f for f in findings if f.confidence >= self.confidence_threshold]
+        # Step 4: Filter by confidence, and drop what no source supports: a finding whose source
+        # numbers matched nothing used to be kept at 50-60% confidence with "Sources: 0"
+        findings = [
+            f for f in findings
+            if f.confidence >= self.confidence_threshold and f.source_ids
+        ]
 
         # Step 5: Generate summary text
         summary = self._generate_summary(query, findings, ranked_sources)
@@ -193,9 +204,16 @@ class SynthesisEngine:
 
             except Exception as e:
                 logging.error(f"Failed to extract from source {source['id']}: {e}")
+                self.errors.append(str(e))
                 continue
 
         logging.info(f"Extracted key points from {len(extractions)}/{len(sources)} sources")
+
+        if sources and not extractions:
+            # Every call failed (model not running, model not installed ...). Carrying on produced
+            # a "completed" research with the message "No high-confidence findings".
+            raise RuntimeError(f"The language model could not read any source: {self.errors[0]}")
+
         return extractions
 
     def _reduce_synthesize_findings(
@@ -279,6 +297,7 @@ class SynthesisEngine:
 
         except Exception as e:
             logging.error(f"Failed to synthesize findings: {e}")
+            self.errors.append(str(e))
             return []
 
     def _parse_findings_from_llm(
@@ -300,62 +319,50 @@ class SynthesisEngine:
         """
         import re
         findings = []
+        current_finding: Dict[str, Any] = {}
 
-        # Try structured parsing first
-        lines = llm_output.strip().split('\n')
-        current_finding = {}
+        def flush():
+            nonlocal current_finding
+            if current_finding.get('finding_text'):
+                finding = self._create_finding_from_dict(current_finding, extractions, sources)
+                if finding:
+                    findings.append(finding)
+            current_finding = {}
 
-        for line in lines:
-            line = line.strip()
+        for raw_line in llm_output.strip().split('\n'):
+            # Small models decorate the format ("- **Finding:** ...", "1. Type: fact"): drop the
+            # bullets, numbering and bold markers before looking at the field name. A bullet used
+            # to be taken for a new finding, so "- Type: fact" replaced the finding's text with "fact".
+            line = re.sub(r'^[\s>*#\-•]+', '', raw_line)
+            line = re.sub(r'^\d+[.)]\s+', '', line).replace('**', '').replace('__', '').strip()
+
             if not line:
-                # End of finding
-                if current_finding.get('finding_text'):
-                    finding = self._create_finding_from_dict(
-                        current_finding,
-                        extractions,
-                        sources
-                    )
-                    if finding:
-                        findings.append(finding)
-                current_finding = {}
+                flush()
                 continue
 
-            # Parse fields (more flexible patterns)
-            if line.startswith('Finding:') or line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                text = line.split(':', 1)[-1].strip().lstrip('-•* ')
-                if text:
-                    current_finding['finding_text'] = text
-            elif 'type:' in line.lower():
-                finding_type = line.split(':', 1)[-1].strip().lower()
-                current_finding['finding_type'] = finding_type
-            elif 'sources:' in line.lower() or 'source' in line.lower():
-                # Extract source numbers
-                source_nums = re.findall(r'\d+', line)
-                current_finding['source_nums'] = [int(n) for n in source_nums]
-            elif 'confidence:' in line.lower():
-                # Extract confidence score
-                conf_match = re.search(r'(\d+\.?\d*)', line)
+            field = re.match(r'^(finding|type|sources?|confidence)\s*:\s*(.*)$', line, re.IGNORECASE)
+            if not field:
+                continue
+
+            name, value = field.group(1).lower(), field.group(2).strip()
+            if name == 'finding':
+                if current_finding.get('finding_text'):
+                    flush()  # fields with no blank line between findings
+                if value:
+                    current_finding['finding_text'] = value
+            elif name == 'type':
+                current_finding['finding_type'] = value.lower().strip('[]. ')
+            elif name.startswith('source'):
+                current_finding['source_nums'] = [int(n) for n in re.findall(r'\d+', value)]
+            elif name == 'confidence':
+                conf_match = re.search(r'(\d+\.?\d*)', value)
                 if conf_match:
                     confidence = float(conf_match.group(1))
-                    # Normalize if >1
-                    if confidence > 1.0:
+                    if confidence > 1.0:  # "85" or "85%"
                         confidence = confidence / 100.0
-                    current_finding['confidence'] = confidence
-            elif re.match(r'^\d+\.', line):
-                # Numbered list item
-                text = re.sub(r'^\d+\.\s*', '', line)
-                if text and not current_finding.get('finding_text'):
-                    current_finding['finding_text'] = text
+                    current_finding['confidence'] = min(confidence, 1.0)
 
-        # Add last finding
-        if current_finding.get('finding_text'):
-            finding = self._create_finding_from_dict(
-                current_finding,
-                extractions,
-                sources
-            )
-            if finding:
-                findings.append(finding)
+        flush()
 
         # Fallback: If no findings parsed, create simple findings from sentences
         if not findings and llm_output:
@@ -448,9 +455,10 @@ class SynthesisEngine:
             source_nums = re.findall(r'source\s+(\d+)|[\[\(](\d+)[\]\)]', sentence.lower())
             source_nums = [int(n[0] or n[1]) for n in source_nums if n]
 
-            # Default to first 3 sources if not mentioned
+            # A sentence that names no source is not credited to any: it used to be credited to
+            # sources 1-3 whatever it said, which made up a citation for it
             if not source_nums:
-                source_nums = [1, 2, 3]
+                continue
 
             # Map to source IDs
             source_ids = []
@@ -516,8 +524,15 @@ class SynthesisEngine:
         Simple heuristic: look for negation words or opposite numbers.
         In production, use LLM for semantic contradiction detection.
         """
+        import re
         text1 = finding1.finding_text.lower()
         text2 = finding2.finding_text.lower()
+
+        # Two statements can only contradict each other when they are about the same thing
+        def topic(text):
+            return {w for w in re.findall(r"[a-z][a-z\-]{3,}", text) if w not in self.NEGATION_WORDS}
+        if len(topic(text1) & topic(text2)) < 3:
+            return False
 
         # Check for negation patterns
         negation_pairs = [
@@ -532,8 +547,17 @@ class SynthesisEngine:
             ('more', 'less')
         ]
 
+        # Whole words: "is" used to match inside "this" and "more" inside "moreover", so nearly every
+        # pair of findings was reported as a contradiction
+        def has(text, phrase):
+            return re.search(rf"\b{re.escape(phrase)}\b", text) is not None
+
+        def affirms(text, pos, neg):
+            # "does" without "does not": the negative phrase contains the positive word
+            return has(text, pos) and not has(text, neg)
+
         for pos, neg in negation_pairs:
-            if (pos in text1 and neg in text2) or (neg in text1 and pos in text2):
+            if (affirms(text1, pos, neg) and has(text2, neg)) or (affirms(text2, pos, neg) and has(text1, neg)):
                 return True
 
         return False
@@ -559,11 +583,17 @@ class SynthesisEngine:
             return "No high-confidence findings were generated from the sources."
 
         # Prepare findings for summary
-        findings_text = "\n\n".join([
-            f"{i+1}. {f.finding_text} (Confidence: {f.confidence:.2f}, "
-            f"Type: {f.finding_type}, Sources: {len(f.source_ids)})"
-            for i, f in enumerate(findings)
+        # Findings are listed with the numbers of the sources behind them and the sources are
+        # listed too, so the summary can cite "(Source: 2)" and mean source 2 of the sources shown.
+        # Findings used to be numbered 1..N themselves, and the summary cited those numbers
+        # ("Source: 9" with 3 sources).
+        source_numbers = {s['id']: n for n, s in enumerate(sources, start=1)}
+        findings_text = "\n".join([
+            f"- {f.finding_text} (confidence {f.confidence:.2f}, sources: "
+            f"{', '.join(str(source_numbers[sid]) for sid in f.source_ids if sid in source_numbers) or 'none'})"
+            for f in findings
         ])
+        sources_text = "\n".join(f"{n}. {s['title']}" for n, s in enumerate(sources, start=1))
 
         # LLM prompt for summary
         messages = [
@@ -572,15 +602,20 @@ class SynthesisEngine:
                 'content': (
                     'You are a research summarizer. Create a coherent, well-structured summary '
                     'that synthesizes the key findings. Use clear paragraphs and maintain '
-                    'academic tone. Prioritize high-confidence findings.'
+                    'academic tone. Prioritize high-confidence findings.\n\n'
+                    'Use ONLY the findings you are given. Do not add facts, comparisons or '
+                    'recommendations from your own knowledge. If the findings do not answer the '
+                    'question, or only part of it, say plainly what is missing.'
                 )
             },
             {
                 'role': 'user',
                 'content': (
                     f"Research query: {query}\n\n"
-                    f"Key findings from {len(sources)} sources:\n\n"
-                    f"{findings_text}\n\n"
+                    f"Sources:\n{sources_text}\n\n"
+                    f"Key findings:\n{findings_text}\n\n"
+                    f"Cite a source only as (Source: N) with a number from the Sources list above, "
+                    f"never as a number of a finding.\n"
                     f"Generate a comprehensive summary (3-5 paragraphs) that:\n"
                     f"1. Directly answers the research query\n"
                     f"2. Synthesizes the key findings\n"
@@ -594,7 +629,7 @@ class SynthesisEngine:
             response = self.llm_client.generate(
                 messages,
                 max_tokens=1000,
-                temperature=0.7
+                temperature=0.3
             )
 
             return response['content']

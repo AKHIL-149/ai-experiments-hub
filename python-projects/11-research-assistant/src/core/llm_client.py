@@ -44,6 +44,10 @@ class LLMClient:
         self.api_key = api_key
         self.api_url = api_url or os.getenv('OLLAMA_API_URL', 'http://localhost:11434')
         self.cost_tracker = cost_tracker
+        # Ollama answers with a 4096-token window unless asked for more, and silently drops the
+        # START of a longer prompt: the reduce step (one extraction per source) outgrew it at
+        # about 8 sources, and the model then answered without seeing the first ones.
+        self.num_ctx = int(os.getenv('OLLAMA_NUM_CTX', 8192))
 
         # Set default models
         if not self.model:
@@ -147,7 +151,8 @@ class LLMClient:
             'stream': False,
             'options': {
                 'temperature': temperature,
-                'num_predict': max_tokens
+                'num_predict': max_tokens,
+                'num_ctx': self.num_ctx
             }
         }
 
@@ -157,8 +162,11 @@ class LLMClient:
                 json=payload,
                 timeout=120
             )
-            response.raise_for_status()
+            if response.status_code != 200:
+                raise RuntimeError(self._ollama_error(response))
             data = response.json()
+            if data.get('error'):
+                raise RuntimeError(self._ollama_error(response))
 
             input_tokens = data.get('prompt_eval_count', 0)
             output_tokens = data.get('eval_count', 0)
@@ -180,9 +188,23 @@ class LLMClient:
                 'cost': 0.0  # Local, free
             }
 
+        except requests.exceptions.ConnectionError:
+            message = f"Could not reach Ollama at {self.api_url}. Is it running? Start it with: ollama serve"
+            logging.error(message)
+            raise RuntimeError(message)
         except Exception as e:
             logging.error(f"Ollama generation failed: {e}")
             raise
+
+    def _ollama_error(self, response) -> str:
+        """Ollama's own message ("model 'x' not found"), and what to do about the usual cause"""
+        try:
+            detail = str(response.json().get('error', '')) or f"HTTP {response.status_code}"
+        except Exception:
+            detail = f"HTTP {response.status_code}"
+        if 'not found' in detail.lower():
+            return f"Ollama does not have the model '{self.model}'. Install it with: ollama pull {self.model}"
+        return f"Ollama error: {detail}"
 
     def _generate_openai(
         self,

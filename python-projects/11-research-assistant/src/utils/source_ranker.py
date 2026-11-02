@@ -164,17 +164,22 @@ class SourceRanker:
     ):
         """Calculate semantic similarity scores."""
         if not self.embedding_model:
-            # Fallback: basic keyword matching
-            query_lower = query.lower()
-            query_words = set(query_lower.split())
+            # Fallback: basic keyword matching on the question's subject words. It used to count
+            # every word ("what", "the", ...) as a substring, so any long page matched, and an
+            # empty question divided by zero.
+            from .query_builder import extract_keywords
+            query_words = {w.lower() for w in extract_keywords(query)}
 
             for source in sources:
-                # Count query word matches in title and content
-                title_lower = source.title.lower()
-                content_lower = source.content.lower()
+                if not query_words:
+                    source.similarity_score = 0.0
+                    continue
 
-                title_matches = sum(1 for word in query_words if word in title_lower)
-                content_matches = sum(1 for word in query_words if word in content_lower)
+                title_words = set(re.findall(r"[a-z0-9][a-z0-9\-]*", source.title.lower()))
+                content_words = set(re.findall(r"[a-z0-9][a-z0-9\-]*", source.content.lower()))
+
+                title_matches = len(query_words & title_words)
+                content_matches = len(query_words & content_words)
 
                 # Weighted: title matches count more
                 match_score = (title_matches * 2 + content_matches) / (len(query_words) * 3)
@@ -228,11 +233,17 @@ class SourceRanker:
             # Domain-based boost
             domain_boost = 0.0
             if source.domain:
-                # Check for exact domain matches
+                # Match the domain's own labels. A substring test gave "education-blog.com" the
+                # authority of ".edu" and "mygovernment.biz" that of ".gov"; and `break` stopped at
+                # the first match, so "arxiv.org" could lose to a lower-scored suffix.
+                host = source.domain.lower().split(':')[0]
                 for domain_key, score in self.DOMAIN_AUTHORITY.items():
-                    if domain_key in source.domain:
+                    if domain_key.startswith('.'):
+                        matched = host.endswith(domain_key) or f"{domain_key}." in host
+                    else:
+                        matched = host == domain_key or host.endswith('.' + domain_key)
+                    if matched:
                         domain_boost = max(domain_boost, score)
-                        break
 
             # Final authority score is max of base and domain
             source.authority_score = max(base_score, domain_boost)
@@ -338,7 +349,9 @@ class SourceRanker:
         """Extract domain from URL."""
         try:
             parsed = urlparse(url)
-            domain = parsed.netloc.replace('www.', '')
+            domain = parsed.netloc
+            if domain.lower().startswith('www.'):
+                domain = domain[4:]
             return domain
         except Exception:
             return ""
