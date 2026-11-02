@@ -30,8 +30,8 @@ An advanced AI-powered research assistant that combines document-based RAG (Retr
 - ✅ **Source deduplication** (exact + semantic)
 - ✅ **Authority-based ranking** (academic papers prioritized)
 - ✅ **Confidence scoring** with configurable thresholds
-- ✅ **Real-time progress** via WebSocket streaming
-- ✅ **Multiple export formats**: Markdown, HTML, PDF, DOCX, JSON
+- ✅ **Live progress**: the page shows which of the 6 steps a research is on (it polls `GET /api/research/progress/{request_id}`)
+- ✅ **Multiple export formats**: Markdown, HTML, JSON and DOCX always; PDF when the pango library is installed (the page only offers the formats the server can make, see `GET /api/export-formats`)
 - ✅ **Cost tracking** across providers (Ollama/OpenAI/Anthropic)
 - ✅ **Usage analytics** (API usage, costs, sources, performance)
 - ✅ **Web UI** with responsive design and real-time updates
@@ -145,6 +145,22 @@ OPENAI_API_KEY=your_key_here
 ANTHROPIC_API_KEY=your_key_here
 ```
 
+### Server and limits
+```bash
+HOST=127.0.0.1           # loopback by default. 0.0.0.0 serves your whole network: sign-ins are cookies over plain HTTP
+PORT=8000
+RELOAD=false             # true restarts the server on every source change (development only: it kills a running research)
+ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000   # CORS and WebSocket origins besides the page's own address
+
+MAX_QUERY_CHARS=2000     # longest research question
+MAX_SOURCES_LIMIT=50     # largest "Max Sources"
+LOGIN_MAX_FAILURES=10    # failed logins per username and client ...
+LOGIN_WINDOW_SECONDS=300 # ... within this window, then HTTP 429
+
+OLLAMA_NUM_CTX=8192      # context window asked from Ollama (its default is 4096 and it silently drops the start of a longer prompt)
+RESEARCH_MIN_RELEVANCE=0.15   # sources less similar than this to the question are left out
+```
+
 ### Optional Settings
 ```bash
 # Verification level
@@ -223,7 +239,9 @@ response = requests.post(f"{base_url}/api/auth/login", json={
 })
 session_cookie = response.cookies
 
-# Submit research query
+# Submit research query (1-50 sources, one research at a time per user). The call returns when the
+# research is done (about a minute); to follow it, send a request_id of your own (8-64 letters, digits
+# or "-") and ask GET /api/research/progress/{request_id} meanwhile: {"step": 4, "total": 6, "message": ..., "status": "running"}
 response = requests.post(
     f"{base_url}/api/research",
     json={
@@ -321,10 +339,17 @@ pytest tests/test_auth.py -v
 pytest tests/ --cov=src --cov-report=html
 ```
 
-**Current test coverage**:
+**Current test coverage** (about 350 tests, a few minutes):
 - ✅ Database models (User, Session, ResearchQuery, Source, Finding, Citation)
-- ✅ Authentication (registration, login, session management)
-- 🚧 Research operations (Phase 2+)
+- ✅ Authentication (registration, login, session management, the failed-login throttle)
+- ✅ The research pipeline with fake search and model clients: source budget, relevance filter, failed searches, saved results, citations, progress
+- ✅ Search queries built from the question, web search and page fetching, source ranking
+- ✅ Reading the model's answer (findings, their sources, contradictions) and what is kept
+- ✅ Reports in every format, including HTML escaping
+- ✅ The server: who can read whose research, validation, progress, uploads, the WebSocket origin check, start-up
+- ✅ `static/app.js` (run in Node with a fake DOM: needs `node` on the PATH, skipped without it; it checks the script's logic, not how the page looks)
+
+Not covered: the real search services (DuckDuckGo, ArXiv), a real model, PDF export (needs pango) and cloud providers.
 
 ## Architecture
 
@@ -366,9 +391,15 @@ pytest tests/ --cov=src --cov-report=html
 - ✅ **Session expiration**: 30-day TTL (configurable)
 - ✅ **Input validation**: Username, email, password constraints
 - ✅ **SQL injection protection**: SQLAlchemy ORM
-- 🚧 **CORS**: Restricted origins (Phase 4)
-- 🚧 **Rate limiting**: 100 req/min per user (Phase 4)
-- 🚧 **HTTPOnly cookies**: Prevent XSS (Phase 4)
+- ✅ **CORS**: Restricted origins
+- ✅ **HTTPOnly cookies**, SameSite=Strict. SameSite is by site, not origin: another port of `localhost` is the same site, so the WebSocket checks the `Origin` header itself, and takes the session from the cookie (not a `?session_token=` URL)
+- ✅ **Ownership**: a research, its download and its progress are only available to the user who made it (404 for anyone else)
+- ✅ **Failed-login throttle**: per username and client, HTTP 429 with `Retry-After`; an unknown username takes as long to reject as a wrong password
+- ✅ **Usernames and emails are unique ignoring case**; passwords are 8-72 bytes (bcrypt ignores the rest, so longer ones are refused instead of silently cut)
+- ✅ **Output escaping**: titles, addresses, findings and the summary come from web pages and a model reading them; the page and the HTML report escape them, and only `http(s)` addresses become links
+- ✅ **Limits**: question length, sources per research, list sizes, upload size (read up to the limit only), upload file names
+- ✅ **Loopback by default** (`HOST=127.0.0.1`), no auto-reload by default
+- 🚧 **Rate limiting** of requests in general
 
 ## Development History
 
@@ -510,8 +541,9 @@ export DYLD_LIBRARY_PATH=/opt/homebrew/lib
 ```
 Add the `export` line to your shell profile (or prefix it before `python server.py` /
 `pytest`) so it's set every time. Without it, `get_info()` in
-`src/utils/report_generator.py` fails on `import weasyprint` - which also breaks
-the availability check for every other export format (Markdown/HTML/JSON), not just PDF.
+`src/utils/report_generator.py` used to fail on `import weasyprint` with that `OSError`, which also broke
+the availability check for every other export format. Now a missing pango only makes PDF unavailable:
+the other formats work, the page does not offer PDF, and `?format=pdf` answers HTTP 501 saying why.
 
 ## Production Readiness
 
@@ -529,7 +561,8 @@ the availability check for every other export format (Markdown/HTML/JSON), not j
 - **Small LLM Quality**: Works with Ollama llama3.2:3b but output quality varies (larger models recommended for production)
 - **DuckDuckGo Rate Limits**: May throttle aggressive searches (retry with backoff implemented)
 - **SQLite Concurrency**: Single-user deployments only (migrate to PostgreSQL for multi-user production)
-- **Citation Accuracy**: Fallback parser assigns default sources [1,2,3] when LLM doesn't specify
+- **Citation Accuracy**: a sentence in the fallback parser that names no source is no longer credited to sources 1-3; it is dropped. A finding must have at least one source to be kept
+- **Web search coverage**: the search service sometimes answers with no results at all (it did for the same question that worked a minute earlier). The research then runs on ArXiv alone and says so in a warning on the results page
 - **Long Summaries**: Markdown parsing is regex-based (consider proper parser for complex formatting)
 
 See [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md) for detailed enhancement roadmap.

@@ -10,20 +10,25 @@ FastAPI server with:
 """
 
 import os
+import re
 import sys
+import time
 import uuid
 import hashlib
 import logging
+import threading
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Literal
 from datetime import datetime
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Cookie, Response, WebSocket, WebSocketDisconnect, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Cookie, Response, WebSocket, WebSocketDisconnect, Request, UploadFile, File, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
 
 # Add src to path
@@ -42,6 +47,7 @@ from src.services.embedding_service import get_embedding_service
 from src.utils.report_generator import ReportGenerator
 from src.utils.usage_analytics import UsageAnalytics
 from src.utils.cost_tracker import CostTracker
+from src.utils.rate_limit import FailureThrottle
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +56,17 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Limits
+MAX_QUERY_CHARS = int(os.getenv('MAX_QUERY_CHARS', 2000))
+MAX_SOURCES_LIMIT = int(os.getenv('MAX_SOURCES_LIMIT', 50))
+PROGRESS_TTL_SECONDS = 600
+
+# Failed logins allowed per username and client before further attempts get a 429
+login_throttle = FailureThrottle(
+    max_failures=int(os.getenv('LOGIN_MAX_FAILURES', 10)),
+    window_seconds=int(os.getenv('LOGIN_WINDOW_SECONDS', 300)),
 )
 
 # Initialize FastAPI app
@@ -151,23 +168,87 @@ ws_connections: Dict[str, WebSocket] = {}
 
 # Pydantic models
 class RegisterRequest(BaseModel):
-    username: str
-    email: str
-    password: str
+    username: str = Field(max_length=200)
+    email: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
+
+
+CITATION_STYLES = {'APA': 'APA', 'MLA': 'MLA', 'CHICAGO': 'Chicago', 'IEEE': 'IEEE'}
 
 
 class ResearchRequest(BaseModel):
-    query: str
+    query: str = Field(max_length=MAX_QUERY_CHARS)
     search_web: bool = True
     search_arxiv: bool = True
     search_documents: bool = False
-    max_sources: int = 20
+    max_sources: int = Field(20, ge=1, le=MAX_SOURCES_LIMIT)
     citation_style: str = 'APA'
+    # Chosen by the page so it can ask how far this research has got while the request is open
+    request_id: Optional[str] = Field(None, pattern=r'^[A-Za-z0-9\-]{8,64}$')
+
+    @field_validator('query')
+    @classmethod
+    def query_has_text(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError('Enter a research question (at least 3 characters)')
+        return value
+
+    @field_validator('citation_style')
+    @classmethod
+    def known_style(cls, value: str) -> str:
+        style = CITATION_STYLES.get(value.strip().upper())
+        if not style:
+            raise ValueError(f"Unknown citation style. Use one of: {', '.join(CITATION_STYLES.values())}")
+        return style
+
+    @model_validator(mode='after')
+    def some_source(self):
+        # With nothing ticked the run used to go through every stage and answer "No sources found"
+        if not (self.search_web or self.search_arxiv or self.search_documents):
+            raise ValueError('Choose at least one source to search')
+        return self
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    """`detail` as one readable sentence: the page shows it to the user, and FastAPI's own list of
+    objects displayed as "[object Object]"."""
+    problems = []
+    for err in exc.errors():
+        loc = list(err.get("loc", ()))
+        if loc and loc[0] in ("body", "query", "path"):  # where it was found, not which field (a field can be called "query")
+            loc = loc[1:]
+        field = ".".join(str(part) for part in loc)
+        message = str(err.get("msg", "Invalid value")).removeprefix("Value error, ")
+        problems.append(f"{field}: {message}" if field else message)
+    return JSONResponse(status_code=422, content={"detail": "; ".join(problems) or "Invalid request"})
+
+
+# Research progress, so the page can show how far a run has got. Kept in memory: it only matters
+# while the request is open.
+research_progress: Dict[str, Dict[str, Any]] = {}
+progress_lock = threading.Lock()
+# One research at a time per user (a second tab or a double click would start a second one)
+running_research: set = set()
+
+
+def set_progress(request_id: Optional[str], user_id: str, **fields):
+    if not request_id:
+        return
+    now = time.time()
+    with progress_lock:
+        for key in [k for k, v in research_progress.items() if now - v['updated'] > PROGRESS_TTL_SECONDS]:
+            del research_progress[key]
+        entry = research_progress.setdefault(request_id, {'user_id': user_id, 'step': 0, 'total': 6,
+                                                          'message': 'Starting', 'status': 'running'})
+        entry.update(fields)
+        entry['updated'] = now
 
 
 # Helper functions
@@ -212,17 +293,15 @@ def create_research_orchestrator(
     llm_client = LLMClient(
         provider=llm_provider,
         model=llm_model,
-        api_key=llm_api_key
+        api_key=llm_api_key,
+        # Without it nothing was ever recorded, and the cost and usage figures stayed empty
+        cost_tracker=cost_tracker
     )
 
-    # Initialize embedding model (optional)
-    embedding_model = None
-    try:
-        from sentence_transformers import SentenceTransformer
-        embedding_model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
-        embedding_model = SentenceTransformer(embedding_model_name)
-    except Exception as e:
-        logging.warning(f"Failed to load embedding model: {e}")
+    # The model that ranks and de-duplicates sources is the one already loaded for documents. A
+    # fresh SentenceTransformer per request loaded the weights again (and asked HuggingFace about
+    # every file) before each research.
+    embedding_model = embedding_service.model if embedding_service else None
 
     # Create orchestrator
     orchestrator = ResearchOrchestrator(
@@ -260,8 +339,15 @@ async def health():
 
 # Authentication endpoints
 
+def client_key(request: Request) -> str:
+    return request.client.host if request.client else 'unknown'
+
+
+# The auth handlers are plain `def` on purpose: FastAPI runs those in a worker thread. bcrypt takes
+# ~0.25 s of CPU per hash, and as `async def` each login or guest sign-in froze the whole server.
+
 @app.post("/api/auth/register")
-async def register(req: RegisterRequest):
+def register(req: RegisterRequest):
     """Register new user."""
     with db_manager.get_session() as db_session:
         success, user, error = auth_manager.register_user(
@@ -283,8 +369,17 @@ async def register(req: RegisterRequest):
 
 
 @app.post("/api/auth/login")
-async def login(req: LoginRequest, response: Response):
+def login(req: LoginRequest, request: Request, response: Response):
     """Login and create session."""
+    throttle_key = f"{client_key(request)}|{req.username.lower()}"
+    wait = login_throttle.retry_after(throttle_key)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed logins. Try again in {wait} seconds.",
+            headers={"Retry-After": str(wait)},
+        )
+
     with db_manager.get_session() as db_session:
         # Authenticate user
         success, user, error = auth_manager.authenticate(
@@ -294,7 +389,10 @@ async def login(req: LoginRequest, response: Response):
         )
 
         if not success:
+            login_throttle.record_failure(throttle_key)
             raise HTTPException(status_code=401, detail=error)
+
+        login_throttle.reset(throttle_key)
 
         # Create session
         success, session, error = auth_manager.create_session(db_session, user)
@@ -322,7 +420,7 @@ async def login(req: LoginRequest, response: Response):
 
 
 @app.post("/api/auth/guest")
-async def guest_login(response: Response):
+def guest_login(response: Response):
     """Create a temporary guest account and log in as it - no signup
     form required. Mirrors /api/auth/login's session/cookie setup."""
     with db_manager.get_session() as db_session:
@@ -387,7 +485,7 @@ async def get_current_user_info(session_token: Optional[str] = Cookie(None)):
 # Document endpoints (My Documents / RAG)
 
 @app.post("/api/documents")
-async def upload_document(
+def upload_document(
     file: UploadFile = File(...),
     session_token: Optional[str] = Cookie(None)
 ):
@@ -407,7 +505,10 @@ async def upload_document(
             detail="Document upload is unavailable (embedding/vector store failed to initialize)"
         )
 
-    filename = file.filename or "upload"
+    # A bare file name: browsers send just the name, other clients can send "../../x.pdf" or text
+    # with control characters, and it is stored, listed and shown back
+    filename = os.path.basename((file.filename or "upload").replace('\\', '/'))
+    filename = ''.join(ch for ch in filename if ch.isprintable())[:200].strip() or "upload"
     file_type = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     if file_type not in SUPPORTED_TYPES:
         raise HTTPException(
@@ -415,11 +516,12 @@ async def upload_document(
             detail=f"Unsupported file type '{file_type}'. Supported: {', '.join(sorted(SUPPORTED_TYPES))}"
         )
 
-    content = await file.read()
+    # Never more than the limit plus one byte: the whole body was read before it was compared
+    content = file.file.read(max_upload_bytes + 1)
     if len(content) > max_upload_bytes:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large ({len(content) / 1024 / 1024:.1f}MB). Max is {max_upload_bytes / 1024 / 1024:.0f}MB"
+            detail=f"File too large (the limit is {max_upload_bytes / 1024 / 1024:.0f}MB)"
         )
     if not content:
         raise HTTPException(status_code=400, detail="File is empty")
@@ -489,7 +591,7 @@ async def upload_document(
 
 
 @app.get("/api/documents")
-async def list_documents(session_token: Optional[str] = Cookie(None)):
+def list_documents(session_token: Optional[str] = Cookie(None)):
     """List the current user's uploaded documents."""
     user = get_current_user(session_token)
 
@@ -504,7 +606,7 @@ async def list_documents(session_token: Optional[str] = Cookie(None)):
 
 
 @app.delete("/api/documents/{document_id}")
-async def delete_document(
+def delete_document(
     document_id: str,
     session_token: Optional[str] = Cookie(None)
 ):
@@ -535,13 +637,38 @@ async def delete_document(
 
 # Research endpoints
 
+def research_reader() -> ResearchOrchestrator:
+    """An orchestrator that only reads saved research (no search, LLM or embedding clients)"""
+    return ResearchOrchestrator(
+        db_path=database_url,
+        web_search_client=None,
+        arxiv_client=None,
+        llm_client=None,
+        embedding_model=None,
+        cache_manager=None
+    )
+
+
+# `def`, not `async def`: a research takes a minute of blocking work (searching, reading pages, the
+# model), and on the event loop it froze every other request, the health check and the progress
+# polling included.
 @app.post("/api/research")
-async def create_research(
+def create_research(
     req: ResearchRequest,
     session_token: Optional[str] = Cookie(None)
 ):
     """Create new research query."""
     user = get_current_user(session_token)
+
+    with progress_lock:
+        if user.id in running_research:
+            raise HTTPException(status_code=429, detail="A research is already running. Wait for it to finish.")
+        running_research.add(user.id)
+
+    set_progress(req.request_id, user.id, step=0, message="Starting", status='running')
+
+    def on_progress(step: int, total: int, message: str):
+        set_progress(req.request_id, user.id, step=step, total=total, message=message)
 
     try:
         # Create orchestrator
@@ -558,35 +685,48 @@ async def create_research(
             search_arxiv=req.search_arxiv,
             search_documents=req.search_documents,
             max_sources=req.max_sources,
-            citation_style=req.citation_style
+            citation_style=req.citation_style,
+            progress=on_progress
         )
 
+        set_progress(req.request_id, user.id, step=6, message="Done", status='done')
         return results
 
     except Exception as e:
         logging.error(f"Research failed: {e}", exc_info=True)
+        set_progress(req.request_id, user.id, message=str(e), status='failed')
         raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        with progress_lock:
+            running_research.discard(user.id)
+
+
+@app.get("/api/research/progress/{request_id}")
+def get_research_progress(
+    request_id: str,
+    session_token: Optional[str] = Cookie(None)
+):
+    """How far a running research has got (step 1-6 of 6 and what it is doing)."""
+    user = get_current_user(session_token)
+
+    with progress_lock:
+        entry = research_progress.get(request_id)
+        if not entry or entry['user_id'] != user.id:
+            raise HTTPException(status_code=404, detail="No such research in progress")
+        return {key: entry[key] for key in ('step', 'total', 'message', 'status')}
 
 
 @app.get("/api/research/{query_id}")
-async def get_research(
+def get_research(
     query_id: str,
     session_token: Optional[str] = Cookie(None)
 ):
     """Get research query results."""
     user = get_current_user(session_token)
 
-    # Create minimal orchestrator without clients (not needed for retrieval)
-    orchestrator = ResearchOrchestrator(
-        db_path=database_url,
-        web_search_client=None,
-        arxiv_client=None,
-        llm_client=None,
-        embedding_model=None,
-        cache_manager=None
-    )
-
-    results = orchestrator.get_research_query(query_id)
+    # Only the owner's: any signed-in user could read any other user's research by its id
+    results = research_reader().get_research_query(query_id, user_id=user.id)
 
     if not results:
         raise HTTPException(status_code=404, detail="Research query not found")
@@ -595,25 +735,16 @@ async def get_research(
 
 
 @app.get("/api/research")
-async def list_research(
-    limit: int = 50,
-    offset: int = 0,
+def list_research(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     session_token: Optional[str] = Cookie(None)
 ):
     """List user's research queries."""
     user = get_current_user(session_token)
 
-    # Create minimal orchestrator without web/arxiv clients (not needed for listing)
-    orchestrator = ResearchOrchestrator(
-        db_path=database_url,
-        web_search_client=None,
-        arxiv_client=None,
-        llm_client=None,
-        embedding_model=None,
-        cache_manager=None
-    )
-
-    queries = orchestrator.list_user_queries(
+    reader = research_reader()
+    queries = reader.list_user_queries(
         user_id=user.id,
         limit=limit,
         offset=offset
@@ -621,14 +752,15 @@ async def list_research(
 
     return {
         "queries": queries,
-        "total": len(queries),
+        # The number of queries the user has: it was the number on this page
+        "total": reader.count_user_queries(user.id),
         "limit": limit,
         "offset": offset
     }
 
 
 @app.delete("/api/research/{query_id}")
-async def delete_research(
+def delete_research(
     query_id: str,
     session_token: Optional[str] = Cookie(None)
 ):
@@ -652,8 +784,23 @@ async def delete_research(
     return {"success": True}
 
 
+REPORT_MEDIA_TYPES = {
+    'markdown': 'text/markdown', 'html': 'text/html', 'json': 'application/json',
+    'pdf': 'application/pdf',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+REPORT_EXTENSIONS = {'markdown': 'md', 'html': 'html', 'json': 'json', 'pdf': 'pdf', 'docx': 'docx'}
+
+
+@app.get("/api/export-formats")
+def export_formats(session_token: Optional[str] = Cookie(None)):
+    """The report formats this server can really produce (PDF needs the pango library)"""
+    get_current_user(session_token)
+    return {"formats": ReportGenerator(output_dir=output_dir).get_info()['supported_formats']}
+
+
 @app.get("/api/research/{query_id}/download")
-async def download_research(
+def download_research(
     query_id: str,
     format: str = 'markdown',
     session_token: Optional[str] = Cookie(None)
@@ -661,33 +808,35 @@ async def download_research(
     """Download research report."""
     user = get_current_user(session_token)
 
-    # Get research results - create minimal orchestrator
-    orchestrator = ResearchOrchestrator(
-        db_path=database_url,
-        web_search_client=None,
-        arxiv_client=None,
-        llm_client=None,
-        embedding_model=None,
-        cache_manager=None
-    )
+    kind = ReportGenerator.FORMAT_ALIASES.get((format or '').lower())
+    if not kind:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{format}'. Use one of: {', '.join(sorted(REPORT_MEDIA_TYPES))}"
+        )
 
-    results = orchestrator.get_research_query(query_id)
+    # Get research results - only the owner's
+    results = research_reader().get_research_query(query_id, user_id=user.id)
 
     if not results:
         raise HTTPException(status_code=404, detail="Research query not found")
 
     # Generate report
     gen = ReportGenerator(output_dir=output_dir)
-    report_path = gen.generate_report(
-        research_data=results,
-        format=format,
-        filename=f"research_{query_id}"
-    )
+    try:
+        report_path = gen.generate_report(
+            research_data=results,
+            format=kind,
+            filename=f"research_{query_id}"
+        )
+    except ValueError as e:
+        # e.g. PDF without the pango library: the server cannot do it, which is not a server bug
+        raise HTTPException(status_code=501, detail=str(e))
 
     return FileResponse(
         path=str(report_path),
-        filename=report_path.name,
-        media_type='application/octet-stream'
+        filename=f"research_{query_id}.{REPORT_EXTENSIONS[kind]}",
+        media_type=REPORT_MEDIA_TYPES[kind]
     )
 
 
@@ -695,7 +844,7 @@ async def download_research(
 
 @app.get("/api/analytics/usage")
 async def get_usage_stats(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=365),
     session_token: Optional[str] = Cookie(None)
 ):
     """Get usage statistics for current user."""
@@ -711,7 +860,7 @@ async def get_usage_stats(
 
 @app.get("/api/analytics/costs")
 async def get_cost_analysis(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=365),
     session_token: Optional[str] = Cookie(None)
 ):
     """Get cost analysis for current user."""
@@ -727,7 +876,7 @@ async def get_cost_analysis(
 
 @app.get("/api/analytics/sources")
 async def get_source_effectiveness(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=365),
     session_token: Optional[str] = Cookie(None)
 ):
     """Get source effectiveness analysis."""
@@ -743,7 +892,7 @@ async def get_source_effectiveness(
 
 @app.get("/api/analytics/performance")
 async def get_performance_metrics(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=365),
     session_token: Optional[str] = Cookie(None)
 ):
     """Get system-wide performance metrics (admin only for now)."""
@@ -774,66 +923,63 @@ async def get_session_costs(
 
 # WebSocket endpoint
 
+def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
+    """
+    Browsers send no CORS preflight for a WebSocket, and SameSite=Strict is "same site", not "same
+    origin": a page on another port of localhost is same-site, so the browser attached the session
+    cookie to its connection. Accept the page's own origin (Origin host == Host header) and
+    ALLOWED_ORIGINS; clients that send no Origin are not browsers and cannot ride a cookie.
+    """
+    if not origin:
+        return True
+    if origin in [o.strip() for o in os.getenv('ALLOWED_ORIGINS', 'http://localhost:8000').split(',')]:
+        return True
+    return bool(host) and urlparse(origin).netloc == host
+
+
 @app.websocket("/ws/research/{query_id}")
-async def websocket_research(websocket: WebSocket, query_id: str):
-    """WebSocket for real-time research progress."""
-    await websocket.accept()
+async def websocket_research(
+    websocket: WebSocket,
+    query_id: str,
+    session_token: Optional[str] = Cookie(None)
+):
+    """
+    Keep-alive socket. Research progress is read from GET /api/research/progress/{request_id}.
+
+    The session comes from the cookie. It used to be a `?session_token=` query parameter, which
+    puts the token in server logs and browser history.
+    """
+    if not origin_allowed(websocket.headers.get('origin'), websocket.headers.get('host')):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
 
     try:
-        # Get session token from query params or headers
-        session_token = websocket.query_params.get('session_token')
+        user = get_current_user(session_token)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Not authenticated")
+        return
 
-        if not session_token:
-            await websocket.send_json({
-                "type": "error",
-                "error": "Authentication required"
-            })
-            await websocket.close()
-            return
+    await websocket.accept()
+    ws_connections[query_id] = websocket
 
-        # Validate session
-        try:
-            user = get_current_user(session_token)
-        except HTTPException:
-            await websocket.send_json({
-                "type": "error",
-                "error": "Invalid session"
-            })
-            await websocket.close()
-            return
-
-        # Register connection
-        ws_connections[query_id] = websocket
-
-        # Send initial message
+    try:
         await websocket.send_json({
             "type": "connected",
             "query_id": query_id,
             "user_id": user.id
         })
 
-        # Keep connection alive
         while True:
-            try:
-                data = await websocket.receive_text()
-                # Echo back for keepalive
-                await websocket.send_json({
-                    "type": "pong",
-                    "timestamp": datetime.now().isoformat()
-                })
-            except WebSocketDisconnect:
-                break
+            await websocket.receive_text()
+            await websocket.send_json({
+                "type": "pong",
+                "timestamp": datetime.now().isoformat()
+            })
 
-    except Exception as e:
-        logging.error(f"WebSocket error: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "error": str(e)
-        })
-
+    except (WebSocketDisconnect, RuntimeError):
+        pass
     finally:
-        # Unregister connection
-        if query_id in ws_connections:
+        if ws_connections.get(query_id) is websocket:
             del ws_connections[query_id]
 
 
@@ -845,18 +991,30 @@ async def startup_event():
     db_manager.create_tables()
     logging.info("Database tables initialized")
 
+    # Research left 'processing' by a server that stopped mid-run
+    interrupted = research_reader().fail_interrupted_queries()
+    if interrupted:
+        logging.warning(f"Marked {interrupted} interrupted research(es) as failed")
+    with db_manager.get_session() as db_session:
+        auth_manager.cleanup_expired_sessions(db_session)
+
 
 # Run server
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv('PORT', '8000'))
-    host = os.getenv('HOST', '0.0.0.0')
+    # Loopback unless HOST says otherwise (the app holds sign-ins and runs your model for anyone who
+    # can reach it); it listened on every interface whatever HOST was set to elsewhere.
+    host = os.getenv('HOST', '127.0.0.1')
+    # Auto-reload restarts the server (and kills a research in progress) whenever a source file
+    # changes: for development only
+    reload = os.getenv('RELOAD', 'false').lower() == 'true'
 
     uvicorn.run(
         "server:app",
         host=host,
         port=port,
-        reload=True,
+        reload=reload,
         log_level="info"
     )

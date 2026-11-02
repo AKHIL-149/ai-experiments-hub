@@ -10,8 +10,17 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import bcrypt
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .database import User, UserSession
+
+# bcrypt only uses the first 72 bytes of a password: longer ones were accepted and silently cut,
+# so a password and the same password plus any suffix both logged in
+MAX_PASSWORD_BYTES = 72
+
+# Checked when the username does not exist, so an unknown user and a wrong password take equally
+# long to reject (login timing otherwise says which usernames are registered)
+_DUMMY_HASH = bcrypt.hashpw(b"not-a-real-password", bcrypt.gensalt(rounds=12))
 
 
 class AuthManager:
@@ -49,28 +58,42 @@ class AuthManager:
         Returns:
             Tuple of (success, user, error_message)
         """
-        # Validate username
-        if not username or len(username) < 3 or len(username) > 50:
+        username = (username or '').strip()
+        email = (email or '').strip()
+
+        # Validate username. fullmatch, not match with `$`: `$` also matches before a trailing
+        # newline, so "alice\n" passed.
+        if len(username) < 3 or len(username) > 50:
             return False, None, "Username must be 3-50 characters"
 
-        if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        if not re.fullmatch(r'[a-zA-Z0-9_]+', username):
             return False, None, "Username can only contain letters, numbers, and underscores"
 
         # Validate email
-        if not email or not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+        if not email or len(email) > 100 or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
             return False, None, "Invalid email address"
 
         # Validate password
         if not password or len(password) < 8:
             return False, None, "Password must be at least 8 characters"
 
-        # Check if username already exists
-        existing_user = db_session.query(User).filter(User.username == username).first()
+        if len(password.encode('utf-8')) > MAX_PASSWORD_BYTES:
+            return False, None, (
+                f"Password must be at most {MAX_PASSWORD_BYTES} bytes "
+                f"(fewer characters if it has accents or emoji)"
+            )
+
+        # Check if username already exists ("ALICE" next to "alice" looks like the same person)
+        existing_user = db_session.query(User).filter(
+            func.lower(User.username) == username.lower()
+        ).first()
         if existing_user:
             return False, None, "Username already exists"
 
         # Check if email already exists
-        existing_email = db_session.query(User).filter(User.email == email).first()
+        existing_email = db_session.query(User).filter(
+            func.lower(User.email) == email.lower()
+        ).first()
         if existing_email:
             return False, None, "Email already registered"
 
@@ -135,13 +158,16 @@ class AuthManager:
         """
         # Find user
         user = db_session.query(User).filter(User.username == username).first()
+        # Cut like bcrypt itself did when the hash was made (and bcrypt 5 refuses longer input)
+        password_bytes = password.encode('utf-8')[:MAX_PASSWORD_BYTES]
 
         if not user:
+            bcrypt.checkpw(password_bytes, _DUMMY_HASH)
             return False, None, "Invalid username or password"
 
         # Verify password
         password_matches = bcrypt.checkpw(
-            password.encode('utf-8'),
+            password_bytes,
             user.password_hash.encode('utf-8')
         )
 
@@ -355,7 +381,7 @@ class AuthManager:
         """
         # Verify old password
         password_matches = bcrypt.checkpw(
-            old_password.encode('utf-8'),
+            old_password.encode('utf-8')[:MAX_PASSWORD_BYTES],
             user.password_hash.encode('utf-8')
         )
 
@@ -365,6 +391,9 @@ class AuthManager:
         # Validate new password
         if len(new_password) < 8:
             return False, "New password must be at least 8 characters"
+
+        if len(new_password.encode('utf-8')) > MAX_PASSWORD_BYTES:
+            return False, f"New password must be at most {MAX_PASSWORD_BYTES} bytes"
 
         # Hash new password
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt(rounds=12))

@@ -238,9 +238,9 @@ class ResearchApp {
             }
 
             item.innerHTML = `
-                <div class="research-item-query">${research.query}</div>
+                <div class="research-item-query">${this.escapeHtml(research.query)}</div>
                 <div class="research-item-meta">
-                    ${research.status} • ${this.formatDate(research.created_at)}
+                    ${this.escapeHtml(research.status)} • ${this.formatDate(research.created_at)}
                 </div>
             `;
 
@@ -261,6 +261,8 @@ class ResearchApp {
                 this.currentResearch = await response.json();
                 this.renderResults();
                 this.renderResearchList(); // Update active state
+            } else {
+                alert('Could not open this research.');
             }
         } catch (error) {
             console.error('Failed to load research:', error);
@@ -282,13 +284,21 @@ class ResearchApp {
             search_web: document.getElementById('source-web').checked,
             search_arxiv: document.getElementById('source-arxiv').checked,
             search_documents: document.getElementById('source-documents').checked,
-            max_sources: parseInt(document.getElementById('max-sources').value),
-            citation_style: document.getElementById('citation-style').value
+            max_sources: this.readMaxSources(),
+            citation_style: document.getElementById('citation-style').value,
+            request_id: this.newRequestId()
         };
+
+        if (!request.search_web && !request.search_arxiv && !request.search_documents) {
+            alert('Choose at least one source to search');
+            return;
+        }
 
         // Show progress
         document.getElementById('research-progress').style.display = 'block';
         document.getElementById('start-research-btn').disabled = true;
+        this.showProgress({ step: 0, total: 6, message: 'Starting' });
+        const stopPolling = this.pollProgress(request.request_id);
 
         try {
             const response = await fetch('/api/research', {
@@ -300,6 +310,7 @@ class ResearchApp {
 
             if (response.ok) {
                 this.currentResearch = await response.json();
+                document.getElementById('research-query').value = '';
 
                 // Reload research list
                 await this.loadResearchList();
@@ -314,10 +325,46 @@ class ResearchApp {
             console.error('Research error:', error);
             alert('Research failed. Please try again.');
         } finally {
+            stopPolling();
             document.getElementById('research-progress').style.display = 'none';
             document.getElementById('start-research-btn').disabled = false;
-            document.getElementById('research-query').value = '';
         }
+    }
+
+    readMaxSources() {
+        const value = parseInt(document.getElementById('max-sources').value, 10);
+        // An empty or out-of-range box sent null or 500 and failed with a validation error
+        return Number.isFinite(value) ? Math.min(50, Math.max(1, value)) : 20;
+    }
+
+    newRequestId() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    }
+
+    /** The bar and the line under it showed "Initializing..." for the whole run: nothing updated them */
+    showProgress(progress) {
+        const percent = Math.round(((progress.step || 0) / (progress.total || 6)) * 100);
+        document.getElementById('progress-fill').style.width = `${percent}%`;
+        document.getElementById('progress-status').textContent =
+            `Step ${Math.max(progress.step || 0, 1)} of ${progress.total || 6}: ${progress.message || ''}`;
+    }
+
+    /** Ask the server how far the run has got, once a second; returns a function that stops it */
+    pollProgress(requestId) {
+        let stopped = false;
+        const tick = async () => {
+            if (stopped) return;
+            try {
+                const response = await fetch(`/api/research/progress/${requestId}`, { credentials: 'include' });
+                if (response.ok && !stopped) this.showProgress(await response.json());
+            } catch (error) {
+                // the next tick tries again
+            }
+            if (!stopped) setTimeout(tick, 1000);
+        };
+        setTimeout(tick, 400);
+        return () => { stopped = true; };
     }
 
     renderResults() {
@@ -345,6 +392,21 @@ class ResearchApp {
                 `${this.currentResearch.processing_time.toFixed(1)}s`;
         }
 
+        // Anything that went wrong without stopping the research (a search that failed, sources set aside)
+        let warningsBox = document.getElementById('results-warnings');
+        if (!warningsBox) {
+            warningsBox = document.createElement('div');
+            warningsBox.id = 'results-warnings';
+            warningsBox.className = 'results-warnings';
+            document.querySelector('.results-meta').after(warningsBox);
+        }
+        const warnings = [...(this.currentResearch.warnings || [])];
+        if (this.currentResearch.status === 'failed') {
+            warnings.unshift(this.currentResearch.error_message || 'This research did not finish.');
+        }
+        warningsBox.innerHTML = warnings.map(w => `<p>⚠ ${this.escapeHtml(w)}</p>`).join('');
+        warningsBox.style.display = warnings.length ? 'block' : 'none';
+
         // Summary (with formatted structure)
         this.renderFormattedSummary(this.currentResearch.summary);
 
@@ -361,12 +423,14 @@ class ResearchApp {
                 const numSources = finding.num_sources || finding.sources || 0;
                 const confidence = finding.confidence || 0;
 
+                // Finding text is written by the model from web pages: escaped, or a page could
+                // put markup in it that ran in this one
                 item.innerHTML = `
-                    <div class="finding-text">${findingText}</div>
+                    <div class="finding-text">${this.escapeHtml(findingText)}</div>
                     <div class="finding-meta">
-                        <span><strong>Type:</strong> ${findingType}</span>
+                        <span><strong>Type:</strong> ${this.escapeHtml(findingType)}</span>
                         <span><strong>Confidence:</strong> ${(confidence * 100).toFixed(0)}%</span>
-                        <span><strong>Sources:</strong> ${numSources}</span>
+                        <span><strong>Sources:</strong> ${Number(numSources) || 0}</span>
                     </div>
                 `;
                 findingsContainer.appendChild(item);
@@ -382,10 +446,15 @@ class ResearchApp {
         this.currentResearch.sources.forEach((source, index) => {
             const item = document.createElement('div');
             item.className = 'source-item';
+            // Titles and addresses come from web search results. A "javascript:" address is shown as
+            // text, not made a link.
+            const safeUrl = this.safeUrl(source.url);
             item.innerHTML = `
-                <div class="source-title">${index + 1}. ${source.title}</div>
-                ${source.url ? `<a href="${source.url}" target="_blank" class="source-url">${source.url}</a>` : ''}
-                <span class="source-type">${source.type}</span>
+                <div class="source-title">${index + 1}. ${this.escapeHtml(source.title)}</div>
+                ${safeUrl
+                    ? `<a href="${this.escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="source-url">${this.escapeHtml(safeUrl)}</a>`
+                    : (source.url ? `<span class="source-url">${this.escapeHtml(source.url)}</span>` : '')}
+                <span class="source-type">${this.escapeHtml(source.type || source.source_type || 'unknown')}</span>
             `;
             sourcesContainer.appendChild(item);
         });
@@ -413,8 +482,9 @@ class ResearchApp {
             return;
         }
 
-        // Parse summary with markdown-style formatting
-        const formatted = summaryText
+        // Parse summary with markdown-style formatting. Escaped first: the summary is model output
+        // built from web pages, and went into innerHTML as it came.
+        const formatted = this.escapeHtml(summaryText)
             // Bold headers (lines starting with **)
             .replace(/^\*\*(.+?)\*\*/gm, '<h3>$1</h3>')
             // Bold inline text
@@ -442,24 +512,53 @@ class ResearchApp {
 
         try {
             const response = await fetch(
-                `/api/research/${this.currentResearch.query_id}/download?format=${format}`,
+                `/api/research/${this.currentResearch.query_id}/download?format=${encodeURIComponent(format)}`,
                 { credentials: 'include' }
             );
 
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `research_${this.currentResearch.query_id}.${format === 'markdown' ? 'md' : format}`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
+            if (!response.ok) {
+                // A failed download used to do nothing at all
+                let detail = 'Download failed.';
+                try { detail = (await response.json()).detail || detail; } catch (e) { /* not JSON */ }
+                alert(detail);
+                return;
             }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const extensions = { markdown: 'md', html: 'html', json: 'json', pdf: 'pdf', docx: 'docx' };
+            a.download = `research_${this.currentResearch.query_id}.${extensions[format] || format}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         } catch (error) {
             console.error('Download failed:', error);
             alert('Download failed. Please try again.');
+        }
+    }
+
+    /** The report formats the server can really make (PDF needs a system library) */
+    async loadExportFormats() {
+        const actions = document.querySelector('.results-actions');
+        try {
+            const response = await fetch('/api/export-formats', { credentials: 'include' });
+            if (!response.ok) return;
+            const { formats } = await response.json();
+            const labels = { pdf: 'Download PDF', docx: 'Download DOCX' };
+            ['pdf', 'docx'].forEach(format => {
+                if (!formats.includes(format) || document.getElementById(`download-${format}-btn`)) return;
+                const button = document.createElement('button');
+                button.id = `download-${format}-btn`;
+                button.className = 'action-btn';
+                button.textContent = labels[format];
+                button.addEventListener('click', () => this.downloadReport(format));
+                actions.appendChild(button);
+            });
+        } catch (error) {
+            console.error('Could not load export formats:', error);
         }
     }
 
@@ -477,6 +576,7 @@ class ResearchApp {
         const label = this.currentUser.username + (this.currentUser.is_guest ? ' (Guest)' : '');
         document.getElementById('username-display').textContent = label;
         this.showView('empty-view');
+        this.loadExportFormats();
     }
 
     showLoginForm() {
@@ -547,7 +647,7 @@ class ResearchApp {
             const sizeKb = (doc.file_size_bytes / 1024).toFixed(1);
             let statusLabel = doc.status;
             if (doc.status === 'ready') statusLabel = `ready · ${doc.chunk_count} chunks`;
-            if (doc.status === 'failed') statusLabel = `failed${doc.error_message ? ': ' + doc.error_message : ''}`;
+            if (doc.status === 'failed') statusLabel = `failed${doc.error_message ? ': ' + this.escapeHtml(doc.error_message) : ''}`;
 
             return `
                 <div class="document-item document-status-${doc.status}">
@@ -555,7 +655,7 @@ class ResearchApp {
                         <span class="document-filename">${this.escapeHtml(doc.filename)}</span>
                         <span class="document-meta">${sizeKb} KB · ${statusLabel} · ${this.formatDate(doc.uploaded_at)}</span>
                     </div>
-                    <button class="action-btn document-delete-btn" data-id="${doc.id}">Delete</button>
+                    <button class="action-btn document-delete-btn" data-id="${this.escapeHtml(doc.id)}">Delete</button>
                 </div>
             `;
         }).join('');
@@ -613,10 +713,25 @@ class ResearchApp {
         }
     }
 
+    /** Text for HTML: also the quotes, so it is safe inside an attribute value too */
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /** The address if it is a web address, else null (no "javascript:" or "data:" links) */
+    safeUrl(url) {
+        if (!url) return null;
+        try {
+            const parsed = new URL(url, window.location.href);
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null;
+        } catch (e) {
+            return null;
+        }
     }
 
     showLoading(show) {
