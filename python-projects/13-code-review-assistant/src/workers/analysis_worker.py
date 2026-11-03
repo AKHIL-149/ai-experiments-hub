@@ -141,6 +141,7 @@ def analyze_file_task(
         if result['success']:
             # Store issues in cache for querying (same-process fallback only)
             _analysis_cache[job_id] = {
+                'user_id': user_id,
                 'filename': filename,
                 'issues': result['report']['issues'],
                 'report': result['report'],
@@ -161,15 +162,15 @@ def analyze_file_task(
                 # the job result/cache still has the data for this process.
                 print(f"Warning: could not persist analysis results for {filename}: {e}")
 
-            self.update_state(
-                state='SUCCESS',
-                meta={
-                    'status': 'Analysis complete',
-                    'issues_found': result['report']['total_issues'],
-                    'health_score': result['report']['health_score']['overall_score'],
-                    'code_file_id': code_file_id
-                }
-            )
+            # These used to be sent with update_state(state='SUCCESS', ...). Celery refuses to
+            # overwrite a result that is already SUCCESS, so the report this task returns was
+            # thrown away and every client got only this summary: the Analyze page then said
+            # "No results available" after each successful analysis. Return them with the
+            # report instead.
+            result['status'] = 'Analysis complete'
+            result['issues_found'] = result['report']['total_issues']
+            result['health_score'] = result['report']['health_score']['overall_score']
+            result['code_file_id'] = code_file_id
 
         return result
 
@@ -193,9 +194,13 @@ def get_analysis_results(job_id: str) -> Optional[Dict[str, Any]]:
     return _analysis_cache.get(job_id)
 
 
-def get_all_cached_analyses() -> List[Dict[str, Any]]:
-    """Get all cached analysis results"""
-    return list(_analysis_cache.values())
+def get_all_cached_analyses(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Cached analysis results. With user_id, only that user's: the cache holds every user's
+    analyses, so endpoints serving a signed-in user must pass theirs"""
+    entries = list(_analysis_cache.values())
+    if user_id is None:
+        return entries
+    return [entry for entry in entries if entry.get('user_id') == user_id]
 
 
 def clear_analysis_cache():

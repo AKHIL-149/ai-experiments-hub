@@ -47,6 +47,11 @@ class StrEnum(str, enum.Enum):
         return self.value
 
 
+# Guest accounts are told apart by this email domain rather than a column, so existing
+# databases keep working without a migration (AuthManager refuses it to normal sign-ups)
+GUEST_EMAIL_DOMAIN = 'guest.local'
+
+
 class UserRole(StrEnum):
     """User role enumeration for RBAC."""
     USER = 'user'
@@ -122,6 +127,11 @@ class User(Base):
     repositories = relationship('Repository', back_populates='user', cascade='all, delete-orphan')
     reviews = relationship('Review', back_populates='reviewer', cascade='all, delete-orphan')
 
+    @property
+    def is_guest(self) -> bool:
+        """True for accounts made by "Continue as guest"."""
+        return (self.email or '').lower().endswith('@' + GUEST_EMAIL_DOMAIN)
+
     def to_dict(self) -> Dict:
         """Convert user to dictionary (exclude password_hash)."""
         return {
@@ -129,6 +139,7 @@ class User(Base):
             'username': self.username,
             'email': self.email,
             'role': self.role.value,
+            'is_guest': self.is_guest,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None

@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
 from sqlalchemy.orm import Session
-from .database import User, UserSession, UserRole
+from .database import User, UserSession, UserRole, GUEST_EMAIL_DOMAIN
 
 
 class AuthManager:
@@ -27,7 +27,8 @@ class AuthManager:
         username: str,
         email: str,
         password: str,
-        role: UserRole = UserRole.USER
+        role: UserRole = UserRole.USER,
+        is_guest: bool = False
     ) -> Tuple[bool, Optional[User], Optional[str]]:
         """
         Register new user
@@ -37,6 +38,8 @@ class AuthManager:
             email: Email address
             password: Password (min 8 characters)
             role: User role (default: USER)
+            is_guest: Set only by create_guest_user. Guests are recognised by their
+                reserved email domain, so nobody else may register an address there.
 
         Returns:
             Tuple of (success, user, error_message)
@@ -50,6 +53,9 @@ class AuthManager:
 
         if '@' not in email or '.' not in email:
             return False, None, "Invalid email format"
+
+        if not is_guest and email.strip().lower().endswith('@' + GUEST_EMAIL_DOMAIN):
+            return False, None, "That email domain is reserved"
 
         # Check if username/email exists
         existing = self.db.query(User).filter(
@@ -79,6 +85,21 @@ class AuthManager:
         self.db.refresh(user)
 
         return True, user, None
+
+    def create_guest_user(self) -> Tuple[bool, Optional[User], Optional[str]]:
+        """
+        Create a temporary guest account: no signup form, just a random username, email and
+        password. The password is never shown, so a guest cannot sign in to it again after
+        logging out; it exists for the current browser session. Goes through register_user so
+        guests get the same validation and hashing as a real registration.
+        """
+        suffix = secrets.token_hex(4)
+        return self.register_user(
+            f'guest_{suffix}',
+            f'guest_{suffix}@{GUEST_EMAIL_DOMAIN}',
+            secrets.token_urlsafe(24),
+            is_guest=True
+        )
 
     def authenticate(
         self,

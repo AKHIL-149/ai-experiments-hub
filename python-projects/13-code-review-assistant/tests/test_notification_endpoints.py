@@ -75,7 +75,8 @@ def test_get_notification_by_id():
         notification = notification_service.create_notification(
             NotificationType.INFO,
             "Test",
-            "Test message"
+            "Test message",
+            user_id='test-user'
         )
 
         client = TestClient(app)
@@ -116,7 +117,8 @@ def test_mark_notification_read():
         notification = notification_service.create_notification(
             NotificationType.INFO,
             "Test",
-            "Test message"
+            "Test message",
+            user_id='test-user'
         )
 
         client = TestClient(app)
@@ -168,7 +170,8 @@ def test_dismiss_notification():
         notification = notification_service.create_notification(
             NotificationType.INFO,
             "Test",
-            "Test message"
+            "Test message",
+            user_id='test-user'
         )
 
         client = TestClient(app)
@@ -193,7 +196,8 @@ def test_delete_notification():
         notification = notification_service.create_notification(
             NotificationType.INFO,
             "Test",
-            "Test message"
+            "Test message",
+            user_id='test-user'
         )
 
         client = TestClient(app)
@@ -208,13 +212,27 @@ def test_delete_notification():
         assert deleted is None
 
 
+def test_clear_old_notifications_is_admin_only():
+    """The service clears every user's notifications, so an ordinary account is refused"""
+    from server import app
+
+    mock_user = Mock()
+    mock_user.id = 'test-user'
+    mock_user.role = UserRole.USER
+
+    with override_current_user(mock_user):
+        response = TestClient(app).delete("/api/notifications/old?days=30")
+
+    assert response.status_code == 403
+
+
 def test_clear_old_notifications():
     """Test clearing old notifications"""
     from server import app
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     with override_current_user(mock_user):
         client = TestClient(app)

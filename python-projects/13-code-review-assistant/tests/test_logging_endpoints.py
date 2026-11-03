@@ -24,7 +24,7 @@ def test_get_logs_endpoint():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     # Create some test logs
     logging_service.info("Test log 1")
@@ -47,7 +47,7 @@ def test_get_logs_with_level_filter():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     logging_service.info("Info log")
     logging_service.error("Error log")
@@ -68,7 +68,7 @@ def test_get_logs_with_correlation_id_filter():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     with logging_service.correlation_context("test-corr-123"):
         logging_service.info("Correlated log")
@@ -89,7 +89,7 @@ def test_get_error_logs():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     logging_service.error("Test error")
 
@@ -109,7 +109,7 @@ def test_get_logging_statistics():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     with override_current_user(mock_user):
         client = TestClient(app)
@@ -129,7 +129,7 @@ def test_export_logs_json():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     logging_service.info("Export test")
 
@@ -147,7 +147,7 @@ def test_export_logs_csv():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     logging_service.info("CSV export test")
 
@@ -165,7 +165,7 @@ def test_invalid_log_level():
 
     mock_user = Mock()
     mock_user.id = 'test-user'
-    mock_user.role = UserRole.USER
+    mock_user.role = UserRole.ADMIN
 
     with override_current_user(mock_user):
         client = TestClient(app)
@@ -190,3 +190,18 @@ def test_logging_endpoints_require_auth():
     for endpoint in endpoints:
         response = client.get(endpoint)
         assert response.status_code == 401, f"{endpoint} should require auth"
+
+
+@pytest.mark.parametrize("endpoint", ["/api/logs", "/api/logs/errors", "/api/logs/statistics", "/api/logs/export"])
+def test_logs_are_for_admins_only(endpoint):
+    """The logs hold every user's requests, so an ordinary (or guest) account gets a 403"""
+    from server import app
+
+    mock_user = Mock()
+    mock_user.id = 'test-user'
+    mock_user.role = UserRole.USER
+
+    with override_current_user(mock_user):
+        response = TestClient(app).get(endpoint)
+
+    assert response.status_code == 403

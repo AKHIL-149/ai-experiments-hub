@@ -81,6 +81,7 @@
     </style>
 </head>
 <body>
+    {% if user %}<div style="display:flex;justify-content:flex-end;padding:0.5rem 1rem;">{% set show_logout = true %}{% include "_account_chip.html" %}</div>{% endif %}
     <div class="demo-container">
         <div class="demo-header">
             <h1>Diff Viewer Component Demo</h1>

@@ -44,7 +44,38 @@ class TestAIRefactoringEndpoints:
         return TestClient(app)
 
     @pytest.fixture
-    def auth_headers(self, client):
+    def auth_username(self):
+        return f'ai_refactor_test_{uuid.uuid4().hex[:8]}'
+
+    @pytest.fixture
+    def owned_issue(self, auth_headers, auth_username, db):
+        """An issue in a repository that belongs to the signed-in account (issues and files are
+        only visible to the account that owns their repository)"""
+        from src.core.database import (
+            User, Repository, CodeFile, Issue, IssueSeverity, IssueCategory
+        )
+        user = db.query(User).filter(User.username == auth_username).first()
+        repository = Repository(user_id=user.id, name='owned', github_url='https://github.com/o/owned')
+        db.add(repository)
+        db.commit()
+        code_file = CodeFile(
+            repository_id=repository.id, file_path='owned.py', file_hash='h', language='python',
+            lines_of_code=1000
+        )
+        db.add(code_file)
+        db.commit()
+        issue = Issue(
+            code_file_id=code_file.id, category=IssueCategory.SECURITY,
+            severity=IssueSeverity.CRITICAL, rule_id='SEC001', title='SQL Injection',
+            description='Unsafe SQL query', line_number=10, code_snippet='q'
+        )
+        db.add(issue)
+        db.commit()
+        db.refresh(issue)
+        return issue
+
+    @pytest.fixture
+    def auth_headers(self, client, auth_username):
         """A real session, obtained through the actual register+login
         flow, carried as a raw Cookie header.
 
@@ -58,8 +89,7 @@ class TestAIRefactoringEndpoints:
         tests/conftest.py and tests/test_rule_marketplace.py - this
         fixture is function-scoped, so every test gets its own account.
         """
-        suffix = uuid.uuid4().hex[:8]
-        username = f'ai_refactor_test_{suffix}'
+        username = auth_username
         password = 'TestPass123!'
 
         client.post('/api/auth/register', json={
@@ -188,7 +218,7 @@ def vulnerable_function(user_input):
             assert response.status_code == 500
             assert 'Error generating refactoring' in response.json()['detail']
 
-    def test_auto_fix_success(self, client, auth_headers):
+    def test_auto_fix_success(self, client, auth_headers, owned_issue):
         """Test successful automated fix application"""
         with patch('src.services.ai_refactoring_service.ai_refactoring_service') as mock_service:
             mock_service.apply_automated_fix.return_value = {
@@ -201,7 +231,7 @@ def vulnerable_function(user_input):
             }
 
             response = client.post(
-                '/api/refactor/auto-fix/issue_123?generate_test=true',
+                f'/api/refactor/auto-fix/{owned_issue.id}?generate_test=true',
                 headers=auth_headers
             )
 
@@ -212,7 +242,7 @@ def vulnerable_function(user_input):
             assert 'test_code' in data
             assert data['confidence'] == 0.95
 
-    def test_auto_fix_no_test(self, client, auth_headers):
+    def test_auto_fix_no_test(self, client, auth_headers, owned_issue):
         """Test automated fix without test generation"""
         with patch('src.services.ai_refactoring_service.ai_refactoring_service') as mock_service:
             mock_service.apply_automated_fix.return_value = {
@@ -225,7 +255,7 @@ def vulnerable_function(user_input):
             }
 
             response = client.post(
-                '/api/refactor/auto-fix/issue_123?generate_test=false',
+                f'/api/refactor/auto-fix/{owned_issue.id}?generate_test=false',
                 headers=auth_headers
             )
 
@@ -249,25 +279,28 @@ def vulnerable_function(user_input):
             assert response.status_code == 404
             assert 'Issue not found' in response.json()['detail']
 
-    def test_technical_debt_estimation(self, client, auth_headers, db):
+    def test_technical_debt_estimation(self, client, auth_headers, db, auth_username):
         """Test technical debt estimation"""
-        from src.core.database import CodeFile, Issue, IssueSeverity, IssueCategory
+        from src.core.database import (
+            User, Repository, CodeFile, Issue, IssueSeverity, IssueCategory
+        )
 
-        # /api/technical-debt queries CodeFile/Issue globally (no
-        # user/repo filter - see server.py), and this test's `db` session
-        # is deliberately the same session-wide isolated database every
-        # other test in the suite shares (see the `db` fixture above), so
-        # baseline counts aren't reliably 0 by the time this test runs.
-        # Measure the delta this test's own data causes instead of
-        # asserting an absolute total.
+        # Only the signed-in account's own files and issues are counted, so a fresh account
+        # starts from zero
         baseline = client.get('/api/technical-debt', headers=auth_headers).json()
+        assert baseline['total_files'] == 0 and baseline['total_issues'] == 0
+
+        user = db.query(User).filter(User.username == auth_username).first()
+        repository = Repository(user_id=user.id, name='debt', github_url='https://github.com/o/debt')
+        db.add(repository)
+        db.commit()
 
         # Create test data. code_file.id is a SQLAlchemy column default
         # applied at flush/commit, not at construction - reading it
         # beforehand (as the issues below originally did) writes NULL
         # into a NOT NULL foreign key column.
         code_file = CodeFile(
-            pull_request_id='pr_123',  # was the nonexistent field 'pr_id'
+            repository_id=repository.id,
             file_path='app.py',
             file_hash='hash123',
             language='python',

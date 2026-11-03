@@ -377,6 +377,81 @@ async def require_admin(user = Depends(get_current_user)):
 
 
 # ============================================================================
+# Ownership helpers
+#
+# Issues, refactorings and the analytics built on them belong to whoever owns the repository
+# their file is in (a repository, or a pull request of one; uploads live in the user's own
+# "Uploaded Files" repository). Endpoints took `user` only to require a login and then read
+# every account's rows, so a brand-new guest saw the whole database.
+# ============================================================================
+
+def owned_file_clause(db, user):
+    """Filter for CodeFile: files in repositories the user owns, directly or through a pull request"""
+    from sqlalchemy import or_, select
+    from src.core.database import CodeFile, Repository, PullRequest
+
+    repo_ids = select(Repository.id).where(Repository.user_id == user.id)
+    pr_ids = select(PullRequest.id).where(PullRequest.repository_id.in_(repo_ids))
+    return or_(CodeFile.repository_id.in_(repo_ids), CodeFile.pull_request_id.in_(pr_ids))
+
+
+def owned_issues_query(db, user):
+    from src.core.database import Issue, CodeFile
+
+    return db.query(Issue).join(CodeFile, Issue.code_file_id == CodeFile.id).filter(owned_file_clause(db, user))
+
+
+def get_owned_issue(db, user, issue_id):
+    """The issue, or None when it does not exist or is not the user's (callers answer 404 for both)"""
+    from src.core.database import Issue
+
+    return owned_issues_query(db, user).filter(Issue.id == issue_id).first()
+
+
+def owned_refactorings_query(db, user):
+    from src.core.database import Refactoring, CodeFile
+
+    return db.query(Refactoring).join(
+        CodeFile, Refactoring.code_file_id == CodeFile.id
+    ).filter(owned_file_clause(db, user))
+
+
+def get_owned_refactoring(db, user, refactoring_id):
+    from src.core.database import Refactoring
+
+    return owned_refactorings_query(db, user).filter(Refactoring.id == refactoring_id).first()
+
+
+def require_owned_repository(user, repository_id):
+    """404 unless the repository exists and is the user's"""
+    from src.core.database import Repository
+
+    with db_manager.get_session() as db:
+        found = db.query(Repository.id).filter(
+            Repository.id == repository_id, Repository.user_id == user.id
+        ).first()
+    if not found:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+
+def require_team_member(team_id, user):
+    """404 unless the user is a member of the team (the same answer as for a team that does not exist)"""
+    from src.core.database import TeamMember
+
+    with db_manager.get_session() as db:
+        member = db.query(TeamMember.id).filter(
+            TeamMember.team_id == team_id, TeamMember.user_id == user.id
+        ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+
+def require_admin_role(user):
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+# ============================================================================
 # Health Check Endpoints
 # ============================================================================
 
@@ -639,6 +714,37 @@ async def register(data: RegisterRequest, response: Response):
             "success": True,
             "user": user.to_dict(),
             "message": "Registration successful"
+        }
+
+
+@app.post("/api/auth/guest")
+def guest_login(response: Response):
+    """Create a temporary guest account and log in as it, with no sign-up form.
+
+    A plain `def` so FastAPI runs it in a worker thread: the bcrypt hash takes ~0.25 s.
+    """
+    with db_manager.get_session() as db:
+        auth_manager = AuthManager(db, SESSION_TTL_DAYS)
+        success, user, error = auth_manager.create_guest_user()
+
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        session_token = auth_manager.create_session(user)
+
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="strict",
+            max_age=SESSION_TTL_DAYS * 24 * 60 * 60
+        )
+
+        return {
+            "success": True,
+            "user": user.to_dict(),
+            "message": "Signed in as a guest"
         }
 
 
@@ -2483,6 +2589,11 @@ async def assign_pr_reviewers(
             "num_reviewers": int (default 2)
         }
     """
+    with db_manager.get_session() as db:
+        found, _, error = PullRequestService(db).get_pr(pr_id, user_id=user.id)
+        if not found:
+            raise HTTPException(status_code=404, detail=error)
+
     try:
         from src.services.review_assignment_service import review_assignment_service
 
@@ -2521,6 +2632,11 @@ async def get_pr_approval_status(
         required_approvals: Minimum number of approvals required
         require_owner_approval: Whether code owner approval is required
     """
+    with db_manager.get_session() as db:
+        found, _, error = PullRequestService(db).get_pr(pr_id, user_id=user.id)
+        if not found:
+            raise HTTPException(status_code=404, detail=error)
+
     try:
         from src.services.review_assignment_service import review_assignment_service
 
@@ -3125,18 +3241,20 @@ async def pull_request_detail_page(
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request, user = Depends(get_current_user_optional)):
     """Login page"""
     return templates.TemplateResponse(request, "login.html", {
-        "request": request
+        "request": request,
+        "user": user
     })
 
 
 @app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
+async def register_page(request: Request, user = Depends(get_current_user_optional)):
     """Registration page"""
     return templates.TemplateResponse(request, "register.html", {
-        "request": request
+        "request": request,
+        "user": user
     })
 
 
@@ -3470,7 +3588,7 @@ async def get_dashboard_metrics(user = Depends(get_current_user)):
     complexity_scores = []
 
     # Get all cached analyses
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     # Collect metrics from all analyses
     for analysis in analyses:
@@ -3556,7 +3674,7 @@ async def get_dashboard_trends(days: int = 30, user = Depends(get_current_user))
     from datetime import datetime, timedelta
 
     # Get all cached analyses
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     # Create date buckets
     end_date = datetime.now()
@@ -3635,7 +3753,7 @@ async def get_recent_activity(limit: int = 10, user = Depends(get_current_user))
     activities = []
 
     # Get all cached analyses
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     # Sort by timestamp (most recent first)
     sorted_analyses = sorted(
@@ -3709,7 +3827,7 @@ async def get_health_score(user = Depends(get_current_user)):
     # here and this endpoint always reported a false "perfect" score.
     with db_manager.get_session() as db:
         from src.core.database import Issue, CodeFile
-        issues_db = db.query(Issue).join(CodeFile).filter(
+        issues_db = owned_issues_query(db, user).filter(
             Issue.resolved == False,
             Issue.dismissed == False
         ).all()
@@ -3752,7 +3870,7 @@ async def get_analytics_trends(
         return JSONResponse(cached_result)
 
     # Get all cached analyses
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     # Calculate trends
     trends = analytics_service.calculate_issue_trends(
@@ -3794,7 +3912,7 @@ async def get_repository_analytics(user = Depends(get_current_user)):
         return JSONResponse(cached_result)
 
     # Get all cached analyses
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     # Calculate repository metrics
     metrics = analytics_service.calculate_repository_metrics(analyses)
@@ -3820,7 +3938,7 @@ async def get_analytics_insights(user = Depends(get_current_user)):
     from src.services.analytics_service import analytics_service
 
     # Get repository metrics
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
     metrics = analytics_service.calculate_repository_metrics(analyses)
 
     # Generate insights
@@ -3851,7 +3969,7 @@ async def compare_periods(
     from datetime import datetime, timedelta
 
     # Get all analyses
-    all_analyses = get_all_cached_analyses()
+    all_analyses = get_all_cached_analyses(user.id)
 
     # Split into current and previous periods
     now = datetime.now()
@@ -3909,7 +4027,7 @@ async def export_analytics(
     import io
 
     # Get analyses for the period
-    all_analyses = get_all_cached_analyses()
+    all_analyses = get_all_cached_analyses(user.id)
     cutoff_date = datetime.now() - timedelta(days=days)
 
     # Filter by date
@@ -4016,8 +4134,10 @@ async def get_notifications(
             raise HTTPException(status_code=400, detail=f"Invalid notification type: {notification_type}")
 
     # Get notifications
+    # Always the signed-in user's own: user_id used to be a query parameter, and leaving it out
+    # returned everybody's notifications
     notifications = notification_service.get_notifications(
-        user_id=user_id,
+        user_id=user.id,
         notification_type=filter_type,
         unread_only=unread_only
     )
@@ -4037,7 +4157,7 @@ async def mark_all_notifications_read(
     """Mark all notifications as read for a user"""
     from src.services.notification_service import notification_service
 
-    count = notification_service.mark_all_as_read(user_id=user_id)
+    count = notification_service.mark_all_as_read(user_id=user.id)
 
     return JSONResponse({'success': True, 'count': count, 'message': f'Marked {count} notifications as read'})
 
@@ -4047,6 +4167,8 @@ async def clear_old_notifications(days: int = 30, user = Depends(get_current_use
     """Clear notifications older than specified days"""
     from src.services.notification_service import notification_service
 
+    # The service clears every user's notifications, so only an admin may
+    require_admin_role(user)
     count = notification_service.clear_old_notifications(days=days)
 
     return JSONResponse({'success': True, 'count': count, 'message': f'Deleted {count} old notifications'})
@@ -4080,7 +4202,7 @@ async def get_notification_statistics(user_id: Optional[str] = None, user = Depe
     """Get notification statistics"""
     from src.services.notification_service import notification_service
 
-    stats = notification_service.get_statistics(user_id=user_id)
+    stats = notification_service.get_statistics(user_id=user.id)
 
     return JSONResponse(stats)
 
@@ -4093,15 +4215,22 @@ async def get_notification_statistics(user_id: Optional[str] = None, user = Depe
 # was being swallowed by GET /api/notifications/{notification_id}
 # (treating "preferences" as the id) and always 404ing as "not found",
 # making three endpoints entirely unreachable.
+def require_own_notification(notification_id, user):
+    """404 unless the notification exists and was addressed to this user"""
+    from src.services.notification_service import notification_service
+
+    notification = notification_service.get_notification(notification_id)
+    if not notification or notification.get('user_id') != user.id:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return notification
+
+
 @app.get("/api/notifications/{notification_id}")
 async def get_notification(notification_id: str, user = Depends(get_current_user)):
     """Get a specific notification by ID"""
     from src.services.notification_service import notification_service
 
-    notification = notification_service.get_notification(notification_id)
-
-    if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
+    notification = require_own_notification(notification_id, user)
 
     return JSONResponse(notification)
 
@@ -4111,6 +4240,7 @@ async def mark_notification_read(notification_id: str, user = Depends(get_curren
     """Mark a notification as read"""
     from src.services.notification_service import notification_service
 
+    require_own_notification(notification_id, user)
     success = notification_service.mark_as_read(notification_id)
 
     if not success:
@@ -4124,6 +4254,7 @@ async def dismiss_notification(notification_id: str, user = Depends(get_current_
     """Dismiss a notification"""
     from src.services.notification_service import notification_service
 
+    require_own_notification(notification_id, user)
     success = notification_service.dismiss_notification(notification_id)
 
     if not success:
@@ -4137,6 +4268,7 @@ async def delete_notification(notification_id: str, user = Depends(get_current_u
     """Permanently delete a notification"""
     from src.services.notification_service import notification_service
 
+    require_own_notification(notification_id, user)
     success = notification_service.delete_notification(notification_id)
 
     if not success:
@@ -4166,6 +4298,7 @@ async def get_logs(
     - limit: Maximum number of logs to return
     - offset: Number of logs to skip
     """
+    require_admin_role(user)
     from src.services.logging_service import logging_service, LogLevel
 
     # Parse log level if provided
@@ -4190,6 +4323,7 @@ async def get_logs(
 @app.get("/api/logs/errors")
 async def get_error_logs(limit: int = 100, user = Depends(get_current_user)):
     """Get recent error logs"""
+    require_admin_role(user)
     from src.services.logging_service import logging_service
 
     errors = logging_service.get_errors(limit=limit)
@@ -4200,6 +4334,7 @@ async def get_error_logs(limit: int = 100, user = Depends(get_current_user)):
 @app.get("/api/logs/statistics")
 async def get_logging_statistics(user = Depends(get_current_user)):
     """Get logging statistics"""
+    require_admin_role(user)
     from src.services.logging_service import logging_service
 
     stats = logging_service.get_statistics()
@@ -4243,6 +4378,7 @@ async def export_logs(format: str = 'json', user = Depends(get_current_user)):
     Query parameters:
     - format: Export format ('json' or 'csv')
     """
+    require_admin_role(user)
     from src.services.logging_service import logging_service
     from datetime import datetime
 
@@ -4294,8 +4430,8 @@ async def list_issues(
     with db_manager.get_session() as db:
         from src.core.database import Issue, CodeFile
 
-        # Build query
-        query = db.query(Issue).join(CodeFile)
+        # Build query: only the user's own issues
+        query = owned_issues_query(db, user)
 
         # Apply repository filter if provided
         if repository:
@@ -4354,7 +4490,7 @@ async def list_issues(
             }
 
     # Fallback to cached analyses if no database issues (legacy behavior for file uploads)
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     # Collect issues from all analyses
     for analysis in analyses:
@@ -4380,7 +4516,7 @@ async def list_issues(
     if job_id:
         # Get specific job's issues
         job_analysis = get_analysis_results(job_id)
-        if job_analysis:
+        if job_analysis and job_analysis.get('user_id') == user.id:
             filtered_issues = job_analysis.get('issues', [])
         else:
             filtered_issues = []
@@ -4422,7 +4558,7 @@ async def get_issue(
     with db_manager.get_session() as db:
         from src.core.database import Issue, CodeFile
 
-        issue = db.query(Issue).filter(Issue.id == issue_id).first()
+        issue = get_owned_issue(db, user, issue_id)
 
         if issue:
             return {
@@ -4448,7 +4584,7 @@ async def get_issue(
             }
 
     # Fallback to in-memory cache for legacy file upload issues
-    analyses = get_all_cached_analyses()
+    analyses = get_all_cached_analyses(user.id)
 
     for analysis in analyses:
         for idx, issue in enumerate(analysis.get('issues', [])):
@@ -4488,7 +4624,7 @@ async def create_github_issue_from_code_issue(
         with db_manager.get_session() as db:
             from src.core.database import Issue, CodeFile, Repository
 
-            issue = db.query(Issue).filter(Issue.id == issue_id).first()
+            issue = get_owned_issue(db, user, issue_id)
 
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
@@ -4630,7 +4766,7 @@ async def dismiss_issue(
             from datetime import datetime
 
             # Get the issue
-            issue = db.query(Issue).filter(Issue.id == issue_id).first()
+            issue = get_owned_issue(db, user, issue_id)
 
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
@@ -4684,7 +4820,7 @@ async def restore_issue(
             from src.core.database import Issue
 
             # Get the issue
-            issue = db.query(Issue).filter(Issue.id == issue_id).first()
+            issue = get_owned_issue(db, user, issue_id)
 
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
@@ -4738,7 +4874,7 @@ async def get_issues_stats(
     files_seen = set()
 
     with db_manager.get_session() as db:
-        rows = db.query(Issue, CodeFile.file_path).join(CodeFile).filter(
+        rows = owned_issues_query(db, user).with_entities(Issue, CodeFile.file_path).filter(
             Issue.resolved == False,
             Issue.dismissed == False
         ).all()
@@ -4796,7 +4932,7 @@ async def list_refactorings(
     from src.core.database import Refactoring, RefactoringStatus
 
     with db_manager.get_session() as db:
-        query = db.query(Refactoring)
+        query = owned_refactorings_query(db, user)
 
         # Apply filters
         if status:
@@ -4841,6 +4977,9 @@ async def get_refactoring(
     from src.services.refactoring_service import RefactoringService
 
     with db_manager.get_session() as db:
+        if not get_owned_refactoring(db, user, refactoring_id):
+            raise HTTPException(status_code=404, detail="Refactoring not found")
+
         service = RefactoringService(db)
         success, refactoring, error = service.get_refactoring(refactoring_id)
 
@@ -4883,6 +5022,11 @@ async def create_refactoring(
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
 
     with db_manager.get_session() as db:
+        # Only on the user's own issue, in a file that issue belongs to
+        issue = get_owned_issue(db, user, str(data['issue_id']))
+        if not issue or issue.code_file_id != data['code_file_id']:
+            raise HTTPException(status_code=404, detail="Issue not found")
+
         service = RefactoringService(db)
 
         success, refactoring, error = service.create_refactoring(
@@ -4914,6 +5058,9 @@ async def accept_refactoring(
     from src.services.refactoring_service import RefactoringService
 
     with db_manager.get_session() as db:
+        if not get_owned_refactoring(db, user, refactoring_id):
+            raise HTTPException(status_code=404, detail="Refactoring not found")
+
         service = RefactoringService(db)
         success, refactoring, error = service.accept_refactoring(refactoring_id)
 
@@ -4935,6 +5082,9 @@ async def reject_refactoring(
     from src.services.refactoring_service import RefactoringService
 
     with db_manager.get_session() as db:
+        if not get_owned_refactoring(db, user, refactoring_id):
+            raise HTTPException(status_code=404, detail="Refactoring not found")
+
         service = RefactoringService(db)
         success, refactoring, error = service.reject_refactoring(refactoring_id)
 
@@ -4956,6 +5106,9 @@ async def mark_refactoring_applied(
     from src.services.refactoring_service import RefactoringService
 
     with db_manager.get_session() as db:
+        if not get_owned_refactoring(db, user, refactoring_id):
+            raise HTTPException(status_code=404, detail="Refactoring not found")
+
         service = RefactoringService(db)
         success, refactoring, error = service.mark_refactoring_applied(refactoring_id)
 
@@ -4975,13 +5128,27 @@ async def get_refactoring_stats(
     """Get refactoring statistics."""
     from src.services.refactoring_service import RefactoringService
 
+    from src.core.database import Refactoring, RefactoringStatus
+
     with db_manager.get_session() as db:
-        service = RefactoringService(db)
-        stats = service.get_stats()
+        owned = owned_refactorings_query(db, user)
+        total = owned.count()
+        counts = {
+            name: owned.filter(Refactoring.status == status).count()
+            for name, status in (
+                ("suggested", RefactoringStatus.SUGGESTED),
+                ("accepted", RefactoringStatus.ACCEPTED),
+                ("rejected", RefactoringStatus.REJECTED),
+                ("applied", RefactoringStatus.APPLIED),
+            )
+        }
 
         return {
             "success": True,
-            **stats
+            "total": total,
+            **counts,
+            "acceptance_rate": (counts["accepted"] / total * 100) if total > 0 else 0.0,
+            "application_rate": (counts["applied"] / total * 100) if total > 0 else 0.0
         }
 
 
@@ -5048,6 +5215,10 @@ async def apply_automated_fix(
     """
     from src.services.ai_refactoring_service import ai_refactoring_service
 
+    with db_manager.get_session() as db:
+        if not get_owned_issue(db, user, issue_id):
+            raise HTTPException(status_code=404, detail="Issue not found")
+
     try:
         result = ai_refactoring_service.apply_automated_fix(
             issue_id=issue_id,
@@ -5082,7 +5253,7 @@ async def get_technical_debt_estimation(
 
     with db_manager.get_session() as db:
         # Get all code files
-        code_files = db.query(CodeFile).all()
+        code_files = db.query(CodeFile).filter(owned_file_clause(db, user)).all()
         code_file_data = [{
             'file_path': cf.file_path,
             'lines_of_code': cf.lines_of_code or 0,
@@ -5090,7 +5261,7 @@ async def get_technical_debt_estimation(
         } for cf in code_files]
 
         # Get all issues
-        issues = db.query(Issue).all()
+        issues = owned_issues_query(db, user).all()
         issue_data = [{
             'severity': i.severity.value if hasattr(i.severity, 'value') else i.severity,
             'category': i.category.value if hasattr(i.category, 'value') else i.category,
@@ -5199,6 +5370,8 @@ async def get_repository_health(
     """
     from src.services.historical_analytics_service import historical_analytics_service
 
+    require_owned_repository(user, repository_id)
+
     try:
         health = historical_analytics_service.get_repository_health_score(
             repository_id=repository_id,
@@ -5239,6 +5412,8 @@ async def get_quality_trends(
     if granularity not in ['daily', 'weekly', 'monthly']:
         raise HTTPException(status_code=400, detail="Invalid granularity. Must be 'daily', 'weekly', or 'monthly'")
 
+    require_owned_repository(user, repository_id)
+
     try:
         trends = historical_analytics_service.get_quality_trends(
             repository_id=repository_id,
@@ -5273,6 +5448,8 @@ async def get_developer_contributions(
     """
     from src.services.historical_analytics_service import historical_analytics_service
 
+    require_owned_repository(user, repository_id)
+
     try:
         analysis = historical_analytics_service.get_developer_contribution_analysis(
             repository_id=repository_id,
@@ -5302,6 +5479,8 @@ async def get_technical_debt_heatmap(
     """
     from src.services.historical_analytics_service import historical_analytics_service
 
+    require_owned_repository(user, repository_id)
+
     try:
         heatmap = historical_analytics_service.get_technical_debt_heatmap(
             repository_id=repository_id
@@ -5327,6 +5506,8 @@ async def get_quality_gate_status(
     Returns overall gate status (passed/failed) and individual SLO metrics
     """
     from src.services.historical_analytics_service import historical_analytics_service
+
+    require_owned_repository(user, repository_id)
 
     try:
         metrics = historical_analytics_service.get_quality_gate_metrics(
@@ -6525,6 +6706,10 @@ async def get_team(team_id: str, user=Depends(get_current_user)):
         team_service = TeamService()
         team = team_service.get_team(team_id, user.id)
 
+        # A team's details are for its members; to anyone else it does not exist
+        if team and not team.get('is_member'):
+            team = None
+
         if not team:
             raise HTTPException(status_code=404, detail="Team not found")
 
@@ -6581,6 +6766,8 @@ async def delete_team(team_id: str, user=Depends(get_current_user)):
 @app.get("/api/teams/{team_id}/members")
 async def get_team_members(team_id: str, user=Depends(get_current_user)):
     """Get all team members."""
+    require_team_member(team_id, user)
+
     try:
         from src.services.team_service import TeamService
 
@@ -6699,6 +6886,8 @@ async def create_team_invitation(team_id: str, request: Request, user=Depends(ge
 @app.get("/api/teams/{team_id}/invitations")
 async def get_team_invitations(team_id: str, status: Optional[str] = None, user=Depends(get_current_user)):
     """Get team invitations."""
+    require_team_member(team_id, user)
+
     try:
         from src.services.team_service import TeamService
 
@@ -6714,6 +6903,8 @@ async def get_team_invitations(team_id: str, status: Optional[str] = None, user=
 @app.get("/api/teams/{team_id}/analytics")
 async def get_team_analytics(team_id: str, user=Depends(get_current_user)):
     """Get team analytics including issue trends and health metrics."""
+    require_team_member(team_id, user)
+
     try:
         from src.services.team_analytics_service import team_analytics_service
 
@@ -6727,6 +6918,8 @@ async def get_team_analytics(team_id: str, user=Depends(get_current_user)):
 @app.get("/api/teams/{team_id}/repositories")
 async def get_team_repositories(team_id: str, user=Depends(get_current_user)):
     """Get all repositories for a team with health metrics."""
+    require_team_member(team_id, user)
+
     try:
         from src.services.team_analytics_service import team_analytics_service
 
@@ -6740,6 +6933,8 @@ async def get_team_repositories(team_id: str, user=Depends(get_current_user)):
 @app.get("/api/teams/{team_id}/leaderboard")
 async def get_team_leaderboard(team_id: str, user=Depends(get_current_user)):
     """Get team member leaderboard ranked by contributions."""
+    require_team_member(team_id, user)
+
     try:
         from src.services.team_analytics_service import team_analytics_service
 
@@ -6753,6 +6948,8 @@ async def get_team_leaderboard(team_id: str, user=Depends(get_current_user)):
 @app.get("/api/teams/{team_id}/activity")
 async def get_team_activity(team_id: str, limit: int = 50, user=Depends(get_current_user)):
     """Get recent team activity feed."""
+    require_team_member(team_id, user)
+
     try:
         from src.services.team_analytics_service import team_analytics_service
 
@@ -6848,7 +7045,7 @@ async def create_schedule(request: Request, user=Depends(get_current_user)):
     try:
         data = await request.json()
 
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             schedule = schedule_service.create_schedule(
                 repository_id=data.get('repository_id'),
@@ -6884,7 +7081,7 @@ async def list_schedules(
 ):
     """List all schedules for the current user."""
     try:
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             schedules = schedule_service.list_schedules(
                 user_id=user.id,
@@ -6902,7 +7099,7 @@ async def list_schedules(
 async def get_schedule(schedule_id: str, user=Depends(get_current_user)):
     """Get schedule details."""
     try:
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             schedule = schedule_service.get_schedule(schedule_id, user_id=user.id)
 
@@ -6923,7 +7120,7 @@ async def update_schedule(schedule_id: str, request: Request, user=Depends(get_c
     try:
         data = await request.json()
 
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             schedule = schedule_service.update_schedule(
                 schedule_id=schedule_id,
@@ -6943,7 +7140,7 @@ async def update_schedule(schedule_id: str, request: Request, user=Depends(get_c
 async def delete_schedule(schedule_id: str, user=Depends(get_current_user)):
     """Delete a schedule."""
     try:
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             result = schedule_service.delete_schedule(schedule_id, user.id)
 
@@ -6962,7 +7159,7 @@ async def toggle_schedule(schedule_id: str, request: Request, user=Depends(get_c
         data = await request.json()
         enabled = data.get('enabled', True)
 
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             schedule = schedule_service.toggle_schedule(schedule_id, user.id, enabled)
 
@@ -6978,7 +7175,7 @@ async def toggle_schedule(schedule_id: str, request: Request, user=Depends(get_c
 async def trigger_schedule(schedule_id: str, user=Depends(get_current_user)):
     """Manually trigger a schedule to run immediately."""
     try:
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             run = schedule_service.trigger_schedule(schedule_id, user.id)
 
@@ -6999,7 +7196,7 @@ async def get_schedule_runs(
 ):
     """Get runs for a specific schedule."""
     try:
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
 
             # Verify user has access to this schedule
@@ -7025,7 +7222,7 @@ async def get_schedule_runs(
 async def get_run(run_id: str, user=Depends(get_current_user)):
     """Get run details."""
     try:
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
             run = schedule_service.get_run(run_id)
 

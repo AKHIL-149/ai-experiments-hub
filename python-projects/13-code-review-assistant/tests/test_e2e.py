@@ -445,7 +445,7 @@ class TestExportFunctionality:
 
         mock_user = Mock()
         mock_user.id = 'test-user'
-        mock_user.role = UserRole.USER
+        mock_user.role = UserRole.ADMIN  # logs are admin-only
 
         with override_current_user(mock_user):
             client = TestClient(app)
@@ -491,7 +491,7 @@ class TestCompleteWorkflow:
 
         mock_user = Mock()
         mock_user.id = 'test-user'
-        mock_user.role = UserRole.USER
+        mock_user.role = UserRole.ADMIN  # logs are admin-only
 
         with override_current_user(mock_user):
             client = TestClient(app)

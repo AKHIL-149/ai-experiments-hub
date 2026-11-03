@@ -4,6 +4,7 @@ Protects API endpoints from abuse with configurable rate limits per user/IP
 """
 
 import time
+import uuid
 from typing import Optional, Dict
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -100,8 +101,10 @@ class RateLimiter:
                     return False, max(1, retry_after)
                 return False, window
 
-            # Add current request
-            self.redis_client.zadd(key, {str(now): now})
+            # Add current request. The member must be unique per request: it used to be
+            # str(now) (whole seconds), so every request inside one second overwrote the
+            # last and a burst of any size counted as one - rapid logins were never limited
+            self.redis_client.zadd(key, {f"{time.time()}:{uuid.uuid4().hex}": now})
             self.redis_client.expire(key, window)
 
             return True, 0
@@ -158,6 +161,7 @@ RATE_LIMITS = {
     # Authentication endpoints - strict limits
     '/api/auth/register': {'limit': 5, 'window': 300},  # 5 per 5 minutes
     '/api/auth/login': {'limit': 5, 'window': 60},      # 5 per minute
+    '/api/auth/guest': {'limit': 10, 'window': 300},    # 10 per 5 minutes
     '/api/auth/logout': {'limit': 10, 'window': 60},    # 10 per minute
 
     # Analysis endpoints - moderate limits

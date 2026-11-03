@@ -17,6 +17,7 @@
                 <a href="/schedules" class="active">Schedules</a>
                 <a href="/issues">Issues</a>
                 <a href="/settings">Settings</a>
+                {% if user %}{% set show_logout = false %}{% include "_account_chip.html" %}{% endif %}
                 <a href="/logout">Logout</a>
             </nav>
         </header>

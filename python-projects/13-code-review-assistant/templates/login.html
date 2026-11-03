@@ -54,6 +54,13 @@
             <div class="form-error" id="errorMessage" style="display: none;"></div>
         </form>
 
+        <div class="auth-divider"><span>or</span></div>
+        <button type="button" id="guestButton" class="btn btn-secondary btn-block">
+            Continue as Guest
+        </button>
+        <p class="auth-hint">Try it without an account. A guest session can't be signed back in to after you log out.</p>
+        <div class="form-error" id="guestError" style="display: none;"></div>
+
         <div class="auth-footer">
             <p>Don't have an account? <a href="/register" class="text-link">Sign up</a></p>
         </div>
@@ -135,6 +142,32 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         submitButton.disabled = false;
         submitButton.textContent = 'Sign In';
     }
+});
+
+document.getElementById('guestButton').addEventListener('click', async (e) => {
+    const button = e.currentTarget;
+    const guestError = document.getElementById('guestError');
+
+    button.disabled = true;
+    button.textContent = 'Starting guest session...';
+    guestError.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/auth/guest', { method: 'POST', credentials: 'include' });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success) {
+            window.location.href = '/dashboard';
+            return;
+        }
+        guestError.textContent = (typeof data.detail === 'string' && data.detail) ||
+            (response.status === 429 ? 'Too many guest sessions started. Try again in a few minutes.' : 'Could not start a guest session.');
+    } catch (error) {
+        guestError.textContent = 'Network error. Please check your connection.';
+    }
+    guestError.style.display = 'block';
+    button.disabled = false;
+    button.textContent = 'Continue as Guest';
 });
 </script>
 {% endblock %}
