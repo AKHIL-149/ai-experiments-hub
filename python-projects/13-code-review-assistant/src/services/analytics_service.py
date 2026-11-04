@@ -168,7 +168,7 @@ class AnalyticsService:
         Returns:
             List of trend data points with date and issue counts
         """
-        end_date = datetime.now()
+        end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=days)
 
         # Initialize time buckets

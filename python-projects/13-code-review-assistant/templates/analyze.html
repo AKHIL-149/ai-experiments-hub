@@ -6,7 +6,7 @@
 <div class="container">
     <div class="page-header">
         <h1>Analyze File</h1>
-        <p class="subtitle">Upload a Python file for comprehensive code analysis</p>
+        <p class="subtitle">Upload a source file for comprehensive code analysis (Python, JavaScript/TypeScript, Java, Go, Rust)</p>
     </div>
 
     <div class="analyze-container">
@@ -19,9 +19,9 @@
                 <div class="card-body">
                     <form id="uploadForm" enctype="multipart/form-data">
                         <div class="form-group">
-                            <label for="file">Select Python File (.py)</label>
+                            <label for="file">Select a source file (up to 500 KB)</label>
                             <div class="file-upload-wrapper">
-                                <input type="file" id="file" name="file" accept=".py" required>
+                                <input type="file" id="file" name="file" accept=".py,.pyw,.js,.jsx,.mjs,.cjs,.ts,.tsx,.java,.go,.rs" required>
                                 <div class="file-upload-display" id="fileDisplay">
                                     <span class="upload-icon">📁</span>
                                     <span class="upload-text">Choose a file or drag and drop</span>
@@ -141,7 +141,7 @@ function updateFileDisplay() {
         const file = fileInput.files[0];
         display.innerHTML = `
             <span class="upload-icon">📄</span>
-            <span class="upload-text">${file.name} (${formatBytes(file.size)})</span>
+            <span class="upload-text">${escapeHtml(file.name)} (${formatBytes(file.size)})</span>
         `;
     } else {
         display.innerHTML = `
@@ -182,7 +182,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             showStatusSection(data.job_id, formData.get('file').name);
             startPolling();
         } else {
-            alert('Error: ' + (data.error || 'Upload failed'));
+            alert('Error: ' + (data.detail || data.error || 'Upload failed'));
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<span>Analyze Code</span>';
         }
@@ -331,15 +331,15 @@ function displayResults(result) {
                 ${report.issues.map((issue, idx) => `
                     <div class="issue-card">
                         <div class="issue-header">
-                            <span class="badge badge-${issue.severity}">${issue.severity}</span>
-                            <span class="badge badge-${issue.category}">${issue.category}</span>
-                            <span class="issue-title">${issue.title}</span>
+                            <span class="badge badge-${escapeHtml(issue.severity)}">${escapeHtml(issue.severity)}</span>
+                            <span class="badge badge-${escapeHtml(issue.category)}">${escapeHtml(issue.category)}</span>
+                            <span class="issue-title">${escapeHtml(issue.title)}</span>
                         </div>
                         <div class="issue-body">
-                            <p class="issue-description">${issue.description}</p>
+                            <p class="issue-description">${escapeHtml(issue.description)}</p>
                             <div class="issue-meta">
                                 <span>📍 Line ${issue.line_number}</span>
-                                <span>🔖 ${issue.rule_id}</span>
+                                <span>🔖 ${escapeHtml(issue.rule_id)}</span>
                                 ${issue.confidence ? `<span>💯 ${(issue.confidence * 100).toFixed(0)}% confident</span>` : ''}
                             </div>
                             ${issue.code_snippet ? `

@@ -244,12 +244,12 @@ class TestGuestIsShownOnEveryPage:
         page = client.get('/login')
         assert 'badge-guest' not in page.text and 'href="/register"' in page.text
 
-    def test_every_routed_standalone_template_includes_the_chip(self):
+    def test_every_routed_standalone_template_includes_the_nav(self):
         routed = set(re.findall(r'TemplateResponse\(request, "([^"]+)"', (ROOT / 'server.py').read_text()))
         missing = []
         for name in sorted(routed):
             html = (ROOT / 'templates' / name).read_text()
-            if 'extends "base.html"' not in html and '_account_chip.html' not in html:
+            if 'extends "base.html"' not in html and '_nav.html' not in html:
                 missing.append(name)
         # Login-less pages are plain documents with no header
         assert set(missing) <= {'terms.html', 'privacy.html'}, missing

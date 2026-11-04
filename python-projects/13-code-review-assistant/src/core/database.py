@@ -211,6 +211,7 @@ class Repository(Base):
         return {
             'id': self.id,
             'user_id': self.user_id,
+            'team_id': self.team_id,
             'name': self.name,
             'github_url': self.github_url,
             'clone_path': self.clone_path,

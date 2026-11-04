@@ -47,12 +47,26 @@ def other():
 
 
 def _delete_user(user_id):
-    from src.core.database import Team, TeamMember
+    from src.core.database import Base, Team, TeamInvitation, TeamMember
 
     with DatabaseManager().get_session() as db:
+        # Teams first, with every membership and invitation of them (and those sent or got by the account)
         team_ids = [m.team_id for m in db.query(TeamMember).filter(TeamMember.user_id == user_id)]
+        db.query(TeamInvitation).filter(
+            TeamInvitation.team_id.in_(team_ids) | (TeamInvitation.invited_by_id == user_id)
+            | (TeamInvitation.user_id == user_id)).delete(synchronize_session=False)
         db.query(TeamMember).filter(TeamMember.team_id.in_(team_ids)).delete(synchronize_session=False)
         db.query(Team).filter(Team.id.in_(team_ids)).delete(synchronize_session=False)
+        # Schedules (and their runs) of the account's repositories
+        from src.core.database import AnalysisSchedule, Repository, ScheduledRun
+        repo_ids = [r.id for r in db.query(Repository).filter(Repository.user_id == user_id)]
+        schedule_ids = [x.id for x in db.query(AnalysisSchedule).filter(AnalysisSchedule.repository_id.in_(repo_ids))]
+        db.query(ScheduledRun).filter(ScheduledRun.schedule_id.in_(schedule_ids)).delete(synchronize_session=False)
+        db.query(AnalysisSchedule).filter(AnalysisSchedule.id.in_(schedule_ids)).delete(synchronize_session=False)
+        # Then everything else the account owns that the ORM does not cascade (plugins, Slack and Discord settings ...)
+        for table in Base.metadata.sorted_tables:
+            if table.name not in ('users', 'repositories', 'sessions') and 'user_id' in table.c:
+                db.execute(table.delete().where(table.c.user_id == user_id))
         db.commit()
         user = db.query(User).filter(User.id == user_id).first()
         if user:

@@ -27,6 +27,7 @@ class JavaScriptSecurityAnalyzer(BaseAnalyzer):
     - JS-SEC004: Prototype pollution
     - JS-SEC005: Unsafe regex (ReDoS)
     - JS-SEC006: Hardcoded secrets/credentials
+    - JS-SEC007: SQL injection (query built from text and a value)
     """
 
     # Patterns for detecting hardcoded secrets
@@ -116,6 +117,7 @@ class JavaScriptSecurityAnalyzer(BaseAnalyzer):
         # code actually contained.
         issues.extend(self._check_unsafe_regex(source_code, file_path))
         issues.extend(self._check_hardcoded_secrets(source_code, file_path))
+        issues.extend(self._check_sql_injection(source_code, file_path))
 
         return issues
 
@@ -128,6 +130,7 @@ class JavaScriptSecurityAnalyzer(BaseAnalyzer):
         issues.extend(self._check_prototype_pollution(source_code, file_path))
         issues.extend(self._check_unsafe_regex(source_code, file_path))
         issues.extend(self._check_hardcoded_secrets(source_code, file_path))
+        issues.extend(self._check_sql_injection(source_code, file_path))
 
         return issues
 
@@ -391,6 +394,45 @@ class JavaScriptSecurityAnalyzer(BaseAnalyzer):
                 code_snippet=self.extract_code_snippet(source_code, line_num),
                 suggestion='Use Object.create(null) or Map for dictionaries.'
             ))
+
+        return issues
+
+    # SELECT counts only with a FROM after it: "select an option " + x is a sentence
+    _SQL_WORDS = r'(?:select\b[^"\'`]*?\bfrom\b|insert\s+into\b|update\s+\w+\s+set\b|delete\s+from\b|drop\s+table\b)'
+    _SQL_PATTERNS = [
+        # db.query("SELECT ... " + value)  /  db.query('...' + value)
+        r'\.(?:query|execute|run|all|get|exec|raw)\s*\(\s*(["\'])(?:(?!\1).)*?' + _SQL_WORDS + r'(?:(?!\1).)*\1\s*\+',
+        # db.query(`SELECT ... ${value}`)
+        r'\.(?:query|execute|run|all|get|exec|raw)\s*\(\s*`[^`]*?' + _SQL_WORDS + r'[^`]*?\$\{',
+        # const sql = "SELECT ... " + value;  /  `SELECT ... ${value}`
+        r'=\s*(["\'])\s*' + _SQL_WORDS + r'(?:(?!\1).)*\1\s*\+\s*[\w(]',
+        r'=\s*`\s*' + _SQL_WORDS + r'[^`]*?\$\{',
+    ]
+
+    def _check_sql_injection(self, source_code: str, file_path: str) -> List[CodeIssue]:
+        """JS-SEC007: a query built from text and a value instead of being parameterized"""
+        issues = []
+        lines_seen = set()
+
+        for pattern in self._SQL_PATTERNS:
+            for match in re.finditer(pattern, source_code, re.IGNORECASE):
+                line_num = source_code[:match.start()].count('\n') + 1
+                if line_num in lines_seen:
+                    continue
+                lines_seen.add(line_num)
+                issues.append(self.create_issue(
+                    rule_id='JS-SEC007',
+                    severity=IssueSeverity.CRITICAL,
+                    title='SQL injection risk',
+                    description='The query is built by putting a value into the SQL text. A value that '
+                               'contains SQL changes the query: an attacker can read, change or delete data.',
+                    file_path=file_path,
+                    line_number=line_num,
+                    code_snippet=self.extract_code_snippet(source_code, line_num),
+                    suggestion='Use placeholders and pass the values separately: '
+                              'db.query("SELECT * FROM t WHERE id = ?", [id]).',
+                    confidence=0.85
+                ))
 
         return issues
 

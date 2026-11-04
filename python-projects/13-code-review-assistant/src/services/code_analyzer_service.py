@@ -90,7 +90,12 @@ class CodeAnalyzerService:
             parsed = self.parser_registry.parse_code(source_code, language, file_path)
 
             # Run analysis with the language-appropriate analyzers
-            issues = self.registry.analyze(parsed, source_code, analyzer_ids, language=language)
+            if analyzer_ids:
+                analyzer_ids = self._analyzer_ids_for_language(analyzer_ids, language)
+            if analyzer_ids == []:
+                issues = []  # only analyzers this language does not have were selected
+            else:
+                issues = self.registry.analyze(parsed, source_code, analyzer_ids, language=language)
 
             # Calculate health score
             health_score = self.registry.calculate_health_score(issues)
@@ -116,6 +121,22 @@ class CodeAnalyzerService:
                 'error': f'Analysis failed: {str(e)}',
                 'file_path': file_path
             }
+
+    def _analyzer_ids_for_language(self, analyzer_ids: List[str], language: str) -> List[str]:
+        """
+        The analyzers behind the names a client selects. The Analyze page offers "security", "smell"
+        and "complexity", which are the Python analyzers' ids: sent with a JavaScript or Java file they
+        selected Python analyzers that cannot read it, so every such upload came back with no issues.
+        "security" now means the file's own language's security analyzer, and so on.
+        """
+        available = self.registry.get_analyzer_ids_for_language(language) or []
+        resolved = []
+        for requested in analyzer_ids:
+            matches = [requested] if requested in available else [a for a in available if requested in a]
+            for match in matches:
+                if match not in resolved:
+                    resolved.append(match)
+        return resolved
 
     def analyze_multiple_files(
         self,

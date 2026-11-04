@@ -1,11 +1,25 @@
 """Authentication, session management, and role-based access control"""
 
 import bcrypt
+import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .database import User, UserSession, UserRole, GUEST_EMAIL_DOMAIN
+
+# bcrypt only uses the first 72 bytes: longer passwords were accepted and silently cut
+MAX_PASSWORD_BYTES = 72
+
+# Usernames are shown in the nav bar, team lists and activity feeds. Any text was accepted, so a
+# username like <img src=x onerror=...> was rendered into other people's pages.
+USERNAME_PATTERN = re.compile(r'[A-Za-z0-9_.\-]{3,50}')
+EMAIL_PATTERN = re.compile(r'[^@\s<>"\']+@[^@\s<>"\']+\.[^@\s<>"\']+')
+
+# Checked when the username does not exist, so an unknown user and a wrong password take equally
+# long to reject (login timing otherwise says which usernames are registered)
+_DUMMY_HASH = bcrypt.hashpw(b"not-a-real-password", bcrypt.gensalt(rounds=12))
 
 
 class AuthManager:
@@ -45,21 +59,31 @@ class AuthManager:
             Tuple of (success, user, error_message)
         """
         # Validate input
-        if len(username) < 3 or len(username) > 50:
-            return False, None, "Username must be 3-50 characters"
+        username = username.strip()
+        email = email.strip()
+
+        if not USERNAME_PATTERN.fullmatch(username):
+            return False, None, "Username must be 3-50 characters: letters, numbers, dots, dashes and underscores"
 
         if len(password) < 8:
             return False, None, "Password must be at least 8 characters"
 
-        if '@' not in email or '.' not in email:
+        if len(password.encode('utf-8')) > MAX_PASSWORD_BYTES:
+            return False, None, (
+                f"Password must be at most {MAX_PASSWORD_BYTES} bytes "
+                "(longer passwords are not fully used by the hashing algorithm)"
+            )
+
+        if len(email) > 100 or not EMAIL_PATTERN.fullmatch(email):
             return False, None, "Invalid email format"
 
         if not is_guest and email.strip().lower().endswith('@' + GUEST_EMAIL_DOMAIN):
             return False, None, "That email domain is reserved"
 
         # Check if username/email exists
+        # 'Alice' and 'alice' are the same name
         existing = self.db.query(User).filter(
-            (User.username == username) | (User.email == email)
+            (func.lower(User.username) == username.lower()) | (func.lower(User.email) == email.lower())
         ).first()
 
         if existing:
@@ -116,29 +140,32 @@ class AuthManager:
         Returns:
             Tuple of (success, user, error_message)
         """
-        user = self.db.query(User).filter(User.username == username).first()
+        user = self.db.query(User).filter(func.lower(User.username) == username.strip().lower()).first()
+        # Cut like bcrypt itself did when the hash was made (bcrypt 5 refuses longer input)
+        password_bytes = password.encode('utf-8')[:MAX_PASSWORD_BYTES]
 
         if not user:
+            bcrypt.checkpw(password_bytes, _DUMMY_HASH)
             return False, None, "Invalid username or password"
-
-        # Check if user is active
-        if not user.is_active:
-            return False, None, "Account is deactivated"
 
         # Verify password with bcrypt
         try:
-            if bcrypt.checkpw(
-                password.encode('utf-8'),
-                user.password_hash.encode('utf-8')
-            ):
-                # Update last login
-                user.last_login = datetime.utcnow()
-                self.db.commit()
-                return True, user, None
+            password_ok = bcrypt.checkpw(password_bytes, user.password_hash.encode('utf-8'))
         except Exception:
             return False, None, "Invalid username or password"
 
-        return False, None, "Invalid username or password"
+        if not password_ok:
+            return False, None, "Invalid username or password"
+
+        # Only after the password is right: saying "deactivated" first told anyone who knew a
+        # username whether the account was deactivated
+        if not user.is_active:
+            return False, None, "Account is deactivated"
+
+        # Update last login
+        user.last_login = datetime.utcnow()
+        self.db.commit()
+        return True, user, None
 
     def create_session(
         self,
@@ -425,7 +452,7 @@ class AuthManager:
         # Verify old password
         try:
             if not bcrypt.checkpw(
-                old_password.encode('utf-8'),
+                old_password.encode('utf-8')[:MAX_PASSWORD_BYTES],
                 user.password_hash.encode('utf-8')
             ):
                 return False, "Current password is incorrect"
@@ -435,6 +462,9 @@ class AuthManager:
         # Validate new password
         if len(new_password) < 8:
             return False, "New password must be at least 8 characters"
+
+        if len(new_password.encode('utf-8')) > MAX_PASSWORD_BYTES:
+            return False, f"New password must be at most {MAX_PASSWORD_BYTES} bytes"
 
         # Hash new password
         password_hash = bcrypt.hashpw(

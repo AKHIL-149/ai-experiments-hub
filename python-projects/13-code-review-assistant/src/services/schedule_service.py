@@ -17,6 +17,91 @@ from src.core.database import (
 )
 
 
+SCHEDULE_TYPES = ('cron', 'interval', 'daily', 'weekly')
+SEVERITY_THRESHOLDS = ('info', 'warning', 'error', 'critical')
+MAX_INTERVAL_MINUTES = 525600  # one year; a larger value overflows when added to a date
+# Only Slack's own incoming-webhook address: the server posts to this URL, so any URL was a way to
+# make it send requests to other machines (including its own network)
+SLACK_WEBHOOK_PREFIX = 'https://hooks.slack.com/'
+
+
+def _check_text(value, label: str, max_length: int, required: bool = False):
+    if value is None:
+        if required:
+            raise ValueError(f"{label} is required")
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be text")
+    value = value.strip()
+    if required and not value:
+        raise ValueError(f"{label} is required")
+    if len(value) > max_length:
+        raise ValueError(f"{label} must be at most {max_length} characters")
+    return value
+
+
+def _check_list(value, label: str, max_items: int, max_length: int):
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{label} must be a list of text values")
+    if len(value) > max_items or any(len(item) > max_length for item in value):
+        raise ValueError(f"{label} may have at most {max_items} entries of {max_length} characters")
+    return value
+
+
+def normalize_timing(schedule_type, cron_expression, interval_minutes):
+    """Validate a schedule's timing and return its cron expression (daily and weekly have a fixed one)"""
+    if schedule_type == 'cron':
+        if not cron_expression or not isinstance(cron_expression, str):
+            raise ValueError("Cron expression required for cron schedule type")
+        if len(cron_expression) > 100 or not croniter.is_valid(cron_expression):
+            raise ValueError("Invalid cron expression")
+        return cron_expression
+    if schedule_type == 'interval':
+        if (not isinstance(interval_minutes, int) or isinstance(interval_minutes, bool)
+                or not 1 <= interval_minutes <= MAX_INTERVAL_MINUTES):
+            raise ValueError(f"Interval minutes must be a whole number from 1 to {MAX_INTERVAL_MINUTES}")
+        return cron_expression
+    if schedule_type == 'daily':
+        return "0 0 * * *"  # midnight
+    if schedule_type == 'weekly':
+        return "0 0 * * 0"  # Sunday midnight
+    raise ValueError(f"Invalid schedule type: {schedule_type}. Must be cron, interval, daily, or weekly")
+
+
+def validate_fields(fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Check the free-form fields of a schedule (those present in `fields`) and return the cleaned values"""
+    checks = {
+        'name': lambda v: _check_text(v, "Name", 200, required=True),
+        'description': lambda v: _check_text(v, "Description", 2000),
+        'file_patterns': lambda v: _check_list(v, "File patterns", 50, 200),
+        'enabled_rules': lambda v: _check_list(v, "Enabled rules", 200, 100),
+        'notification_emails': lambda v: _check_list(v, "Notification emails", 20, 254),
+    }
+    cleaned = dict(fields)
+    for key, check in checks.items():
+        if key in fields:
+            cleaned[key] = check(fields[key])
+    for pattern in cleaned.get('file_patterns') or []:
+        if pattern.startswith(('/', '\\')) or '..' in pattern.replace('\\', '/').split('/'):
+            raise ValueError(f"File pattern must stay inside the repository: {pattern[:50]}")
+    for email in cleaned.get('notification_emails') or []:
+        if '@' not in email or any(ch in email for ch in ' <>"\''):
+            raise ValueError(f"Invalid notification email: {email[:50]}")
+    if 'severity_threshold' in fields and fields['severity_threshold'] not in SEVERITY_THRESHOLDS:
+        raise ValueError(f"Severity threshold must be one of: {', '.join(SEVERITY_THRESHOLDS)}")
+    if 'slack_webhook_url' in fields and fields['slack_webhook_url']:
+        url = _check_text(fields['slack_webhook_url'], "Slack webhook URL", 500)
+        if not url.startswith(SLACK_WEBHOOK_PREFIX):
+            raise ValueError(f"Slack webhook URL must start with {SLACK_WEBHOOK_PREFIX}")
+        cleaned['slack_webhook_url'] = url
+    for key in ('analyze_all_files', 'notify_on_completion', 'notify_on_issues', 'enabled'):
+        if key in fields and not isinstance(fields[key], bool):
+            raise ValueError(f"{key} must be true or false")
+    return cleaned
+
+
 class ScheduleService:
     """Service for managing analysis schedules and runs."""
 
@@ -74,33 +159,24 @@ class ScheduleService:
             ValueError: If validation fails
         """
         # Validate repository exists and user has access
-        repository = self.session.query(Repository).filter_by(id=repository_id).first()
-        if not repository:
-            raise ValueError(f"Repository not found: {repository_id}")
+        repository = self.session.query(Repository).filter_by(id=repository_id).first() if isinstance(repository_id, str) else None
+        # The same answer for a repository that is someone else's as for one that does not exist
+        if not repository or repository.user_id != user_id:
+            raise ValueError("Repository not found")
 
-        if repository.user_id != user_id:
-            raise ValueError("You don't have permission to schedule analysis for this repository")
+        cleaned = validate_fields({
+            'name': name, 'description': description, 'file_patterns': file_patterns,
+            'enabled_rules': enabled_rules, 'notification_emails': notification_emails,
+            'severity_threshold': severity_threshold, 'slack_webhook_url': slack_webhook_url,
+            'analyze_all_files': analyze_all_files, 'notify_on_completion': notify_on_completion,
+            'notify_on_issues': notify_on_issues,
+        })
+        name, description = cleaned['name'], cleaned['description']
+        file_patterns, enabled_rules = cleaned['file_patterns'], cleaned['enabled_rules']
+        notification_emails, slack_webhook_url = cleaned['notification_emails'], cleaned['slack_webhook_url']
 
         # Validate schedule type and configuration
-        if schedule_type == 'cron':
-            if not cron_expression:
-                raise ValueError("Cron expression required for cron schedule type")
-            # Validate cron expression
-            try:
-                croniter(cron_expression)
-            except Exception as e:
-                raise ValueError(f"Invalid cron expression: {e}")
-        elif schedule_type == 'interval':
-            if not interval_minutes or interval_minutes < 1:
-                raise ValueError("Interval minutes must be >= 1 for interval schedule type")
-        elif schedule_type == 'daily':
-            # Daily at midnight
-            cron_expression = "0 0 * * *"
-        elif schedule_type == 'weekly':
-            # Weekly on Sunday at midnight
-            cron_expression = "0 0 * * 0"
-        else:
-            raise ValueError(f"Invalid schedule type: {schedule_type}. Must be cron, interval, daily, or weekly")
+        cron_expression = normalize_timing(schedule_type, cron_expression, interval_minutes)
 
         # Calculate next run time
         next_run_at = self._calculate_next_run(schedule_type, cron_expression, interval_minutes)
@@ -213,7 +289,7 @@ class ScheduleService:
         # Check permission
         repository = self.session.query(Repository).filter_by(id=schedule.repository_id).first()
         if repository.user_id != user_id:
-            raise ValueError("You don't have permission to update this schedule")
+            raise ValueError(f"Schedule not found: {schedule_id}")
 
         # Update allowed fields
         allowed_fields = [
@@ -222,6 +298,18 @@ class ScheduleService:
             'notify_on_completion', 'notify_on_issues', 'notification_emails',
             'slack_webhook_url', 'enabled'
         ]
+
+        # Validated like a new schedule: any value was stored, and a schedule type or cron expression
+        # that could not be calculated made every later read and the scheduler itself fail
+        kwargs = validate_fields({k: v for k, v in kwargs.items() if k in allowed_fields})
+        timing_fields = ('schedule_type', 'cron_expression', 'interval_minutes')
+        if any(field in kwargs for field in timing_fields):
+            merged_type = kwargs.get('schedule_type', schedule.schedule_type)
+            kwargs['cron_expression'] = normalize_timing(
+                merged_type,
+                kwargs.get('cron_expression', schedule.cron_expression),
+                kwargs.get('interval_minutes', schedule.interval_minutes)
+            )
 
         schedule_changed = False
         for field, value in kwargs.items():
@@ -273,7 +361,7 @@ class ScheduleService:
         # Check permission
         repository = self.session.query(Repository).filter_by(id=schedule.repository_id).first()
         if repository.user_id != user_id:
-            raise ValueError("You don't have permission to delete this schedule")
+            raise ValueError(f"Schedule not found: {schedule_id}")
 
         self.session.delete(schedule)
         self.session.commit()
@@ -312,7 +400,7 @@ class ScheduleService:
         # Check permission
         repository = self.session.query(Repository).filter_by(id=schedule.repository_id).first()
         if repository.user_id != user_id:
-            raise ValueError("You don't have permission to trigger this schedule")
+            raise ValueError(f"Schedule not found: {schedule_id}")
 
         # Create a run
         run = ScheduledRun(

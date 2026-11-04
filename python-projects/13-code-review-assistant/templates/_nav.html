@@ -1,0 +1,58 @@
+{#
+  The one navigation bar, for every page that has a signed-in user (pages that extend base.html get it
+  there; the standalone pages include it). Pages used to have their own header, each with its own and
+  different set of links: Settings, Schedules and Analyze were missing from some, Plugins from all.
+#}
+{% set _path = request.url.path if request is defined and request else '' %}
+{% macro tab(href, label) -%}
+<a class="app-nav__link{% if _path == href or (href != '/' and _path.startswith(href + '/')) %} is-active{% endif %}" href="{{ href }}"{% if _path == href or (href != '/' and _path.startswith(href + '/')) %} aria-current="page"{% endif %}>{{ label }}</a>
+{%- endmacro %}
+{% set _more = [('/rules/builder', 'Rule builder'), ('/plugins', 'Plugins'), ('/settings/github-app', 'GitHub App'), ('/settings', 'Settings')] %}
+{% set _more_active = _path in ('/rules/builder', '/plugins', '/settings', '/settings/github-app') or _path.startswith('/rules/') or _path.startswith('/plugins/') %}
+<div class="app-nav" role="navigation" aria-label="Main">
+    <div class="app-nav__inner">
+        <a class="app-nav__brand" href="/">
+            <span class="app-nav__logo">🔍</span>
+            <span>Code Review Assistant</span>
+        </a>
+        {% if user %}
+        <div class="app-nav__links">
+            {{ tab('/dashboard', 'Dashboard') }}
+            {{ tab('/analyze', 'Analyze') }}
+            {{ tab('/repositories', 'Repositories') }}
+            {{ tab('/pull-requests', 'Pull Requests') }}
+            {{ tab('/issues', 'Issues') }}
+            {{ tab('/teams', 'Teams') }}
+            {{ tab('/schedules', 'Schedules') }}
+            <details class="app-nav__more{% if _more_active %} is-active{% endif %}">
+                <summary class="app-nav__link{% if _more_active %} is-active{% endif %}">More ▾</summary>
+                <div class="app-nav__menu">
+                    {% for href, label in _more %}
+                    <a class="app-nav__menu-link{% if _path == href %} is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+                    {% endfor %}
+                </div>
+            </details>
+            {{ tab('/notifications', '🔔 Notifications') }}<span id="notification-badge" class="app-nav__count" style="display: none;"></span>
+        </div>
+        <div class="app-nav__user">
+            <span class="app-nav__name">{{ user.username }}</span>
+            {% if user.role == 'admin' %}<span class="app-nav__badge app-nav__badge--admin">Admin</span>{% endif %}
+            {% if user.is_guest %}<span class="app-nav__badge badge-guest" title="Temporary account: it can't be signed back in to after you log out">Guest</span>{% endif %}
+            <a class="app-nav__logout" href="/logout">Logout</a>
+        </div>
+        {% else %}
+        <div class="app-nav__user">
+            <a class="app-nav__logout app-nav__logout--primary" href="/login">Login</a>
+            <a class="app-nav__logout" href="/register">Register</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+<script>
+// Close the "More" menu when something else is clicked
+document.addEventListener('click', function (event) {
+    document.querySelectorAll('.app-nav__more[open]').forEach(function (menu) {
+        if (!menu.contains(event.target)) menu.removeAttribute('open');
+    });
+});
+</script>

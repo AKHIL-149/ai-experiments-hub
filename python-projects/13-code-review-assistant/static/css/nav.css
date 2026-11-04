@@ -1,0 +1,150 @@
+/* The navigation bar (templates/_nav.html). Self-contained: its own names and its own colours, so the
+   pages that bring their own stylesheets can include it without being restyled by it (or restyling it). */
+.app-nav {
+    --nav-bg: #ffffff;
+    --nav-border: #e2e8f0;
+    --nav-text: #64748b;
+    --nav-dark: #1e293b;
+    --nav-primary: #2563eb;
+    --nav-active-bg: #eff6ff;
+    background: var(--nav-bg);
+    border-bottom: 1px solid var(--nav-border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    font-size: 15px;
+    line-height: 1.4;
+    position: relative;
+    z-index: 50;
+}
+
+.app-nav *, .app-nav *::before, .app-nav *::after { box-sizing: border-box; }
+
+.app-nav__inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0.6rem 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+.app-nav a.app-nav__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-right: 0.5rem;
+    color: var(--nav-dark);
+    font-weight: 600;
+    font-size: 1.1rem;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.app-nav__logo { font-size: 1.4rem; }
+
+.app-nav__links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15rem;
+    flex: 1;
+}
+
+.app-nav .app-nav__link,
+.app-nav summary.app-nav__link {
+    display: inline-block;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    color: var(--nav-text);
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+}
+
+.app-nav summary.app-nav__link::-webkit-details-marker { display: none; }
+
+.app-nav .app-nav__link:hover { color: var(--nav-primary); background: #f1f5f9; }
+
+.app-nav .app-nav__link.is-active {
+    color: var(--nav-primary);
+    background: var(--nav-active-bg);
+    font-weight: 600;
+}
+
+.app-nav__more { position: relative; }
+
+.app-nav__menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 11rem;
+    padding: 0.35rem;
+    background: var(--nav-bg);
+    border: 1px solid var(--nav-border);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+    z-index: 60;
+}
+
+.app-nav .app-nav__menu-link {
+    display: block;
+    padding: 0.45rem 0.7rem;
+    border-radius: 6px;
+    color: var(--nav-dark);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.app-nav .app-nav__menu-link:hover { background: #f1f5f9; }
+.app-nav .app-nav__menu-link.is-active { color: var(--nav-primary); font-weight: 600; }
+
+.app-nav__count {
+    min-width: 1.25rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--nav-primary);
+    color: #fff;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.app-nav__user {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-left: auto;
+}
+
+.app-nav__name { color: var(--nav-dark); font-weight: 500; }
+
+.app-nav__badge {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.app-nav__badge--admin { background: #dbeafe; color: #1e40af; }
+.app-nav__badge.badge-guest { background: #fef3c7; color: #92400e; }
+
+.app-nav a.app-nav__logout {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    background: #64748b;
+    color: #fff;
+    font-weight: 500;
+    font-size: 0.9rem;
+    text-decoration: none;
+}
+
+.app-nav a.app-nav__logout:hover { background: #475569; }
+.app-nav a.app-nav__logout--primary { background: var(--nav-primary); }
+
+@media (max-width: 900px) {
+    .app-nav__links { order: 3; flex-basis: 100%; }
+    .app-nav__user { order: 2; }
+}

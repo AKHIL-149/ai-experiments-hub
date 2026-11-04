@@ -20,6 +20,45 @@ from src.workers.notification_worker import send_notification
 logger = logging.getLogger(__name__)
 
 
+# Folders that are not the project's own code
+SKIP_DIRECTORIES = {'.git', 'node_modules', 'venv', '.venv', 'env', '__pycache__', 'dist', 'build', '.tox', '.mypy_cache'}
+MAX_SCHEDULED_FILES = 2000
+MAX_SCHEDULED_FILE_BYTES = 512000
+
+
+def collect_source_files(repo_root: Path, file_patterns, analyze_all_files: bool, extensions) -> list:
+    """
+    The source files of a cloned repository to analyze, as resolved paths inside `repo_root`.
+
+    Patterns come from the schedule's owner: a pattern like '../../*' used to be globbed as it was,
+    so a schedule could analyze (and report snippets of) files anywhere on the server.
+    """
+    extensions = tuple(e.lower() for e in extensions)
+    # Patterns are globbed the same way whether or not "analyze all files" is set (with it set they were
+    # matched with Path.match, where 'src/**/*.py' means something else)
+    if file_patterns:
+        candidates = (match for pattern in file_patterns for match in repo_root.rglob(pattern))
+    else:
+        candidates = repo_root.rglob('*')
+
+    found, seen = [], set()
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+            relative = resolved.relative_to(repo_root)  # ValueError: outside the repository
+            if (resolved in seen or not resolved.is_file() or resolved.suffix.lower() not in extensions
+                    or any(part in SKIP_DIRECTORIES for part in relative.parts)
+                    or resolved.stat().st_size > MAX_SCHEDULED_FILE_BYTES):
+                continue
+        except (ValueError, OSError, NotImplementedError):
+            continue
+        seen.add(resolved)
+        found.append(resolved)
+        if len(found) >= MAX_SCHEDULED_FILES:
+            break
+    return sorted(found)
+
+
 class ScheduledAnalysisTask(Task):
     """Custom task class with database session management."""
 
@@ -91,84 +130,48 @@ def run_scheduled_analysis(self, run_id: str) -> Dict[str, Any]:
             enabled_rules = json.loads(schedule.enabled_rules) if schedule.enabled_rules else None
 
             # Initialize analyzer
-            analyzer_service = CodeAnalyzerService(session)
+            analyzer_service = CodeAnalyzerService()
 
             # Analyze repository
             logger.info(f"Analyzing repository: {repository.name}")
 
-            if schedule.analyze_all_files:
-                # Analyze all Python files in repository
-                repo_path = Path(repository.clone_path)
-                if not repo_path.exists():
-                    raise ValueError(f"Repository path not found: {repository.clone_path}")
+            if not schedule.analyze_all_files and not file_patterns:
+                raise ValueError("file_patterns required when analyze_all_files is False")
+            if not repository.clone_path or not Path(repository.clone_path).exists():
+                raise ValueError(f"Repository path not found: {repository.clone_path}")
 
-                # Find Python files
-                python_files = list(repo_path.rglob('*.py'))
-                logger.info(f"Found {len(python_files)} Python files to analyze")
+            repo_root = Path(repository.clone_path).resolve()
+            source_files = collect_source_files(
+                repo_root, file_patterns, schedule.analyze_all_files,
+                analyzer_service.parser_registry.get_supported_extensions()
+            )
+            logger.info(f"Found {len(source_files)} source files to analyze")
 
-                all_issues = []
-                files_analyzed = 0
+            all_issues = []
+            files_analyzed = 0
 
-                for file_path in python_files:
-                    # Check if file matches patterns (if specified)
-                    if file_patterns:
-                        relative_path = file_path.relative_to(repo_path)
-                        if not any(relative_path.match(pattern) for pattern in file_patterns):
-                            continue
+            for file_path in source_files:
+                try:
+                    code = file_path.read_text(encoding='utf-8')
+                    result = analyzer_service.analyze_code(
+                        source_code=code,
+                        file_path=str(file_path.relative_to(repo_root))
+                    )
+                except Exception as e:
+                    logger.warning(f"Error analyzing file {file_path}: {e}")
+                    continue
 
-                    try:
-                        # Analyze file
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            code = f.read()
+                # analyze_code answers {'success', 'report': {'issues': [...]}}: this used to read
+                # result['issues'], which is never there, so no run ever reported an issue
+                if not result.get('success'):
+                    logger.warning(f"Could not analyze {file_path}: {result.get('error')}")
+                    continue
 
-                        # Use analyzer service
-                        result = analyzer_service.analyze_code(
-                            code=code,
-                            language='python',
-                            file_path=str(file_path.relative_to(repo_path)),
-                            enabled_rules=enabled_rules
-                        )
-
-                        if result.get('issues'):
-                            all_issues.extend(result['issues'])
-
-                        files_analyzed += 1
-
-                    except Exception as e:
-                        logger.warning(f"Error analyzing file {file_path}: {e}")
-                        continue
-
-            else:
-                # Analyze specific files based on patterns
-                if not file_patterns:
-                    raise ValueError("file_patterns required when analyze_all_files is False")
-
-                repo_path = Path(repository.clone_path)
-                all_issues = []
-                files_analyzed = 0
-
-                for pattern in file_patterns:
-                    for file_path in repo_path.rglob(pattern):
-                        if file_path.is_file() and file_path.suffix == '.py':
-                            try:
-                                with open(file_path, 'r', encoding='utf-8') as f:
-                                    code = f.read()
-
-                                result = analyzer_service.analyze_code(
-                                    code=code,
-                                    language='python',
-                                    file_path=str(file_path.relative_to(repo_path)),
-                                    enabled_rules=enabled_rules
-                                )
-
-                                if result.get('issues'):
-                                    all_issues.extend(result['issues'])
-
-                                files_analyzed += 1
-
-                            except Exception as e:
-                                logger.warning(f"Error analyzing file {file_path}: {e}")
-                                continue
+                issues = result['report']['issues']
+                if enabled_rules:
+                    issues = [i for i in issues if i.get('rule_id') in enabled_rules]
+                all_issues.extend(issues)
+                files_analyzed += 1
 
             # Filter issues by severity threshold
             severity_order = {'info': 0, 'warning': 1, 'error': 2, 'critical': 3}

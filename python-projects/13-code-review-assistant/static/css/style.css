@@ -35,62 +35,6 @@ body {
     padding: 0 20px;
 }
 
-/* Navigation */
-.navbar {
-    background: var(--bg-white);
-    border-bottom: 1px solid var(--border-color);
-    padding: 1rem 0;
-    box-shadow: var(--shadow);
-}
-
-.navbar .container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.nav-brand a {
-    display: flex;
-    align-items: center;
-    text-decoration: none;
-    color: var(--text-dark);
-    font-weight: 600;
-    font-size: 1.25rem;
-}
-
-.logo {
-    font-size: 1.5rem;
-    margin-right: 0.5rem;
-}
-
-.nav-menu {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-}
-
-.nav-link {
-    text-decoration: none;
-    color: var(--text-muted);
-    font-weight: 500;
-    transition: color 0.2s;
-}
-
-.nav-link:hover {
-    color: var(--primary-color);
-}
-
-.nav-user {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.user-name {
-    font-weight: 500;
-    color: var(--text-dark);
-}
-
 /* Buttons */
 .btn {
     display: inline-block;
@@ -715,10 +659,6 @@ body {
 
     .dashboard-grid {
         grid-template-columns: 1fr;
-    }
-
-    .nav-menu {
-        flex-wrap: wrap;
     }
 
     .footer .container {

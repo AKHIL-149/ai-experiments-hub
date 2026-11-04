@@ -2,16 +2,64 @@
 Team Management Service - Create and manage teams, members, and invitations
 """
 
+import re
 import secrets
 import uuid
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 
 from src.core.database import (
     DatabaseManager, Team, TeamMember, TeamInvitation,
     User, CustomRule, Plugin, Repository
 )
+
+
+# Roles that can be given to a member or invitee. 'owner' is only ever the creator: the role was not
+# checked, so a team admin (or, with member invites on, any member) could make an owner, who can delete
+# the team. Only the owner grants or takes away 'admin'.
+ASSIGNABLE_ROLES = ('admin', 'member', 'viewer')
+ROLES_ANYONE_MAY_INVITE = ('member', 'viewer')
+VISIBILITIES = ('private', 'public')
+SLUG_PATTERN = re.compile(r'[a-z0-9][a-z0-9-]{1,48}[a-z0-9]')
+EMAIL_PATTERN = re.compile(r'[^@\s<>"\']+@[^@\s<>"\']+\.[^@\s<>"\']+')
+MAX_PENDING_INVITATIONS = 50
+
+
+def _error(message: str) -> Dict[str, Any]:
+    return {'success': False, 'error': message}
+
+
+def validate_team_fields(fields: Dict[str, Any], creating: bool = False) -> Dict[str, Any]:
+    """
+    Check the fields of a team (those present in `fields`) and return the cleaned values.
+    Raises ValueError with the reason. Any text was stored: an empty name, a slug with spaces or
+    slashes, a visibility of 'banana'.
+    """
+    cleaned = dict(fields)
+    if creating or 'name' in fields:
+        name = fields.get('name')
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Team name is required")
+        if len(name.strip()) > 100:
+            raise ValueError("Team name must be at most 100 characters")
+        cleaned['name'] = name.strip()
+    if creating or 'slug' in fields:
+        slug = fields.get('slug')
+        if not isinstance(slug, str) or not SLUG_PATTERN.fullmatch(slug.strip().lower()):
+            raise ValueError("Slug must be 3-50 characters: lowercase letters, numbers and dashes, "
+                             "starting and ending with a letter or number")
+        cleaned['slug'] = slug.strip().lower()
+    if 'description' in fields and fields['description'] is not None:
+        description = fields['description']
+        if not isinstance(description, str) or len(description) > 2000:
+            raise ValueError("Description must be text of at most 2000 characters")
+        cleaned['description'] = description.strip()
+    if 'visibility' in fields and fields['visibility'] not in VISIBILITIES:
+        raise ValueError(f"Visibility must be one of: {', '.join(VISIBILITIES)}")
+    if 'allow_member_invites' in fields and not isinstance(fields['allow_member_invites'], bool):
+        raise ValueError("allow_member_invites must be true or false")
+    return cleaned
 
 
 class TeamService:
@@ -33,6 +81,14 @@ class TeamService:
         Returns:
             Result dictionary with team and membership
         """
+        try:
+            cleaned = validate_team_fields(
+                {'name': name, 'slug': slug, 'description': description, 'visibility': visibility},
+                creating=True)
+        except ValueError as e:
+            return _error(str(e))
+        name, slug, description = cleaned['name'], cleaned['slug'], cleaned.get('description')
+
         db_manager = DatabaseManager()
         with db_manager.get_session() as db:
             # Check if slug is already taken
@@ -165,6 +221,10 @@ class TeamService:
 
             # Update allowed fields
             allowed_fields = ['name', 'description', 'visibility', 'allow_member_invites']
+            try:
+                kwargs = validate_team_fields({k: v for k, v in kwargs.items() if k in allowed_fields})
+            except ValueError as e:
+                return _error(str(e))
             for field in allowed_fields:
                 if field in kwargs:
                     setattr(team, field, kwargs[field])
@@ -210,6 +270,12 @@ class TeamService:
                     'success': False,
                     'error': 'Team not found'
                 }
+
+            # Repositories, rules and plugins that were shared with the team go back to their owners
+            from src.core.database import Base
+            for table in Base.metadata.sorted_tables:
+                if 'team_id' in table.c and table.name not in ('teams', 'team_members', 'team_invitations'):
+                    db.execute(table.update().where(table.c.team_id == team_id).values(team_id=None))
 
             db.delete(team)
             db.commit()
@@ -287,6 +353,15 @@ class TeamService:
                     'error': 'Insufficient permissions to add members'
                 }
 
+            if role not in ASSIGNABLE_ROLES:
+                return _error(f"Role must be one of: {', '.join(ASSIGNABLE_ROLES)}")
+            if role == 'admin' and inviter.role != 'owner':
+                return _error('Only the team owner can make someone an admin')
+
+            target = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+            if not target:
+                return _error('User not found')
+
             # Check if user already a member
             existing = db.query(TeamMember).filter(
                 TeamMember.team_id == team_id,
@@ -311,10 +386,8 @@ class TeamService:
             )
 
             db.add(member)
-
-            # Update team member count
-            team = db.query(Team).filter(Team.id == team_id).first()
-            team.member_count += 1
+            db.flush()
+            self._refresh_member_count(db, team_id)
 
             db.commit()
             db.refresh(member)
@@ -323,6 +396,15 @@ class TeamService:
                 'success': True,
                 'member': member.to_dict()
             }
+
+    @staticmethod
+    def _refresh_member_count(db, team_id: str) -> None:
+        """The stored count is counted, not nudged up and down by every code path"""
+        from sqlalchemy import func
+        team = db.query(Team).filter(Team.id == team_id).first()
+        if team:
+            team.member_count = db.query(func.count(TeamMember.id)).filter(
+                TeamMember.team_id == team_id, TeamMember.is_active == True).scalar() or 0
 
     def remove_member(self, team_id: str, user_id: str, remover_id: str) -> Dict[str, Any]:
         """
@@ -338,13 +420,14 @@ class TeamService:
         """
         db_manager = DatabaseManager()
         with db_manager.get_session() as db:
-            # Check remover permissions
+            # Check remover permissions (anyone may remove themselves: a plain member could not leave)
             remover = db.query(TeamMember).filter(
                 TeamMember.team_id == team_id,
                 TeamMember.user_id == remover_id
             ).first()
 
-            if not remover or not remover.can_manage_members:
+            leaving = user_id == remover_id
+            if not remover or not (leaving or remover.can_manage_members):
                 return {
                     'success': False,
                     'error': 'Insufficient permissions to remove members'
@@ -366,14 +449,15 @@ class TeamService:
             if member.role == 'owner':
                 return {
                     'success': False,
-                    'error': 'Cannot remove team owner'
+                    'error': 'The team owner cannot be removed or leave: delete the team instead'
                 }
 
-            db.delete(member)
+            if member.role == 'admin' and not leaving and remover.role != 'owner':
+                return _error('Only the team owner can remove an admin')
 
-            # Update team member count
-            team = db.query(Team).filter(Team.id == team_id).first()
-            team.member_count -= 1
+            db.delete(member)
+            db.flush()
+            self._refresh_member_count(db, team_id)
 
             db.commit()
 
@@ -429,6 +513,11 @@ class TeamService:
                     'error': 'Cannot change owner role'
                 }
 
+            if new_role not in ASSIGNABLE_ROLES:
+                return _error(f"Role must be one of: {', '.join(ASSIGNABLE_ROLES)}")
+            if (new_role == 'admin' or member.role == 'admin') and updater.role != 'owner':
+                return _error('Only the team owner can make or change an admin')
+
             # Update role and permissions
             member.role = new_role
             permissions = self._get_role_permissions(new_role)
@@ -468,6 +557,15 @@ class TeamService:
                 'error': 'Either email or user_id must be provided'
             }
 
+        if role not in ASSIGNABLE_ROLES:
+            return _error(f"Role must be one of: {', '.join(ASSIGNABLE_ROLES)}")
+        if not isinstance(expires_in_days, int) or isinstance(expires_in_days, bool) or not 1 <= expires_in_days <= 30:
+            return _error('Invitations last from 1 to 30 days')
+        if email is not None:
+            email = email.strip().lower() if isinstance(email, str) else ''
+            if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
+                return _error('Invalid email address')
+
         db_manager = DatabaseManager()
         with db_manager.get_session() as db:
             # Check inviter permissions
@@ -488,6 +586,35 @@ class TeamService:
                     'error': 'Insufficient permissions to send invitations'
                 }
 
+            # Someone who may invite only because the team allows it cannot hand out power
+            if not inviter.can_manage_members and role not in ROLES_ANYONE_MAY_INVITE:
+                return _error(f"Members can only invite as: {', '.join(ROLES_ANYONE_MAY_INVITE)}")
+            if role == 'admin' and inviter.role != 'owner':
+                return _error('Only the team owner can invite an admin')
+
+            invitee = None
+            if user_id:
+                invitee = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+                if not invitee:
+                    return _error('User not found')
+            elif email:
+                invitee = db.query(User).filter(func.lower(User.email) == email).first()
+
+            if invitee and db.query(TeamMember.id).filter(
+                    TeamMember.team_id == team_id, TeamMember.user_id == invitee.id).first():
+                return _error('That person is already a team member')
+
+            now = datetime.now(timezone.utc)
+            pending = db.query(TeamInvitation).filter(
+                TeamInvitation.team_id == team_id, TeamInvitation.status == 'pending',
+                TeamInvitation.expires_at > now)
+            if pending.count() >= MAX_PENDING_INVITATIONS:
+                return _error('Too many pending invitations: cancel some first')
+            if invitee and pending.filter(TeamInvitation.user_id == invitee.id).first():
+                return _error('That person already has a pending invitation')
+            if email and pending.filter(func.lower(TeamInvitation.email) == email).first():
+                return _error('That email already has a pending invitation')
+
             # Generate unique token
             token = secrets.token_urlsafe(32)
 
@@ -495,11 +622,11 @@ class TeamService:
             invitation = TeamInvitation(
                 team_id=team_id,
                 email=email,
-                user_id=user_id,
+                user_id=user_id or (invitee.id if invitee else None),
                 invited_by_id=inviter_id,
                 role=role,
                 token=token,
-                expires_at=datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+                expires_at=now + timedelta(days=expires_in_days)
             )
 
             db.add(invitation)
@@ -536,7 +663,12 @@ class TeamService:
                 }
 
             # Check if invitation expired
-            if invitation.expires_at < datetime.now(timezone.utc):
+            # SQLite gives back a naive datetime (stored as UTC): comparing it with an aware one raised
+            # TypeError, so accepting an invitation always failed with a 500
+            expires_at = invitation.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at < datetime.now(timezone.utc):
                 invitation.status = 'expired'
                 db.commit()
                 return {
@@ -545,7 +677,7 @@ class TeamService:
                 }
 
             # Check if user matches invitation
-            if invitation.user_id and invitation.user_id != user_id:
+            if not self._invitation_is_for(db, invitation, user_id):
                 return {
                     'success': False,
                     'error': 'This invitation is for a different user'
@@ -566,12 +698,14 @@ class TeamService:
                     'error': 'You are already a member of this team'
                 }
 
-            # Create membership
-            permissions = self._get_role_permissions(invitation.role)
+            # Create membership (an invitation stored with a role that is no longer assignable, such as
+            # 'owner', gives an ordinary member)
+            role = invitation.role if invitation.role in ASSIGNABLE_ROLES else 'member'
+            permissions = self._get_role_permissions(role)
             member = TeamMember(
                 team_id=invitation.team_id,
                 user_id=user_id,
-                role=invitation.role,
+                role=role,
                 **permissions
             )
 
@@ -581,9 +715,9 @@ class TeamService:
             invitation.status = 'accepted'
             invitation.responded_at = datetime.now(timezone.utc)
 
-            # Update team member count
+            db.flush()
+            self._refresh_member_count(db, invitation.team_id)
             team = db.query(Team).filter(Team.id == invitation.team_id).first()
-            team.member_count += 1
 
             db.commit()
             db.refresh(member)
@@ -593,6 +727,20 @@ class TeamService:
                 'member': member.to_dict(),
                 'team': team.to_dict()
             }
+
+    @staticmethod
+    def _invitation_is_for(db, invitation, user_id: str) -> bool:
+        """
+        An invitation to a user id is for that user. One sent to an email address is for the account
+        with that email: it used to be for anyone who held the token, and the token was listed for every
+        team member, so any account could take (or decline) an invitation meant for someone else.
+        """
+        if invitation.user_id:
+            return invitation.user_id == user_id
+        if invitation.email:
+            user = db.query(User).filter(User.id == user_id).first()
+            return bool(user and user.email and user.email.strip().lower() == invitation.email.strip().lower())
+        return False
 
     def decline_invitation(self, token: str, user_id: str) -> Dict[str, Any]:
         """
@@ -619,7 +767,7 @@ class TeamService:
                 }
 
             # Check if user matches invitation
-            if invitation.user_id and invitation.user_id != user_id:
+            if not self._invitation_is_for(db, invitation, user_id):
                 return {
                     'success': False,
                     'error': 'This invitation is for a different user'
@@ -681,7 +829,8 @@ class TeamService:
                 'message': 'Invitation canceled'
             }
 
-    def get_team_invitations(self, team_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_team_invitations(self, team_id: str, status: Optional[str] = None,
+                             include_tokens: bool = False) -> List[Dict[str, Any]]:
         """
         Get team invitations.
 
@@ -703,7 +852,20 @@ class TeamService:
 
             invitations = query.order_by(TeamInvitation.created_at.desc()).all()
 
-            return [inv.to_dict() for inv in invitations]
+            # The token is the key to the invitation: only those who manage the team see it
+            names = {}
+            wanted = [inv.user_id for inv in invitations if inv.user_id]
+            if wanted:
+                names = {u.id: u.username for u in db.query(User.id, User.username).filter(User.id.in_(wanted))}
+
+            result = []
+            for inv in invitations:
+                data = inv.to_dict()
+                data['username'] = names.get(inv.user_id)
+                if not include_tokens:
+                    data.pop('token', None)
+                result.append(data)
+            return result
 
     def get_user_teams(self, user_id: str) -> List[Dict[str, Any]]:
         """
@@ -754,7 +916,7 @@ class TeamService:
                 query = query.filter(
                     or_(
                         TeamInvitation.user_id == user_id,
-                        TeamInvitation.email == email
+                        func.lower(TeamInvitation.email) == email.strip().lower()
                     )
                 )
             else:

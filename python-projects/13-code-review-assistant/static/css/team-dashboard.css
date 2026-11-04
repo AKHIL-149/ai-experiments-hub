@@ -1,378 +1,129 @@
-/**
- * Team Dashboard Styles
- */
+/* Teams page (templates/team_dashboard.html). Everything is under .teams-page or a .teams-* name so it
+   cannot change how other pages look. */
+.teams-page { padding-top: 1.5rem; padding-bottom: 3rem; }
 
-#team-selector {
-    margin-bottom: 30px;
-    padding: 20px;
-    background: #f8f9fa;
-    border-radius: 8px;
+.teams-page .page-header h1 { font-size: 1.75rem; margin-bottom: 0.15rem; }
+.teams-page .page-header .subtitle { color: var(--text-muted); margin-bottom: 1.25rem; }
+
+.teams-card {
+    background: var(--bg-white);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1rem;
 }
 
-#team-selector label {
-    display: block;
-    margin-bottom: 10px;
+.teams-card h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+.teams-card h3 { font-size: 1rem; margin-bottom: 0.6rem; }
+
+.teams-muted { color: var(--text-muted); font-size: 0.92rem; }
+
+.teams-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.teams-toolbar label { font-weight: 600; }
+
+.teams-select, .teams-input {
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-white);
+    color: var(--text-dark);
+    font: inherit;
+}
+.teams-select { min-width: 14rem; }
+.teams-select--small { min-width: 0; padding: 0.3rem 0.5rem; }
+.teams-input { width: 100%; margin-bottom: 0.75rem; }
+.teams-inline .teams-input { margin-bottom: 0; flex: 1; min-width: 12rem; }
+.teams-inline { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+.teams-empty { text-align: center; padding: 2.5rem 1.5rem; }
+.teams-empty__icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+.teams-empty p { max-width: 34rem; margin: 0 auto 1rem; color: var(--text-muted); }
+
+.teams-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; }
+.teams-header__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
+.teams-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+.teams-badge {
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: var(--text-dark);
+    font-size: 0.78rem;
     font-weight: 600;
-    color: #333;
 }
+.teams-badge--role { background: #dbeafe; color: #1e40af; }
+.teams-badge--plain { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); font-weight: 500; }
 
-#current-team {
-    width: 100%;
-    max-width: 400px;
-    padding: 10px 15px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 16px;
-}
+.teams-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.teams-stat { background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem 1.1rem; box-shadow: var(--shadow); }
+.teams-stat__value { font-size: 1.8rem; font-weight: 700; line-height: 1.2; }
+.teams-stat__label { color: var(--text-muted); font-size: 0.85rem; }
 
-.dashboard-section {
-    margin-bottom: 40px;
-    background: white;
-    padding: 25px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.dashboard-section h2 {
-    margin: 0 0 20px 0;
-    color: #333;
-    font-size: 24px;
-}
-
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-.section-header h2 {
-    margin: 0;
-}
-
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-}
-
-.stat-card {
-    display: flex;
-    align-items: center;
-    padding: 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 8px;
-}
-
-.stat-card:nth-child(2) {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-}
-
-.stat-card:nth-child(3) {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-}
-
-.stat-card:nth-child(4) {
-    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-}
-
-.stat-icon {
-    font-size: 48px;
-    margin-right: 20px;
-}
-
-.stat-content {
-    flex: 1;
-}
-
-.stat-value {
-    font-size: 32px;
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-
-.stat-label {
-    font-size: 14px;
-    opacity: 0.9;
-}
-
-/* Repositories Grid */
-.repositories-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 20px;
-}
-
-.repo-card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 20px;
-    transition: box-shadow 0.2s;
-}
-
-.repo-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.repo-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    margin-bottom: 15px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #eee;
-}
-
-.repo-header h3 {
-    margin: 0;
-    font-size: 18px;
-    color: #333;
-}
-
-.repo-info {
-    margin-bottom: 15px;
-}
-
-.repo-info p {
-    margin: 8px 0;
-    font-size: 14px;
-    color: #666;
-}
-
-.repo-actions {
-    display: flex;
-    gap: 10px;
-}
-
-.health-score {
-    font-weight: bold;
-}
-
-.health-good {
-    color: #28a745;
-}
-
-.health-ok {
-    color: #ffc107;
-}
-
-.health-poor {
-    color: #dc3545;
-}
-
-/* Analytics Grid */
-.analytics-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
-}
-
-.analytics-card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 20px;
-}
-
-.analytics-card h3 {
-    margin: 0 0 15px 0;
-    font-size: 16px;
-    color: #555;
-}
-
-.analytics-card canvas {
-    max-height: 250px;
-}
-
-/* Leaderboard */
-.leaderboard {
-    overflow-x: auto;
-}
-
-.leaderboard table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.leaderboard th,
-.leaderboard td {
-    padding: 12px;
-    text-align: left;
-    border-bottom: 1px solid #eee;
-}
-
-.leaderboard th {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: #333;
-}
-
-.leaderboard tr:hover {
-    background: #f8f9fa;
-}
-
-.member-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.badge-role {
-    font-size: 12px;
-    padding: 4px 10px;
-    border-radius: 12px;
-    background: #e2e3e5;
-    color: #383d41;
-}
-
-/* Activity Feed */
-.activity-list {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-}
-
-.activity-item {
-    display: flex;
-    align-items: start;
-    padding: 15px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #007bff;
-}
-
-.activity-icon {
-    font-size: 32px;
-    margin-right: 15px;
-    width: 40px;
-    text-align: center;
-}
-
-.activity-content {
-    flex: 1;
-}
-
-.activity-text {
-    margin-bottom: 5px;
-    color: #333;
-}
-
-.activity-meta {
-    font-size: 12px;
-    color: #666;
-}
-
-.activity-analysis {
-    border-left-color: #17a2b8;
-}
-
-.activity-pr {
-    border-left-color: #28a745;
-}
-
-.activity-issue {
-    border-left-color: #ffc107;
-}
-
-.activity-member {
-    border-left-color: #6c757d;
-}
-
-/* Badges */
-.badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.badge-success {
-    background: #d4edda;
-    color: #155724;
-}
-
-.badge-danger {
-    background: #f8d7da;
-    color: #721c24;
-}
-
-.badge-warning {
-    background: #fff3cd;
-    color: #856404;
-}
-
-.badge-primary {
-    background: #cce5ff;
-    color: #004085;
-}
-
-.badge-secondary {
-    background: #e2e3e5;
-    color: #383d41;
-}
-
-/* Buttons */
-.btn {
-    padding: 8px 16px;
+.teams-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 2px solid var(--border-color); margin-bottom: 1rem; }
+.teams-tab {
+    padding: 0.55rem 1rem;
     border: none;
-    border-radius: 4px;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 500;
     cursor: pointer;
-    font-size: 14px;
-    transition: background-color 0.2s;
-    text-decoration: none;
-    display: inline-block;
 }
+.teams-tab:hover { color: var(--primary-color); }
+.teams-tab.is-active { color: var(--primary-color); border-bottom-color: var(--primary-color); font-weight: 600; }
 
-.btn-primary {
-    background-color: #007bff;
-    color: white;
+.teams-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; }
+.teams-charts .teams-card { margin-bottom: 0; }
+.teams-chart { position: relative; height: 240px; }
+
+.teams-repos { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 1rem; }
+.teams-repos .teams-card { margin-bottom: 0; }
+.teams-repo__head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.teams-repo__head h3 { margin: 0; overflow-wrap: anywhere; }
+.teams-repo__issues { margin: 0.5rem 0 0.75rem; }
+.teams-grade {
+    min-width: 2rem; padding: 0.15rem 0.5rem; border-radius: 6px; text-align: center; font-weight: 700;
+    background: #e2e8f0; color: var(--text-dark);
 }
+.teams-grade--a { background: #dcfce7; color: #166534; }
+.teams-grade--b { background: #ecfccb; color: #3f6212; }
+.teams-grade--c { background: #fef9c3; color: #854d0e; }
+.teams-grade--d { background: #ffedd5; color: #9a3412; }
+.teams-grade--f { background: #fee2e2; color: #991b1b; }
+.teams-share { margin-bottom: 1rem; }
 
-.btn-primary:hover {
-    background-color: #0056b3;
+.teams-table-wrap { overflow-x: auto; }
+.teams-table { width: 100%; border-collapse: collapse; }
+.teams-table th, .teams-table td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+.teams-table th { color: var(--text-muted); font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+
+.teams-list { list-style: none; margin: 0; padding: 0; }
+.teams-list__item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border-color); }
+.teams-list__item:last-child { border-bottom: none; }
+.teams-invitations { border-left: 4px solid var(--primary-color); }
+
+.teams-toast {
+    position: fixed; top: 1rem; right: 1rem; z-index: 200; max-width: 22rem;
+    padding: 0.75rem 1rem; border-radius: 8px; background: #166534; color: #fff; box-shadow: var(--shadow-lg);
 }
+.teams-toast--error { background: #991b1b; }
 
-.btn-sm {
-    padding: 6px 12px;
-    font-size: 12px;
+.teams-modal {
+    position: fixed; inset: 0; z-index: 150; display: flex; align-items: center; justify-content: center;
+    padding: 1rem; background: rgba(15, 23, 42, 0.5);
 }
+.teams-modal[hidden] { display: none; }
+.teams-modal__box { width: 100%; max-width: 30rem; max-height: 90vh; overflow-y: auto; background: var(--bg-white); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-lg); }
+.teams-modal__box h2 { margin-bottom: 1rem; }
+.teams-modal__box label { display: block; margin: 0.25rem 0 0.25rem; font-weight: 600; font-size: 0.92rem; }
+.teams-modal__box .teams-select { width: 100%; margin-bottom: 0.75rem; }
+.teams-modal__actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
+.teams-check { display: flex !important; align-items: center; gap: 0.5rem; font-weight: 400 !important; margin: 0.25rem 0 0.75rem; }
+.teams-form-error { color: #991b1b; margin: 0.25rem 0; }
 
-.empty-state {
-    text-align: center;
-    padding: 40px;
-    color: #999;
-    font-style: italic;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-    .stats-grid,
-    .repositories-grid,
-    .analytics-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .section-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
-    }
-
-    .repo-actions {
-        flex-direction: column;
-    }
-
-    .leaderboard {
-        font-size: 14px;
-    }
-
-    .stat-icon {
-        font-size: 36px;
-    }
-
-    .stat-value {
-        font-size: 24px;
-    }
-}
+.teams-page .btn-danger { background: #dc2626; color: #fff; }
+.teams-page .btn-danger:hover { background: #b91c1c; }
+.teams-page .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.85rem; }
+.teams-page [hidden], .teams-modal [hidden] { display: none !important; }

@@ -1,28 +1,19 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduled Analysis - AI Code Review Assistant</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/css/schedules.css">
-</head>
-<body>
+{% extends "base.html" %}
+
+{% block title %}Scheduled Analysis - AI Code Review Assistant{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/schedules.css">
+{% endblock %}
+
+{% block content %}
+
     <div class="container">
-        <header>
+        <header class="page-header">
             <h1>📅 Scheduled Analysis</h1>
-            <nav>
-                <a href="/">Dashboard</a>
-                <a href="/repositories">Repositories</a>
-                <a href="/schedules" class="active">Schedules</a>
-                <a href="/issues">Issues</a>
-                <a href="/settings">Settings</a>
-                {% if user %}{% set show_logout = false %}{% include "_account_chip.html" %}{% endif %}
-                <a href="/logout">Logout</a>
-            </nav>
         </header>
 
-        <main>
+        <div class="page-body">
             <!-- Schedules List -->
             <section id="schedules-section">
                 <div class="section-header">
@@ -52,7 +43,7 @@
                     <!-- Runs will be loaded here -->
                 </div>
             </section>
-        </main>
+        </div>
     </div>
 
     <!-- Create/Edit Schedule Modal -->
@@ -174,7 +165,8 @@
             </div>
         </div>
     </div>
+{% endblock %}
 
-    <script src="/static/js/schedules.js"></script>
-</body>
-</html>
+{% block extra_js %}
+<script src="/static/js/schedules.js"></script>
+{% endblock %}

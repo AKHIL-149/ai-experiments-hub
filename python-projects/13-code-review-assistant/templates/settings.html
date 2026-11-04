@@ -64,9 +64,10 @@
             text-decoration: underline;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/nav.css">
 </head>
 <body>
-    {% if user %}<div style="display:flex;justify-content:flex-end;padding:0.5rem 1rem;">{% set show_logout = true %}{% include "_account_chip.html" %}</div>{% endif %}
+    {% include "_nav.html" %}
     <!-- Page Header -->
     <div class="page-header">
         <div class="page-header-content">

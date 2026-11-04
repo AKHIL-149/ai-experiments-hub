@@ -352,7 +352,7 @@ class NotificationManager {
         if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('New Code Review Notifications', {
                 body: `You have ${count} new notification${count > 1 ? 's' : ''}`,
-                icon: '/static/favicon.ico'
+                icon: '/static/favicon.svg'
             });
         }
     }

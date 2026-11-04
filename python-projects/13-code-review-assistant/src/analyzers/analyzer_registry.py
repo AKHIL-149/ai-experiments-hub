@@ -144,8 +144,17 @@ class AnalyzerRegistry:
             except Exception as e:
                 # Log error but continue with other analyzers
                 print(f"Error in {analyzer.analyzer_id}: {e}")
-        
-        return issues
+
+        # Several patterns of one rule can match the same line (Java's SQL injection reported one
+        # statement twice): keep one finding per rule, place and title
+        unique, seen = [], set()
+        for issue in issues:
+            key = (issue.rule_id, issue.file_path, issue.line_number, getattr(issue, 'column_number', None), issue.title)
+            if key not in seen:
+                seen.add(key)
+                unique.append(issue)
+
+        return unique
     
     def get_supported_categories(self) -> List[str]:
         """

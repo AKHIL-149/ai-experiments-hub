@@ -27,6 +27,16 @@ class SecurityAnalyzer(BaseAnalyzer):
         'client_secret', 'app_secret', 'encryption_key', 'auth_key'
     }
 
+    # A variable called password_field, PASSWORD_LABEL or secret_name holds a name, not a secret
+    SECRET_NAME_SUFFIXES = (
+        '_field', '_label', '_name', '_header', '_env', '_var', '_prompt', '_placeholder',
+        '_url', '_path', '_file', '_type', '_length', '_min', '_max', '_regex', '_pattern',
+        '_help', '_text', '_message', '_error', '_hint', '_param', '_key_name',
+    )
+
+    SQL_KEYWORDS = re.compile(r'\b(select|insert\s+into|update|delete\s+from|drop|alter|create\s+table|union|where)\b', re.IGNORECASE)
+    SQL_CALL_METHODS = {'execute', 'executemany', 'executescript', 'raw', 'read_sql', 'read_sql_query', 'mogrify'}
+
     @property
     def analyzer_id(self) -> str:
         return 'security'
@@ -44,6 +54,7 @@ class SecurityAnalyzer(BaseAnalyzer):
         except SyntaxError:
             return issues
 
+        issues.extend(self._check_sql_injection(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_command_injection(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_hardcoded_secrets(tree, source_code, parsed_module.file_path))
         issues.extend(self._check_path_traversal(tree, source_code, parsed_module.file_path))
@@ -52,6 +63,89 @@ class SecurityAnalyzer(BaseAnalyzer):
 
         # Apply configuration (filter disabled rules, apply severity overrides)
         return self.apply_configuration(issues)
+
+    # ------------------------------------------------------------------ SEC001: SQL injection
+
+    def _check_sql_injection(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
+        """
+        SEC001: a query built from text and a value (concatenation, %, .format(), an f-string) and
+        passed to execute()/executemany()/raw()..., directly or through a variable of the same function.
+        There was no such rule: the README lists SQL injection, but none of these patterns was reported.
+        """
+        issues = []
+        reported_lines = set()
+
+        scopes = [tree] + [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        for scope in scopes:
+            dynamic_names = set()
+            for node in ast.walk(scope):
+                if isinstance(node, ast.Assign) and self._is_dynamic_sql(node.value, dynamic_names):
+                    dynamic_names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+                elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                    if node.target.id in dynamic_names or self._is_dynamic_sql(node.value, dynamic_names):
+                        dynamic_names.add(node.target.id)
+
+            for node in ast.walk(scope):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in self.SQL_CALL_METHODS):
+                    continue
+                query = node.args[0] if node.args else next(
+                    (kw.value for kw in node.keywords if kw.arg in ('sql', 'query', 'operation')), None)
+                if query is None or node.lineno in reported_lines:
+                    continue
+                if self._is_dynamic_sql(query, dynamic_names):
+                    reported_lines.add(node.lineno)
+                    issues.append(self.create_issue(
+                        rule_id='SEC001',
+                        severity=IssueSeverity.CRITICAL,
+                        title='SQL injection risk',
+                        description='The query is built by putting values into the SQL text '
+                                   '(concatenation, %, .format() or an f-string). A value that contains SQL '
+                                   'changes the query: an attacker can read, change or delete data.',
+                        file_path=file_path,
+                        line_number=node.lineno,
+                        code_snippet=self.extract_code_snippet(source_code, node.lineno),
+                        suggestion='Pass the values separately as parameters: '
+                                  'cursor.execute("SELECT * FROM users WHERE name = %s", (name,)).',
+                        confidence=0.85
+                    ))
+        return issues
+
+    def _is_dynamic_sql(self, node: ast.AST, dynamic_names) -> bool:
+        """True for SQL text with a non-constant value put into it"""
+        if isinstance(node, ast.Name):
+            return node.id in dynamic_names
+
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+            parts = self._operands(node)
+            has_sql_text = any(
+                isinstance(p, ast.Constant) and isinstance(p.value, str) and self.SQL_KEYWORDS.search(p.value)
+                for p in parts
+            )
+            if isinstance(node.op, ast.Mod):
+                # "... %s ..." % (a, b) - the values are what follows the %
+                values = node.right.elts if isinstance(node.right, (ast.Tuple, ast.List)) else (
+                    node.right.values if isinstance(node.right, ast.Dict) else [node.right])
+                has_value = any(not isinstance(v, ast.Constant) for v in values)
+            else:
+                has_value = any(not isinstance(p, ast.Constant) for p in parts)
+            return (has_sql_text and has_value) or (self._is_dynamic_sql(node.left, dynamic_names) and has_value)
+
+        if isinstance(node, ast.JoinedStr):
+            text = ''.join(v.value for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str))
+            return bool(self.SQL_KEYWORDS.search(text)) and any(isinstance(v, ast.FormattedValue) for v in node.values)
+
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'format'
+                and isinstance(node.func.value, ast.Constant) and isinstance(node.func.value.value, str)):
+            return bool(self.SQL_KEYWORDS.search(node.func.value.value)) and bool(node.args or node.keywords)
+
+        return False
+
+    def _operands(self, node: ast.AST) -> list:
+        """The leaves of a chain of + (or %) operations"""
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+            return self._operands(node.left) + self._operands(node.right)
+        return [node]
 
     def _check_command_injection(self, tree: ast.AST, source_code: str, file_path: str) -> List[CodeIssue]:
         """Detect command injection vulnerabilities"""
@@ -188,6 +282,13 @@ class SecurityAnalyzer(BaseAnalyzer):
 
         var_lower = var_name.lower()
         is_secret_var = any(secret in var_lower for secret in self.SECRET_VAR_NAMES)
+
+        # password_field = "Password", TOKEN_URL = "https://...": a name or a label, not a credential.
+        # A value that reads as a prompt ("Enter password:", no digits) is a label too.
+        stripped = value.strip()
+        reads_as_prompt = stripped.endswith(':') or (' ' in stripped and not re.search(r'\d', stripped))
+        if var_lower.endswith(self.SECRET_NAME_SUFFIXES) or reads_as_prompt:
+            is_secret_var = False
 
         # Check variable name
         if is_secret_var:
@@ -346,6 +447,22 @@ class SecurityAnalyzer(BaseAnalyzer):
                         confidence=0.9
                     ))
 
+                # yaml.load() without a safe loader builds arbitrary Python objects
+                elif self._is_unsafe_yaml_load(node):
+                    snippet = self.extract_code_snippet(source_code, node.lineno)
+                    issues.append(self.create_issue(
+                        rule_id='SEC006',
+                        severity=IssueSeverity.ERROR,
+                        title='Unsafe deserialization with yaml.load',
+                        description='yaml.load() without a safe loader can construct arbitrary Python objects '
+                                   'from the document, which can run code when the data is untrusted.',
+                        file_path=file_path,
+                        line_number=node.lineno,
+                        code_snippet=snippet,
+                        suggestion='Use yaml.safe_load(), or pass Loader=yaml.SafeLoader.',
+                        confidence=0.9
+                    ))
+
                 # Check for eval()
                 elif self._is_eval_call(node):
                     snippet = self.extract_code_snippet(source_code, node.lineno)
@@ -389,6 +506,20 @@ class SecurityAnalyzer(BaseAnalyzer):
                 if isinstance(node.func.value, ast.Name) and node.func.value.id == 'pickle':
                     return True
         return False
+
+    def _is_unsafe_yaml_load(self, node: ast.Call) -> bool:
+        """yaml.load(...) / yaml.load_all(...) unless a safe Loader is passed"""
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr in ('load', 'load_all')
+                and isinstance(func.value, ast.Name) and func.value.id == 'yaml'):
+            return False
+        loader = next((kw.value for kw in node.keywords if kw.arg == 'Loader'), None)
+        if loader is None and len(node.args) >= 2:
+            loader = node.args[1]
+        if loader is None:
+            return True
+        name = loader.attr if isinstance(loader, ast.Attribute) else getattr(loader, 'id', '')
+        return name not in ('SafeLoader', 'CSafeLoader', 'BaseLoader')
 
     def _is_eval_call(self, node: ast.Call) -> bool:
         """Check if node is eval()"""
@@ -438,4 +569,4 @@ class SecurityAnalyzer(BaseAnalyzer):
 
     def get_rule_ids(self) -> List[str]:
         """Get all rule IDs this analyzer can detect"""
-        return ['SEC002', 'SEC003', 'SEC004', 'SEC005', 'SEC006', 'SEC007']
+        return ['SEC001', 'SEC002', 'SEC003', 'SEC004', 'SEC005', 'SEC006', 'SEC007']

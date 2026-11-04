@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Issue Detail - AI Code Review Assistant</title>
-    <link rel="stylesheet" href="/static/css/main.css">
     <link rel="stylesheet" href="/static/css/issue_detail.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="/static/css/nav.css">
 </head>
 <body>
-    {% if user %}<div style="display:flex;justify-content:flex-end;padding:0.5rem 1rem;">{% set show_logout = true %}{% include "_account_chip.html" %}</div>{% endif %}
+    {% include "_nav.html" %}
     <div class="container">
         <header>
             <h1>Issue Detail</h1>

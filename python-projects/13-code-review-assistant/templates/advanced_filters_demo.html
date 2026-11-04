@@ -130,9 +130,10 @@
             font-weight: 500;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/nav.css">
 </head>
 <body>
-    {% if user %}<div style="display:flex;justify-content:flex-end;padding:0.5rem 1rem;">{% set show_logout = true %}{% include "_account_chip.html" %}</div>{% endif %}
+    {% include "_nav.html" %}
     <div class="container">
         <header>
             <h1>🔍 Advanced Filters Demo</h1>

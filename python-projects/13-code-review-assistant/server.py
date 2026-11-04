@@ -3,15 +3,19 @@ FastAPI server for AI Code Review Assistant
 """
 
 import os
+import re
 import tempfile
+import time
 from dotenv import load_dotenv
-from sqlalchemy import text
-from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form, Request
+from sqlalchemy import func, text
+from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, UploadFile, File, Form, Request, Query
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 from src.core.database import (
@@ -167,7 +171,7 @@ app = FastAPI(
     """,
     contact={
         "name": "AI Code Review Team",
-        "email": "support@codereview.local"
+        "email": "support@example.com"
     },
     license_info={
         "name": "MIT License",
@@ -226,7 +230,7 @@ app.add_middleware(
 )
 
 # Rate Limiting Middleware
-from src.middleware.rate_limiter import RateLimitMiddleware
+from src.middleware.rate_limiter import RateLimitMiddleware, client_ip
 app.add_middleware(RateLimitMiddleware)
 
 # Security Headers Middleware
@@ -316,6 +320,31 @@ db_manager = DatabaseManager(db_url)
 SESSION_TTL_DAYS = int(os.getenv('SESSION_TTL_DAYS', '30'))
 COOKIE_SECURE = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
 
+# Largest source file (bytes) or pasted code (characters) accepted for analysis. Analysis time grows
+# quickly with size: 1.8 MB held a worker for 21 s, and in /api/analyze/code that froze the server.
+APP_STARTED_AT = time.time()  # for /health: it reported the computer's uptime, not the app's
+
+MAX_SOURCE_BYTES = int(os.getenv('MAX_SOURCE_BYTES', '512000'))
+MAX_ANALYZE_CHARS = MAX_SOURCE_BYTES
+
+# The hidden repository that holds one user's single-file uploads: it is not a repository to show,
+# count or schedule (it was listed as a "pending" repository that could never be synced)
+UPLOADS_REPOSITORY_URL = 'local://uploads'
+
+GITHUB_URL_PATTERN = re.compile(
+    r'(?:https://github\.com/|git@github\.com:)'
+    r'(?P<owner>[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/'
+    r'(?P<repo>(?!\.{1,2}(?:\.git)?$)[A-Za-z0-9._-]{1,100}?)(?:\.git)?/?'
+)
+REPOSITORY_NAME_PATTERN = re.compile(r'[\w .\-]{1,200}')
+
+# Failed logins per username and client before HTTP 429
+LOGIN_MAX_FAILURES = int(os.getenv('LOGIN_MAX_FAILURES', '10'))
+LOGIN_WINDOW_SECONDS = int(os.getenv('LOGIN_WINDOW_SECONDS', '300'))
+
+from src.utils.rate_limit import FailureThrottle
+login_throttle = FailureThrottle(LOGIN_MAX_FAILURES, LOGIN_WINDOW_SECONDS)
+
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -323,26 +352,26 @@ templates = Jinja2Templates(directory="templates")
 
 # Pydantic models for requests
 class RegisterRequest(BaseModel):
-    username: str
-    email: str
-    password: str
+    username: str = Field(max_length=100)
+    email: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=100)
+    password: str = Field(max_length=1000)
 
 
 class PasswordChangeRequest(BaseModel):
-    old_password: str
-    new_password: str
+    old_password: str = Field(max_length=1000)
+    new_password: str = Field(max_length=1000)
 
 
 class CreateRepositoryRequest(BaseModel):
     """Request model for creating a repository"""
-    name: str
-    github_url: str
-    github_token: Optional[str] = None
+    name: str = Field(default='', max_length=200)  # blank: use the repository's own name
+    github_url: str = Field(max_length=500)
+    github_token: Optional[str] = Field(default=None, max_length=500)
 
 
 class UpdateRepositoryRequest(BaseModel):
@@ -366,6 +395,60 @@ async def get_current_user(session_token: Optional[str] = Cookie(None)):
             raise HTTPException(status_code=401, detail=error or "Invalid session")
 
         return user
+
+
+SLACK_WEBHOOK_PREFIXES = ('https://hooks.slack.com/',)
+DISCORD_WEBHOOK_PREFIXES = (
+    'https://discord.com/api/webhooks/', 'https://discordapp.com/api/webhooks/',
+    'https://ptb.discord.com/api/webhooks/', 'https://canary.discord.com/api/webhooks/',
+)
+
+
+def check_webhook_url(url, allowed_prefixes, service_name):
+    """The server posts to this address, so it must be the service's own: any URL was a way to make
+    it send requests to other machines, including ones on its own network (and the test buttons did
+    so immediately)"""
+    if not isinstance(url, str) or len(url) > 500 or not url.startswith(allowed_prefixes):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{service_name} webhook URL must start with {allowed_prefixes[0]}"
+        )
+
+
+async def read_json_object(request: Request) -> Dict[str, Any]:
+    """The request body as a JSON object; anything else is a 400, not a 500 from the parser"""
+    try:
+        data = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    return data
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(request: Request, exc: StarletteHTTPException):
+    """Error answers with both `detail` (FastAPI's) and `error`: most pages read `.error`, so the reason
+    (a validation message, "Repository not found") never reached the user, only "Failed to ..." """
+    body = {"detail": exc.detail}
+    if isinstance(exc.detail, str):
+        body["error"] = exc.detail
+    return JSONResponse(body, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    """`detail` as one sentence: the pages show it, and FastAPI's list of objects displayed as [object Object]"""
+    problems = []
+    for err in exc.errors():
+        loc = list(err.get("loc", ()))
+        if loc and loc[0] in ("body", "query", "path", "form"):
+            loc = loc[1:]
+        field = ".".join(str(part) for part in loc)
+        message = str(err.get("msg", "Invalid value")).removeprefix("Value error, ")
+        problems.append(f"{field}: {message}" if field else message)
+    message = "; ".join(problems) or "Invalid request"
+    return JSONResponse(status_code=422, content={"detail": message, "error": message})
 
 
 # Dependency: Require admin role
@@ -571,7 +654,7 @@ async def health_check():
         "service": "code-review-assistant",
         "version": "0.1.0",
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "uptime_seconds": int((datetime.utcnow() - datetime.utcfromtimestamp(psutil.boot_time())).total_seconds()),
+        "uptime_seconds": int(time.time() - APP_STARTED_AT),
         "components": components,
         "metrics": metrics
     }
@@ -683,8 +766,11 @@ async def redis_health():
 # Authentication Endpoints
 # ============================================================================
 
+# register, guest_login, login and change_password are plain `def` on purpose: FastAPI runs those in a
+# worker thread, and bcrypt (~0.25 s of CPU per hash) froze every other request when they were `async def`.
+
 @app.post("/api/auth/register")
-async def register(data: RegisterRequest, response: Response):
+def register(data: RegisterRequest, response: Response, request: Request):
     """Register a new user"""
     with db_manager.get_session() as db:
         auth_manager = AuthManager(db, SESSION_TTL_DAYS)
@@ -698,7 +784,7 @@ async def register(data: RegisterRequest, response: Response):
             raise HTTPException(status_code=400, detail=error)
 
         # Auto-login: create session
-        session_token = auth_manager.create_session(user)
+        session_token = auth_manager.create_session(user, client_ip(request))
 
         # Set session cookie
         response.set_cookie(
@@ -718,7 +804,7 @@ async def register(data: RegisterRequest, response: Response):
 
 
 @app.post("/api/auth/guest")
-def guest_login(response: Response):
+def guest_login(response: Response, request: Request):
     """Create a temporary guest account and log in as it, with no sign-up form.
 
     A plain `def` so FastAPI runs it in a worker thread: the bcrypt hash takes ~0.25 s.
@@ -730,7 +816,7 @@ def guest_login(response: Response):
         if not success:
             raise HTTPException(status_code=400, detail=error)
 
-        session_token = auth_manager.create_session(user)
+        session_token = auth_manager.create_session(user, client_ip(request))
 
         response.set_cookie(
             key="session_token",
@@ -749,8 +835,19 @@ def guest_login(response: Response):
 
 
 @app.post("/api/auth/login")
-async def login(data: LoginRequest, response: Response):
+def login(data: LoginRequest, response: Response, request: Request):
     """Login with username and password"""
+    # Per username and client, on top of the per-IP request limit: that one is shared by everything
+    # the client does and says nothing about which account is being guessed
+    throttle_key = f"{client_ip(request)}|{data.username.strip().lower()}"
+    wait = login_throttle.retry_after(throttle_key)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed logins. Try again in {wait} seconds.",
+            headers={"Retry-After": str(wait)},
+        )
+
     with db_manager.get_session() as db:
         auth_manager = AuthManager(db, SESSION_TTL_DAYS)
         success, user, error = auth_manager.authenticate(
@@ -759,10 +856,13 @@ async def login(data: LoginRequest, response: Response):
         )
 
         if not success:
+            login_throttle.record_failure(throttle_key)
             raise HTTPException(status_code=401, detail=error)
 
+        login_throttle.reset(throttle_key)
+
         # Create session
-        session_token = auth_manager.create_session(user)
+        session_token = auth_manager.create_session(user, client_ip(request))
 
         # Set session cookie
         response.set_cookie(
@@ -808,7 +908,7 @@ async def get_me(user = Depends(get_current_user)):
 
 
 @app.post("/api/auth/change-password")
-async def change_password(
+def change_password(
     data: PasswordChangeRequest,
     user = Depends(get_current_user)
 ):
@@ -1287,6 +1387,7 @@ async def create_slack_config(
     webhook_url = data.get('webhook_url')
     if not webhook_url:
         raise HTTPException(status_code=400, detail="webhook_url is required")
+    check_webhook_url(webhook_url, SLACK_WEBHOOK_PREFIXES, "Slack")
 
     config_id = data.get('id')
     repository_id = data.get('repository_id')
@@ -1371,6 +1472,7 @@ async def test_slack_connection(
 
     if not webhook_url:
         raise HTTPException(status_code=400, detail="webhook_url is required")
+    check_webhook_url(webhook_url, SLACK_WEBHOOK_PREFIXES, "Slack")
 
     # Create temporary Slack service
     slack_service = SlackService(webhook_url=webhook_url)
@@ -1611,6 +1713,7 @@ async def create_discord_config(
     webhook_url = data.get('webhook_url')
     if not webhook_url:
         raise HTTPException(status_code=400, detail="webhook_url is required")
+    check_webhook_url(webhook_url, DISCORD_WEBHOOK_PREFIXES, "Discord")
 
     config_id = data.get('id')
     repository_id = data.get('repository_id')
@@ -1692,6 +1795,7 @@ async def test_discord_connection(
 
     if not webhook_url:
         raise HTTPException(status_code=400, detail="webhook_url is required")
+    check_webhook_url(webhook_url, DISCORD_WEBHOOK_PREFIXES, "Discord")
 
     # Create temporary Discord service
     discord_service = DiscordService(webhook_url=webhook_url)
@@ -2141,8 +2245,8 @@ async def import_pull_request(
 async def list_pull_requests(
     repository_id: Optional[str] = None,
     status: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user = Depends(get_current_user)
 ):
     """List pull requests"""
@@ -2620,7 +2724,7 @@ async def assign_pr_reviewers(
 @app.get("/api/prs/{pr_id}/approval-status")
 async def get_pr_approval_status(
     pr_id: str,
-    required_approvals: int = 1,
+    required_approvals: int = Query(1, ge=0, le=20),
     require_owner_approval: bool = False,
     user = Depends(get_current_user)
 ):
@@ -2660,7 +2764,7 @@ async def get_pr_approval_status(
 @app.get("/api/users/{user_id}/reviewer-stats")
 async def get_user_reviewer_stats(
     user_id: str,
-    days: int = 30,
+    days: int = Query(30, ge=1, le=3650),
     user = Depends(get_current_user)
 ):
     """
@@ -2703,6 +2807,12 @@ async def get_current_user_optional(session_token: Optional[str] = Cookie(None))
         return None
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Browsers ask for /favicon.ico on every page, including the ones without a <link rel="icon">"""
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'favicon.svg'), media_type='image/svg+xml')
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Root endpoint - redirect to dashboard"""
@@ -2723,12 +2833,14 @@ async def dashboard_page(request: Request, user = Depends(get_current_user_optio
     with db_manager.get_session() as db:
         # Get recent repositories for display
         repositories = db.query(Repository).filter(
-            Repository.user_id == user.id
+            Repository.user_id == user.id,
+            Repository.github_url != UPLOADS_REPOSITORY_URL
         ).order_by(Repository.created_at.desc()).limit(5).all()
 
         # Get total count
         total_repositories = db.query(Repository).filter(
-            Repository.user_id == user.id
+            Repository.user_id == user.id,
+            Repository.github_url != UPLOADS_REPOSITORY_URL
         ).count()
 
         # Recent unresolved issues across the user's own repositories/PRs
@@ -2856,7 +2968,7 @@ async def get_user_settings(user = Depends(get_current_user)):
 async def save_user_settings(request: Request, user = Depends(get_current_user)):
     """Save user settings"""
     try:
-        settings = await request.json()
+        settings = await read_json_object(request)
 
         # For now, just acknowledge receipt
         # In a production app, you'd save these to the database
@@ -2892,22 +3004,14 @@ async def issue_detail_page(request: Request, issue_id: str, user = Depends(get_
         return RedirectResponse(url="/login")
 
     with db_manager.get_session() as db:
-        # Get the issue
-        issue = db.query(Issue).filter(Issue.id == issue_id).first()
+        # Get the issue (only the user's own; someone else's is "not found", like a missing one)
+        issue = get_owned_issue(db, user, issue_id)
 
         if not issue:
             raise HTTPException(status_code=404, detail="Issue not found")
 
         # Get code file information
         code_file = db.query(CodeFile).filter(CodeFile.id == issue.code_file_id).first()
-
-        # Verify user has access to this issue (through repository ownership)
-        if code_file:
-            pr = db.query(PullRequest).filter(PullRequest.id == code_file.pull_request_id).first()
-            if pr:
-                repo = db.query(Repository).filter(Repository.id == pr.repository_id).first()
-                if repo and repo.user_id != user.id:
-                    raise HTTPException(status_code=403, detail="Access denied")
 
         # Get refactoring suggestion if exists
         refactoring = db.query(Refactoring).filter(Refactoring.issue_id == issue_id).first()
@@ -3008,7 +3112,7 @@ async def repositories_page(request: Request, user = Depends(get_current_user_op
 
     # Calculate repository statistics
     with db_manager.get_session() as db:
-        repos = db.query(Repository).filter(Repository.user_id == user.id).all()
+        repos = db.query(Repository).filter(Repository.user_id == user.id, Repository.github_url != UPLOADS_REPOSITORY_URL).all()
         stats = {
             'total': len(repos),
             'ready': sum(1 for r in repos if r.status == RepositoryStatus.READY),
@@ -3133,7 +3237,8 @@ async def pull_requests_page(request: Request, user = Depends(get_current_user_o
     with db_manager.get_session() as db:
         # Get user's repositories for filter dropdown
         repositories = db.query(Repository).filter(
-            Repository.user_id == user.id
+            Repository.user_id == user.id,
+            Repository.github_url != UPLOADS_REPOSITORY_URL
         ).order_by(Repository.name).all()
 
         # Get user's pull requests
@@ -3178,6 +3283,7 @@ async def pull_request_import_page(request: Request, user = Depends(get_current_
         # Get user's repositories for dropdown
         repositories = db.query(Repository).filter(
             Repository.user_id == user.id,
+            Repository.github_url != UPLOADS_REPOSITORY_URL,
             Repository.status == RepositoryStatus.READY
         ).order_by(Repository.name).all()
 
@@ -3323,9 +3429,9 @@ async def health():
 
 class AnalyzeFileRequest(BaseModel):
     """Request model for file analysis"""
-    code: str
-    filename: str = "code.py"
-    analyzer_ids: Optional[List[str]] = None
+    code: str = Field(max_length=MAX_ANALYZE_CHARS)
+    filename: str = Field(default="code.py", max_length=255)
+    analyzer_ids: Optional[List[str]] = Field(default=None, max_length=50)
 
 
 @app.post("/api/analyze/file")
@@ -3346,18 +3452,29 @@ async def analyze_file(
     # regardless of what the analyzers underneath could handle.
     from src.parsers.parser_registry import get_registry as get_parser_registry
     supported_extensions = get_parser_registry().get_supported_extensions()
-    if not any(file.filename.endswith(ext) for ext in supported_extensions):
+
+    # Only the file's own name: it is shown on the Issues pages and stored with every issue
+    filename = os.path.basename((file.filename or '').replace('\\', '/')).strip()[:255]
+    if not any(filename.lower().endswith(ext) for ext in supported_extensions):
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type. Supported extensions: {', '.join(sorted(supported_extensions))}"
         )
 
-    # Read file content
+    # Read file content: at most one byte over the limit, so a huge upload is refused without
+    # being read into memory first
+    content = await file.read(MAX_SOURCE_BYTES + 1)
+    if len(content) > MAX_SOURCE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is too large. The limit is {MAX_SOURCE_BYTES // 1024} KB."
+        )
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="The file is empty")
     try:
-        content = await file.read()
         file_content = content.decode('utf-8')
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="The file is not UTF-8 text")
 
     # Parse analyzer IDs if provided
     analyzer_list = None
@@ -3367,7 +3484,7 @@ async def analyze_file(
     # Queue async analysis task
     task = analyze_file_task.delay(
         file_content=file_content,
-        filename=file.filename,
+        filename=filename,
         analyzer_ids=analyzer_list,
         user_id=user.id
     )
@@ -3375,13 +3492,13 @@ async def analyze_file(
     return {
         "success": True,
         "job_id": task.id,
-        "filename": file.filename,
+        "filename": filename,
         "message": "Analysis queued successfully"
     }
 
 
 @app.post("/api/analyze/code")
-async def analyze_code(
+def analyze_code(
     data: AnalyzeFileRequest,
     user = Depends(get_current_user)
 ):
@@ -3495,9 +3612,13 @@ async def get_task_status(
     return response
 
 
+TASK_STREAM_MAX_SECONDS = int(os.getenv('TASK_STREAM_MAX_SECONDS', '900'))
+
+
 @app.get("/api/tasks/{task_id}/progress")
 async def task_progress_stream(
     task_id: str,
+    request: Request,
     user = Depends(get_current_user)
 ):
     """
@@ -3509,8 +3630,18 @@ async def task_progress_stream(
 
     async def event_generator():
         task = AsyncResult(task_id, app=celery_app)
+        started = time.monotonic()
 
         while True:
+            # An unknown task id is PENDING for ever, and a closed tab never ended the loop: every
+            # such connection kept polling Redis until the server stopped
+            if await request.is_disconnected():
+                break
+            if time.monotonic() - started > TASK_STREAM_MAX_SECONDS:
+                data = {"status": "failed", "error": "Timed out waiting for the task", "message": "Task timed out"}
+                yield f"event: error\ndata: {json.dumps(data)}\n\n"
+                break
+
             # Get current task state
             state = task.state
 
@@ -3657,7 +3788,7 @@ async def get_dashboard_metrics(user = Depends(get_current_user)):
 
 
 @app.get("/api/dashboard/trends")
-async def get_dashboard_trends(days: int = 30, user = Depends(get_current_user)):
+async def get_dashboard_trends(days: int = Query(30, ge=1, le=3650), user = Depends(get_current_user)):
     """
     Get issue trends over time.
 
@@ -3677,7 +3808,7 @@ async def get_dashboard_trends(days: int = 30, user = Depends(get_current_user))
     analyses = get_all_cached_analyses(user.id)
 
     # Create date buckets
-    end_date = datetime.now()
+    end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
 
     # Initialize daily counts
@@ -3734,7 +3865,7 @@ async def get_dashboard_trends(days: int = 30, user = Depends(get_current_user))
 
 
 @app.get("/api/dashboard/activity")
-async def get_recent_activity(limit: int = 10, user = Depends(get_current_user)):
+async def get_recent_activity(limit: int = Query(10, ge=1, le=1000), user = Depends(get_current_user)):
     """
     Get recent activity feed.
 
@@ -3764,7 +3895,7 @@ async def get_recent_activity(limit: int = 10, user = Depends(get_current_user))
 
     # Generate activity items
     for analysis in sorted_analyses[:limit]:
-        analyzed_at = analysis.get('analyzed_at', datetime.now().isoformat())
+        analyzed_at = analysis.get('analyzed_at', datetime.utcnow().isoformat())
         filename = analysis.get('filename', 'Unknown file')
         issues = analysis.get('issues', [])
 
@@ -3847,7 +3978,7 @@ async def get_health_score(user = Depends(get_current_user)):
 
 @app.get("/api/analytics/trends")
 async def get_analytics_trends(
-    days: int = 30,
+    days: int = Query(30, ge=1, le=3650),
     grouping: str = 'day',
     user = Depends(get_current_user)
 ):
@@ -3949,8 +4080,8 @@ async def get_analytics_insights(user = Depends(get_current_user)):
 
 @app.get("/api/analytics/compare")
 async def compare_periods(
-    current_days: int = 7,
-    previous_days: int = 7,
+    current_days: int = Query(7, ge=1, le=3650),
+    previous_days: int = Query(7, ge=1, le=3650),
     user = Depends(get_current_user)
 ):
     """
@@ -3972,7 +4103,7 @@ async def compare_periods(
     all_analyses = get_all_cached_analyses(user.id)
 
     # Split into current and previous periods
-    now = datetime.now()
+    now = datetime.utcnow()
     current_start = now - timedelta(days=current_days)
     previous_start = current_start - timedelta(days=previous_days)
 
@@ -4007,7 +4138,7 @@ async def compare_periods(
 @app.get("/api/analytics/export")
 async def export_analytics(
     format: str = 'json',
-    days: int = 30,
+    days: int = Query(30, ge=1, le=3650),
     user = Depends(get_current_user)
 ):
     """
@@ -4028,7 +4159,7 @@ async def export_analytics(
 
     # Get analyses for the period
     all_analyses = get_all_cached_analyses(user.id)
-    cutoff_date = datetime.now() - timedelta(days=days)
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
 
     # Filter by date
     recent_analyses = []
@@ -4111,7 +4242,7 @@ async def get_notifications(
     user_id: Optional[str] = None,
     notification_type: Optional[str] = None,
     unread_only: bool = False,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=1000),
     user = Depends(get_current_user)
 ):
     """
@@ -4163,7 +4294,7 @@ async def mark_all_notifications_read(
 
 
 @app.delete("/api/notifications/old")
-async def clear_old_notifications(days: int = 30, user = Depends(get_current_user)):
+async def clear_old_notifications(days: int = Query(30, ge=1, le=3650), user = Depends(get_current_user)):
     """Clear notifications older than specified days"""
     from src.services.notification_service import notification_service
 
@@ -4285,8 +4416,8 @@ async def delete_notification(notification_id: str, user = Depends(get_current_u
 async def get_logs(
     level: Optional[str] = None,
     correlation_id: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user = Depends(get_current_user)
 ):
     """
@@ -4321,7 +4452,7 @@ async def get_logs(
 
 
 @app.get("/api/logs/errors")
-async def get_error_logs(limit: int = 100, user = Depends(get_current_user)):
+async def get_error_logs(limit: int = Query(100, ge=1, le=1000), user = Depends(get_current_user)):
     """Get recent error logs"""
     require_admin_role(user)
     from src.services.logging_service import logging_service
@@ -4408,8 +4539,8 @@ async def list_issues(
     file_path: Optional[str] = None,
     job_id: Optional[str] = None,
     repository: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user = Depends(get_current_user)
 ):
     """
@@ -4915,8 +5046,8 @@ async def list_refactorings(
     status: Optional[str] = None,
     issue_id: Optional[str] = None,
     code_file_id: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user = Depends(get_current_user)
 ):
     """
@@ -5357,7 +5488,7 @@ async def predict_code_smells(
 @app.get("/api/analytics/repository/{repository_id}/health")
 async def get_repository_health(
     repository_id: str,
-    time_window_days: int = 30,
+    time_window_days: int = Query(30, ge=1, le=3650),
     user = Depends(get_current_user)
 ):
     """
@@ -5394,7 +5525,7 @@ async def get_repository_health(
 @app.get("/api/analytics/repository/{repository_id}/trends")
 async def get_quality_trends(
     repository_id: str,
-    days: int = 90,
+    days: int = Query(90, ge=1, le=3650),
     granularity: str = 'daily',
     user = Depends(get_current_user)
 ):
@@ -5435,7 +5566,7 @@ async def get_quality_trends(
 @app.get("/api/analytics/repository/{repository_id}/developers")
 async def get_developer_contributions(
     repository_id: str,
-    days: int = 30,
+    days: int = Query(30, ge=1, le=3650),
     user = Depends(get_current_user)
 ):
     """
@@ -5538,24 +5669,32 @@ async def create_repository(
     Validates GitHub URL and stores repository metadata.
     Actual cloning happens asynchronously.
     """
-    # Validate GitHub URL format
-    if not data.github_url.startswith(('https://github.com/', 'git@github.com:')):
+    # Validate GitHub URL format: https://github.com/<owner>/<repo>[.git] or git@github.com:<owner>/<repo>[.git]
+    # (anything that merely started with those prefixes was accepted: no owner or repository, spaces,
+    # '..' segments, a query string)
+    github_url = data.github_url.strip()
+    url_match = GITHUB_URL_PATTERN.fullmatch(github_url)
+    if not url_match:
         raise HTTPException(
             status_code=400,
-            detail="Invalid GitHub URL. Must start with https://github.com/ or git@github.com:"
+            detail="Invalid GitHub URL. Use https://github.com/<owner>/<repository> or git@github.com:<owner>/<repository>"
         )
 
-    # Extract repo name from URL if not provided
-    name = data.name
-    if not name:
-        # Extract from URL like https://github.com/user/repo.git
-        parts = data.github_url.rstrip('/').rstrip('.git').split('/')
-        if len(parts) >= 2:
-            name = parts[-1]
-        else:
-            raise HTTPException(status_code=400, detail="Could not extract repository name from URL")
+    # The repository's own name unless one is given (rstrip('.git') removed *characters*: 'react' became 'reac')
+    name = (data.name or '').strip() or url_match.group('repo')
+    if not REPOSITORY_NAME_PATTERN.fullmatch(name):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid name. Use up to 200 letters, numbers, spaces, dots, dashes and underscores"
+        )
+    data.github_url = github_url
 
     with db_manager.get_session() as db:
+        if db.query(Repository.id).filter(
+            Repository.user_id == user.id, Repository.github_url == github_url
+        ).first():
+            raise HTTPException(status_code=409, detail="This repository has already been added")
+
         # Create repository record
         repo = Repository(
             user_id=user.id,
@@ -5598,7 +5737,8 @@ async def list_repositories(
     """
     with db_manager.get_session() as db:
         repositories = db.query(Repository).filter(
-            Repository.user_id == user.id
+            Repository.user_id == user.id,
+            Repository.github_url != UPLOADS_REPOSITORY_URL
         ).order_by(Repository.created_at.desc()).all()
 
         return {
@@ -6086,8 +6226,8 @@ async def get_marketplace_rules(
     language: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = 'popular',
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user = Depends(get_current_user_optional)
 ):
     """
@@ -6125,7 +6265,7 @@ async def get_marketplace_rules(
 
 @app.get("/api/marketplace/featured")
 async def get_featured_rules(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=1000),
     user = Depends(get_current_user_optional)
 ):
     """Get featured rules from the marketplace."""
@@ -6199,8 +6339,8 @@ async def rate_rule(
 @app.get("/api/marketplace/rules/{rule_id}/ratings")
 async def get_rule_ratings(
     rule_id: str,
-    limit: int = 10,
-    offset: int = 0,
+    limit: int = Query(10, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user = Depends(get_current_user_optional)
 ):
     """Get ratings for a specific rule."""
@@ -6352,8 +6492,34 @@ async def import_rules(
 
 class LoadPluginRequest(BaseModel):
     """Request model for loading a plugin"""
-    file_path: str
+    file_path: str = Field(max_length=500)
     enabled: bool = True
+
+
+PLUGINS_DIR = os.path.realpath(os.getenv('PLUGINS_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'plugins')))
+
+
+def resolve_plugin_path(raw_path: str) -> str:
+    """
+    The real path of a plugin file, which must be a .py file inside the plugins folder.
+
+    A plugin is Python that the server runs. This used to load any path on the machine for any
+    signed-in account (a one-click guest included), and repositories are cloned onto the same disk,
+    so anyone could have the server run a file they had put there.
+    """
+    # Relative paths: from the project folder ("./plugins/example_analyzer.py"), or the plugins folder
+    project_root = os.path.dirname(PLUGINS_DIR)
+    candidates = [raw_path] if os.path.isabs(raw_path) else [
+        os.path.join(project_root, raw_path), os.path.join(PLUGINS_DIR, raw_path)
+    ]
+    for candidate in candidates:
+        real = os.path.realpath(candidate)
+        if (real.startswith(PLUGINS_DIR + os.sep) and real.endswith('.py') and os.path.isfile(real)):
+            return real
+    raise HTTPException(
+        status_code=400,
+        detail="Plugin files must be .py files inside the server's plugins folder"
+    )
 
 
 class UpdatePluginRequest(BaseModel):
@@ -6402,13 +6568,11 @@ async def load_plugin(
         from src.core.plugin_manager import PluginManager
         import os
 
-        # Validate file exists
-        if not os.path.exists(request.file_path):
-            raise HTTPException(status_code=404, detail="Plugin file not found")
+        plugin_path = resolve_plugin_path(request.file_path)
 
         # Load plugin using PluginManager
         plugin_manager = PluginManager()
-        plugin_instance = plugin_manager.load_plugin_from_file(request.file_path)
+        plugin_instance = plugin_manager.load_plugin_from_file(plugin_path)
 
         if not plugin_instance:
             raise HTTPException(status_code=400, detail="Failed to load plugin")
@@ -6433,7 +6597,7 @@ async def load_plugin(
                 description=plugin_instance.metadata.description,
                 plugin_type=plugin_instance.metadata.plugin_type.value,
                 status='active' if request.enabled else 'inactive',
-                file_path=request.file_path,
+                file_path=plugin_path,
                 homepage=plugin_instance.metadata.homepage,
                 license=plugin_instance.metadata.license,
                 supported_languages=','.join(plugin_instance.metadata.supported_languages) if plugin_instance.metadata.supported_languages else '',
@@ -6525,7 +6689,7 @@ async def update_plugin(
                 plugin_manager = PluginManager()
                 if request.enabled:
                     # Reload and enable plugin
-                    plugin_instance = plugin_manager.load_plugin_from_file(plugin.file_path)
+                    plugin_instance = plugin_manager.load_plugin_from_file(resolve_plugin_path(plugin.file_path))
                     if plugin_instance:
                         plugin_manager.register_plugin(plugin_instance)
                 else:
@@ -6660,7 +6824,7 @@ async def create_team(request: Request, user=Depends(get_current_user)):
     try:
         from src.services.team_service import TeamService
 
-        data = await request.json()
+        data = await read_json_object(request)
         team_service = TeamService()
 
         result = team_service.create_team(
@@ -6678,6 +6842,8 @@ async def create_team(request: Request, user=Depends(get_current_user)):
 
     except HTTPException:
         raise
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Missing field: {e.args[0]}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create team: {str(e)}")
 
@@ -6727,7 +6893,7 @@ async def update_team(team_id: str, request: Request, user=Depends(get_current_u
     try:
         from src.services.team_service import TeamService
 
-        data = await request.json()
+        data = await read_json_object(request)
         team_service = TeamService()
 
         result = team_service.update_team(team_id, user.id, **data)
@@ -6786,7 +6952,7 @@ async def add_team_member(team_id: str, request: Request, user=Depends(get_curre
     try:
         from src.services.team_service import TeamService
 
-        data = await request.json()
+        data = await read_json_object(request)
         team_service = TeamService()
 
         result = team_service.add_member(
@@ -6803,6 +6969,8 @@ async def add_team_member(team_id: str, request: Request, user=Depends(get_curre
 
     except HTTPException:
         raise
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Missing field: {e.args[0]}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add member: {str(e)}")
 
@@ -6833,7 +7001,7 @@ async def update_member_role(team_id: str, user_id: str, request: Request, user=
     try:
         from src.services.team_service import TeamService
 
-        data = await request.json()
+        data = await read_json_object(request)
         team_service = TeamService()
 
         result = team_service.update_member_role(
@@ -6850,6 +7018,8 @@ async def update_member_role(team_id: str, user_id: str, request: Request, user=
 
     except HTTPException:
         raise
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Missing field: {e.args[0]}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
 
@@ -6860,14 +7030,26 @@ async def create_team_invitation(team_id: str, request: Request, user=Depends(ge
     try:
         from src.services.team_service import TeamService
 
-        data = await request.json()
+        data = await read_json_object(request)
         team_service = TeamService()
+
+        invited_user_id = data.get('user_id')
+        username = data.get('username')
+        if username:
+            # Invite by username (what the Teams page uses)
+            with db_manager.get_session() as db:
+                found = db.query(User.id).filter(
+                    func.lower(User.username) == str(username).strip().lower(), User.is_active == True
+                ).first()
+            if not found:
+                raise HTTPException(status_code=404, detail="User not found")
+            invited_user_id = found[0]
 
         result = team_service.create_invitation(
             team_id=team_id,
             inviter_id=user.id,
             email=data.get('email'),
-            user_id=data.get('user_id'),
+            user_id=invited_user_id,
             role=data.get('role', 'member'),
             expires_in_days=data.get('expires_in_days', 7)
         )
@@ -6892,7 +7074,9 @@ async def get_team_invitations(team_id: str, status: Optional[str] = None, user=
         from src.services.team_service import TeamService
 
         team_service = TeamService()
-        invitations = team_service.get_team_invitations(team_id, status)
+        # The token is the key to an invitation: only members who manage the team see it
+        can_manage = team_service.check_permission(team_id, user.id, 'can_manage_members')
+        invitations = team_service.get_team_invitations(team_id, status, include_tokens=can_manage)
 
         return {"invitations": invitations}
 
@@ -6930,6 +7114,62 @@ async def get_team_repositories(team_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to get team repositories: {str(e)}")
 
 
+@app.post("/api/teams/{team_id}/repositories")
+async def share_repository_with_team(team_id: str, request: Request, user=Depends(get_current_user)):
+    """Share one of your repositories with a team: its members then see it on the team dashboard."""
+    require_team_member(team_id, user)
+    data = await read_json_object(request)
+    repository_id = data.get('repository_id')
+    if not isinstance(repository_id, str) or not repository_id:
+        raise HTTPException(status_code=400, detail="Missing field: repository_id")
+
+    from src.core.database import Team, TeamMember
+    with db_manager.get_session() as db:
+        member = db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.user_id == user.id).first()
+        if member.role == 'viewer':
+            raise HTTPException(status_code=403, detail="Viewers cannot share repositories")
+
+        repository = db.query(Repository).filter(
+            Repository.id == repository_id, Repository.user_id == user.id,
+            Repository.github_url != UPLOADS_REPOSITORY_URL
+        ).first()
+        if not repository:
+            raise HTTPException(status_code=404, detail="Repository not found")
+        if repository.team_id == team_id:
+            raise HTTPException(status_code=409, detail="This repository is already shared with the team")
+        if repository.team_id:
+            raise HTTPException(status_code=409, detail="This repository is shared with another team: stop sharing it there first")
+
+        repository.team_id = team_id
+        db.flush()
+        team = db.query(Team).filter(Team.id == team_id).first()
+        team.repository_count = db.query(func.count(Repository.id)).filter(Repository.team_id == team_id).scalar()
+        db.commit()
+        return {"success": True, "repository_id": repository_id, "team_id": team_id}
+
+
+@app.delete("/api/teams/{team_id}/repositories/{repository_id}")
+async def stop_sharing_repository(team_id: str, repository_id: str, user=Depends(get_current_user)):
+    """Stop sharing a repository with the team: its owner, or a member who manages the team, may"""
+    require_team_member(team_id, user)
+
+    from src.core.database import Team, TeamMember
+    with db_manager.get_session() as db:
+        member = db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.user_id == user.id).first()
+        repository = db.query(Repository).filter(Repository.id == repository_id, Repository.team_id == team_id).first()
+        if not repository:
+            raise HTTPException(status_code=404, detail="Repository not found")
+        if repository.user_id != user.id and not member.can_manage_members:
+            raise HTTPException(status_code=403, detail="Only the repository's owner or a team manager can stop sharing it")
+
+        repository.team_id = None
+        db.flush()
+        team = db.query(Team).filter(Team.id == team_id).first()
+        team.repository_count = db.query(func.count(Repository.id)).filter(Repository.team_id == team_id).scalar()
+        db.commit()
+        return {"success": True}
+
+
 @app.get("/api/teams/{team_id}/leaderboard")
 async def get_team_leaderboard(team_id: str, user=Depends(get_current_user)):
     """Get team member leaderboard ranked by contributions."""
@@ -6946,7 +7186,7 @@ async def get_team_leaderboard(team_id: str, user=Depends(get_current_user)):
 
 
 @app.get("/api/teams/{team_id}/activity")
-async def get_team_activity(team_id: str, limit: int = 50, user=Depends(get_current_user)):
+async def get_team_activity(team_id: str, limit: int = Query(50, ge=1, le=1000), user=Depends(get_current_user)):
     """Get recent team activity feed."""
     require_team_member(team_id, user)
 
@@ -7043,7 +7283,7 @@ async def get_my_invitations(user=Depends(get_current_user)):
 async def create_schedule(request: Request, user=Depends(get_current_user)):
     """Create a new analysis schedule."""
     try:
-        data = await request.json()
+        data = await read_json_object(request)
 
         with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
@@ -7068,7 +7308,7 @@ async def create_schedule(request: Request, user=Depends(get_current_user)):
             return schedule
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404 if 'not found' in str(e).lower() else 400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create schedule: {str(e)}")
 
@@ -7118,7 +7358,7 @@ async def get_schedule(schedule_id: str, user=Depends(get_current_user)):
 async def update_schedule(schedule_id: str, request: Request, user=Depends(get_current_user)):
     """Update schedule settings."""
     try:
-        data = await request.json()
+        data = await read_json_object(request)
 
         with db_manager.get_session() as session:
             schedule_service = ScheduleService(session)
@@ -7131,7 +7371,7 @@ async def update_schedule(schedule_id: str, request: Request, user=Depends(get_c
             return schedule
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404 if 'not found' in str(e).lower() else 400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update schedule: {str(e)}")
 
@@ -7156,7 +7396,7 @@ async def delete_schedule(schedule_id: str, user=Depends(get_current_user)):
 async def toggle_schedule(schedule_id: str, request: Request, user=Depends(get_current_user)):
     """Enable or disable a schedule."""
     try:
-        data = await request.json()
+        data = await read_json_object(request)
         enabled = data.get('enabled', True)
 
         with db_manager.get_session() as session:
@@ -7166,7 +7406,7 @@ async def toggle_schedule(schedule_id: str, request: Request, user=Depends(get_c
             return schedule
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404 if 'not found' in str(e).lower() else 400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to toggle schedule: {str(e)}")
 
@@ -7182,7 +7422,7 @@ async def trigger_schedule(schedule_id: str, user=Depends(get_current_user)):
             return run
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404 if 'not found' in str(e).lower() else 400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to trigger schedule: {str(e)}")
 
@@ -7191,7 +7431,7 @@ async def trigger_schedule(schedule_id: str, user=Depends(get_current_user)):
 async def get_schedule_runs(
     schedule_id: str,
     status: Optional[str] = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=1000),
     user=Depends(get_current_user)
 ):
     """Get runs for a specific schedule."""
@@ -7249,8 +7489,11 @@ async def get_run(run_id: str, user=Depends(get_current_user)):
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.getenv('HOST', '0.0.0.0')
+    # 127.0.0.1 unless HOST says otherwise: the sign-in is a cookie over plain HTTP, and with
+    # HOST=0.0.0.0 anyone on the network can reach the app (and open a guest session with one click)
+    host = os.getenv('HOST', '127.0.0.1')
     port = int(os.getenv('PORT', '8000'))
+    trust_proxy = os.getenv('TRUST_PROXY', 'false').lower() == 'true'
 
     print(f"🚀 Starting AI Code Review Assistant on http://{host}:{port}")
     print(f"📖 API Docs: http://{host}:{port}/docs")
@@ -7259,5 +7502,8 @@ if __name__ == "__main__":
         app,
         host=host,
         port=port,
-        log_level="info"
+        log_level="info",
+        # uvicorn rewrites the client address from X-Forwarded-For for requests from 127.0.0.1 unless
+        # told not to, which let a local client (or a proxy) pick the address the limits see
+        proxy_headers=trust_proxy
     )

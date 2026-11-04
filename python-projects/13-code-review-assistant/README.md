@@ -8,6 +8,10 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 ## 🚀 Features
 
 ### Core Analysis
+- **Try it without an account**: "Continue as Guest" on the login and register pages starts a throwaway
+  account (named `guest_xxxxxxxx`, marked with a *Guest* badge on every page). Its password is never shown, so
+  a guest cannot sign back in after logging out. Guests are recognised by the reserved `@guest.local` email
+  (nobody can register an address there), so no database change was needed
 - **Multi-Language Support**: Python, JavaScript, TypeScript, JSX, TSX, Java, Go, Rust
 - **Intelligent Auto-Detection**:
   - **Extension-based**: Automatic parser selection from file extension
@@ -108,13 +112,19 @@ An intelligent code review system that analyzes Python, JavaScript/TypeScript, J
 - **Async Execution**: Background processing via Celery workers
 
 ### Team Collaboration
-- **Teams & Organizations**: Create teams with hierarchical role-based access control
-  - Owner, Admin, Member, Viewer roles with granular permissions
-  - Team invitations with token-based acceptance
-  - Team settings and visibility controls
+- **Teams & Organizations**: Create teams with hierarchical role-based access control (the **Teams** page)
+  - Owner, Admin, Member, Viewer roles with granular permissions. Only the creator is an owner; only the owner
+    makes, changes or removes an admin; members who may invite (a team setting) can only invite members or viewers
+  - Invitations by username or email: an invitation is for the account it names (an email invitation can only be
+    accepted by the account with that email), lasts 1-30 days, and its token is only shown to those who manage the team.
+    Invited users answer from a banner on the Teams page
+  - Anyone but the owner can leave a team; the owner deletes it (its repositories go back to their owners)
+  - Team settings and visibility controls; names, short names (slugs), roles and visibility are validated
 - **Shared Workspaces**: Collaborative team dashboards with comprehensive analytics
   - Team overview stats (members, repositories, issues, health score)
-  - Shared repository pools across team members
+  - **Share a repository with a team** from the Repositories tab (a repository belongs to one team; stopping is
+    allowed to its owner or a team manager). Sharing shows the team its issues, health and activity; it does not
+    open the issues themselves: each account's Issues page stays its own
   - Team analytics with Chart.js visualizations (severity, category, health trends)
   - Team leaderboard ranking members by contributions
   - Activity feed tracking team analyses and reviews
@@ -252,9 +262,17 @@ Open [http://localhost:8000](http://localhost:8000)
 ### Environment Variables (.env)
 ```env
 # Server
-HOST=0.0.0.0
+HOST=127.0.0.1         # 0.0.0.0 serves other machines on your network (see Security)
 PORT=8000
 ALLOWED_ORIGINS=http://localhost:8000
+TRUST_PROXY=false      # true only behind a reverse proxy you run: then X-Forwarded-For is believed
+
+# Limits
+MAX_SOURCE_BYTES=512000        # largest file (or pasted code) accepted for analysis
+LOGIN_MAX_FAILURES=10          # failed logins per username and client ...
+LOGIN_WINDOW_SECONDS=300       # ... within this window, then HTTP 429 until it passes
+TASK_STREAM_MAX_SECONDS=900    # how long GET /api/tasks/{id}/progress waits for a task
+PLUGINS_DIR=./plugins          # plugin files must be inside this folder
 
 # Database
 DATABASE_URL=sqlite:///./data/database.db
@@ -525,6 +543,11 @@ def get_plugin():
 
 ### Loading Plugins
 
+A plugin is Python that the server runs, so plugin files must be `.py` files **inside the `plugins/` folder**
+(`PLUGINS_DIR`): other paths are refused with HTTP 400, symlinks that point out of the folder included.
+Relative paths work from the project folder (`./plugins/x.py`) or the plugins folder (`x.py`). This used to load
+any file on the machine for any signed-in account.
+
 #### Via API
 ```bash
 curl -X POST http://localhost:8000/api/plugins/load \
@@ -547,7 +570,7 @@ manager.register_plugin(plugin)
 #### Via UI
 1. Navigate to `/plugins` in the web interface
 2. Click "Load Plugin"
-3. Enter the plugin file path
+3. Enter the plugin file path (inside `plugins/`)
 4. Click "Load Plugin"
 
 ### Plugin Hooks
@@ -660,6 +683,28 @@ Each plugin tracks:
 
 **Full API documentation**: [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger UI)
 
+## 🔒 Security
+
+- **Accounts**: usernames are letters, numbers, dots, dashes and underscores (3-50; `Alice` and `alice` are one
+  name), passwords are 8 to 72 bytes (bcrypt ignores the rest, so longer ones are refused rather than cut),
+  failed logins are limited per username and client (HTTP 429 with `Retry-After`), and an unknown username
+  takes as long to reject as a wrong password
+- **Each account sees only its own data**: issues, refactorings, analytics, technical debt, the dashboard,
+  notifications, schedules and pull requests are scoped to the repositories the account owns (single-file
+  uploads live in the account's own hidden "Uploaded Files" repository); someone else's id is a 404. Team pages
+  need membership. The application logs are admin-only
+- **Rate limits** count every request (a burst inside one second used to count once) and use the connection's
+  address; `X-Forwarded-For` is only believed when `TRUST_PROXY=true`
+- **Inputs are bounded**: list endpoints take `limit` 1-1000 and `offset` >= 0, day ranges 1-3650, uploads and
+  pasted code at most `MAX_SOURCE_BYTES`; repository URLs must be `https://github.com/<owner>/<repo>` or
+  `git@github.com:<owner>/<repo>`; Slack and Discord webhook URLs must be the service's own addresses, because the
+  server posts to them
+- **Schedules**: file patterns may not climb out of the repository (`..`) and are checked again when a run
+  starts; types, cron expressions, intervals and thresholds are validated
+- The server listens on `127.0.0.1` unless `HOST` says otherwise. The sign-in is a cookie over plain HTTP: with
+  `HOST=0.0.0.0` anyone on the network can reach the app (and open a guest session with one click)
+- Errors are `{"detail": "...", "error": "..."}` (the same sentence under both names), validation errors included
+
 ## 🧪 Testing
 
 ```bash
@@ -676,7 +721,12 @@ pytest tests/test_*_endpoints.py -v            # API tests
 ```
 
 **Test Statistics**:
-- Total: 1008+ tests
+- Total: 1990+ tests (the front-end checks are static: no browser or Node is needed)
+- Sign-in as guest, data isolation between accounts, server hardening, the analysis flow and the Schedules
+  feature each have their own file: `test_guest_login.py`, `test_data_isolation.py`, `test_server_hardening.py`,
+  `test_analysis_and_schedules.py`
+- Not covered by the tests: the pages' appearance, a real Celery worker or Beat, cloning from GitHub, the AI
+  providers and the Slack/Discord/email senders
 - Service layer: 100% passing
 - E2E workflows: 15 comprehensive tests
 - Coverage: 89%+
@@ -854,6 +904,33 @@ Built as part of the AI Experiments Hub project series. Patterns reused from Pro
 ---
 
 ## 📈 Recent Updates
+
+### Version 13.6 / 13.7 - Guest sign-in, data isolation and a test-and-fix pass
+Found by using the app (details in the commit messages):
+- **Continue as Guest**, and the guest badge on every page
+- **A new guest saw every other account's 453 issues**: about 60 endpoints required a login and then read every
+  row. Everything is now scoped to its owner (see Security)
+- **The Analyze page said "No results available" after every successful analysis**: Celery kept the task's early
+  `SUCCESS` and dropped the returned report. JavaScript and Java uploads also came back empty (the page sent the
+  Python analyzers' names)
+- **Schedules never worked**: every endpoint failed on an undefined `get_db_session`, and the worker called the
+  analyzer with the wrong arguments and read its results in the wrong shape
+- **New rules**: SQL injection for Python (`SEC001`) and JavaScript (`JS-SEC007`), unsafe `yaml.load`; fewer false
+  "hardcoded secret" findings (`password_field = "Password"`); Java no longer reports one statement twice
+- **Security**: any account could make the server run any `.py` file (plugin loading), the rate limits could be
+  skipped with an `X-Forwarded-For` header, webhook URLs could point anywhere, and the issue page showed anyone's
+  code to anyone with its id
+- **Teams** could pick a team and nothing else: no way to create one, invite anyone or put a repository in one,
+  and every query behind the dashboard used columns that do not exist. Rebuilt page (create, invite, accept,
+  roles, leave, share, analytics, leaderboard, activity); invitations could never be accepted (a naive/aware
+  datetime comparison raised a 500); a team admin could make an owner; an email invitation could be taken by anyone
+  holding its token; trends ignored the last 6 hours on a machine west of UTC (UTC data against local time)
+- **One navigation bar** (Dashboard, Analyze, Repositories, Pull Requests, Issues, Teams, Schedules, More: Rule
+  builder, Plugins, GitHub App, Settings; Notifications) on every page, with the current page highlighted. Each page
+  had its own header with its own, different set of links
+- Smaller: blank repository name (`react` became `reac`, and the form's blank name was a 422), limits on inputs,
+  readable error messages, `/docs` returned 500, `/health` reported the computer's uptime, the Repositories
+  page listed the hidden uploads repository as a "pending" repository, missing stylesheet and favicon
 
 ### 🎉 Version 1.0.0 - Production Release (100% Complete)
 **Commit 13.5.17 (AKHIL-176)** - First production-ready release with comprehensive features and documentation:
