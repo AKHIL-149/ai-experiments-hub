@@ -179,6 +179,35 @@ curl http://localhost:8001/api/monitoring/health
 
 See [MONITORING.md](MONITORING.md) for complete guide.
 
+### Workflow Tracker
+
+```
+http://localhost:8001/workflow-tracker
+```
+
+A page for following your workflows step by step (the dashboard has a **Workflow Tracker** button). The list on the
+left shows every workflow with live progress and its current step; pick one to see each step in order: which agent ran
+it, how long it took, what it was asked, and what it produced (research and analysis text, writer content, code with its
+explanation, planner plans, or the error if it failed). It refreshes every 3 seconds while anything is running. You can
+start, cancel or delete a workflow from there, copy a result, or open the raw output. Everyone sees only their own
+workflows (admins see all).
+
+```bash
+# the same data as JSON (sign in first: see "Accounts and sign-in")
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8001/api/workflow-tracker?status=running
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8001/api/workflow-tracker/12
+```
+
+### Which agent handles which task
+
+A task goes to the agent with the matching role. The dashboard's task types map like this (see `TASK_TYPE_ROLES` in
+`src/services/task_service.py`): Research and Data Analysis go to a Researcher, Code Review to a Reviewer, Documentation
+to a Writer, Testing to a Tester, and Feature Development, Bug Fix, Refactoring, Optimization and Deployment to a Coder.
+A task type that is not listed (for example Custom) goes to the Coordinator. A workflow step's *agent type* works the
+same way (Planner steps run on the Coordinator). If no agent with the needed role exists the task fails with "No
+available agent found", so make sure each role has an agent: `python scripts/init_db.py` creates a default one for every
+role.
+
 ## 🧪 Testing
 
 The project includes a comprehensive test suite:
@@ -201,6 +230,7 @@ pytest -m integration  # Integration tests only
 - Agent execution workflows
 - Database operations
 - WebSocket connections
+- Workflow tracker: `tests/integration/test_workflow_tracker.py` and `tests/unit/test_workflow_tracker.py`; the markdown reader for agent answers (runs in node): `tests/unit/test_markdown_js.py`; task-type to agent-role mapping: `tests/unit/test_task_type_roles.py`
 - Sign-in portal: `tests/integration/test_portal.py` (accounts, guests, sessions, isolation, live presence); it starts its own server on a temporary database
 
 See [tests/README.md](tests/README.md) for testing guide.

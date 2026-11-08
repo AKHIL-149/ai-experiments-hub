@@ -1,0 +1,118 @@
+/* Workflow tracker page */
+* { box-sizing: border-box; }
+body { margin: 0; background: #f5f7fa; color: #2c3e50; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.tk-page { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+.tk-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 24px 28px; border-radius: 10px;
+  margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,.1); }
+.tk-header h1 { margin: 6px 0 4px; font-size: 26px; }
+.tk-header p { margin: 0; opacity: .9; }
+.tk-back { color: #fff; opacity: .9; text-decoration: none; font-size: 13px; }
+.tk-back:hover { opacity: 1; text-decoration: underline; }
+
+.tk-layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
+.tk-list-pane, .tk-detail-pane { background: #fff; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,.08); }
+.tk-list-pane { padding: 14px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.tk-detail-pane { padding: 22px 24px; min-height: 320px; }
+.tk-mobile-back { display: none; margin-bottom: 12px; }
+
+.tk-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tk-chip { border: 1px solid #dfe3ea; background: #fff; border-radius: 999px; padding: 3px 11px; font: inherit; font-size: 12px; cursor: pointer; color: #57607a; }
+.tk-chip:hover { border-color: #667eea; }
+.tk-chip[aria-pressed="true"] { background: #667eea; border-color: #667eea; color: #fff; }
+
+.tk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tk-item { display: block; width: 100%; text-align: left; border: 1px solid #e6e9f0; border-radius: 8px; padding: 10px 12px; background: #fff;
+  cursor: pointer; font: inherit; color: inherit; }
+.tk-item:hover { border-color: #667eea; }
+.tk-item[aria-current="true"] { border-color: #667eea; background: #f3f5ff; box-shadow: inset 3px 0 0 #667eea; }
+.tk-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tk-item-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-item-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 12px; color: #7a8399; }
+
+.tk-bar { height: 6px; border-radius: 999px; background: #e9ecf3; overflow: hidden; margin-top: 8px; }
+.tk-bar > span { display: block; height: 100%; background: #27ae60; transition: width .4s; }
+.tk-bar.has-failed > span { background: #e67e22; }
+
+.tk-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
+  padding: 2px 9px; border-radius: 999px; background: #eef0f6; color: #57607a; white-space: nowrap; }
+.tk-badge.running { background: #e4ecff; color: #2f49c2; }
+.tk-badge.running::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2f49c2; animation: tk-pulse 1.2s infinite; }
+.tk-badge.completed { background: #dff6e7; color: #1e7d44; }
+.tk-badge.failed { background: #fde4e1; color: #b3342a; }
+.tk-badge.paused { background: #fff1d1; color: #8a6100; }
+.tk-badge.cancelled, .tk-badge.skipped { background: #e9ebef; color: #6b7280; }
+@keyframes tk-pulse { 50% { opacity: .25; } }
+
+.tk-empty { color: #8a93a6; text-align: center; padding: 28px 12px; margin: 0; }
+.tk-empty a { color: #667eea; }
+
+/* detail */
+.tk-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tk-title-row h2 { margin: 0; font-size: 22px; overflow-wrap: anywhere; }
+.tk-desc { margin: 6px 0 0; color: #5d6780; overflow-wrap: anywhere; }
+.tk-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; }
+.tk-btn { border: 1px solid #dfe3ea; background: #fff; border-radius: 8px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: #2c3e50; }
+.tk-btn:hover { border-color: #667eea; }
+.tk-btn.primary { background: #667eea; border-color: #667eea; color: #fff; }
+.tk-btn.danger { color: #b3342a; }
+.tk-btn:disabled { opacity: .5; cursor: default; }
+.tk-notice { margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; background: #fde4e1; color: #b3342a; }
+
+.tk-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 18px 0; }
+.tk-stat { background: #f7f8fc; border-radius: 8px; padding: 10px 12px; }
+.tk-stat b { display: block; font-size: 18px; }
+.tk-stat span { font-size: 12px; color: #7a8399; }
+.tk-bar.large { height: 10px; margin: 14px 0 0; }
+
+.tk-steps { list-style: none; margin: 0; padding: 0; }
+.tk-step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 18px; }
+.tk-step:not(:last-child)::before { content: ""; position: absolute; left: 16px; top: 34px; bottom: 0; width: 2px; background: #e3e6ee; }
+.tk-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700;
+  background: #eef0f6; color: #57607a; z-index: 1; }
+.is-running .tk-num { background: #667eea; color: #fff; }
+.is-completed .tk-num { background: #27ae60; color: #fff; }
+.is-failed .tk-num { background: #e74c3c; color: #fff; }
+.tk-card { border: 1px solid #e6e9f0; border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.is-running .tk-card { border-color: #b9c8ff; }
+.is-failed .tk-card { border-color: #f3b9b3; }
+.tk-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tk-card-head h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.tk-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0; font-size: 12px; color: #7a8399; }
+.tk-meta b { color: #4a5470; font-weight: 600; }
+.tk-asked { margin: 6px 0 10px; padding: 6px 10px; border-left: 3px solid #d9dcf2; color: #5d6780; font-size: 13px; overflow-wrap: anywhere; }
+
+.tk-result-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #8a93a6; margin: 10px 0 4px; display: flex; justify-content: space-between; align-items: center; }
+.tk-text { overflow-wrap: anywhere; background: #fafbfe; border: 1px solid #eceff6; border-radius: 8px; padding: 10px 12px; }
+.tk-clamp { max-height: 15em; overflow: hidden; position: relative; }
+.tk-clamp::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3em; background: linear-gradient(transparent, #fafbfe); }
+.tk-code { margin: 0; background: #1e2433; color: #e6e9f2; border-radius: 8px; padding: 12px 14px; overflow-x: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+.tk-code.tk-clamp::after { background: linear-gradient(transparent, #1e2433); }
+.tk-link { background: none; border: 0; padding: 0; color: #667eea; cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; }
+.tk-error { background: #fde4e1; color: #8f2820; border-radius: 8px; padding: 10px 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.tk-waiting { color: #8a93a6; font-style: italic; margin: 8px 0 0; }
+.tk-metrics { margin-top: 8px; font-size: 12px; color: #7a8399; display: flex; gap: 14px; flex-wrap: wrap; }
+
+@media (max-width: 860px) {
+  .tk-page { padding: 12px; }
+  .tk-layout { grid-template-columns: 1fr; }
+  .tk-list-pane { position: static; max-height: none; }
+  .tk-header { padding: 20px 18px; padding-right: 150px; }
+  .tk-header h1 { font-size: 22px; }
+  .tk-detail-pane { padding: 16px; }
+  .tk-mobile-back { display: inline-block; }
+  .tk-layout.has-selection .tk-list-pane { display: none; }
+  .tk-layout:not(.has-selection) .tk-detail-pane { display: none; }
+}
+
+/* formatted answers */
+.tk-md > * { margin: 0 0 .65em; }
+.tk-md > :last-child { margin-bottom: 0; }
+.tk-md h4 { margin: 1em 0 .35em; font-size: 14px; color: #2c3e50; }
+.tk-md > h4:first-child { margin-top: 0; }
+.tk-md ul, .tk-md ol { padding-left: 1.4em; }
+.tk-md li { margin: .15em 0; }
+.tk-md li.lvl-1 { margin-left: 1.2em; } .tk-md li.lvl-2 { margin-left: 2.4em; } .tk-md li.lvl-3 { margin-left: 3.6em; }
+.tk-md code { background: #eceff8; border-radius: 4px; padding: .05em .35em; font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tk-md .tk-code code { background: none; padding: 0; color: inherit; }
+.tk-md a { color: #4f63d8; }

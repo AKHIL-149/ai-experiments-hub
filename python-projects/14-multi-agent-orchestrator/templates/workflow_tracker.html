@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Tracker - Multi-Agent Orchestrator</title>
+    <link rel="stylesheet" href="/static/css/portal.css">
+    <link rel="stylesheet" href="/static/css/tracker.css">
+    <script src="/static/js/portal.js"></script>
+</head>
+<body>
+    <div class="tk-page">
+        <header class="tk-header">
+            <a class="tk-back" href="/dashboard">&larr; Dashboard</a>
+            <h1>Workflow Tracker</h1>
+            <p>Follow every workflow step by step and read what each agent produced. Updates live.</p>
+        </header>
+
+        <div class="tk-layout" id="tkLayout">
+            <aside class="tk-list-pane" aria-label="Workflows">
+                <div class="tk-filters" id="tkFilters" role="group" aria-label="Filter by status"></div>
+                <ul class="tk-list" id="tkList"></ul>
+                <p class="tk-empty" id="tkListEmpty" hidden></p>
+            </aside>
+
+            <main class="tk-detail-pane" id="tkDetail" aria-live="polite">
+                <p class="tk-empty" id="tkDetailEmpty">Select a workflow to see its steps and results.</p>
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/js/markdown.js"></script>
+    <script src="/static/js/tracker.js"></script>
+</body>
+</html>

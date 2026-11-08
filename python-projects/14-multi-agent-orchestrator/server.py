@@ -19,6 +19,7 @@ from src.core.cache_middleware import ResponseCachingMiddleware
 from src.core.login_gate import LoginGateMiddleware
 from src.core import portal
 from src.api import presence
+from src.api import workflow_tracker
 from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management, secret_management, api_rate_limiting, data_retention, circuit_breaker, service_discovery, event_streaming, distributed_tracing, agent_profiling, agent_versioning, testing_framework, api_documentation, deployment_orchestration, environment_config, database_migration, monitoring_observability, log_aggregation, performance_optimization, capacity_planning, disaster_recovery, sla_management, resource_quota, multi_region, api_gateway, feature_flags, data_privacy, webhook_management, notification_service, search_indexing, analytics_dashboard, graphql_api, admin_dashboard, integration_testing, production_readiness, monitoring
 
 
@@ -100,6 +101,7 @@ app.include_router(load_balancer.router, prefix="/api/load-balancer", tags=["Loa
 app.include_router(health_monitor.router, prefix="/api/health-monitor", tags=["Health Monitor"])
 app.include_router(events.router, prefix="/api/events", tags=["Events"])
 app.include_router(workflow_engine.router, prefix="/api/workflow-engine", tags=["Workflow Engine"])
+app.include_router(workflow_tracker.router, prefix="/api/workflow-tracker", tags=["Workflow Tracker"])
 app.include_router(shared_memory.router, prefix="/api/shared-memory", tags=["Shared Memory"])
 app.include_router(communication_protocol.router, prefix="/api/communication", tags=["Communication"])
 app.include_router(task_decomposition.router, prefix="/api/task-decomposition", tags=["Task Decomposition"])
@@ -191,6 +193,12 @@ async def dashboard():
     """Serve monitoring dashboard HTML (it sends you to /login when you are not signed in)"""
     dashboard_path = os.path.join(os.path.dirname(__file__), "templates", "dashboard.html")
     return FileResponse(dashboard_path, headers=NO_STORE)
+
+
+@app.get("/workflow-tracker")
+async def workflow_tracker_page():
+    """Serve the workflow tracker page (progress of your workflows and what every step produced)"""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "templates", "workflow_tracker.html"), headers=NO_STORE)
 
 
 @app.get("/login")

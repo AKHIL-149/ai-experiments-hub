@@ -46,6 +46,32 @@ def _run_async(coro):
         return loop.run_until_complete(coro)
 
 
+# Which agent role handles which task_type. The names come from three vocabularies:
+# the API's own ("coding", "review", ...), the workflow engine's agent-registry keys
+# ("code", "writer", "planner", ...) and the dashboard's "Create Task" dropdown values.
+# A type that is missing here falls through to COORDINATOR, which no seeded agent has,
+# so the task fails with "No available agent found" - hence the dropdown values below.
+TASK_TYPE_ROLES = {
+    "research": AgentRole.RESEARCHER,
+    "coding": AgentRole.CODER,
+    "review": AgentRole.REVIEWER,
+    "testing": AgentRole.TESTER,
+    "documentation": AgentRole.WRITER,
+    "general": AgentRole.COORDINATOR,
+    "writer": AgentRole.WRITER,
+    "code": AgentRole.CODER,
+    "data_analyst": AgentRole.RESEARCHER,
+    "planner": AgentRole.COORDINATOR,
+    "code_review": AgentRole.REVIEWER,
+    "data_analysis": AgentRole.RESEARCHER,
+    "feature": AgentRole.CODER,
+    "bugfix": AgentRole.CODER,
+    "refactoring": AgentRole.CODER,
+    "optimization": AgentRole.CODER,
+    "deployment": AgentRole.CODER,
+}
+
+
 class TaskService:
     """Service for task management and orchestration"""
 
@@ -337,33 +363,7 @@ class TaskService:
 
         # Determine required role from task type if not provided
         if not required_role:
-            role_mapping = {
-                "research": AgentRole.RESEARCHER,
-                "coding": AgentRole.CODER,
-                "review": AgentRole.REVIEWER,
-                "testing": AgentRole.TESTER,
-                "documentation": AgentRole.WRITER,
-                "general": AgentRole.COORDINATOR,
-                # WorkflowEngine steps use the agent registry's own type
-                # keys (research/code/data_analyst/writer/planner), a
-                # different vocabulary than the one above - without these,
-                # every workflow step task_type ("writer", "code", ...)
-                # fell through to the default COORDINATOR role, which no
-                # seeded agent has.
-                "writer": AgentRole.WRITER,
-                "code": AgentRole.CODER,
-                "data_analyst": AgentRole.RESEARCHER,
-                "planner": AgentRole.COORDINATOR,
-                # A third vocabulary: the dashboard's own "Create Task"
-                # dropdown values (templates/dashboard.html) - confirmed
-                # live, picking "Data Analysis" from that dropdown created
-                # a task_type of "data_analysis" (not "data_analyst" or
-                # "research"), which fell through to COORDINATOR (no
-                # seeded agent) and failed every time.
-                "code_review": AgentRole.REVIEWER,
-                "data_analysis": AgentRole.RESEARCHER,
-            }
-            required_role = role_mapping.get(task.task_type, AgentRole.COORDINATOR)
+            required_role = TASK_TYPE_ROLES.get(task.task_type, AgentRole.COORDINATOR)
 
         # Find best available agent
         agent = AgentService.find_best_agent_for_role(session, required_role)
