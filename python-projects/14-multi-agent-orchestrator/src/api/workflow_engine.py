@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db_session
+from src.core.login_gate import Caller, get_caller
+from src.models.workflow import Workflow
 from src.services.workflow_engine import WorkflowEngine, WorkflowStatus, StepStatus
 from src.core.logging import logger
 
@@ -49,12 +51,26 @@ class CancelWorkflowRequest(BaseModel):
     reason: Optional[str] = Field(None, description="Cancellation reason")
 
 
+def workflow_access(
+    workflow_id: int,
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
+) -> None:
+    """A workflow made by somebody else is a 404 for you (admins see everything)"""
+    if caller is None or caller.is_admin:
+        return
+    row = db.query(Workflow.created_by).filter(Workflow.id == workflow_id).first()
+    if row is not None and row[0] != caller.user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow {workflow_id} not found")
+
+
 # Endpoints
 
 @router.post("")
 async def create_workflow(
     request: CreateWorkflowRequest,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
 ) -> Dict[str, Any]:
     """
     Create a new DAG workflow.
@@ -78,7 +94,8 @@ async def create_workflow(
             name=request.name,
             description=request.description,
             steps=steps_data,
-            metadata=request.metadata
+            metadata=request.metadata,
+            created_by=caller.user_id if caller else None,
         )
 
         return {
@@ -95,7 +112,7 @@ async def create_workflow(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/{workflow_id}/start")
+@router.post("/{workflow_id}/start", dependencies=[Depends(workflow_access)])
 async def start_workflow(
     workflow_id: int,
     db: Session = Depends(get_db_session)
@@ -130,7 +147,7 @@ async def start_workflow(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/{workflow_id}/pause")
+@router.post("/{workflow_id}/pause", dependencies=[Depends(workflow_access)])
 async def pause_workflow(
     workflow_id: int,
     db: Session = Depends(get_db_session)
@@ -162,7 +179,7 @@ async def pause_workflow(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/{workflow_id}/resume")
+@router.post("/{workflow_id}/resume", dependencies=[Depends(workflow_access)])
 async def resume_workflow(
     workflow_id: int,
     db: Session = Depends(get_db_session)
@@ -192,7 +209,7 @@ async def resume_workflow(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/{workflow_id}/cancel")
+@router.post("/{workflow_id}/cancel", dependencies=[Depends(workflow_access)])
 async def cancel_workflow(
     workflow_id: int,
     request: CancelWorkflowRequest,
@@ -224,7 +241,7 @@ async def cancel_workflow(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.get("/{workflow_id}/status")
+@router.get("/{workflow_id}/status", dependencies=[Depends(workflow_access)])
 async def get_workflow_status(
     workflow_id: int,
     db: Session = Depends(get_db_session)
@@ -257,7 +274,7 @@ async def get_workflow_status(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/{workflow_id}/steps/update")
+@router.post("/{workflow_id}/steps/update", dependencies=[Depends(workflow_access)])
 async def update_step_status(
     workflow_id: int,
     request: UpdateStepStatusRequest,
@@ -305,7 +322,8 @@ async def list_workflows(
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum workflows to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
 ) -> Dict[str, Any]:
     # `status` (the query param above) shadows the fastapi `status` module
     # imported at the top of this file within this function's scope - any
@@ -333,7 +351,8 @@ async def list_workflows(
             session=db,
             status=status,
             limit=limit,
-            offset=offset
+            offset=offset,
+            owner_id=None if caller is None or caller.is_admin else caller.user_id,
         )
 
         return {
@@ -347,7 +366,7 @@ async def list_workflows(
         raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.delete("/{workflow_id}")
+@router.delete("/{workflow_id}", dependencies=[Depends(workflow_access)])
 async def delete_workflow(
     workflow_id: int,
     db: Session = Depends(get_db_session)

@@ -2,6 +2,7 @@
 Seed data for database initialization
 """
 
+import os
 from typing import List, Dict, Any
 
 from src.core.database import DatabaseManager
@@ -312,6 +313,12 @@ class SeedData:
         Returns:
             dict: Seeding results
         """
+        # These accounts have passwords that are printed in this file. On a copy of the app other people
+        # can reach, that is an open admin account, so they are only made when asked for.
+        if os.getenv("SEED_DEMO_USERS", "").lower() not in ("1", "true", "yes"):
+            print("   Skipping demo users (set SEED_DEMO_USERS=true to create admin/user/viewer)")
+            return {'success': True, 'created': 0, 'skipped': 0}
+
         default_users = [
             {
                 'username': 'admin',

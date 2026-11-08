@@ -2,17 +2,33 @@
 Task management API endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 from src.core.database import get_db_session
+from src.core.login_gate import Caller, get_caller
 from src.core.logging import logger
 from src.models import Task, TaskStatus
 from src.workers.task_worker import update_task_status, execute_task
 
 router = APIRouter()
+
+
+def owned(query, caller: Optional[Caller]):
+    """Restrict a task query to the caller's own tasks (admins, and a gate that is off, see all)"""
+    if caller is None or caller.is_admin:
+        return query
+    return query.filter(Task.created_by_user_id == caller.user_id)
+
+
+def get_owned_task(db: Session, task_id: int, caller: Optional[Caller]) -> Task:
+    """The task, or 404: a task that belongs to somebody else looks exactly like one that does not exist"""
+    task = owned(db.query(Task), caller).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return task
 
 
 # Pydantic models for request/response
@@ -50,12 +66,13 @@ class TaskResponse(BaseModel):
 @router.get("/", response_model=List[TaskResponse])
 async def list_tasks(
     status: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
-    db: Session = Depends(get_db_session)
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
 ) -> List[Dict[str, Any]]:
     """
-    List all tasks with optional filtering
+    List your tasks (all of them for an admin) with optional filtering
 
     Args:
         status: Filter by task status
@@ -66,10 +83,13 @@ async def list_tasks(
     Returns:
         list: Tasks matching criteria
     """
-    query = db.query(Task)
+    query = owned(db.query(Task), caller)
 
     if status:
-        query = query.filter(Task.status == TaskStatus(status))
+        try:
+            query = query.filter(Task.status == TaskStatus(status))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown status '{status}'")
 
     tasks = query.order_by(Task.created_at.desc()).limit(limit).offset(offset).all()
 
@@ -90,7 +110,11 @@ async def list_tasks(
 
 
 @router.get("/{task_id}")
-async def get_task(task_id: int, db: Session = Depends(get_db_session)) -> Dict[str, Any]:
+async def get_task(
+    task_id: int,
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
+) -> Dict[str, Any]:
     """
     Get task details by ID
 
@@ -101,10 +125,7 @@ async def get_task(task_id: int, db: Session = Depends(get_db_session)) -> Dict[
     Returns:
         dict: Task details
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    task = get_owned_task(db, task_id, caller)
 
     return {
         "id": task.id,
@@ -126,7 +147,11 @@ async def get_task(task_id: int, db: Session = Depends(get_db_session)) -> Dict[
 
 
 @router.post("/", status_code=201)
-async def create_new_task(task: TaskCreate, db: Session = Depends(get_db_session)) -> Dict[str, Any]:
+async def create_new_task(
+    task: TaskCreate,
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
+) -> Dict[str, Any]:
     """
     Create a new task
 
@@ -137,8 +162,12 @@ async def create_new_task(task: TaskCreate, db: Session = Depends(get_db_session
     Returns:
         dict: Created task information
     """
+    if task.parent_task_id is not None:
+        get_owned_task(db, task.parent_task_id, caller)  # 404 unless it is yours
+
     try:
         new_task = Task(
+            created_by_user_id=caller.user_id if caller else None,
             title=task.title,
             description=task.description,
             task_type=task.task_type,
@@ -178,7 +207,12 @@ async def create_new_task(task: TaskCreate, db: Session = Depends(get_db_session
 
 
 @router.patch("/{task_id}")
-async def update_task(task_id: int, task_update: TaskUpdate) -> Dict[str, Any]:
+async def update_task(
+    task_id: int,
+    task_update: TaskUpdate,
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
+) -> Dict[str, Any]:
     """
     Update task status or output
 
@@ -189,6 +223,8 @@ async def update_task(task_id: int, task_update: TaskUpdate) -> Dict[str, Any]:
     Returns:
         dict: Update result
     """
+    get_owned_task(db, task_id, caller)
+
     if task_update.status:
         result = update_task_status.delay(
             task_id=task_id,
@@ -207,7 +243,11 @@ async def update_task(task_id: int, task_update: TaskUpdate) -> Dict[str, Any]:
 
 
 @router.delete("/{task_id}", status_code=204)
-async def delete_task(task_id: int, db: Session = Depends(get_db_session)):
+async def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
+):
     """
     Delete a task
 
@@ -215,10 +255,7 @@ async def delete_task(task_id: int, db: Session = Depends(get_db_session)):
         task_id: Task ID
         db: Database session
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    task = get_owned_task(db, task_id, caller)
 
     db.delete(task)
     db.commit()
@@ -227,7 +264,11 @@ async def delete_task(task_id: int, db: Session = Depends(get_db_session)):
 
 
 @router.get("/{task_id}/dependencies")
-async def get_task_dependencies(task_id: int, db: Session = Depends(get_db_session)) -> Dict[str, Any]:
+async def get_task_dependencies(
+    task_id: int,
+    db: Session = Depends(get_db_session),
+    caller: Optional[Caller] = Depends(get_caller),
+) -> Dict[str, Any]:
     """
     Get task dependencies
 
@@ -238,10 +279,7 @@ async def get_task_dependencies(task_id: int, db: Session = Depends(get_db_sessi
     Returns:
         dict: Task dependencies
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    task = get_owned_task(db, task_id, caller)
 
     dependency_ids = task.get_dependency_ids()
 

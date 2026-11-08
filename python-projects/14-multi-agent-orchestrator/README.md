@@ -31,7 +31,29 @@ python3 server.py
 PYTHONPATH=. celery -A celery_app worker --loglevel=info -Q celery,tasks,agents,orchestration,monitoring
 ```
 
-Server runs on **http://localhost:8001**
+Server runs on **http://localhost:8001**. Open it, and you land on the sign-in page.
+
+## 🔐 Accounts and sign-in
+
+The app has its own sign-in portal, so everyone who reaches **your running copy** uses **their own account**:
+
+- **Create account** (username + password, email optional), **Sign in**, or **Continue as guest** (no details, removed after `GUEST_TTL_HOURS` = 24 h without use; a guest can turn the account into a real one and keep their tasks).
+- **Per installation:** each clone has its own database and its own token-signing key (generated on first launch into `data/.jwt_secret`, git-ignored). Nothing is shared between copies and no account or password ships in the repository.
+- **Other devices:** set `API_HOST=0.0.0.0` (the default in `.env.example`) and people on your network open `http://<your-computer>:8001` from their own devices and make their own accounts. Each sign-in is a device session: the panel at the top right lists your devices and signs any of them out, and a signed-out device is cut off immediately.
+- **Real time:** the bar at the top right shows who is online right now, and sign-ins, sign-outs, new accounts and guests appear live to everyone (WebSocket `/api/ws/presence`, authenticated by its first message, not the URL).
+- **Your data is yours:** tasks and workflows (and the dashboard numbers) belong to their creator; other accounts get a 404 for them. Admins (`ADMIN_USERNAMES`) see everything.
+- **Safety:** passwords are bcrypt-hashed (8-72 bytes); failed sign-ins are throttled per account (5 / 15 min) and per address; account and guest creation are limited per address; `X-Forwarded-For` is ignored unless `TRUST_PROXY=true`; the API answers 401 without a valid session (`REQUIRE_LOGIN=false` turns that off).
+- **Existing data:** tasks created before accounts existed have no owner, so only admins see them.
+
+From a script, sign in once and send the token with every call (all the `curl` examples below need it):
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8001/api/auth/login -H "Content-Type: application/json" \
+  -d '{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8001/api/tasks/
+```
+
+API: `POST /api/auth/register | login | guest | refresh | logout | guest/upgrade | change-password`, `GET /api/auth/me | sessions | online`, `DELETE /api/auth/sessions/{id}`; send `Authorization: Bearer <access_token>`.
 
 📚 **Full Setup Guide**: See [STARTUP.md](STARTUP.md) for detailed installation instructions
 
@@ -179,6 +201,7 @@ pytest -m integration  # Integration tests only
 - Agent execution workflows
 - Database operations
 - WebSocket connections
+- Sign-in portal: `tests/integration/test_portal.py` (accounts, guests, sessions, isolation, live presence); it starts its own server on a temporary database
 
 See [tests/README.md](tests/README.md) for testing guide.
 
@@ -252,9 +275,9 @@ curl -X POST http://localhost:8001/api/workflow-engine/workflows \
   -d @examples/workflows/code_review_workflow.json
 ```
 
-**Monitor via WebSocket:**
+**Monitor via WebSocket** (sign in first; the task sockets take `?token=<access_token>` and only open for your own tasks):
 ```javascript
-const ws = new WebSocket('ws://localhost:8001/ws/tasks/{task_id}');
+const ws = new WebSocket('ws://localhost:8001/api/ws/tasks/{task_id}?token=' + accessToken);
 ws.onmessage = (event) => {
   const update = JSON.parse(event.data);
   console.log('Task update:', update);

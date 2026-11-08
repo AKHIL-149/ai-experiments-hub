@@ -6,6 +6,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+import asyncio
 from contextlib import asynccontextmanager
 import os
 
@@ -14,6 +16,9 @@ from src.core.logging import setup_logging, logger
 from src.core.middleware import RequestLoggingMiddleware, ErrorTrackingMiddleware
 from src.core.rate_limit_middleware import RateLimitMiddleware
 from src.core.cache_middleware import ResponseCachingMiddleware
+from src.core.login_gate import LoginGateMiddleware
+from src.core import portal
+from src.api import presence
 from src.api import tasks, agents, health, metrics, auth, workflows, websockets, errors, rate_limits, cache, messages, memory, orchestration, executions, analytics, lifecycle, scheduler, capabilities, priorities, dependencies, resources, collaboration, load_balancer, health_monitor, events, workflow_engine, shared_memory, communication_protocol, task_decomposition, conflict_resolution, agent_consensus, coalition_formation, agent_negotiation, agent_reputation, agent_incentive, agent_learning, agent_knowledge, agent_performance, agent_role, workflow_template, agent_discovery, agent_contract, agent_auction, agent_trust, agent_coordination, human_approval, cost_tracking, performance_monitoring, alert_management, audit_logging, backup_recovery, config_management, secret_management, api_rate_limiting, data_retention, circuit_breaker, service_discovery, event_streaming, distributed_tracing, agent_profiling, agent_versioning, testing_framework, api_documentation, deployment_orchestration, environment_config, database_migration, monitoring_observability, log_aggregation, performance_optimization, capacity_planning, disaster_recovery, sla_management, resource_quota, multi_region, api_gateway, feature_flags, data_privacy, webhook_management, notification_service, search_indexing, analytics_dashboard, graphql_api, admin_dashboard, integration_testing, production_readiness, monitoring
 
 
@@ -29,9 +34,18 @@ async def lifespan(app: FastAPI):
     logger.info(f"🤖 Default LLM: {settings.DEFAULT_LLM_PROVIDER}/{settings.DEFAULT_MODEL}")
     logger.info(f"📝 Log Level: {settings.LOG_LEVEL}")
 
+    # Accounts: create the users/sessions tables and the task owner column if this database predates them
+    portal.ensure_schema()
+    portal.housekeeping()
+    housekeeping_task = asyncio.create_task(portal.housekeeping_loop())
+    logger.info(
+        "🔐 Sign-in portal: " + ("required for the API" if portal.REQUIRE_LOGIN else "OFF (REQUIRE_LOGIN=false)")
+    )
+
     yield
 
     # Shutdown
+    housekeeping_task.cancel()
     logger.info(f"🛑 Shutting down {settings.APP_NAME}")
 
 
@@ -50,6 +64,9 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(ErrorTrackingMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(ResponseCachingMiddleware)
+# Outside the response cache so the cache sees who is asking; inside CORS so preflights and error
+# responses still carry the CORS headers
+app.add_middleware(LoginGateMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -63,6 +80,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(presence.router, prefix="/api", tags=["Presence"])
 app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
@@ -149,6 +167,10 @@ app.include_router(cache.router, prefix="/api", tags=["Cache"])
 app.include_router(monitoring.router)
 
 
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -161,11 +183,20 @@ async def root():
     }
 
 
+NO_STORE = {"Cache-Control": "no-store"}
+
+
 @app.get("/dashboard")
 async def dashboard():
-    """Serve monitoring dashboard HTML"""
+    """Serve monitoring dashboard HTML (it sends you to /login when you are not signed in)"""
     dashboard_path = os.path.join(os.path.dirname(__file__), "templates", "dashboard.html")
-    return FileResponse(dashboard_path)
+    return FileResponse(dashboard_path, headers=NO_STORE)
+
+
+@app.get("/login")
+async def login_page():
+    """Serve the sign-in page"""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "templates", "login.html"), headers=NO_STORE)
 
 
 if __name__ == "__main__":
@@ -174,5 +205,7 @@ if __name__ == "__main__":
         host=settings.API_HOST,
         port=settings.API_PORT,
         reload=settings.DEBUG,
+        # uvicorn would believe X-Forwarded-For from localhost and let any caller pick their own address
+        proxy_headers=portal.TRUST_PROXY,
         log_level=settings.LOG_LEVEL.lower(),
     )

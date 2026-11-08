@@ -28,7 +28,8 @@ class ResponseCachingMiddleware(BaseHTTPMiddleware):
 
     # Cache TTL per endpoint (in seconds)
     ENDPOINT_TTL = {
-        "/api/tasks": 60,  # 1 minute
+        # /api/tasks is not cached: it is per account and changes whenever a task is made, so a cached
+        # list showed "No tasks yet" for up to a minute after creating one
         "/api/agents": 120,  # 2 minutes
         "/api/agents/available": 30,  # 30 seconds
         "/api/metrics/summary": 300,  # 5 minutes
@@ -174,10 +175,13 @@ class ResponseCachingMiddleware(BaseHTTPMiddleware):
         Returns:
             str: Cache key
         """
-        # Include path and query parameters
+        # Include path and query parameters, and who is asking: /api/tasks answers differ per account,
+        # and a shared key would hand one user's list to the next
+        caller = getattr(request.state, "caller", None)
         key_parts = [
             request.url.path,
-            str(sorted(request.query_params.items()))
+            str(sorted(request.query_params.items())),
+            f"user:{caller.user_id}" if caller else "anonymous",
         ]
 
         # Create hash

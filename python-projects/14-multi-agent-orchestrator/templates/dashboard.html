@@ -491,6 +491,8 @@
             color: #e74c3c;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/portal.css">
+    <script src="/static/js/portal.js"></script>
 </head>
 <body>
     <div class="container">
@@ -756,7 +758,7 @@
                 document.getElementById('overview-metrics').innerHTML = overviewHTML;
             } catch (error) {
                 document.getElementById('overview-metrics').innerHTML =
-                    `<div class="error">Failed to load overview metrics: ${error.message}</div>`;
+                    `<div class="error">Failed to load overview metrics: ${esc(error.message)}</div>`;
             }
         }
 
@@ -767,14 +769,14 @@
 
                 const statusClass = `status-${data.status}`;
                 const issuesHTML = data.issues.length > 0
-                    ? `<ul style="margin-top: 10px; padding-left: 20px;">${data.issues.map(i => `<li>${i}</li>`).join('')}</ul>`
+                    ? `<ul style="margin-top: 10px; padding-left: 20px;">${data.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
                     : '<p style="margin-top: 10px; color: #27ae60;">All systems operational</p>';
 
                 const healthHTML = `
                     <div class="section">
                         <h2 class="section-title">💚 System Health</h2>
                         <div>
-                            <span class="status-badge ${statusClass}">${data.status.toUpperCase()}</span>
+                            <span class="status-badge ${statusClass}">${esc(data.status.toUpperCase())}</span>
                             ${issuesHTML}
                         </div>
                     </div>
@@ -783,7 +785,7 @@
                 document.getElementById('health-status').innerHTML = healthHTML;
             } catch (error) {
                 document.getElementById('health-status').innerHTML =
-                    `<div class="error">Failed to load system health: ${error.message}</div>`;
+                    `<div class="error">Failed to load system health: ${esc(error.message)}</div>`;
             }
         }
 
@@ -801,7 +803,7 @@
                             <div class="metric-label">By Status</div>
                             ${Object.entries(byStatus).map(([status, count]) => `
                                 <div style="margin: 8px 0;">
-                                    <strong>${status}:</strong> ${count}
+                                    <strong>${esc(status)}:</strong> ${count}
                                 </div>
                             `).join('')}
                         </div>
@@ -809,7 +811,7 @@
                             <div class="metric-label">By Priority</div>
                             ${Object.entries(byPriority).map(([priority, count]) => `
                                 <div style="margin: 8px 0;">
-                                    <strong>${priority}:</strong> ${count}
+                                    <strong>${esc(priority)}:</strong> ${count}
                                 </div>
                             `).join('')}
                         </div>
@@ -823,7 +825,7 @@
                 document.getElementById('task-metrics').innerHTML = metricsHTML;
             } catch (error) {
                 document.getElementById('task-metrics').innerHTML =
-                    `<div class="error">Failed to load task metrics: ${error.message}</div>`;
+                    `<div class="error">Failed to load task metrics: ${esc(error.message)}</div>`;
             }
         }
 
@@ -841,7 +843,7 @@
                 const agentsHTML = agents.map(agent => `
                     <div class="agent-item">
                         <div class="agent-info">
-                            <div class="agent-name">${agent.agent_name} (${agent.agent_role})</div>
+                            <div class="agent-name">${esc(agent.agent_name)} (${esc(agent.agent_role)})</div>
                             <div class="agent-stats">
                                 ${agent.total_executions} executions |
                                 ${agent.success_rate}% success |
@@ -850,7 +852,7 @@
                         </div>
                         <div>
                             <span class="status-badge ${agent.status === 'ACTIVE' ? 'status-healthy' : 'status-warning'}">
-                                ${agent.status}
+                                ${esc(agent.status)}
                             </span>
                         </div>
                     </div>
@@ -859,7 +861,7 @@
                 document.getElementById('agent-performance').innerHTML = agentsHTML;
             } catch (error) {
                 document.getElementById('agent-performance').innerHTML =
-                    `<div class="error">Failed to load agent performance: ${error.message}</div>`;
+                    `<div class="error">Failed to load agent performance: ${esc(error.message)}</div>`;
             }
         }
 
@@ -877,7 +879,7 @@
                             <div class="metric-label">By Status</div>
                             ${Object.entries(byStatus).map(([status, count]) => `
                                 <div style="margin: 8px 0;">
-                                    <strong>${status}:</strong> ${count}
+                                    <strong>${esc(status)}:</strong> ${count}
                                 </div>
                             `).join('')}
                         </div>
@@ -885,7 +887,7 @@
                             <div class="metric-label">By Type</div>
                             ${Object.entries(byType).map(([type, count]) => `
                                 <div style="margin: 8px 0;">
-                                    <strong>${type}:</strong> ${count}
+                                    <strong>${esc(type)}:</strong> ${count}
                                 </div>
                             `).join('')}
                         </div>
@@ -899,7 +901,7 @@
                 document.getElementById('workflow-metrics').innerHTML = metricsHTML;
             } catch (error) {
                 document.getElementById('workflow-metrics').innerHTML =
-                    `<div class="error">Failed to load workflow metrics: ${error.message}</div>`;
+                    `<div class="error">Failed to load workflow metrics: ${esc(error.message)}</div>`;
             }
         }
 
@@ -924,15 +926,15 @@
                 document.getElementById('recent-tasks').innerHTML = tasks.map(t => `
                     <div class="agent-item" style="cursor: pointer; border-left-color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};" onclick="openTaskDetail(${t.id})">
                         <div class="agent-info">
-                            <div class="agent-name">${t.title} <span style="font-weight:400; color:#95a5a6;">#${t.id}</span></div>
-                            <div class="agent-stats">${t.task_type} &middot; ${new Date(t.created_at).toLocaleString()}</div>
+                            <div class="agent-name">${esc(t.title)} <span style="font-weight:400; color:#95a5a6;">#${t.id}</span></div>
+                            <div class="agent-stats">${esc(t.task_type)} &middot; ${new Date(t.created_at).toLocaleString()}</div>
                         </div>
-                        <div style="font-weight: 600; color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">${t.status} ›</div>
+                        <div style="font-weight: 600; color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">${esc(t.status)} ›</div>
                     </div>
                 `).join('');
             } catch (error) {
                 document.getElementById('recent-tasks').innerHTML =
-                    `<div class="error">Failed to load recent tasks: ${error.message}</div>`;
+                    `<div class="error">Failed to load recent tasks: ${esc(error.message)}</div>`;
             }
         }
 
@@ -1019,30 +1021,30 @@
                 const canCancel = CANCELLABLE_STATUSES.includes(task.status);
 
                 document.getElementById('taskDetailBody').innerHTML = `
-                    <h3 style="margin-bottom: 4px;">${task.title}</h3>
+                    <h3 style="margin-bottom: 4px;">${esc(task.title)}</h3>
                     <div style="color:#95a5a6; margin-bottom: 15px;">
-                        #${task.id} &middot; ${task.task_type} &middot;
-                        <span style="color:${TASK_STATUS_COLORS[task.status] || '#667eea'}; font-weight:600;">${task.status}</span>
+                        #${task.id} &middot; ${esc(task.task_type)} &middot;
+                        <span style="color:${TASK_STATUS_COLORS[task.status] || '#667eea'}; font-weight:600;">${esc(task.status)}</span>
                         ${task.assigned_agent_id ? ` &middot; agent #${task.assigned_agent_id}` : ''}
                     </div>
                     <div class="form-group">
                         <label>Task description</label>
-                        <div style="padding: 10px; background: #f8f9fa; border-radius: 6px;">${task.description}</div>
+                        <div style="padding: 10px; background: #f8f9fa; border-radius: 6px;">${esc(task.description)}</div>
                     </div>
                     ${outputText ? `
                         <div class="form-group">
                             <label>Result</label>
                             <div style="padding: 4px 14px; background: #f8f9fa; border-radius: 6px; max-height: 400px; overflow-y: auto;">${renderMarkdownLite(outputText)}</div>
                         </div>
-                    ` : task.status === 'completed' ? '<div>No output recorded.</div>' : `<div style="color:#95a5a6;">Still ${task.status} - reopen this task in a moment.</div>`}
-                    ${task.error_message ? `<div class="form-group"><label>Error</label><div style="padding: 10px; background: #fdecea; color: #c0392b; border-radius: 6px;">${task.error_message}</div></div>` : ''}
+                    ` : task.status === 'completed' ? '<div>No output recorded.</div>' : `<div style="color:#95a5a6;">Still ${esc(task.status)} - reopen this task in a moment.</div>`}
+                    ${task.error_message ? `<div class="form-group"><label>Error</label><div style="padding: 10px; background: #fdecea; color: #c0392b; border-radius: 6px;">${esc(task.error_message)}</div></div>` : ''}
                     <div class="form-actions" style="margin-top: 20px;">
                         ${canCancel ? `<button type="button" class="btn btn-secondary" onclick="cancelTaskAction(${task.id})">🛑 Stop / Cancel Task</button>` : ''}
                         <button type="button" class="btn btn-secondary" style="color:#e74c3c; margin-left:auto;" onclick="deleteTaskAction(${task.id}, true)">🗑️ Delete Task</button>
                     </div>
                 `;
             } catch (error) {
-                document.getElementById('taskDetailBody').innerHTML = `<div class="error">Failed to load task: ${error.message}</div>`;
+                document.getElementById('taskDetailBody').innerHTML = `<div class="error">Failed to load task: ${esc(error.message)}</div>`;
             }
         }
 
@@ -1129,11 +1131,11 @@
                 listDiv.innerHTML += tasks.map(t => `
                     <div class="agent-item" style="border-left-color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">
                         <div class="agent-info" style="cursor: pointer;" onclick="openTaskDetail(${t.id})">
-                            <div class="agent-name">${t.title} <span style="font-weight:400; color:#95a5a6;">#${t.id}</span></div>
-                            <div class="agent-stats">${t.task_type} &middot; ${new Date(t.created_at).toLocaleString()}</div>
+                            <div class="agent-name">${esc(t.title)} <span style="font-weight:400; color:#95a5a6;">#${t.id}</span></div>
+                            <div class="agent-stats">${esc(t.task_type)} &middot; ${new Date(t.created_at).toLocaleString()}</div>
                         </div>
                         <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="font-weight: 600; color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">${t.status}</span>
+                            <span style="font-weight: 600; color: ${TASK_STATUS_COLORS[t.status] || '#667eea'};">${esc(t.status)}</span>
                             ${CANCELLABLE_STATUSES.includes(t.status) ? `<button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="cancelTaskAction(${t.id}); event.stopPropagation();">Stop</button>` : ''}
                             <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:12px; color:#e74c3c;" onclick="deleteTaskAction(${t.id}, false); event.stopPropagation();">Delete</button>
                         </div>
@@ -1145,7 +1147,7 @@
                 btn.disabled = false;
                 btn.textContent = 'Load More';
             } catch (error) {
-                document.getElementById('allTasksList').innerHTML += `<div class="error">Failed to load tasks: ${error.message}</div>`;
+                document.getElementById('allTasksList').innerHTML += `<div class="error">Failed to load tasks: ${esc(error.message)}</div>`;
                 btn.disabled = false;
                 btn.textContent = 'Load More';
             }
@@ -1448,9 +1450,9 @@
                             <div style="margin-top: 10px; padding: 10px; border-radius: 6px; background: ${
                                 s.taskStatus === 'completed' ? '#e8f8ee' : s.taskStatus === 'failed' ? '#fdecea' : '#f5f5f5'
                             };">
-                                <div><strong>${s.name}</strong> - ${s.taskStatus}</div>
+                                <div><strong>${esc(s.name)}</strong> - ${esc(s.taskStatus)}</div>
                                 ${truncated ? `<div style="margin-top: 6px; font-size: 0.9em;">${renderMarkdownLite(truncated)}</div>` : ''}
-                                ${s.error ? `<div style="margin-top: 6px; color: #c0392b; font-size: 0.9em;">${s.error}</div>` : ''}
+                                ${s.error ? `<div style="margin-top: 6px; color: #c0392b; font-size: 0.9em;">${esc(s.error)}</div>` : ''}
                             </div>
                         `;
                         }).join('')}
@@ -1467,7 +1469,7 @@
                     btn.textContent = '⏱️ Still running (check back later)';
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<div class="error">Failed to poll workflow status: ${error.message}</div>`;
+                resultDiv.innerHTML = `<div class="error">Failed to poll workflow status: ${esc(error.message)}</div>`;
             }
         }
 

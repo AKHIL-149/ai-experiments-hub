@@ -18,7 +18,7 @@ from src.models import (
 class MonitoringService:
     """Service for collecting monitoring metrics and dashboard data"""
 
-    def get_dashboard_overview(self, db: Session) -> Dict[str, Any]:
+    def get_dashboard_overview(self, db: Session, owner_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Get high-level overview metrics for dashboard
 
@@ -29,21 +29,30 @@ class MonitoringService:
         last_24h = now - timedelta(hours=24)
         last_7d = now - timedelta(days=7)
 
+        # Task and workflow counts are the caller's own (owner_id None = everyone's); agents are shared
+        task_scope = [Task.created_by_user_id == owner_id] if owner_id is not None else []
+        workflow_scope = [Workflow.created_by == owner_id] if owner_id is not None else []
+
         # Task metrics
-        total_tasks = db.query(func.count(Task.id)).scalar()
+        total_tasks = db.query(func.count(Task.id)).filter(*task_scope).scalar()
         tasks_pending = db.query(func.count(Task.id)).filter(
+            *task_scope,
             Task.status == TaskStatus.PENDING
         ).scalar()
         tasks_running = db.query(func.count(Task.id)).filter(
+            *task_scope,
             Task.status == TaskStatus.IN_PROGRESS
         ).scalar()
         tasks_completed = db.query(func.count(Task.id)).filter(
+            *task_scope,
             Task.status == TaskStatus.COMPLETED
         ).scalar()
         tasks_failed = db.query(func.count(Task.id)).filter(
+            *task_scope,
             Task.status == TaskStatus.FAILED
         ).scalar()
         tasks_24h = db.query(func.count(Task.id)).filter(
+            *task_scope,
             Task.created_at >= last_24h
         ).scalar()
 
@@ -75,11 +84,13 @@ class MonitoringService:
         ).scalar()
 
         # Workflow metrics
-        total_workflows = db.query(func.count(Workflow.id)).scalar()
+        total_workflows = db.query(func.count(Workflow.id)).filter(*workflow_scope).scalar()
         workflows_running = db.query(func.count(Workflow.id)).filter(
+            *workflow_scope,
             Workflow.status == WorkflowStatus.RUNNING
         ).scalar()
         workflows_completed = db.query(func.count(Workflow.id)).filter(
+            *workflow_scope,
             Workflow.status == WorkflowStatus.COMPLETED
         ).scalar()
 
@@ -130,7 +141,8 @@ class MonitoringService:
     def get_task_metrics(
         self,
         db: Session,
-        time_range: str = "24h"
+        time_range: str = "24h",
+        owner_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Get detailed task metrics over time
@@ -154,11 +166,14 @@ class MonitoringService:
         else:
             start_time = now - timedelta(hours=24)
 
+        task_scope = [Task.created_by_user_id == owner_id] if owner_id is not None else []
+
         # Tasks by status in time range
         tasks_by_status = db.query(
             Task.status,
             func.count(Task.id).label('count')
         ).filter(
+            *task_scope,
             Task.created_at >= start_time
         ).group_by(Task.status).all()
 
@@ -167,6 +182,7 @@ class MonitoringService:
             Task.priority,
             func.count(Task.id).label('count')
         ).filter(
+            *task_scope,
             Task.created_at >= start_time
         ).group_by(Task.priority).all()
 
@@ -177,6 +193,7 @@ class MonitoringService:
                 func.extract('epoch', Task.completed_at - Task.started_at)
             ).label('avg_duration')
         ).filter(
+            *task_scope,
             Task.status == TaskStatus.COMPLETED,
             Task.completed_at.isnot(None),
             Task.started_at.isnot(None),
@@ -263,7 +280,7 @@ class MonitoringService:
 
         return performance_data
 
-    def get_workflow_metrics(self, db: Session) -> Dict[str, Any]:
+    def get_workflow_metrics(self, db: Session, owner_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Get workflow execution metrics
 
@@ -272,17 +289,20 @@ class MonitoringService:
         """
         now = datetime.utcnow()
 
+        # Counts cover the caller's own workflows (owner_id None = everyone's)
+        workflow_scope = [Workflow.created_by == owner_id] if owner_id is not None else []
+
         # Workflows by status
         workflows_by_status = db.query(
             Workflow.status,
             func.count(Workflow.id).label('count')
-        ).group_by(Workflow.status).all()
+        ).filter(*workflow_scope).group_by(Workflow.status).all()
 
         # Workflows by type
         workflows_by_type = db.query(
             Workflow.workflow_type,
             func.count(Workflow.id).label('count')
-        ).group_by(Workflow.workflow_type).all()
+        ).filter(*workflow_scope).group_by(Workflow.workflow_type).all()
 
         # Average workflow duration
         avg_duration_result = db.query(
@@ -290,6 +310,7 @@ class MonitoringService:
                 func.extract('epoch', Workflow.completed_at - Workflow.started_at)
             ).label('avg_duration')
         ).filter(
+            *workflow_scope,
             Workflow.status == WorkflowStatus.COMPLETED,
             Workflow.completed_at.isnot(None),
             Workflow.started_at.isnot(None)
@@ -298,9 +319,11 @@ class MonitoringService:
         avg_duration = avg_duration_result if avg_duration_result else 0
 
         # Recent workflows (last 10)
-        recent_workflows = db.query(Workflow).order_by(
-            Workflow.created_at.desc()
-        ).limit(10).all()
+        # The counts above are system-wide; the names listed here are only the caller's own workflows
+        recent_query = db.query(Workflow)
+        if owner_id is not None:
+            recent_query = recent_query.filter(Workflow.created_by == owner_id)
+        recent_workflows = recent_query.order_by(Workflow.created_at.desc()).limit(10).all()
 
         return {
             "by_status": {

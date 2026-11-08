@@ -4,6 +4,8 @@ Rate Limiting Middleware for FastAPI
 Applies rate limiting to incoming requests based on user role and endpoint.
 """
 
+import os
+import time
 from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -58,6 +60,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """
         path = request.url.path
 
+        # RATE_LIMIT_ENABLED=false switches the per-address/per-account request limits off (tests)
+        if os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "false":
+            return await call_next(request)
+
         # Skip rate limiting for exempt endpoints
         if path in self.EXEMPT_ENDPOINTS:
             return await call_next(request)
@@ -77,6 +83,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Check for endpoint-specific limits
         endpoint_config = self._get_endpoint_limit(path, request.method)
+
+        # Used by the 429 below when the very first check is the one that refuses (it was unbound then,
+        # so a rate-limited request answered 500 instead of 429)
+        reset_time = int(time.time()) + rate_limit_config["window_seconds"]
 
         try:
             # Apply global rate limit
@@ -177,19 +187,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             str: Client IP address
         """
-        # Check for X-Forwarded-For header (proxy/load balancer)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # Take first IP in the list
-            return forwarded_for.split(",")[0].strip()
-
-        # Check for X-Real-IP header
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-
-        # Fall back to direct client IP
-        return request.client.host if request.client else "unknown"
+        # Anyone can send these headers, so a different value per request would give every request its
+        # own limit: they only count behind a proxy that sets them (TRUST_PROXY=true)
+        from src.core.portal import client_ip
+        return client_ip(request)
 
     def _add_rate_limit_headers(
         self,

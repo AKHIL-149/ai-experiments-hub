@@ -3,6 +3,11 @@ Pytest configuration and shared fixtures
 """
 
 import os
+
+# The existing API tests call the app without signing in; the portal's own tests (test_portal.py) run
+# a separate server with the sign-in gate on
+os.environ.setdefault('REQUIRE_LOGIN', 'false')
+
 import pytest
 from typing import Generator
 from sqlalchemy import create_engine

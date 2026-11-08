@@ -4,7 +4,7 @@ User model for authentication
 
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from passlib.context import CryptContext
 
@@ -20,6 +20,10 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     USER = "user"
     VIEWER = "viewer"
+
+
+GUEST_EMAIL_DOMAIN = "guest.local"
+GUEST_USERNAME_PREFIX = "guest_"
 
 
 class User(Base):
@@ -99,6 +103,11 @@ class User(Base):
         self.api_calls_count += 1
         self.last_api_call = datetime.utcnow()
 
+    @property
+    def is_guest(self) -> bool:
+        """Guest accounts are throwaway: their email is in the reserved guest domain"""
+        return (self.email or "").lower().endswith("@" + GUEST_EMAIL_DOMAIN)
+
     def is_admin(self) -> bool:
         """Check if user is admin"""
         return self.role == UserRole.ADMIN or self.is_superuser
@@ -126,7 +135,42 @@ class User(Base):
             'role': self.role.value,
             'is_active': self.is_active,
             'is_superuser': self.is_superuser,
+            'is_guest': self.is_guest,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'api_calls_count': self.api_calls_count
+        }
+
+
+
+class UserSession(Base):
+    """
+    One sign-in on one device.
+
+    Every login (or guest start) creates a row; the access and refresh tokens carry its id, so signing
+    out, or revoking a device from another device, ends that sign-in at once.
+    """
+    __tablename__ = "user_sessions"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device = Column(String(120), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+
+    def is_active(self, now: datetime = None) -> bool:
+        now = now or datetime.utcnow()
+        return self.revoked_at is None and self.expires_at > now
+
+    def to_dict(self, current_id: str = None) -> dict:
+        return {
+            'id': self.id,
+            'device': self.device,
+            'ip_address': self.ip_address,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_seen_at': self.last_seen_at.isoformat() if self.last_seen_at else None,
+            'current': self.id == current_id,
         }

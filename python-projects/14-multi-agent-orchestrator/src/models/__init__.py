@@ -8,7 +8,7 @@ from src.models.agent_execution import AgentExecution, ExecutionStatus
 from src.models.agent_message import AgentMessage, MessageType, MessagePriority, MessageStatus
 from src.models.shared_memory import SharedMemory, MemoryScope, MemoryType
 from src.models.workflow import Workflow, WorkflowStatus, WorkflowType, WorkflowStep
-from src.models.user import User, UserRole
+from src.models.user import User, UserRole, UserSession
 
 __all__ = [
     "Task",
@@ -32,5 +32,6 @@ __all__ = [
     "WorkflowType",
     "WorkflowStep",
     "User",
+    "UserSession",
     "UserRole",
 ]

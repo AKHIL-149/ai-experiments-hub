@@ -50,10 +50,11 @@ class WorkflowEngine:
         name: str,
         description: Optional[str] = None,
         steps: List[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        created_by: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Create a new workflow definition.
+        Create a new workflow definition (`created_by`: id of the user who owns it and its step tasks).
 
         Args:
             session: Database session
@@ -92,7 +93,8 @@ class WorkflowEngine:
             "name": name,
             "description": description,
             "status": WorkflowStatus.PENDING,
-            "extra_metadata": metadata or {}
+            "extra_metadata": metadata or {},
+            "created_by": created_by
         }
 
         # Store workflow definition in metadata
@@ -281,6 +283,7 @@ class WorkflowEngine:
             description=step.get("task_description", ""),
             task_type=step.get("agent_type", "general"),
             status="pending",
+            created_by_user_id=workflow.created_by,
             context={
                 "workflow_id": workflow.id,
                 "step_id": step["step_id"],
@@ -610,10 +613,11 @@ class WorkflowEngine:
         session: Session,
         status: Optional[str] = None,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        owner_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        List workflows with optional filtering.
+        List workflows with optional filtering (`owner_id`: only that user's workflows).
 
         Args:
             session: Database session
@@ -625,6 +629,9 @@ class WorkflowEngine:
             Dictionary with workflows and pagination info
         """
         query = session.query(Workflow)
+
+        if owner_id is not None:
+            query = query.filter(Workflow.created_by == owner_id)
 
         if status:
             query = query.filter(Workflow.status == status)

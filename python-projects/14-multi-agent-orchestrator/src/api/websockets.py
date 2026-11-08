@@ -7,12 +7,67 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
 from uuid import uuid4
 import json
 
+import asyncio
+
+from fastapi import HTTPException
+
+from src.core import portal
+from src.core.auth import authenticate_token
+from src.core.database import SessionLocal
 from src.core.websocket import connection_manager
-from src.core.auth import get_current_user_ws
 from src.core.logging import logger
+from src.models.task import Task
 
 
 router = APIRouter()
+
+
+async def authenticate_socket(websocket: WebSocket, token: Optional[str], admin_only: bool = False):
+    """
+    The user id of a valid token (None when sign-in is not required and none was given); closes the
+    socket and returns False if it is not allowed in. Browsers cannot set headers on a WebSocket,
+    so these endpoints take the access token in the query string.
+    """
+    if not portal.REQUIRE_LOGIN and not token:
+        return None
+
+    def check():
+        db = SessionLocal()
+        try:
+            user, _ = authenticate_token(token or "", db)
+            return user.id, user.is_admin()
+        finally:
+            db.close()
+
+    try:
+        user_id, is_admin = await asyncio.to_thread(check)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Invalid or missing token")
+        return False
+    if admin_only and not is_admin:
+        await websocket.close(code=1008, reason="Admin only")
+        return False
+    return user_id
+
+
+async def can_watch_task(user_id: Optional[int], task_id: int) -> bool:
+    """You may follow your own tasks (an admin or a disabled sign-in gate: any task)"""
+    if user_id is None:
+        return True
+
+    def check():
+        db = SessionLocal()
+        try:
+            from src.models.user import User
+            user = db.query(User).filter(User.id == user_id).first()
+            if user is not None and user.is_admin():
+                return True
+            owner = db.query(Task.created_by_user_id).filter(Task.id == task_id).first()
+            return owner is not None and owner[0] == user_id
+        finally:
+            db.close()
+
+    return await asyncio.to_thread(check)
 
 
 @router.websocket("/ws")
@@ -48,18 +103,10 @@ async def websocket_endpoint(
     user_id = None
 
     try:
-        # Authenticate user if token provided
-        if token:
-            try:
-                # In production, validate JWT token here
-                # For now, we'll accept any token and extract user info
-                # user = await get_current_user_ws(token)
-                # user_id = user.id
-                pass
-            except Exception as e:
-                logger.warning(f"WebSocket auth failed: {e}")
-                await websocket.close(code=1008, reason="Invalid token")
-                return
+        # Signed-in users only; the broadcast channel carries every user's events, so it is admin-only
+        user_id = await authenticate_socket(websocket, token, admin_only=True)
+        if user_id is False:
+            return
 
         # Accept connection
         await connection_manager.connect(websocket, connection_id, user_id)
@@ -189,15 +236,12 @@ async def task_websocket(
     room_name = f"task_{task_id}"
 
     try:
-        # Authenticate if token provided
-        if token:
-            try:
-                # Validate token and get user
-                pass
-            except Exception as e:
-                logger.warning(f"WebSocket auth failed: {e}")
-                await websocket.close(code=1008, reason="Invalid token")
-                return
+        user_id = await authenticate_socket(websocket, token)
+        if user_id is False:
+            return
+        if not await can_watch_task(user_id, task_id):
+            await websocket.close(code=1008, reason="Task not found")
+            return
 
         # Accept connection and join task room
         await connection_manager.connect(websocket, connection_id, user_id)
@@ -257,15 +301,9 @@ async def agent_websocket(
     room_name = f"agent_{agent_id}"
 
     try:
-        # Authenticate if token provided
-        if token:
-            try:
-                # Validate token and get user
-                pass
-            except Exception as e:
-                logger.warning(f"WebSocket auth failed: {e}")
-                await websocket.close(code=1008, reason="Invalid token")
-                return
+        user_id = await authenticate_socket(websocket, token)
+        if user_id is False:
+            return
 
         # Accept connection and join agent room
         await connection_manager.connect(websocket, connection_id, user_id)

@@ -47,6 +47,9 @@ class Task(Base):
     # Primary Key
     id = Column(Integer, primary_key=True, index=True)
 
+    # Who created it (a users.id); None for tasks made before accounts existed or by the system
+    created_by_user_id = Column(Integer, nullable=True, index=True)
+
     # Task Information
     title = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=False)

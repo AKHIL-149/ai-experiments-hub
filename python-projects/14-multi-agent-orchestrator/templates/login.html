@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - Multi-Agent Orchestrator</title>
+    <link rel="stylesheet" href="/static/css/login.css">
+</head>
+<body>
+    <main class="card">
+        <h1>🤖 Multi-Agent Orchestrator</h1>
+        <p class="lead">Sign in to run tasks and workflows with your own account.</p>
+
+        <div id="notice" class="notice" role="status" hidden></div>
+
+        <div class="tabs" role="tablist">
+            <button type="button" role="tab" id="tab-signin" class="tab active" aria-selected="true" aria-controls="form-signin">Sign in</button>
+            <button type="button" role="tab" id="tab-register" class="tab" aria-selected="false" aria-controls="form-register">Create account</button>
+        </div>
+
+        <form id="form-signin" autocomplete="on">
+            <label for="si-username">Username or email</label>
+            <input id="si-username" name="username" autocomplete="username" required maxlength="254" autofocus>
+            <label for="si-password">Password</label>
+            <input id="si-password" name="password" type="password" autocomplete="current-password" required maxlength="1024">
+            <p class="error" id="si-error" role="alert"></p>
+            <button type="submit" class="primary">Sign in</button>
+        </form>
+
+        <form id="form-register" autocomplete="on" hidden>
+            <label for="rg-username">Username</label>
+            <input id="rg-username" name="username" autocomplete="username" required minlength="3" maxlength="30"
+                   pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,29}" title="3-30 letters, numbers, dots, dashes or underscores">
+            <label for="rg-email">Email <span class="optional">(optional)</span></label>
+            <input id="rg-email" name="email" type="email" autocomplete="email" maxlength="254">
+            <label for="rg-password">Password <span class="optional">(8 or more characters)</span></label>
+            <input id="rg-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72">
+            <p class="error" id="rg-error" role="alert"></p>
+            <button type="submit" class="primary">Create account</button>
+        </form>
+
+        <div class="divider"><span>or</span></div>
+        <button type="button" id="guest-btn" class="secondary">Continue as guest</button>
+        <p class="hint">A guest account needs no details and is removed after a day without use.
+           Every device gets its own account: yours is not visible to anyone else.</p>
+    </main>
+    <script src="/static/js/login.js"></script>
+</body>
+</html>
