@@ -142,8 +142,9 @@
                 <div class="tab-content active" id="file-tab">
                     <div class="upload-area" id="dropzone">
                         <i class="fas fa-cloud-upload-alt"></i>
-                        <p>Drag & drop video file here or click to browse</p>
-                        <input type="file" id="file-input" accept="video/*" hidden>
+                        <p>Drag & drop a video or audio file here, or click to browse</p>
+                        <p class="upload-hint">Video: mp4, mov, mkv, avi, webm. Audio: mp3, wav, m4a, aac, flac, ogg, opus, wma.</p>
+                        <input type="file" id="file-input" accept="video/*,audio/*,.mkv,.wma,.opus,.m4a" hidden>
                         <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
                             Choose File
                         </button>
@@ -188,6 +189,7 @@
                             <option value="1080p">1080p</option>
                             <option value="720p" selected>720p</option>
                             <option value="480p">480p</option>
+                            <option value="audio">Audio only (mp3)</option>
                         </select>
                     </div>
                     <button class="btn btn-success" onclick="uploadYouTube()">
@@ -347,6 +349,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=11"></script>
+    <script src="/static/app.js?v=12"></script>
 </body>
 </html>

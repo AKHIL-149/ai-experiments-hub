@@ -93,6 +93,10 @@ def ensure_account_schema(engine) -> None:
     insp = inspect(engine)
     if "videos" in insp.get_table_names():
         columns = {c["name"] for c in insp.get_columns("videos")}
+        if "media_type" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE videos ADD COLUMN media_type VARCHAR(10) NOT NULL DEFAULT 'video'"))
+            logger.info("Added videos.media_type")
         if "user_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE videos ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE"))

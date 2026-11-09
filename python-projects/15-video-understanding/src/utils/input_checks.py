@@ -18,6 +18,10 @@ from urllib.parse import urlparse
 MAX_TITLE_LENGTH = 200
 MAX_DESCRIPTION_LENGTH = 2000
 
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".webm")
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma")
+ALLOWED_EXTENSIONS = VIDEO_EXTENSIONS + AUDIO_EXTENSIONS
+
 
 class InvalidMedia(ValueError):
     """The file is not a video the pipeline can process (the message says why)"""
@@ -29,6 +33,11 @@ class MediaInfo:
     width: Optional[int]
     height: Optional[int]
     has_audio: bool
+    kind: str = "video"   # "audio" when there is no moving picture: podcasts, music, voice memos, audio-only .mp4
+
+    @property
+    def has_video(self) -> bool:
+        return self.kind == "video"
 
 
 def _ffprobe() -> str:
@@ -38,7 +47,9 @@ def _ffprobe() -> str:
 def probe_media(path: str, timeout: float = 30.0) -> MediaInfo:
     """
     Ask ffprobe what the file really is. A name ending in .mp4 proves nothing:
-    text files, empty files and audio-only files all get that far.
+    text files and empty files get that far, and so do audio-only files, which are now accepted as audio
+    (kind == "audio"). Cover art in an .mp3 is not a video: ffprobe lists it as a video stream with the
+    attached_pic flag, and it is ignored here.
 
     Raises InvalidMedia with a one-line reason a user can act on.
     """
@@ -57,24 +68,32 @@ def probe_media(path: str, timeout: float = 30.0) -> MediaInfo:
     except ValueError:
         data = {}
     if result.returncode != 0 or not data.get("streams"):
-        raise InvalidMedia("The file is not a valid video (it is empty, damaged or not a video)")
+        raise InvalidMedia("The file is not a valid video or audio file (it is empty, damaged or something else)")
 
-    video = next((s for s in data["streams"] if s.get("codec_type") == "video"), None)
-    if video is None:
-        raise InvalidMedia("The file has no video stream (audio-only files are not supported)")
+    streams = data["streams"]
+    video = next(
+        (s for s in streams
+         if s.get("codec_type") == "video" and not (s.get("disposition") or {}).get("attached_pic")),
+        None,
+    )
+    audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    if video is None and audio is None:
+        raise InvalidMedia("The file has no video or audio stream")
+    main = video or audio
 
     try:
-        duration = float(data.get("format", {}).get("duration") or video.get("duration") or 0)
+        duration = float(data.get("format", {}).get("duration") or main.get("duration") or 0)
     except (TypeError, ValueError):
         duration = 0.0
     if duration <= 0:
-        raise InvalidMedia("The video has no length (it is empty or damaged)")
+        raise InvalidMedia("The file has no length (it is empty or damaged)")
 
     return MediaInfo(
         duration=duration,
-        width=video.get("width"),
-        height=video.get("height"),
-        has_audio=any(s.get("codec_type") == "audio" for s in data["streams"]),
+        width=video.get("width") if video else None,
+        height=video.get("height") if video else None,
+        has_audio=audio is not None,
+        kind="video" if video else "audio",
     )
 
 

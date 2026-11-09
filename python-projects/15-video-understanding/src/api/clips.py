@@ -30,7 +30,9 @@ class CreateClipRequest(BaseModel):
     start_time: float = Field(..., ge=0.0, description="Start timestamp (seconds)")
     end_time: float = Field(..., gt=0.0, description="End timestamp (seconds)")
     include_audio: bool = Field(True, description="Include audio in clip")
-    format: Literal["mp4", "webm", "gif"] = Field("mp4", description="Output format (mp4, webm, gif)")
+    format: Optional[Literal["mp4", "webm", "gif", "mp3"]] = Field(
+        None, description="Output format: mp4, webm or gif for a video, mp3 for the sound only. "
+                          "Default: mp4 for a video, mp3 for an audio file")
     resolution: Optional[Literal["480p", "720p", "1080p", "original"]] = Field(
         None, description="Resolution (480p, 720p, 1080p, original)"
     )
@@ -85,6 +87,21 @@ class BatchClipRequest(BaseModel):
     video_id: str
     clips: List[CreateClipRequest]
     create_highlight_reel: bool = Field(False, description="Also create reel from clips")
+
+
+def resolve_clip_format(media_type: Optional[str], request: "CreateClipRequest") -> str:
+    """
+    The format a clip gets: mp4 for a video and mp3 for an audio file when none was asked for. An audio
+    file can only be clipped as mp3 (there is no picture for mp4, webm or gif), and a clip with the sound
+    switched off cannot be an mp3. Raises HTTPException 400 with the reason.
+    """
+    audio = (media_type or "video") == "audio"
+    chosen = request.format or ("mp3" if audio else "mp4")
+    if audio and chosen != "mp3":
+        raise HTTPException(status_code=400, detail=f"This is an audio file: clips can only be mp3, not {chosen}")
+    if chosen == "mp3" and not request.include_audio:
+        raise HTTPException(status_code=400, detail="An mp3 clip is only sound: include_audio cannot be false")
+    return chosen
 
 
 def _clip_to_response(clip, db) -> "ClipResponse":
@@ -158,6 +175,7 @@ async def create_clip(
                 raise HTTPException(status_code=404, detail="Video not found")
             if not video.file_path:
                 raise HTTPException(status_code=400, detail="Video has no source file")
+            request.format = resolve_clip_format(video.media_type, request)
             # A clip can only come from footage that exists: 55-300 s of a
             # 60 s video used to be stored as a 245 s clip of 5 s
             length = video.duration_seconds or 0.0
@@ -240,7 +258,14 @@ async def create_clips_batch(
     try:
         logger.info(f"Creating {len(request.clips)} clips for video {video_id}")
 
-        # TODO: Verify video exists
+        from src.core.database import get_db
+        with get_db() as db:
+            source = find_video(db, video_id)
+            if not source:
+                raise HTTPException(status_code=404, detail="Video not found")
+            formats = {resolve_clip_format(source.media_type, c) for c in request.clips}  # 400 before anything is made
+        if request.create_highlight_reel and len({f == "mp3" for f in formats}) > 1:
+            raise HTTPException(status_code=400, detail="A reel cannot mix audio (mp3) clips with video clips")
 
         clips = []
         for clip_req in request.clips:
@@ -270,7 +295,7 @@ async def create_clips_batch(
                     title="Highlight Reel",
                     start_time=0.0,
                     end_time=total_duration,
-                    format="mp4",
+                    format="mp3" if formats == {"mp3"} else "mp4",
                     resolution="original",
                     status=ClipStatus.PENDING,
                     extra_metadata={"is_reel": True, "source_clip_ids": clip_ids},
@@ -347,6 +372,12 @@ async def create_highlight_reel(
                     detail=f"Clips not ready (must be completed): {not_ready}"
                 )
 
+            # a reel of sound clips is an mp3; sound and picture cannot be joined into one file
+            kinds = {c.format == "mp3" for c in clips}
+            if len(kinds) > 1:
+                raise HTTPException(status_code=400, detail="A reel cannot mix audio (mp3) clips with video clips")
+            reel_format = "mp3" if kinds == {True} else "mp4"
+
             # Associate the reel with the first clip's source video, so it's
             # queryable through the same /clips endpoints as a normal clip
             reel_video_id = clips[0].video_id
@@ -363,7 +394,7 @@ async def create_highlight_reel(
                 description=request.description,
                 start_time=0.0,
                 end_time=total_duration,
-                format="mp4",
+                format=reel_format,
                 resolution="original",
                 status=ClipStatus.PENDING,
                 extra_metadata={"is_reel": True, "source_clip_ids": request.clip_ids},
@@ -387,7 +418,7 @@ async def create_highlight_reel(
             start_time=0.0,
             end_time=total_duration,
             duration=total_duration,
-            format="mp4",
+            format=reel_format,
             resolution="original",
             status="pending",
             created_at=datetime.utcnow(),
@@ -576,7 +607,7 @@ async def download_clip(clip_id: str):
 
             return FileResponse(
                 path=clip.file_path,
-                media_type={"webm": "video/webm", "gif": "image/gif"}.get(clip.format, "video/mp4"),
+                media_type={"webm": "video/webm", "gif": "image/gif", "mp3": "audio/mpeg"}.get(clip.format, "video/mp4"),
                 filename=f"{clip.title}.{clip.format}",
             )
 
@@ -660,8 +691,10 @@ async def create_clip_task(
 
         from src.services.highlights.clip_creator import ClipCreator, ClipConfig
 
+        audio_clip = config.format == "mp3"
         clip_config = ClipConfig(
             output_format=config.format,
+            audio_only=audio_clip,
             include_audio=config.include_audio,
             fade_in_duration=0.5 if config.add_fade else 0.0,
             fade_out_duration=0.5 if config.add_fade else 0.0,
@@ -681,9 +714,11 @@ async def create_clip_task(
 
         metadata = await asyncio.to_thread(_create)
 
-        # Thumbnail from the clip's midpoint
+        # Thumbnail from the clip's midpoint (an mp3 has no picture)
         thumbnail_path = None
         try:
+            if audio_clip:
+                raise RuntimeError("audio clips have no thumbnail")
             from src.core.video_processor import create_video_processor
             processor = create_video_processor()
             thumb_dir = Path("./storage/clips/thumbnails")
@@ -695,7 +730,8 @@ async def create_clip_task(
             )
             thumbnail_path = str(thumb_path)
         except Exception as e:
-            logger.warning(f"Thumbnail generation failed for clip {clip_id}: {e}")
+            if not audio_clip:
+                logger.warning(f"Thumbnail generation failed for clip {clip_id}: {e}")
 
         with get_db() as db:
             clip_row = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
@@ -714,6 +750,26 @@ async def create_clip_task(
             if clip_row:
                 clip_row.status = ClipStatus.FAILED
                 clip_row.error_message = str(e)
+
+
+def os_path_getsize(path: str) -> int:
+    import os
+    return os.path.getsize(path)
+
+
+def _concat_mp3(clip_paths: List[str], output_path: str) -> str:
+    """Join mp3 clips, one after the other, into one mp3 (no transitions: the sound just continues)"""
+    import subprocess
+    inputs = []
+    for path in clip_paths:
+        inputs.extend(["-i", path])
+    graph = "".join(f"[{i}:a]" for i in range(len(clip_paths))) + f"concat=n={len(clip_paths)}:v=0:a=1[out]"
+    command = ["ffmpeg", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[out]",
+               "-c:a", "libmp3lame", "-q:a", "2", "-y", output_path]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {(result.stderr or '')[-300:]}")
+    return output_path
 
 
 async def create_highlight_reel_task(
@@ -749,10 +805,22 @@ async def create_highlight_reel_task(
             by_id = {c.external_id: c for c in source_clips}
             ordered_clips = [by_id[cid] for cid in clip_ids]
             clip_paths = [c.file_path for c in ordered_clips]
+            reel_formats = [c.format for c in ordered_clips]
             durations = [c.end_time - c.start_time for c in ordered_clips]
             if not reel_row or any(p is None for p in clip_paths):
                 raise RuntimeError(f"Reel {reel_id} or one of its source clips is missing a file")
             reel_row.status = ClipStatus.PROCESSING
+
+        if all(c_format == "mp3" for c_format in reel_formats):
+            reel_path = await asyncio.to_thread(_concat_mp3, clip_paths, f"./storage/clips/reel_{reel_id}.mp3")
+            with get_db() as db:
+                reel_row = db.query(ClipModel).filter(ClipModel.external_id == reel_id).first()
+                reel_row.file_path = reel_path
+                reel_row.file_size = os_path_getsize(reel_path)
+                reel_row.status = ClipStatus.COMPLETED
+                reel_row.completed_at = datetime.utcnow()
+            logger.info(f"Audio highlight reel {reel_id} created: {reel_path}")
+            return
 
         from src.services.highlights.exporter import HighlightExporter, ExportConfig, TransitionConfig
 

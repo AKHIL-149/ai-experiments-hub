@@ -752,3 +752,9 @@ textarea.form-control {
         flex-direction: column;
     }
 }
+
+.upload-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}

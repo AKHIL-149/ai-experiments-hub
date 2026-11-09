@@ -69,6 +69,9 @@ class Video(Base):
     # Who the video belongs to (NULL: uploaded before accounts existed; the first account adopts it)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
 
+    # "video", or "audio" for podcasts, music and voice memos (no frames, scenes or visual analysis)
+    media_type = Column(String(10), nullable=False, default="video", server_default="video")
+
     # Basic information
     title = Column(String(500), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -119,6 +122,7 @@ class Video(Base):
             "id": self.external_id or str(self.id),
             "title": self.title,
             "description": self.description,
+            "media_type": self.media_type or "video",
             "source_type": self.source_type.value,
             "source_url": self.source_url,
             "file_path": self.file_path,

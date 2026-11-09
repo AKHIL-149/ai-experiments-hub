@@ -18,6 +18,7 @@ from src.services.video_cleanup import purge_video
 from src.core.access import find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video
 from src.core.database import get_db
 from src.utils.input_checks import (
+    ALLOWED_EXTENSIONS,
     InvalidMedia, probe_media, short_error, is_youtube_url, check_public_http_url,
     clean_title, clean_description, fit_segments_to_duration,
 )
@@ -48,13 +49,14 @@ class VideoUploadResponse(BaseModel):
     created_at: datetime
     job_id: Optional[str] = None          # the queue job that will do the work
     queue_position: Optional[int] = None  # 1 = next in line
+    media_type: str = "video"             # "audio" for audio-only files
 
 
 class YouTubeVideoRequest(BaseModel):
     """Request to process YouTube video"""
     url: str = Field(..., description="YouTube video URL")
     title: Optional[str] = Field(None, description="Optional custom title")
-    download_quality: str = Field("best", description="Download quality (best, 1080p, 720p, 480p)")
+    download_quality: str = Field("best", description="Download quality (best, 1080p, 720p, 480p), or audio for the sound only (mp3)")
 
 
 class StreamingVideoRequest(BaseModel):
@@ -74,6 +76,7 @@ class VideoResponse(BaseModel):
     file_path: Optional[str] = None
     thumbnail_path: Optional[str] = None
     processing_status: str
+    media_type: str = "video"             # "video" or "audio"
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -193,15 +196,14 @@ async def upload_video(
         logger.info(f"Uploading video: {file.filename}")
         owner_id, max_mb = _upload_allowance()
 
-        # Validate file type
-        allowed_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+        # Validate file type (video or audio; ffprobe below decides which it really is)
         import os
         file_ext = os.path.splitext(file.filename)[1].lower()
 
-        if file_ext not in allowed_extensions:
+        if file_ext not in ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+                detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
             )
 
         # Generate video ID
@@ -246,7 +248,7 @@ async def upload_video(
                 os.remove(file_path)
             raise
 
-        logger.info(f"Saved video to {file_path}")
+        logger.info(f"Saved {media.kind} to {file_path}")
         duration = media.duration
 
         job_id = position = None
@@ -257,6 +259,7 @@ async def upload_video(
                 title=video_title,
                 description=description,
                 source_type=SourceType.LOCAL,
+                media_type=media.kind,
                 file_path=file_path,
                 duration_seconds=duration,
                 processing_status=VideoStatus.PENDING,
@@ -270,9 +273,9 @@ async def upload_video(
         if auto_process:
             job_queue.notify()
             position = _position_of(job_id)
-            status_msg = "Video uploaded and queued for processing"
+            status_msg = f"{'Audio' if media.kind == 'audio' else 'Video'} uploaded and queued for processing"
         else:
-            status_msg = "Video uploaded successfully"
+            status_msg = f"{'Audio' if media.kind == 'audio' else 'Video'} uploaded successfully"
 
         return VideoUploadResponse(
             video_id=video_id,
@@ -284,6 +287,7 @@ async def upload_video(
             created_at=datetime.utcnow(),
             job_id=job_id,
             queue_position=position,
+            media_type=media.kind,
         )
 
     except HTTPException:
@@ -587,7 +591,10 @@ async def get_video_status(video_id: str):
             from src.api.websockets import get_latest_progress
             job = _job_fields(db, [video]).get(video.id, {})
             waiting = job.get("job_status") == "queued"
-            live = get_latest_progress(video_id) if video.processing_status == VideoStatus.PROCESSING else None
+            # The analysis marks a video completed before the summary, highlights and chapters are written, so
+            # while its job still runs the live progress is the truth, whatever the status column says
+            running = job.get("job_status") == "running"
+            live = get_latest_progress(video_id) if (video.processing_status == VideoStatus.PROCESSING or running) else None
             progress = 100.0 if video.processing_status == VideoStatus.COMPLETED and not job else (
                 float(live["progress"]) if live and not waiting else 0.0
             )
@@ -670,7 +677,81 @@ def _aggregate_scene_actions(actions: list, start_time: float, end_time: float) 
     return {"activity_ratio": activity_ratio, "dominant_action": dominant_action}
 
 
-def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None, check_cancel=None) -> dict:
+def _apply_diarization(audio_path, transcription) -> None:
+    """Label transcript segments with speakers (pyannote.audio), if a HuggingFace token is configured"""
+    from src.core.config import settings
+    if not (settings.diarization_use_auth_token and settings.hf_token):
+        return
+    try:
+        from src.services.speaker_diarization import SpeakerDiarization
+        diarizer = SpeakerDiarization(hf_token=settings.hf_token)
+        diarization_result = diarizer.diarize(audio_path)
+        merged = diarizer.merge_with_transcription(diarization_result, transcription.segments)
+        for seg, merged_seg in zip(transcription.segments, merged):
+            seg.speaker = merged_seg["speaker"]
+        logger.info(f"Diarization found {diarization_result.num_speakers} speakers")
+    except Exception as e:
+        logger.warning(f"Speaker diarization failed, continuing without it: {e}")
+
+
+def _run_audio_analysis(audio_file: str, media_uuid: str, progress_callback=None, check_cancel=None) -> dict:
+    """
+    The analysis of an audio-only file (podcast, lecture recording, voice memo, audio-only .mp4):
+    transcription, speakers, and sections cut at pauses in the speech, each with its audio energy. There is no
+    picture, so no frames, scene detection, captioning, objects, faces, OCR or CLIP; the sections stand in for
+    scenes so that the summary, chapters, highlights and timeline work from the transcript.
+
+    Returns the same shape as _run_video_analysis (with no sampled frames and no keyframes).
+    """
+    from pathlib import Path
+    from src.core.config import settings
+    from src.core.video_processor import create_video_processor
+    from src.services.transcription_service import TranscriptionService
+    from src.services.audio_features import AudioFeatureExtractor
+    from src.utils.audio_sections import build_sections, sections_to_scenes
+
+    path = Path(audio_file)
+    checkpoint = check_cancel or (lambda: None)
+    processor = create_video_processor()
+
+    audio_path = Path(settings.temp_path) / f"{media_uuid}.wav"
+    processor.extract_audio(path, audio_path)
+    checkpoint()
+
+    transcriber = TranscriptionService(prefer_local=True, model_name=settings.whisper_model)
+    transcription = transcriber.transcribe(audio_path, use_local=True)
+    duration = probe_media(str(path)).duration
+    transcription.segments = fit_segments_to_duration(transcription.segments, duration)
+    checkpoint()
+
+    _apply_diarization(audio_path, transcription)
+
+    scenes = sections_to_scenes(build_sections(transcription.segments, duration))
+    audio_extractor = AudioFeatureExtractor()
+    results = []
+    for index, scene in enumerate(scenes):
+        checkpoint()
+        audio_energy = 0.0
+        try:
+            features = audio_extractor.extract_segment_features(audio_path, scene.start_time, scene.end_time)
+            audio_energy = min(1.0, features.rms_energy * 10)  # same scaling as for video scenes
+        except Exception as e:
+            logger.warning(f"Audio feature extraction failed for section {scene.scene_id}: {e}")
+        results.append({
+            "scene": scene, "keyframe_path": None, "caption": "", "objects": [], "faces": [], "ocr_text": "",
+            "activity_ratio": 0.0, "dominant_action": None, "audio_energy": audio_energy, "clip_embedding": None,
+        })
+        if progress_callback:
+            try:
+                progress_callback(index, len(scenes))
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+
+    return {"sampled_frame_paths": [], "scenes": results, "transcription": transcription, "audio_only": True}
+
+
+def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None, check_cancel=None,
+                        media_type: str = "video") -> dict:
     """
     Real (synchronous, CPU/IO-bound) analysis pipeline: sparse frame
     sampling, scene detection, audio transcription, per-scene keyframe
@@ -685,7 +766,12 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     check_cancel(), if given, is called between stages and before every scene; it raises JobCancelled when the
     job was cancelled (or the server is shutting down). A stage that is already running (transcribing a long
     video, say) finishes first: it cannot be interrupted from outside.
+
+    media_type "audio" runs _run_audio_analysis instead: no picture, so none of the visual stages.
     """
+    if media_type == "audio":
+        return _run_audio_analysis(video_path, video_uuid, progress_callback, check_cancel)
+
     from pathlib import Path
     from src.core.config import settings
     from src.core.video_processor import create_video_processor
@@ -732,18 +818,7 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
 
     checkpoint()
 
-    # Real speaker diarization (pyannote.audio), if a HF token is configured
-    if settings.diarization_use_auth_token and settings.hf_token:
-        try:
-            from src.services.speaker_diarization import SpeakerDiarization
-            diarizer = SpeakerDiarization(hf_token=settings.hf_token)
-            diarization_result = diarizer.diarize(audio_path)
-            merged = diarizer.merge_with_transcription(diarization_result, transcription.segments)
-            for seg, merged_seg in zip(transcription.segments, merged):
-                seg.speaker = merged_seg["speaker"]
-            logger.info(f"Diarization found {diarization_result.num_speakers} speakers")
-        except Exception as e:
-            logger.warning(f"Speaker diarization failed, continuing without it: {e}")
+    _apply_diarization(audio_path, transcription)
 
     # Real motion-based action recognition, once for the whole video
     try:
@@ -962,6 +1037,7 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
                 "processing_started_at": datetime.utcnow().isoformat(),
             }
             file_path = video.file_path
+            audio_only = (video.media_type or "video") == "audio"
 
             # Clear any prior analysis before regenerating, so running this more than once (a reprocess)
             # does not duplicate scenes/frames/transcripts (confirmed live: a second run doubled every count)
@@ -974,9 +1050,9 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
         # (runs off the event loop; it's CPU/subprocess-bound)
         await send_progress_update(
             video_id=video_id,
-            stage="frame_extraction",
+            stage="transcription" if audio_only else "frame_extraction",
             progress=10.0,
-            message="Extracting frames and detecting scenes...",
+            message="Transcribing the audio..." if audio_only else "Extracting frames and detecting scenes...",
         )
 
         # _run_video_analysis is the longest-running stage (per-scene BLIP/
@@ -997,7 +1073,7 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
                     video_id=video_id,
                     stage="scene_analysis",
                     progress=pct,
-                    message=f"Analyzing scene {scene_index + 1}/{total_scenes}...",
+                    message=f"Analyzing {'section' if audio_only else 'scene'} {scene_index + 1}/{total_scenes}...",
                 ),
                 loop,
             )
@@ -1005,23 +1081,25 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
         analysis = await asyncio.to_thread(
             _run_video_analysis, file_path, video_id, _on_scene_progress,
             ctx.check_cancel if ctx is not None else None,
+            "audio" if audio_only else "video",
         )
         transcription = analysis["transcription"]
         await checkpoint()
 
-        await send_stage_complete(
-            video_id=video_id,
-            stage="frame_extraction",
-            message="Frame extraction complete",
-            results={"frames_extracted": len(analysis["sampled_frame_paths"])},
-        )
+        if not audio_only:
+            await send_stage_complete(
+                video_id=video_id,
+                stage="frame_extraction",
+                message="Frame extraction complete",
+                results={"frames_extracted": len(analysis["sampled_frame_paths"])},
+            )
 
-        await send_stage_complete(
-            video_id=video_id,
-            stage="scene_detection",
-            message="Scene detection complete",
-            results={"scenes_detected": len(analysis["scenes"])},
-        )
+            await send_stage_complete(
+                video_id=video_id,
+                stage="scene_detection",
+                message="Scene detection complete",
+                results={"scenes_detected": len(analysis["scenes"])},
+            )
 
         await send_stage_complete(
             video_id=video_id,
@@ -1030,12 +1108,20 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
             results={"segments": len(transcription.segments), "language": transcription.language},
         )
 
-        await send_stage_complete(
-            video_id=video_id,
-            stage="visual_analysis",
-            message="Visual analysis complete",
-            results={"scenes_captioned": len(analysis["scenes"])},
-        )
+        if audio_only:
+            await send_stage_complete(
+                video_id=video_id,
+                stage="sections",
+                message=f"Split into {len(analysis['scenes'])} sections",
+                results={"sections": len(analysis["scenes"])},
+            )
+        else:
+            await send_stage_complete(
+                video_id=video_id,
+                stage="visual_analysis",
+                message="Visual analysis complete",
+                results={"scenes_captioned": len(analysis["scenes"])},
+            )
 
         # Stage 3: Persist scenes/frames/transcript + build real embeddings
         await send_progress_update(
@@ -1081,7 +1167,7 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
             db.flush()  # assign scene_row.id values
 
             frame_rows = []
-            for item, scene_row in zip(analysis["scenes"], scene_rows):
+            for item, scene_row in ([] if audio_only else zip(analysis["scenes"], scene_rows)):
                 s = item["scene"]
                 clip_emb = item.get("clip_embedding")
                 frame_row = FrameModel(
@@ -1246,7 +1332,8 @@ async def process_video_background(video_id: str, ctx: Optional[JobContext] = No
 # ============================================================================
 
 
-def _download_finished(video_id: str, title: str, file_path: str, duration: float, auto_process: bool) -> None:
+def _download_finished(video_id: str, title: str, file_path: str, duration: float, auto_process: bool,
+                       media_type: str = "video") -> None:
     """The file is on disk: record it, and queue the analysis when the person asked for it"""
     with get_db() as db:
         video = db.query(Video).filter(Video.external_id == video_id).first()
@@ -1255,6 +1342,7 @@ def _download_finished(video_id: str, title: str, file_path: str, duration: floa
         video.title = title
         video.file_path = file_path
         video.duration_seconds = duration
+        video.media_type = media_type
         video.processing_status = VideoStatus.PENDING
         video.error_message = None
         if auto_process:
@@ -1289,10 +1377,20 @@ def _download_youtube_blocking(url: str, video_id: str, quality: str, ctx: JobCo
             last_check[0] = time.monotonic()
             ctx.check_cancel()
 
+    audio_only = quality == "audio"   # download_quality "audio": the sound only, as mp3 (podcasts, talks)
+    if audio_only:
+        chosen = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '128'}],
+        }
+    else:
+        chosen = {
+            'format': f'bestvideo[height<={quality.replace("p", "")}]+bestaudio/best' if quality != 'best' else 'best',
+            'merge_output_format': 'mp4',
+        }
     ydl_opts = {
-        'format': f'bestvideo[height<={quality.replace("p", "")}]+bestaudio/best' if quality != 'best' else 'best',
+        **chosen,
         'outtmpl': f'{output_dir}/{video_id}.%(ext)s',
-        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
@@ -1301,7 +1399,7 @@ def _download_youtube_blocking(url: str, video_id: str, quality: str, ctx: JobCo
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-    return info, f"{output_dir}/{video_id}.mp4"
+    return info, f"{output_dir}/{video_id}.{'mp3' if audio_only else 'mp4'}"
 
 
 async def download_youtube_video(
@@ -1336,7 +1434,8 @@ async def download_youtube_video(
         logger.info(f"Downloaded: {video_title} ({duration}s) -> {file_path}")
 
         await asyncio.to_thread(ctx.check_cancel)
-        await asyncio.to_thread(_download_finished, video_id, video_title, file_path, duration, auto_process)
+        await asyncio.to_thread(_download_finished, video_id, video_title, file_path, duration, auto_process,
+                                "audio" if quality == "audio" else "video")
         await send_progress_update(video_id=video_id, stage="download", progress=30.0,
                                    message=f"Download complete: {video_title}")
 
@@ -1353,7 +1452,7 @@ async def download_youtube_video(
 
 def _after_download_stop(video_id: str, reason: str) -> None:
     """A download that was stopped leaves no half file behind"""
-    for ext in ("mp4", "mkv", "webm", "part", "mp4.part"):
+    for ext in ("mp4", "mkv", "webm", "mp3", "m4a", "part", "mp4.part", "mp3.part"):
         try:
             os.remove(f"./data/uploads/{video_id}.{ext}")
         except OSError:
@@ -1442,11 +1541,16 @@ async def download_streaming_video(
         await asyncio.to_thread(_download_stream_blocking, cmd, file_path, ctx, MAX_STREAM_DURATION_SECONDS + 60)
 
         duration = await get_video_duration(file_path)
+        try:  # an audio stream (a radio or podcast URL) is audio, not a video with no picture
+            media_type = (await asyncio.to_thread(probe_media, file_path)).kind
+        except Exception:
+            media_type = "video"
         video_title = clean_title(title, None) if title else "Streaming Video"
         logger.info(f"Downloaded stream: {video_title} ({duration:.1f}s) -> {file_path}")
 
         await asyncio.to_thread(ctx.check_cancel)
-        await asyncio.to_thread(_download_finished, video_id, video_title, file_path, duration, auto_process)
+        await asyncio.to_thread(_download_finished, video_id, video_title, file_path, duration, auto_process,
+                                media_type)
         await send_progress_update(video_id=video_id, stage="download", progress=30.0,
                                    message=f"Download complete: {video_title}")
 

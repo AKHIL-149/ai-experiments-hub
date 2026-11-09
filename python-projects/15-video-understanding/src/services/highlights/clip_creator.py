@@ -31,6 +31,7 @@ class ClipConfig:
     # Processing
     copy_streams: bool = False  # Fast copy without re-encoding
     include_audio: bool = True
+    audio_only: bool = False    # an mp3 of the sound (from an audio file, or the sound of a video): no picture
 
     # Resolution
     max_width: Optional[int] = None
@@ -273,6 +274,15 @@ class ClipCreator:
             "-t", str(duration),  # Duration
         ])
 
+        if config.audio_only:
+            # sound only: drop any picture, encode mp3 (quality 2 is about 190 kbit/s: transparent for speech)
+            command.extend(["-vn", "-c:a", "libmp3lame", "-q:a", "2"])
+            if config.fade_in_duration > 0 or config.fade_out_duration > 0:
+                command.extend(["-af", self._build_audio_fade_filter(duration, config.fade_in_duration,
+                                                                     config.fade_out_duration)])
+            command.extend(["-y", output_path])
+            return command
+
         # Video codec
         if config.copy_streams:
             # Fast copy without re-encoding
@@ -339,6 +349,15 @@ class ClipCreator:
             return f"scale=-1:{max_height}"
         else:
             return ""
+
+    def _build_audio_fade_filter(self, duration: float, fade_in: float, fade_out: float) -> str:
+        """Fade the sound in and out (the picture fade filter does not apply to audio)"""
+        filters = []
+        if fade_in > 0:
+            filters.append(f"afade=t=in:st=0:d={fade_in}")
+        if fade_out > 0:
+            filters.append(f"afade=t=out:st={max(0.0, duration - fade_out)}:d={fade_out}")
+        return ",".join(filters)
 
     def _build_fade_filter(
         self,

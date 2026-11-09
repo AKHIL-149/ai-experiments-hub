@@ -654,6 +654,11 @@ function displayQueryResult(data) {
 // Videos List
 // ============================================================================
 
+// Audio files (podcasts, recordings) have no picture: a note icon instead of a film strip
+function mediaIconClass(video) {
+    return video.media_type === 'audio' ? 'fa-music' : 'fa-film';
+}
+
 // Where a video stands, in words: waiting videos say their place in the queue
 function videoStatusLabel(video) {
     if (video.job_status === 'queued') {
@@ -722,7 +727,7 @@ async function loadVideos() {
         const html = data.videos.map(video => `
             <div class="video-card" onclick="showVideoDetails('${esc(video.video_id)}')">
                 <div class="video-thumbnail">
-                    <i class="fas fa-film" style="font-size: 3rem; color: var(--text-muted);"></i>
+                    <i class="fas ${mediaIconClass(video)}" style="font-size: 3rem; color: var(--text-muted);"></i>
                 </div>
                 <div class="video-info">
                     <div class="video-title">${esc(video.title)}</div>
@@ -767,6 +772,7 @@ async function showVideoDetails(videoId) {
             <div style="margin-top: 2rem;">
                 <h3>Video Information</h3>
                 <div style="margin-top: 1rem;">
+                    <div><strong>Type:</strong> ${video.media_type === 'audio' ? 'Audio' : 'Video'}</div>
                     <div><strong>Duration:</strong> ${formatTime(video.duration_seconds)}</div>
                     <div><strong>Status:</strong> ${esc(video.processing_status)}</div>
                     <div><strong>Source:</strong> ${esc(video.source_type)}</div>
@@ -916,7 +922,13 @@ function clipStatusBadge(status) {
 }
 
 function renderClipCard(c) {
-    const thumb = c.status === 'completed'
+    const isAudio = c.format === 'mp3';   // sound only: there is no picture to show
+    const thumb = c.status === 'completed' && isAudio
+        ? `<div style="width: 120px; height: 68px; border-radius: 0.35rem; flex-shrink: 0; background: #111;
+                        display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+             <i class="fas fa-music" style="font-size: 1.5rem;"></i>
+           </div>`
+        : c.status === 'completed'
         ? `<img src="/api/clips/${esc(c.clip_id)}/thumbnail" alt="Clip thumbnail"
                 style="width: 120px; height: 68px; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; background: #111;"
                 onerror="this.style.display='none'">`
