@@ -237,6 +237,25 @@ curl -b jar http://localhost:8000/api/videos
 
 Not built: password change or reset, e-mail, a list of your devices, per-account storage quotas (only video counts), an admin screen.
 
+## Job Queue
+
+Downloads and video analysis do not run inside the request that asked for them. Every upload, YouTube/stream link, `/process` and `/reprocess` puts a **job** in a queue, and a few workers take jobs one by one.
+
+Before this, each upload started its own analysis at once. Five uploads meant five Whisper + CLIP + vision-model runs fighting over one CPU and its memory; a restart left videos "processing" for ever; nothing could be cancelled or retried; and a YouTube download froze the whole server while it ran.
+
+- **How many at once:** `MAX_CONCURRENT_VIDEOS` analyses (default **1**: each loads Whisper, CLIP and a vision model, so more at once is slower, not faster, on a laptop) and `MAX_CONCURRENT_DOWNLOADS` downloads (default 2) in their own lane, so a download never waits for an analysis.
+- **Where a video stands:** `status` / `GET /api/videos/{id}` / the list carry `job_id`, `job_status` (`queued` or `running`) and `queue_position` (1 = next). The Videos page shows `queued: #3`, `queued: next` or `processing`, a **Cancel** button on waiting and running videos, **Retry** on failed ones and **Process** on videos that never ran; the WebSocket sends `queued` events with the position.
+- **Fair order:** one account with twenty videos queued does not make everyone else wait for all twenty. A job's turn is (jobs its account has running) + (its place in its own line), ties by age: accounts take turns.
+- **Limits:** an account may have `MAX_QUEUED_JOBS_PER_USER` (20) jobs waiting or running; more answers `429` before the file is saved.
+- **Survives restarts:** a job is a row in the `jobs` table. Waiting jobs are still waiting after a restart. A running job beats a heartbeat every 10 s; if the process is killed, a job whose heartbeat is older than `JOB_STALE_SECONDS` (45) goes back in the queue (`JOB_MAX_ATTEMPTS` (2) tries, then it fails with a message). A clean shutdown (Ctrl-C, SIGTERM) puts the running job back at once without using up a try. Videos left "processing" by a version without the queue are marked failed on start so **Reprocess** is offered.
+- **Cancel:** a waiting job is cancelled at once. A running one stops at its next checkpoint (between pipeline stages and before each scene) and the video goes back to "pending" with its partial results removed; a Whisper transcription that is already running finishes first, so on a long video a cancel can take a few minutes. A download is stopped within a second and its partial file removed. Deleting a video stops its job too.
+- **API:** `GET /api/jobs` (yours, with the queue summary), `GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`. Another account's job answers `404`; administrators see all.
+- **Downloads** now run off the event loop (`yt-dlp` used to block the whole server) and are capped by size: `YT_DLP_MAX_FILESIZE_MB` for YouTube, `MAX_VIDEO_SIZE_MB` (or the guest limit) for streams (`ffmpeg -fs`). A finished download queues its analysis as a separate job.
+- A job that runs longer than `PROCESSING_TIMEOUT_SECONDS` (3600) is failed and asked to stop.
+- Finished jobs older than a week are deleted. `alembic upgrade head` adds the `jobs` table (the server also creates it on start in debug mode).
+
+Limits of this design: the workers live in the API process (run one server process; with several, jobs are still never taken twice, but each process runs its own workers), a running analysis cannot be interrupted inside a single long stage, and the order between accounts is fair but there are no priorities (a guest's job is not slower than an account's).
+
 ## Inputs, Limits and What to Expect
 
 Written from running the platform on real videos (a 60 s 1080p explainer, a 4-minute lecture, a 5.8 s phone clip, audio-only and invalid files).
@@ -289,7 +308,7 @@ For accurate slide and screen descriptions set `VISION_MODEL=qwen3-vl:8b` (`olla
 - `scene_type` is always `unknown`; scenes are not classified.
 - Highlights are labelled "Action Highlight" from motion energy, which also fires for a talking head.
 - Audio-only files are refused; there is no transcribe-only mode.
-- Processing runs in the API process, one video at a time per request; there is no job queue. A 4-minute 1080p video took about 4.5 minutes, a 60 s video under 2 minutes.
+- Analysis is queued (see Job Queue) but runs inside the API process. A 4-minute 1080p video took about 4.5 minutes, a 60 s video under 2 minutes.
 - Sign-in is cookie based and the server speaks plain HTTP: put it behind HTTPS (and set `COOKIE_SECURE=true`) before exposing it beyond your own machine. It listens on `127.0.0.1` by default; with `API_HOST=0.0.0.0` the sign-in page and API are reachable from your network.
 - The page shows everything the server sends as text (titles, summaries, answers, errors are never interpreted as HTML).
 
@@ -346,7 +365,8 @@ pytest tests/test_scene_detection.py
 # The checks written from real-video testing (ffmpeg and node are used when installed)
 pytest tests/test_input_checks.py tests/test_single_shot_scenes.py tests/test_qa_context.py \
        tests/test_captions.py tests/test_chapter_titles_and_faces.py tests/test_frontend_escaping.py \
-       tests/api/test_hardening.py tests/api/test_accounts.py tests/test_frontend_auth.py
+       tests/api/test_hardening.py tests/api/test_accounts.py tests/test_frontend_auth.py \
+       tests/api/test_job_queue.py tests/test_frontend_queue.py
 ```
 
 ### Code Formatting
