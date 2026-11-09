@@ -201,6 +201,42 @@ curl -X POST http://localhost:8000/api/videos/{video_id}/highlights/generate \
 └── pyproject.toml     # Project configuration
 ```
 
+## Accounts
+
+Every request to `/api/*` needs a sign-in. Open the app and you land on `/login`:
+
+- **Sign in / Create account** with a username (3-32 letters, digits, `.` `-` `_`, not case-sensitive) and a password (8-128 characters).
+- **Continue as guest** needs no details: a throwaway account that can keep `GUEST_MAX_VIDEOS` (3) videos of up to `GUEST_MAX_VIDEO_SIZE_MB` (50) and is deleted, with everything it uploaded, after `GUEST_TTL_HOURS` (24). A guest who then creates an account keeps their videos (the guest account is turned into the real one).
+- **Every account only sees its own videos.** Another account's video, clip, frame, thumbnail, transcript, summary, search hit and progress feed answer `404`, exactly like an id that does not exist. Search is filtered inside the vector search, so one person's results never depend on what others uploaded. Administrators see everything.
+- The **first real account** is the administrator and adopts the videos that were uploaded before accounts existed (they had no owner). `ADMIN_USERNAMES=name1,name2` makes other names administrators.
+- Deleting a video (or an expired guest) removes the upload, frames, clips, thumbnails **and** its search embeddings; before, only the upload went.
+- Accounts may keep `MAX_VIDEOS_PER_USER` (100) videos; administrators have no limit.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `REQUIRE_LOGIN` | `true` | `false` = single-user mode: no sign-in, everyone is the local administrator (only for `API_HOST=127.0.0.1`) |
+| `ALLOW_REGISTRATION` / `ALLOW_GUESTS` | `true` | switch account creation / guest access off |
+| `SESSION_DAYS` | `14` | how long a sign-in lasts |
+| `COOKIE_SECURE` | `false` | set `true` behind HTTPS so the cookie is never sent over plain HTTP |
+| `GUEST_TTL_HOURS`, `GUEST_MAX_VIDEOS`, `GUEST_MAX_VIDEO_SIZE_MB`, `MAX_VIDEOS_PER_USER` | 24, 3, 50, 100 | limits above |
+
+How it is built (and why):
+
+- A sign-in is a random token in an `HttpOnly`, `SameSite=Lax` cookie (a cookie, not a header, because the page loads thumbnails, frames and clip downloads through `<img>` and `<a>` tags that cannot send headers). The database keeps only the SHA-256 of the token, so a leaked database holds nothing a browser can replay; signing out ends that sign-in at once. Passwords are stored with scrypt.
+- A write that carries the cookie but comes from another website (`Origin`/`Referer` is not this site or a `CORS_ORIGINS` entry) is refused, and so is a WebSocket from another site, because browsers do not apply CORS to WebSockets.
+- Wrong passwords are limited to 8 per 10 minutes per address and per username (`429`), "no such user" and "wrong password" answer identically, and account/guest creation is limited per address.
+- `/uploads`, `/clips` and `/thumbnails` used to be mounted as public folders (any file, no sign-in). They are gone: files only leave through the endpoints that check the owner.
+- Run `alembic upgrade head` (adds `users`, `user_sessions`, `videos.user_id`); the server also adds them on start-up in debug mode.
+
+From a script, keep the cookie:
+
+```bash
+curl -c jar -H 'content-type: application/json' -d '{"username":"me","password":"my-password"}' http://localhost:8000/api/auth/login
+curl -b jar http://localhost:8000/api/videos
+```
+
+Not built: password change or reset, e-mail, a list of your devices, per-account storage quotas (only video counts), an admin screen.
+
 ## Inputs, Limits and What to Expect
 
 Written from running the platform on real videos (a 60 s 1080p explainer, a 4-minute lecture, a 5.8 s phone clip, audio-only and invalid files).
@@ -254,7 +290,7 @@ For accurate slide and screen descriptions set `VISION_MODEL=qwen3-vl:8b` (`olla
 - Highlights are labelled "Action Highlight" from motion energy, which also fires for a talking head.
 - Audio-only files are refused; there is no transcribe-only mode.
 - Processing runs in the API process, one video at a time per request; there is no job queue. A 4-minute 1080p video took about 4.5 minutes, a 60 s video under 2 minutes.
-- The API has no sign-in. It listens on `127.0.0.1` by default and only answers web pages from `CORS_ORIGINS`; if you set `API_HOST=0.0.0.0`, anyone on your network can upload, read and delete videos.
+- Sign-in is cookie based and the server speaks plain HTTP: put it behind HTTPS (and set `COOKIE_SECURE=true`) before exposing it beyond your own machine. It listens on `127.0.0.1` by default; with `API_HOST=0.0.0.0` the sign-in page and API are reachable from your network.
 - The page shows everything the server sends as text (titles, summaries, answers, errors are never interpreted as HTML).
 
 ## Performance
@@ -310,7 +346,7 @@ pytest tests/test_scene_detection.py
 # The checks written from real-video testing (ffmpeg and node are used when installed)
 pytest tests/test_input_checks.py tests/test_single_shot_scenes.py tests/test_qa_context.py \
        tests/test_captions.py tests/test_chapter_titles_and_faces.py tests/test_frontend_escaping.py \
-       tests/api/test_hardening.py
+       tests/api/test_hardening.py tests/api/test_accounts.py tests/test_frontend_auth.py
 ```
 
 ### Code Formatting
