@@ -5,7 +5,7 @@ Start processing, get results (scenes, transcripts, frames)
 
 import logging
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from datetime import datetime
 from src.core.access import find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video
@@ -38,6 +38,8 @@ class ProcessVideoResponse(BaseModel):
     status: str
     message: str
     started_at: datetime
+    job_id: Optional[str] = None
+    queue_position: Optional[int] = None  # 1 = starts next
 
 
 class SceneResponse(BaseModel):
@@ -119,10 +121,42 @@ class ReprocessRequest(BaseModel):
 # ============================================================================
 
 
+def _position_of(job_id: str) -> Optional[int]:
+    from src.api.videos import _position_of as position_of
+    return position_of(job_id)
+
+
+def _enqueue_processing(video_id: str, no_file_message: str) -> str:
+    """Queue the analysis of a video: 404 / 400 / 409 / 429 as the request deserves, else the job's id"""
+    from src.core.database import get_db
+    from src.models import VideoStatus
+    from src.models.job import JobKind
+    from src.services import job_queue
+
+    with get_db() as db:
+        video = find_video(db, video_id)
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        if not video.file_path:
+            raise HTTPException(status_code=400, detail=no_file_message)
+        if video.processing_status == VideoStatus.PROCESSING:
+            raise HTTPException(status_code=409, detail="Video is already being processed")
+        try:
+            job, created = job_queue.enqueue(db, video, JobKind.PROCESS.value)
+        except job_queue.QueueFull as e:
+            raise HTTPException(status_code=429, detail=str(e))
+        if not created:
+            raise HTTPException(status_code=409, detail="Video is already waiting in the queue")
+        video.processed_at = None
+        video.error_message = None
+        job_id = job.id
+    job_queue.notify()
+    return job_id
+
+
 @router.post("/{video_id}/process", response_model=ProcessVideoResponse)
 async def process_video(
     video_id: str,
-    background_tasks: BackgroundTasks,
     request: Optional[ProcessVideoRequest] = None,
 ):
     """
@@ -143,29 +177,16 @@ async def process_video(
     try:
         logger.info(f"Starting processing for video {video_id}")
 
-        from src.core.database import get_db
-        from src.models import Video, VideoStatus
-        from src.api.videos import process_video_background
-
-        with get_db() as db:
-            video = find_video(db, video_id)
-            if not video:
-                raise HTTPException(status_code=404, detail="Video not found")
-            if not video.file_path:
-                raise HTTPException(status_code=400, detail="Video has no source file yet (still downloading?)")
-            if video.processing_status == VideoStatus.PROCESSING:
-                raise HTTPException(status_code=409, detail="Video is already being processed")
-
-            video.processing_status = VideoStatus.PROCESSING
-
-        # Schedule the real processing pipeline
-        background_tasks.add_task(process_video_background, video_id)
+        job_id = _enqueue_processing(video_id, "Video has no source file yet (still downloading?)")
+        position = _position_of(job_id)
 
         return ProcessVideoResponse(
             video_id=video_id,
-            status="processing",
-            message="Video processing started",
-            started_at=datetime.now(),
+            status="queued" if position else "processing",
+            message="Video queued for processing" + (f" (position {position})" if position else ""),
+            started_at=datetime.utcnow(),
+            job_id=job_id,
+            queue_position=position,
         )
 
     except HTTPException:
@@ -181,7 +202,6 @@ async def process_video(
 @router.post("/{video_id}/reprocess", response_model=ProcessVideoResponse)
 async def reprocess_video(
     video_id: str,
-    background_tasks: BackgroundTasks,
     request: ReprocessRequest,
 ):
     """
@@ -201,30 +221,17 @@ async def reprocess_video(
     try:
         logger.info(f"Reprocessing video {video_id}")
 
-        from src.core.database import get_db
-        from src.models import Video, VideoStatus
-        from src.api.videos import process_video_background
-
-        with get_db() as db:
-            video = find_video(db, video_id)
-            if not video:
-                raise HTTPException(status_code=404, detail="Video not found")
-            if not video.file_path:
-                raise HTTPException(status_code=400, detail="Video has no source file to reprocess")
-            if video.processing_status == VideoStatus.PROCESSING:
-                raise HTTPException(status_code=409, detail="Video is already being processed")
-
-            video.processed_at = None
-            video.error_message = None
-
-        # Schedule the real processing pipeline (it clears prior data itself)
-        background_tasks.add_task(process_video_background, video_id)
+        # the analysis clears the earlier results itself when it starts
+        job_id = _enqueue_processing(video_id, "Video has no source file to reprocess")
+        position = _position_of(job_id)
 
         return ProcessVideoResponse(
             video_id=video_id,
-            status="processing",
-            message="Video reprocessing started",
-            started_at=datetime.now(),
+            status="queued" if position else "processing",
+            message="Video queued for reprocessing" + (f" (position {position})" if position else ""),
+            started_at=datetime.utcnow(),
+            job_id=job_id,
+            queue_position=position,
         )
 
     except HTTPException:

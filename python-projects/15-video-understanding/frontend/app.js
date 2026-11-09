@@ -654,9 +654,62 @@ function displayQueryResult(data) {
 // Videos List
 // ============================================================================
 
+// Where a video stands, in words: waiting videos say their place in the queue
+function videoStatusLabel(video) {
+    if (video.job_status === 'queued') {
+        const place = Number(video.queue_position);
+        return place === 1 ? 'queued: next' : (place > 1 ? `queued: #${place}` : 'queued');
+    }
+    if (video.job_status === 'running') {
+        return video.processing_status === 'downloading' ? 'downloading' : 'processing';
+    }
+    return video.processing_status;
+}
+
+function videoStatusClass(video) {
+    if (video.job_status === 'queued') return 'queued';
+    if (video.job_status === 'running') return 'processing';
+    return String(video.processing_status || '').replace(/[^a-z]/g, '');
+}
+
+// The button on a video card: Cancel while it waits or runs, Retry after a failure, Process if it never ran.
+// Ids travel in data- attributes, never inside inline script strings.
+function videoActionButton(video) {
+    if (video.job_id) {
+        return `<button type="button" class="btn btn-sm btn-ghost" data-job="${esc(video.job_id)}"
+                    onclick="cancelJob(event, this.dataset.job)"><i class="fas fa-ban"></i> Cancel</button>`;
+    }
+    if (video.processing_status === 'failed' || video.processing_status === 'pending') {
+        const label = video.processing_status === 'failed' ? 'Retry' : 'Process';
+        return `<button type="button" class="btn btn-sm btn-ghost" data-video="${esc(video.video_id)}"
+                    onclick="startProcessing(event, this.dataset.video)"><i class="fas fa-redo"></i> ${label}</button>`;
+    }
+    return '';
+}
+
+async function cancelJob(event, jobId) {
+    event.stopPropagation();
+    try {
+        await apiCall(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+        showToast('Cancelled', 'info');
+    } catch (error) { /* apiCall already showed why */ }
+    loadVideos();
+}
+
+async function startProcessing(event, videoId) {
+    event.stopPropagation();
+    try {
+        await apiCall(`/api/videos/${encodeURIComponent(videoId)}/process`, { method: 'POST', body: JSON.stringify({}) });
+        showToast('Queued for processing', 'success');
+    } catch (error) { /* apiCall already showed why */ }
+    loadVideos();
+}
+
+let videosRefreshTimer = null;
+
 async function loadVideos() {
     const videosDiv = document.getElementById('videos-list');
-    videosDiv.innerHTML = '<div class="loading">Loading videos...</div>';
+    clearTimeout(videosRefreshTimer);
 
     try {
         const data = await apiCall('/api/videos');
@@ -675,15 +728,26 @@ async function loadVideos() {
                     <div class="video-title">${esc(video.title)}</div>
                     <div class="video-meta">
                         <span><i class="fas fa-clock"></i> ${formatTime(video.duration_seconds)}</span>
-                        <span class="video-status status-${esc(video.processing_status)}">
-                            ${esc(video.processing_status)}
+                        <span class="video-status status-${esc(videoStatusClass(video))}">
+                            ${esc(videoStatusLabel(video))}
                         </span>
                     </div>
+                    ${video.error_message && video.processing_status !== 'completed'
+                        ? `<div class="video-error">${esc(video.error_message)}</div>` : ''}
+                    <div class="video-actions">${videoActionButton(video)}</div>
                 </div>
             </div>
         `).join('');
 
         videosDiv.innerHTML = html;
+
+        // Places in the line change as other videos finish: keep the list current while anything is waiting or running
+        if (data.videos.some(v => v.job_id)) {
+            videosRefreshTimer = setTimeout(() => {
+                const page = document.getElementById('videos-page');
+                if (page && page.classList.contains('active')) loadVideos();
+            }, 5000);
+        }
     } catch (error) {
         videosDiv.innerHTML = '<div class="error">Failed to load videos</div>';
     }

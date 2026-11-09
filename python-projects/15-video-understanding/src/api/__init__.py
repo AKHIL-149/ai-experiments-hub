@@ -9,6 +9,7 @@ from src.api.search import router as search_router
 from src.api.clips import router as clips_router
 from src.api.websockets import router as websockets_router
 from src.api.auth import router as auth_router
+from src.api.jobs import router as jobs_router
 
 __all__ = [
     'videos_router',
@@ -18,4 +19,5 @@ __all__ = [
     'clips_router',
     'websockets_router',
     'auth_router',
+    'jobs_router',
 ]

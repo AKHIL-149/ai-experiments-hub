@@ -12,6 +12,7 @@ from src.models.embedding import VideoEmbedding, EmbeddingType
 from src.models.chapter import Chapter
 from src.models.clip import Clip, ClipStatus
 from src.models.user import User, UserSession
+from src.models.job import Job, JobKind, JobStatus
 
 __all__ = [
     "Video",
@@ -34,4 +35,7 @@ __all__ = [
     "ClipStatus",
     "User",
     "UserSession",
+    "Job",
+    "JobKind",
+    "JobStatus",
 ]

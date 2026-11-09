@@ -33,6 +33,7 @@ from src.api import (
     clips_router,
     websockets_router,
     auth_router,
+    jobs_router,
 )
 from src.core.login_gate import LoginGateMiddleware
 from src.services.video_cleanup import (
@@ -55,6 +56,8 @@ def _cleanup_once() -> None:
     try:
         purge_expired_guests(db)
         purge_dead_sessions(db)
+        from src.services.job_queue import purge_old_jobs
+        purge_old_jobs(db)
     finally:
         db.close()
 
@@ -116,12 +119,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     cleanup_task = asyncio.create_task(_cleanup_loop())
 
+    # The job queue: downloads and analysis run here, a few at a time, and survive restarts
+    if settings.job_workers_enabled:
+        from src.api.videos import QUEUE_RUNNERS
+        from src.services import job_queue
+        await job_queue.start(QUEUE_RUNNERS)
+
     logger.info("✅ Application startup complete")
 
     yield
 
     # Shutdown
     cleanup_task.cancel()
+    if settings.job_workers_enabled:
+        from src.services import job_queue
+        await job_queue.stop()
     logger.info("🛑 Shutting down Video Understanding Platform...")
     logger.info("✅ Application shutdown complete")
 
@@ -285,6 +297,7 @@ app.include_router(processing_router)
 app.include_router(analysis_router)
 app.include_router(search_router)
 app.include_router(clips_router)
+app.include_router(jobs_router)
 app.include_router(websockets_router)
 
 # ============================================================================

@@ -91,7 +91,12 @@ class Settings(BaseSettings):
     cache_max_size_mb: int = Field(default=500, description="Maximum cache size in MB")
 
     # Processing Configuration
-    max_concurrent_videos: int = Field(default=3, description="Maximum concurrent video processing")
+    max_concurrent_videos: int = Field(default=1, description="Videos analysed at the same time (each one loads Whisper, CLIP and a vision model: 1 suits a laptop)")
+    max_concurrent_downloads: int = Field(default=2, description="YouTube/stream downloads at the same time")
+    max_queued_jobs_per_user: int = Field(default=20, description="Waiting + running jobs one account may have")
+    job_max_attempts: int = Field(default=2, description="Tries for a job that was interrupted by a server restart")
+    job_stale_seconds: int = Field(default=45, description="A running job with no heartbeat for this long is considered dead")
+    job_workers_enabled: bool = Field(default=True, description="Run the queue workers in this server process")
     processing_timeout_seconds: int = Field(default=3600, description="Processing timeout in seconds")
     enable_gpu: bool = Field(default=False, description="Enable GPU acceleration")
 

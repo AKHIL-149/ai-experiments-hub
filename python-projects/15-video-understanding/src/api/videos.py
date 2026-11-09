@@ -6,9 +6,10 @@ Upload, retrieve, and manage videos
 import asyncio
 import logging
 import os
+import threading
 import uuid
 from typing import Optional, List
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -21,6 +22,9 @@ from src.utils.input_checks import (
     clean_title, clean_description, fit_segments_to_duration,
 )
 from src.models import Video, VideoStatus, SourceType
+from src.models.job import ACTIVE_STATUSES, Job, JobKind
+from src.services import job_queue
+from src.services.job_queue import JobCancelled, JobContext, QueueFull
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,8 @@ class VideoUploadResponse(BaseModel):
     file_path: Optional[str] = None
     duration: Optional[float] = None
     created_at: datetime
+    job_id: Optional[str] = None          # the queue job that will do the work
+    queue_position: Optional[int] = None  # 1 = next in line
 
 
 class YouTubeVideoRequest(BaseModel):
@@ -73,6 +79,9 @@ class VideoResponse(BaseModel):
     updated_at: datetime
     processed_at: Optional[datetime] = None
     metadata: dict = {}
+    job_id: Optional[str] = None          # a waiting or running job for this video, if any
+    job_status: Optional[str] = None      # queued | running
+    queue_position: Optional[int] = None  # while queued: 1 = next in line
 
 
 class VideoListResponse(BaseModel):
@@ -92,6 +101,9 @@ class VideoStatusResponse(BaseModel):
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    job_id: Optional[str] = None
+    job_status: Optional[str] = None
+    queue_position: Optional[int] = None
 
 
 class DeleteResponse(BaseModel):
@@ -129,15 +141,39 @@ def _upload_allowance() -> tuple:
         limit = settings.guest_max_videos if caller.is_guest else settings.max_videos_per_user
         with get_db() as db:
             count = db.query(Video).filter(Video.user_id == caller.user_id).count()
+            waiting = db.query(Job).filter(Job.user_id == caller.user_id, Job.status.in_(ACTIVE_STATUSES)).count()
         if count >= limit:
             hint = "delete one or create an account" if caller.is_guest else "delete one first"
             raise HTTPException(status_code=403, detail=f"You can keep at most {limit} videos: {hint}")
+        if waiting >= settings.max_queued_jobs_per_user:
+            raise HTTPException(
+                status_code=429,
+                detail=f"You already have {waiting} videos waiting or running: wait for some to finish or cancel one",
+            )
     return caller.user_id, max_mb
+
+
+def _position_of(job_id: Optional[str]) -> Optional[int]:
+    if not job_id:
+        return None
+    with get_db() as db:
+        return job_queue.queue_positions(db).get(job_id)
+
+
+def _job_fields(db, videos) -> dict:
+    """video row id -> job_id / job_status / queue_position for the videos that have a waiting or running job"""
+    active = job_queue.active_jobs_for_videos(db, [v.id for v in videos])
+    if not active:
+        return {}
+    positions = job_queue.queue_positions(db)
+    return {
+        vid: {"job_id": job.id, "job_status": job.status, "queue_position": positions.get(job.id)}
+        for vid, job in active.items()
+    }
 
 
 @router.post("/upload", response_model=VideoUploadResponse)
 async def upload_video(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Video file to upload"),
     title: Optional[str] = Form(None, description="Video title"),
     description: Optional[str] = Form(None, description="Video description"),
@@ -213,6 +249,7 @@ async def upload_video(
         logger.info(f"Saved video to {file_path}")
         duration = media.duration
 
+        job_id = position = None
         with get_db() as db:
             video = Video(
                 external_id=video_id,
@@ -225,10 +262,14 @@ async def upload_video(
                 processing_status=VideoStatus.PENDING,
             )
             db.add(video)
-
-        # Schedule processing if auto_process
+            db.flush()
+            # Analysis starts when a worker is free (MAX_CONCURRENT_VIDEOS at a time), not on arrival
+            if auto_process:
+                job, _ = job_queue.enqueue(db, video, JobKind.PROCESS.value)
+                job_id = job.id
         if auto_process:
-            background_tasks.add_task(process_video_background, video_id)
+            job_queue.notify()
+            position = _position_of(job_id)
             status_msg = "Video uploaded and queued for processing"
         else:
             status_msg = "Video uploaded successfully"
@@ -241,6 +282,8 @@ async def upload_video(
             file_path=file_path,
             duration=duration,
             created_at=datetime.utcnow(),
+            job_id=job_id,
+            queue_position=position,
         )
 
     except HTTPException:
@@ -252,7 +295,6 @@ async def upload_video(
 
 @router.post("/youtube", response_model=VideoUploadResponse)
 async def process_youtube_video(
-    background_tasks: BackgroundTasks,
     request: YouTubeVideoRequest,
     auto_process: bool = True,
 ):
@@ -266,6 +308,7 @@ async def process_youtube_video(
 
     Downloads the video and optionally starts processing
     """
+    from src.core.config import settings
     try:
         logger.info(f"Processing YouTube video: {request.url}")
 
@@ -276,7 +319,7 @@ async def process_youtube_video(
                 detail="Invalid YouTube URL"
             )
 
-        owner_id, _ = _upload_allowance()
+        owner_id, max_mb = _upload_allowance()
 
         # Generate video ID
         import uuid
@@ -292,23 +335,23 @@ async def process_youtube_video(
                 processing_status=VideoStatus.DOWNLOADING,
             )
             db.add(video)
-
-        # Download video using yt-dlp (in background)
-        background_tasks.add_task(
-            download_youtube_video,
-            video_id,
-            request.url,
-            request.title,
-            request.download_quality,
-            auto_process,
-        )
+            db.flush()
+            job, _ = job_queue.enqueue(db, video, JobKind.DOWNLOAD.value, {
+                "source": "youtube", "url": request.url, "title": request.title,
+                "quality": request.download_quality, "auto_process": auto_process,
+                "max_mb": min(max_mb, settings.yt_dlp_max_filesize_mb),
+            })
+            job_id = job.id
+        job_queue.notify()
 
         return VideoUploadResponse(
             video_id=video_id,
             title=request.title or "YouTube Video",
             status="downloading",
-            message="YouTube video download started",
+            message="YouTube video queued for download",
             created_at=datetime.utcnow(),
+            job_id=job_id,
+            queue_position=_position_of(job_id),
         )
 
     except HTTPException:
@@ -323,7 +366,6 @@ async def process_youtube_video(
 
 @router.post("/stream", response_model=VideoUploadResponse)
 async def process_streaming_video(
-    background_tasks: BackgroundTasks,
     request: StreamingVideoRequest,
     auto_process: bool = True,
 ):
@@ -349,7 +391,7 @@ async def process_streaming_video(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        owner_id, _ = _upload_allowance()
+        owner_id, max_mb = _upload_allowance()
 
         # Generate video ID
         import uuid
@@ -365,22 +407,22 @@ async def process_streaming_video(
                 processing_status=VideoStatus.DOWNLOADING,
             )
             db.add(video)
-
-        # Download video in background
-        background_tasks.add_task(
-            download_streaming_video,
-            video_id,
-            request.url,
-            request.title,
-            auto_process,
-        )
+            db.flush()
+            job, _ = job_queue.enqueue(db, video, JobKind.DOWNLOAD.value, {
+                "source": "stream", "url": request.url, "title": request.title,
+                "auto_process": auto_process, "max_mb": max_mb,
+            })
+            job_id = job.id
+        job_queue.notify()
 
         return VideoUploadResponse(
             video_id=video_id,
             title=request.title or "Streaming Video",
             status="downloading",
-            message="Streaming video download started",
+            message="Streaming video queued for download",
             created_at=datetime.utcnow(),
+            job_id=job_id,
+            queue_position=_position_of(job_id),
         )
 
     except HTTPException:
@@ -430,7 +472,8 @@ async def list_videos(
                 .limit(page_size)
                 .all()
             )
-            videos = [VideoResponse(**_video_to_response_dict(v)) for v in rows]
+            jobs = _job_fields(db, rows)
+            videos = [VideoResponse(**_video_to_response_dict(v), **jobs.get(v.id, {})) for v in rows]
 
         return VideoListResponse(
             videos=videos,
@@ -462,7 +505,7 @@ async def get_video(video_id: str):
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
-            return VideoResponse(**_video_to_response_dict(video))
+            return VideoResponse(**_video_to_response_dict(video), **_job_fields(db, [video]).get(video.id, {}))
 
     except HTTPException:
         raise
@@ -493,6 +536,9 @@ async def delete_video(
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
+            # a running job notices that its video is gone at its next checkpoint and stops
+            db.query(Job).filter(Job.video_id == video.id, Job.status.in_(ACTIVE_STATUSES)).update(
+                {Job.cancel_requested: True}, synchronize_session=False)
             # the upload, frames, clips, thumbnails and search embeddings go too (only the upload used to)
             purge_video(db, video, delete_files=delete_files)
 
@@ -539,18 +585,21 @@ async def get_video_status(video_id: str):
                 raise HTTPException(status_code=404, detail="Video not found")
 
             from src.api.websockets import get_latest_progress
+            job = _job_fields(db, [video]).get(video.id, {})
+            waiting = job.get("job_status") == "queued"
             live = get_latest_progress(video_id) if video.processing_status == VideoStatus.PROCESSING else None
-            progress = 100.0 if video.processing_status == VideoStatus.COMPLETED else (
-                float(live["progress"]) if live else 0.0
+            progress = 100.0 if video.processing_status == VideoStatus.COMPLETED and not job else (
+                float(live["progress"]) if live and not waiting else 0.0
             )
             return VideoStatusResponse(
                 video_id=video_id,
                 status=video.processing_status.value,
                 progress=progress,
-                stage=live["stage"] if live else video.processing_status.value,
+                stage="queued" if waiting else (live["stage"] if live else video.processing_status.value),
                 error_message=video.error_message,
                 started_at=_processing_started_at(video),
                 completed_at=video.processed_at,
+                **job,
             )
 
     except HTTPException:
@@ -621,7 +670,7 @@ def _aggregate_scene_actions(actions: list, start_time: float, end_time: float) 
     return {"activity_ratio": activity_ratio, "dominant_action": dominant_action}
 
 
-def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None) -> dict:
+def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None, check_cancel=None) -> dict:
     """
     Real (synchronous, CPU/IO-bound) analysis pipeline: sparse frame
     sampling, scene detection, audio transcription, per-scene keyframe
@@ -632,6 +681,10 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     after each scene's per-scene analysis - this is the longest-running
     part of the pipeline (BLIP/YOLO/OCR/CLIP per scene, all on CPU) and
     otherwise produces zero progress feedback for its entire duration.
+
+    check_cancel(), if given, is called between stages and before every scene; it raises JobCancelled when the
+    job was cancelled (or the server is shutting down). A stage that is already running (transcribing a long
+    video, say) finishes first: it cannot be interrupted from outside.
     """
     from pathlib import Path
     from src.core.config import settings
@@ -648,10 +701,12 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
 
     path = Path(video_path)
     processor = create_video_processor()
+    checkpoint = check_cancel or (lambda: None)
 
     # Sparse raw frame sampling (for storage/browsing)
     frames_dir = Path(settings.frames_path) / video_uuid
     sampled_frames = processor.extract_frames(path, frames_dir, fps=0.2)
+    checkpoint()
 
     # Real scene detection (histogram-based content detector)
     detector = ContentBasedSceneDetector(
@@ -661,6 +716,7 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
         )
     )
     scenes = detector.detect_scenes(path)
+    checkpoint()
 
     # Real audio transcription (local Whisper)
     audio_path = Path(settings.temp_path) / f"{video_uuid}.wav"
@@ -673,6 +729,8 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
         )
     except Exception as e:
         logger.warning(f"Could not check transcript segments against the video length: {e}")
+
+    checkpoint()
 
     # Real speaker diarization (pyannote.audio), if a HF token is configured
     if settings.diarization_use_auth_token and settings.hf_token:
@@ -709,6 +767,7 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     scene_results = []
     total_scenes = len(scenes)
     for scene_index, scene in enumerate(scenes):
+        checkpoint()
         ts = scene.keyframe_timestamp or scene.middle_timestamp
         kf_path = keyframes_dir / f"scene_{scene.scene_id:03d}.jpg"
         caption = ""
@@ -779,14 +838,17 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
 
 
 _embedding_model = None
+_model_lock = threading.Lock()  # two workers starting together must not both load a model (memory, and a race)
 
 
 def _get_embedding_model():
     """Lazily load a shared sentence-transformers model for text embeddings"""
     global _embedding_model
     if _embedding_model is None:
-        from sentence_transformers import SentenceTransformer
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        with _model_lock:
+            if _embedding_model is None:
+                from sentence_transformers import SentenceTransformer
+                _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _embedding_model
 
 
@@ -799,13 +861,67 @@ def _get_clip_model():
     never mix the two in the same ChromaDB collection or query."""
     global _clip_model
     if _clip_model is None:
-        from src.services.clip.clip_model import CLIPModel, CLIPConfig
-        _clip_model = CLIPModel(CLIPConfig(device="cpu"))
+        with _model_lock:
+            if _clip_model is None:
+                from src.services.clip.clip_model import CLIPModel, CLIPConfig
+                _clip_model = CLIPModel(CLIPConfig(device="cpu"))
     return _clip_model
 
 
-async def process_video_background(video_id: str):
-    """Process video in background: real analysis, DB persistence, and progress updates"""
+def _clear_analysis(db, video) -> None:
+    """Delete a video's scenes, frames, transcript, summary, highlights and chapters (not the video itself)"""
+    from src.models import (
+        Scene as SceneModel, Frame as FrameModel, Transcript as TranscriptModel, Summary as SummaryModel,
+        Highlight as HighlightModel, Chapter as ChapterModel,
+    )
+    for model in (ChapterModel, HighlightModel, SummaryModel, TranscriptModel, FrameModel, SceneModel):
+        db.query(model).filter(model.video_id == video.id).delete()
+
+
+def _clear_embeddings(video_id: str) -> None:
+    from pathlib import Path
+    from src.core.config import settings
+    from src.core.vector_store import VideoVectorStore
+    store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+    store.initialize_collections()
+    store.delete_video_embeddings(video_id)
+
+
+def _after_stop(video_id: str, reason: str) -> None:
+    """
+    A run that was stopped part-way leaves its video where the person can act on it.
+    cancelled: partial results are removed and the video is "pending" again;
+    shutdown: the job goes back in the queue, so the video simply waits;
+    deleted: the video is gone, nothing to do.
+    """
+    if reason == "deleted":
+        return
+    with get_db() as db:
+        video = db.query(Video).filter(Video.external_id == video_id).first()
+        if video is None:
+            return
+        video.processing_status = VideoStatus.PENDING
+        if reason == "cancelled":
+            _clear_analysis(db, video)
+            video.error_message = "Processing cancelled"
+            video.processed_at = None
+        else:
+            video.error_message = None
+    if reason == "cancelled":
+        try:
+            _clear_embeddings(video_id)
+        except Exception as e:
+            logger.warning(f"Could not remove partial embeddings of {video_id}: {e}")
+
+
+async def process_video_background(video_id: str, ctx: Optional[JobContext] = None):
+    """
+    The analysis pipeline for one video: real analysis, DB persistence, progress updates.
+
+    Runs as a queue job (ctx says which). Raises JobCancelled when the job was cancelled or the server is
+    shutting down, and re-raises any other failure after recording it on the video, so the queue can mark the
+    job failed.
+    """
     import asyncio
     from pathlib import Path
     from src.core.config import settings
@@ -827,6 +943,10 @@ async def process_video_background(video_id: str):
         send_processing_error,
     )
 
+    async def checkpoint():
+        if ctx is not None:
+            await asyncio.to_thread(ctx.check_cancel)
+
     try:
         logger.info(f"Starting background processing for video {video_id}")
 
@@ -843,21 +963,12 @@ async def process_video_background(video_id: str):
             }
             file_path = video.file_path
 
-            # Clear any prior analysis before regenerating, so calling this
-            # more than once (e.g. /process on an already-completed video,
-            # not just /reprocess) doesn't duplicate scenes/frames/
-            # transcripts - confirmed live: without this, a second run
-            # doubled every count (4->8 scenes, 149->298 transcripts).
-            db.query(ChapterModel).filter(ChapterModel.video_id == video.id).delete()
-            db.query(HighlightModel).filter(HighlightModel.video_id == video.id).delete()
-            db.query(SummaryModel).filter(SummaryModel.video_id == video.id).delete()
-            db.query(TranscriptModel).filter(TranscriptModel.video_id == video.id).delete()
-            db.query(FrameModel).filter(FrameModel.video_id == video.id).delete()
-            db.query(SceneModel).filter(SceneModel.video_id == video.id).delete()
+            # Clear any prior analysis before regenerating, so running this more than once (a reprocess)
+            # does not duplicate scenes/frames/transcripts (confirmed live: a second run doubled every count)
+            _clear_analysis(db, video)
 
-        vector_store_for_cleanup = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
-        vector_store_for_cleanup.initialize_collections()
-        vector_store_for_cleanup.delete_video_embeddings(video_id)
+        await asyncio.to_thread(_clear_embeddings, video_id)
+        await checkpoint()
 
         # Stage 1-2: Frame sampling + scene detection + transcription + captioning
         # (runs off the event loop; it's CPU/subprocess-bound)
@@ -891,8 +1002,12 @@ async def process_video_background(video_id: str):
                 loop,
             )
 
-        analysis = await asyncio.to_thread(_run_video_analysis, file_path, video_id, _on_scene_progress)
+        analysis = await asyncio.to_thread(
+            _run_video_analysis, file_path, video_id, _on_scene_progress,
+            ctx.check_cancel if ctx is not None else None,
+        )
         transcription = analysis["transcription"]
+        await checkpoint()
 
         await send_stage_complete(
             video_id=video_id,
@@ -931,6 +1046,7 @@ async def process_video_background(video_id: str):
         )
 
         embed_model = await asyncio.to_thread(_get_embedding_model)
+        await checkpoint()
 
         transcript_count = 0
         caption_count = 0
@@ -1074,6 +1190,7 @@ async def process_video_background(video_id: str):
             message="Generating video summary, highlights, and chapters...",
         )
 
+        await checkpoint()
         from src.api.analysis import (
             generate_summary_task,
             generate_highlights_task,
@@ -1105,6 +1222,10 @@ async def process_video_background(video_id: str):
 
         logger.info(f"Background processing complete for video {video_id}")
 
+    except JobCancelled as stop:
+        logger.info(f"Processing of {video_id} stopped: {stop.reason}")
+        await asyncio.to_thread(_after_stop, video_id, stop.reason)
+        raise
     except Exception as e:
         logger.error(f"Background processing failed: {e}", exc_info=True)
         with get_db() as db:
@@ -1117,6 +1238,70 @@ async def process_video_background(video_id: str):
             stage="unknown",
             error_message=short_error(e),
         )
+        raise
+
+
+# ============================================================================
+# Download jobs (YouTube and streams)
+# ============================================================================
+
+
+def _download_finished(video_id: str, title: str, file_path: str, duration: float, auto_process: bool) -> None:
+    """The file is on disk: record it, and queue the analysis when the person asked for it"""
+    with get_db() as db:
+        video = db.query(Video).filter(Video.external_id == video_id).first()
+        if video is None:
+            return
+        video.title = title
+        video.file_path = file_path
+        video.duration_seconds = duration
+        video.processing_status = VideoStatus.PENDING
+        video.error_message = None
+        if auto_process:
+            try:
+                job_queue.enqueue(db, video, JobKind.PROCESS.value)
+            except QueueFull as e:
+                video.error_message = str(e)
+    if auto_process:
+        job_queue.notify()
+
+
+def _record_download_failure(video_id: str, message: str) -> None:
+    with get_db() as db:
+        video = db.query(Video).filter(Video.external_id == video_id).first()
+        if video:
+            video.processing_status = VideoStatus.FAILED
+            video.error_message = message
+
+
+def _download_youtube_blocking(url: str, video_id: str, quality: str, ctx: JobContext, max_mb: int):
+    """yt-dlp is synchronous: it runs in a worker thread so the server keeps answering while it downloads"""
+    import time
+    import yt_dlp
+
+    output_dir = "./data/uploads"
+    os.makedirs(output_dir, exist_ok=True)
+    last_check = [0.0]
+
+    def on_progress(_info):
+        # called many times a second: look at the cancel flag about once a second
+        if time.monotonic() - last_check[0] >= 1.0:
+            last_check[0] = time.monotonic()
+            ctx.check_cancel()
+
+    ydl_opts = {
+        'format': f'bestvideo[height<={quality.replace("p", "")}]+bestaudio/best' if quality != 'best' else 'best',
+        'outtmpl': f'{output_dir}/{video_id}.%(ext)s',
+        'merge_output_format': 'mp4',
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'max_filesize': max_mb * 1024 * 1024,   # refuse (do not fill the disk with) a huge video
+        'progress_hooks': [on_progress],
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+    return info, f"{output_dir}/{video_id}.mp4"
 
 
 async def download_youtube_video(
@@ -1125,90 +1310,90 @@ async def download_youtube_video(
     title: Optional[str],
     quality: str,
     auto_process: bool,
+    ctx: Optional[JobContext] = None,
+    max_mb: Optional[int] = None,
 ):
-    """Download YouTube video with progress updates"""
+    """Download a YouTube video (a queue job). Raises on failure after recording it on the video."""
+    from src.api.websockets import send_progress_update, send_processing_error
+    from src.core.config import settings
+
+    ctx = ctx or JobContext(job_id="", kind="download", video_id=video_id, user_id=None)
+    if not ctx.job_id:
+        ctx.check_cancel = lambda: None  # called directly (no queue): nothing to check
+    max_mb = max_mb or settings.yt_dlp_max_filesize_mb
+
     try:
-        from src.api.websockets import send_progress_update, send_processing_error
-        import yt_dlp
-
         logger.info(f"Downloading YouTube video: {url}")
+        await send_progress_update(video_id=video_id, stage="download", progress=5.0,
+                                   message="Starting YouTube video download...")
 
-        # Send initial download progress (0-30%)
-        await send_progress_update(
-            video_id=video_id,
-            stage="download",
-            progress=5.0,
-            message="Starting YouTube video download...",
-        )
+        info, file_path = await asyncio.to_thread(_download_youtube_blocking, url, video_id, quality, ctx, max_mb)
+        if not os.path.exists(file_path):  # yt-dlp skips (without an error) a video over the size limit
+            raise RuntimeError(f"The video is larger than the {max_mb} MB limit or could not be downloaded")
 
-        # Configure output directory
-        output_dir = "./data/uploads"
-        os.makedirs(output_dir, exist_ok=True)
+        video_title = clean_title(title or info.get('title'), None) if (title or info.get('title')) else "YouTube Video"
+        duration = info.get('duration') or 0
+        logger.info(f"Downloaded: {video_title} ({duration}s) -> {file_path}")
 
-        # Configure yt-dlp options
-        ydl_opts = {
-            'format': f'bestvideo[height<={quality.replace("p", "")}]+bestaudio/best' if quality != 'best' else 'best',
-            'outtmpl': f'{output_dir}/{video_id}.%(ext)s',
-            'merge_output_format': 'mp4',
-            'quiet': False,
-            'no_warnings': False,
-        }
+        await asyncio.to_thread(ctx.check_cancel)
+        await asyncio.to_thread(_download_finished, video_id, video_title, file_path, duration, auto_process)
+        await send_progress_update(video_id=video_id, stage="download", progress=30.0,
+                                   message=f"Download complete: {video_title}")
 
-        # Download video
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Inform user download is in progress
-            await send_progress_update(
-                video_id=video_id,
-                stage="download",
-                progress=15.0,
-                message="Fetching video information...",
-            )
-
-            info = ydl.extract_info(url, download=True)
-
-            # Get downloaded file info
-            video_title = title or info.get('title', 'YouTube Video')
-            duration = info.get('duration', 0)
-
-            # Find the downloaded file
-            file_path = f"{output_dir}/{video_id}.mp4"
-
-            logger.info(f"Downloaded: {video_title} ({duration}s) -> {file_path}")
-
-        with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
-            if video:
-                video.title = video_title
-                video.file_path = file_path
-                video.duration_seconds = duration
-                video.processing_status = (
-                    VideoStatus.PROCESSING if auto_process else VideoStatus.PENDING
-                )
-
-        # Download complete
-        await send_progress_update(
-            video_id=video_id,
-            stage="download",
-            progress=30.0,
-            message=f"Download complete: {video_title}",
-        )
-
-        # If auto_process, start processing
-        if auto_process:
-            await process_video_background(video_id)
-
+    except JobCancelled as stop:
+        await asyncio.to_thread(_after_download_stop, video_id, stop.reason)
+        raise
     except Exception as e:
         logger.error(f"YouTube download failed: {e}")
-        with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
-            if video:
-                video.processing_status = VideoStatus.FAILED
-                video.error_message = short_error(e)
-        await send_processing_error(
-            video_id=video_id,
-            stage="download",
-            error_message=f"Download failed: {short_error(e)}",
-        )
+        await asyncio.to_thread(_record_download_failure, video_id, short_error(e))
+        await send_processing_error(video_id=video_id, stage="download",
+                                    error_message=f"Download failed: {short_error(e)}")
+        raise
+
+
+def _after_download_stop(video_id: str, reason: str) -> None:
+    """A download that was stopped leaves no half file behind"""
+    for ext in ("mp4", "mkv", "webm", "part", "mp4.part"):
+        try:
+            os.remove(f"./data/uploads/{video_id}.{ext}")
+        except OSError:
+            pass
+    if reason in ("deleted", "failed"):
+        return  # (a failure records its own message)
+    with get_db() as db:
+        video = db.query(Video).filter(Video.external_id == video_id).first()
+        if video is None:
+            return
+        if reason == "cancelled":
+            video.processing_status = VideoStatus.FAILED
+            video.error_message = "Download cancelled"
+        else:  # shutdown: the job goes back in the queue and starts over
+            video.processing_status = VideoStatus.DOWNLOADING
+            video.error_message = None
+
+
+def _download_stream_blocking(cmd: list, file_path: str, ctx: JobContext, timeout: int) -> None:
+    """Run ffmpeg and watch it: it is stopped as soon as the job is cancelled (subprocess.run could not be)"""
+    import subprocess
+    import time
+
+    process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    started = time.monotonic()
+    try:
+        while True:
+            try:
+                _, stderr = process.communicate(timeout=1.0)
+                break
+            except subprocess.TimeoutExpired:
+                ctx.check_cancel()
+                if time.monotonic() - started > timeout:
+                    raise RuntimeError("The stream took too long to download")
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+    if process.returncode != 0 or not os.path.exists(file_path):
+        raise RuntimeError(f"ffmpeg failed: {(stderr or '')[-500:]}")
 
 
 async def download_streaming_video(
@@ -1216,24 +1401,25 @@ async def download_streaming_video(
     url: str,
     title: Optional[str],
     auto_process: bool,
+    ctx: Optional[JobContext] = None,
+    max_mb: Optional[int] = None,
 ):
-    """Download streaming video (HTTP/HLS) with ffmpeg"""
-    import subprocess
+    """Download a stream (HTTP/HLS) with ffmpeg (a queue job). Raises on failure after recording it."""
     from src.api.websockets import send_progress_update, send_processing_error
+    from src.core.config import settings
 
-    # Safety cap: a truly live (infinite) stream would otherwise hang the
-    # pipeline forever. VOD streams finish well before this.
+    ctx = ctx or JobContext(job_id="", kind="download", video_id=video_id, user_id=None)
+    if not ctx.job_id:
+        ctx.check_cancel = lambda: None
+    max_mb = max_mb or settings.max_video_size_mb
+
+    # Safety cap: a truly live (infinite) stream would otherwise hang for ever. VOD streams finish well before.
     MAX_STREAM_DURATION_SECONDS = 3600
 
     try:
         logger.info(f"Downloading streaming video: {url}")
-
-        await send_progress_update(
-            video_id=video_id,
-            stage="download",
-            progress=5.0,
-            message="Starting stream download...",
-        )
+        await send_progress_update(video_id=video_id, stage="download", progress=5.0,
+                                   message="Starting stream download...")
 
         output_dir = "./data/uploads"
         os.makedirs(output_dir, exist_ok=True)
@@ -1246,53 +1432,57 @@ async def download_streaming_video(
             "-protocol_whitelist", "http,https,tcp,tls,crypto",
             "-i", url,
             "-t", str(MAX_STREAM_DURATION_SECONDS),
+            "-fs", str(max_mb * 1024 * 1024),   # stop writing at the size limit instead of filling the disk
             "-c", "copy",
             "-y",
             "-hide_banner",
             "-loglevel", "error",
             file_path,
         ]
-        import asyncio
-        result = await asyncio.to_thread(
-            subprocess.run, cmd, capture_output=True, text=True, timeout=MAX_STREAM_DURATION_SECONDS + 60
-        )
-        if result.returncode != 0 or not os.path.exists(file_path):
-            raise RuntimeError(f"ffmpeg failed: {result.stderr[-500:]}")
+        await asyncio.to_thread(_download_stream_blocking, cmd, file_path, ctx, MAX_STREAM_DURATION_SECONDS + 60)
 
         duration = await get_video_duration(file_path)
-        video_title = title or "Streaming Video"
-
-        with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
-            if video:
-                video.title = video_title
-                video.file_path = file_path
-                video.duration_seconds = duration
-                video.processing_status = (
-                    VideoStatus.PROCESSING if auto_process else VideoStatus.PENDING
-                )
-
+        video_title = clean_title(title, None) if title else "Streaming Video"
         logger.info(f"Downloaded stream: {video_title} ({duration:.1f}s) -> {file_path}")
 
-        await send_progress_update(
-            video_id=video_id,
-            stage="download",
-            progress=30.0,
-            message=f"Download complete: {video_title}",
-        )
+        await asyncio.to_thread(ctx.check_cancel)
+        await asyncio.to_thread(_download_finished, video_id, video_title, file_path, duration, auto_process)
+        await send_progress_update(video_id=video_id, stage="download", progress=30.0,
+                                   message=f"Download complete: {video_title}")
 
-        if auto_process:
-            await process_video_background(video_id)
-
+    except JobCancelled as stop:
+        await asyncio.to_thread(_after_download_stop, video_id, stop.reason)
+        raise
     except Exception as e:
         logger.error(f"Streaming download failed: {e}")
-        with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
-            if video:
-                video.processing_status = VideoStatus.FAILED
-                video.error_message = short_error(e)
-        await send_processing_error(
-            video_id=video_id,
-            stage="download",
-            error_message=f"Stream download failed: {short_error(e)}",
+        await asyncio.to_thread(_after_download_stop, video_id, "failed")
+        await asyncio.to_thread(_record_download_failure, video_id, short_error(e))
+        await send_processing_error(video_id=video_id, stage="download",
+                                    error_message=f"Stream download failed: {short_error(e)}")
+        raise
+
+
+# ============================================================================
+# Queue runners: how the queue starts each kind of job
+# ============================================================================
+
+
+async def run_process_job(ctx: JobContext) -> None:
+    await process_video_background(ctx.video_id, ctx)
+
+
+async def run_download_job(ctx: JobContext) -> None:
+    payload = ctx.payload
+    if payload.get("source") == "youtube":
+        await download_youtube_video(
+            ctx.video_id, payload["url"], payload.get("title"), payload.get("quality", "best"),
+            bool(payload.get("auto_process", True)), ctx, payload.get("max_mb"),
         )
+    else:
+        await download_streaming_video(
+            ctx.video_id, payload["url"], payload.get("title"), bool(payload.get("auto_process", True)),
+            ctx, payload.get("max_mb"),
+        )
+
+
+QUEUE_RUNNERS = {JobKind.PROCESS.value: run_process_job, JobKind.DOWNLOAD.value: run_download_job}
