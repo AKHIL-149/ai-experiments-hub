@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is no
 HARNESS = r"""
 const vm = require('vm'), fs = require('fs');
 const input = JSON.parse(process.argv[process.argv.length - 1]);
-const elements = {}, created = [], calls = [], redirects = [];
+const elements = {}, created = [], calls = [], redirects = [], timers = [];
 
 function el(id) {
   const e = {id, innerHTML: '', textContent: '', outerHTML: '', value: '', style: {}, dataset: {}, children: [], hidden: false,
@@ -42,7 +42,7 @@ const location = {origin: 'http://localhost:8000', pathname: input.path || '/', 
 
 const ctx = {
   document, location, window: {location}, console: {log() {}, error() {}, warn() {}},
-  URLSearchParams, encodeURIComponent, setTimeout() { return 0; }, clearTimeout() {}, WebSocket: function () { this.close = () => {}; },
+  URLSearchParams, encodeURIComponent, setTimeout(fn, ms) { timers.push(ms); return timers.length; }, clearTimeout() {}, WebSocket: function () { this.close = () => {}; },
   confirm: () => true, alert() {}, URL, Date, Math, JSON, Number, String, Promise, parseFloat, isNaN, Object, Array, RegExp,
   fetch: async (url, options) => {
     calls.push({url: String(url), method: (options && options.method) || 'GET', body: options && options.body, credentials: options && options.credentials});
@@ -60,7 +60,7 @@ const run = async () => {
   await new Promise(r => setImmediate(r));
   await vm.runInContext('(async () => {' + input.script + '})()', ctx);
   await new Promise(r => setImmediate(r));
-  const out = {redirects, calls, byId: {}, created: created.map(c => ({tag: c.tag, textContent: c.textContent, innerHTML: c.innerHTML, href: c.href, type: c.type,
+  const out = {redirects, calls, timers, byId: {}, created: created.map(c => ({tag: c.tag, textContent: c.textContent, innerHTML: c.innerHTML, href: c.href, type: c.type,
     listeners: Object.keys(c.listeners)}))};
   for (const [id, e] of Object.entries(elements)) out.byId[id] = {innerHTML: e.innerHTML, textContent: e.textContent, hidden: e.hidden, disabled: e.disabled,
     listeners: Object.keys(e.listeners), children: e.children.map(k => ({tag: k.tag, textContent: k.textContent, innerHTML: k.innerHTML, href: k.href}))};

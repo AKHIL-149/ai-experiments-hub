@@ -12,6 +12,8 @@ import io
 import os
 import subprocess
 
+from src.models import VideoStatus
+
 # Import FastAPI app (will need to be created)
 # from server import app
 
@@ -99,23 +101,29 @@ class TestYouTubeVideoEndpoint:
 class TestStreamingVideoEndpoint:
     """Tests for POST /api/videos/stream"""
 
+    @staticmethod
+    def _queue():
+        """The queue is replaced: these tests are about the endpoint, the queue has its own tests"""
+        job = Mock(id="job-1")
+        return patch("src.api.videos.job_queue.enqueue", return_value=(job, True)), \
+            patch("src.api.videos.job_queue.notify"), patch("src.api.videos._position_of", return_value=1)
+
     @pytest.mark.asyncio
     async def test_streaming_video_http_url(self):
-        """A valid http:// URL is accepted, persisted, and scheduled for download"""
+        """A valid http:// URL is accepted, persisted, and queued for download"""
         from src.api.videos import process_streaming_video, StreamingVideoRequest
 
         mock_db = MagicMock()
-        background_tasks = BackgroundTasks()
+        enqueue, notify, position = self._queue()
 
-        with patch("src.api.videos.get_db", _mock_get_db(mock_db)):
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), enqueue as mock_enqueue, notify, position:
             response = await process_streaming_video(
-                background_tasks=background_tasks,
                 request=StreamingVideoRequest(url="http://example.com/video.mp4", title="My Stream"),
                 auto_process=True,
             )
 
         assert response.status == "downloading"
-        assert response.video_id
+        assert response.video_id and response.job_id == "job-1" and response.queue_position == 1
 
         # A Video row was persisted with the right source metadata
         added_video = mock_db.add.call_args[0][0]
@@ -124,11 +132,11 @@ class TestStreamingVideoEndpoint:
         assert added_video.source_type.value == "stream"
         assert added_video.processing_status.value == "downloading"
 
-        # The real download was scheduled, not skipped
-        assert len(background_tasks.tasks) == 1
-        scheduled = background_tasks.tasks[0]
-        assert scheduled.func.__name__ == "download_streaming_video"
-        assert scheduled.args == (response.video_id, "http://example.com/video.mp4", "My Stream", True)
+        # The download was queued (not run inside the request), with everything it needs
+        _, video, kind, payload = mock_enqueue.call_args[0]
+        assert kind == "download" and video is added_video
+        assert payload["source"] == "stream" and payload["url"] == "http://example.com/video.mp4"
+        assert payload["title"] == "My Stream" and payload["auto_process"] is True and payload["max_mb"] > 0
 
     @pytest.mark.asyncio
     async def test_streaming_video_m3u8_playlist(self):
@@ -137,12 +145,11 @@ class TestStreamingVideoEndpoint:
         from src.api.videos import process_streaming_video, StreamingVideoRequest
 
         mock_db = MagicMock()
-        background_tasks = BackgroundTasks()
         url = "https://example.com/stream/playlist.m3u8"
+        enqueue, notify, position = self._queue()
 
-        with patch("src.api.videos.get_db", _mock_get_db(mock_db)):
+        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), enqueue as mock_enqueue, notify, position:
             response = await process_streaming_video(
-                background_tasks=background_tasks,
                 request=StreamingVideoRequest(url=url),
                 auto_process=False,
             )
@@ -152,6 +159,7 @@ class TestStreamingVideoEndpoint:
         assert added_video.source_url == url
         # No title given -> falls back to the generic default
         assert added_video.title == "Streaming Video"
+        assert mock_enqueue.call_args[0][3]["auto_process"] is False
 
     @pytest.mark.asyncio
     async def test_streaming_video_invalid_protocol(self):
@@ -160,25 +168,22 @@ class TestStreamingVideoEndpoint:
         from src.api.videos import process_streaming_video, StreamingVideoRequest
 
         mock_db = MagicMock()
-        background_tasks = BackgroundTasks()
+        enqueue, notify, position = self._queue()
 
         for bad_url in ["ftp://example.com/video.mp4", "file:///etc/passwd", "not-a-url"]:
-            with patch("src.api.videos.get_db", _mock_get_db(mock_db)):
+            with patch("src.api.videos.get_db", _mock_get_db(mock_db)), enqueue as mock_enqueue, notify, position:
                 with pytest.raises(HTTPException) as exc_info:
-                    await process_streaming_video(
-                        background_tasks=background_tasks,
-                        request=StreamingVideoRequest(url=bad_url),
-                    )
+                    await process_streaming_video(request=StreamingVideoRequest(url=bad_url))
             assert exc_info.value.status_code == 400
+            mock_enqueue.assert_not_called()
 
-        # Nothing should have been persisted or scheduled for any of them
+        # Nothing should have been persisted for any of them
         mock_db.add.assert_not_called()
-        assert len(background_tasks.tasks) == 0
 
 
 class TestDownloadStreamingVideoTask:
-    """Tests for the download_streaming_video background task
-    (the actual ffmpeg download logic, AKHIL-423)"""
+    """The stream download job (the ffmpeg download logic, AKHIL-423). The blocking ffmpeg run and the queue
+    are replaced; what is checked is what the job does with their results."""
 
     def _mock_video_row(self):
         """A Mock standing in for the SQLAlchemy Video row, with settable attrs"""
@@ -190,38 +195,40 @@ class TestDownloadStreamingVideoTask:
         video.error_message = None
         return video
 
+    def _patches(self, mock_db, ffmpeg=None, exists=True, duration=10.0):
+        from contextlib import ExitStack
+        stack = ExitStack()
+        stack.enter_context(patch("src.api.videos.get_db", _mock_get_db(mock_db)))
+        stack.enter_context(patch("src.api.videos.os.path.exists", return_value=exists))
+        run = stack.enter_context(patch("src.api.videos._download_stream_blocking", side_effect=ffmpeg))
+        stack.enter_context(patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=duration)))
+        enqueue = stack.enter_context(patch("src.api.videos.job_queue.enqueue"))
+        stack.enter_context(patch("src.api.videos.job_queue.notify"))
+        stack.enter_context(patch("src.api.websockets.send_progress_update", new=AsyncMock()))
+        error = stack.enter_context(patch("src.api.websockets.send_processing_error", new=AsyncMock()))
+        return stack, run, enqueue, error
+
     @pytest.mark.asyncio
-    async def test_successful_download_updates_video_and_triggers_processing(self):
+    async def test_successful_download_updates_video_and_queues_processing(self):
         from src.api.videos import download_streaming_video
 
         mock_video = self._mock_video_row()
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+        stack, run, enqueue, _ = self._patches(mock_db, duration=123.4)
 
-        fake_ffmpeg_result = Mock(returncode=0, stderr="")
-
-        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
-             patch("src.api.videos.os.path.exists", return_value=True), \
-             patch("asyncio.to_thread", new=AsyncMock(return_value=fake_ffmpeg_result)), \
-             patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=123.4)), \
-             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_process, \
-             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
-             patch("src.api.websockets.send_processing_error", new=AsyncMock()):
-
+        with stack:
             await download_streaming_video(
-                video_id="vid-123",
-                url="http://example.com/video.mp4",
-                title="My Stream",
-                auto_process=True,
+                video_id="vid-123", url="http://example.com/video.mp4", title="My Stream", auto_process=True,
             )
 
         # Real duration and file path were written to the Video row
         assert mock_video.duration_seconds == 123.4
         assert mock_video.file_path == "./data/uploads/vid-123.mp4"
         assert mock_video.title == "My Stream"
-        assert mock_video.processing_status.value == "processing"
-        # Auto-process was actually invoked, not just claimed
-        mock_process.assert_awaited_once_with("vid-123")
+        assert mock_video.processing_status.value == "pending"   # the analysis waits its turn in the queue
+        # Auto-process queued the analysis as a job, not claimed it
+        assert enqueue.call_args[0][1] is mock_video and enqueue.call_args[0][2] == "process"
 
     @pytest.mark.asyncio
     async def test_download_without_auto_process_stays_pending(self):
@@ -230,86 +237,63 @@ class TestDownloadStreamingVideoTask:
         mock_video = self._mock_video_row()
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_video
-        fake_ffmpeg_result = Mock(returncode=0, stderr="")
+        stack, _, enqueue, _ = self._patches(mock_db, duration=60.0)
 
-        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
-             patch("src.api.videos.os.path.exists", return_value=True), \
-             patch("asyncio.to_thread", new=AsyncMock(return_value=fake_ffmpeg_result)), \
-             patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=60.0)), \
-             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_process, \
-             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
-             patch("src.api.websockets.send_processing_error", new=AsyncMock()):
-
+        with stack:
             await download_streaming_video(
                 video_id="vid-456", url="http://example.com/video.mp4", title=None, auto_process=False,
             )
 
         assert mock_video.processing_status.value == "pending"
-        mock_process.assert_not_awaited()
+        enqueue.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_ffmpeg_failure_marks_video_failed_not_silently_lost(self):
         """This is the exact bug AKHIL-423 fixed: a failed download used to
         vanish silently (Video row never existed). Now it must land as FAILED
-        with a real error message, and auto-process must never run."""
+        with a real error message, auto-process must never run, and the job
+        must fail too (the exception reaches the queue)."""
         from src.api.videos import download_streaming_video
 
         mock_video = self._mock_video_row()
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+        stack, _, enqueue, error = self._patches(
+            mock_db, ffmpeg=RuntimeError("ffmpeg failed: Connection refused"), exists=False)
 
-        fake_ffmpeg_result = Mock(returncode=1, stderr="Connection refused")
-
-        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
-             patch("src.api.videos.os.path.exists", return_value=False), \
-             patch("asyncio.to_thread", new=AsyncMock(return_value=fake_ffmpeg_result)), \
-             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_process, \
-             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
-             patch("src.api.websockets.send_processing_error", new=AsyncMock()) as mock_error:
-
-            await download_streaming_video(
-                video_id="vid-789", url="http://bad.example.com/nope.mp4", title=None, auto_process=True,
-            )
+        with stack:
+            with pytest.raises(RuntimeError, match="Connection refused"):
+                await download_streaming_video(
+                    video_id="vid-789", url="http://bad.example.com/nope.mp4", title=None, auto_process=True,
+                )
 
         assert mock_video.processing_status.value == "failed"
         assert "Connection refused" in mock_video.error_message
-        mock_process.assert_not_awaited()
-        mock_error.assert_awaited_once()
+        enqueue.assert_not_called()
+        error.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_ffmpeg_command_includes_safety_duration_cap(self):
-        """A truly live (infinite) stream must not hang the pipeline forever -
-        verify the -t cap is actually passed to ffmpeg, not just documented"""
+    async def test_ffmpeg_command_includes_safety_caps(self):
+        """A truly live (infinite) stream must not hang the pipeline forever, and a huge one must not fill the
+        disk - verify the -t and -fs caps are actually passed to ffmpeg, not just documented"""
         from src.api.videos import download_streaming_video
 
         mock_video = self._mock_video_row()
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_video
+        stack, run, _, _ = self._patches(mock_db)
 
-        captured_cmd = {}
-
-        async def fake_to_thread(func, *args, **kwargs):
-            # args[0] is the ffmpeg argv list passed to subprocess.run
-            captured_cmd["cmd"] = args[0]
-            return Mock(returncode=0, stderr="")
-
-        with patch("src.api.videos.get_db", _mock_get_db(mock_db)), \
-             patch("src.api.videos.os.path.exists", return_value=True), \
-             patch("asyncio.to_thread", new=fake_to_thread), \
-             patch("src.api.videos.get_video_duration", new=AsyncMock(return_value=10.0)), \
-             patch("src.api.videos.process_video_background", new=AsyncMock()), \
-             patch("src.api.websockets.send_progress_update", new=AsyncMock()), \
-             patch("src.api.websockets.send_processing_error", new=AsyncMock()):
-
+        with stack:
             await download_streaming_video(
-                video_id="vid-cap", url="http://example.com/live.m3u8", title=None, auto_process=False,
+                video_id="vid-cap", url="http://example.com/live.m3u8", title=None, auto_process=False, max_mb=7,
             )
 
-        cmd = captured_cmd["cmd"]
+        cmd = run.call_args[0][0]
         assert cmd[0] == "ffmpeg"
-        assert "-t" in cmd
         assert cmd[cmd.index("-t") + 1] == "3600"
+        assert cmd[cmd.index("-fs") + 1] == str(7 * 1024 * 1024)
         assert "-c" in cmd and cmd[cmd.index("-c") + 1] == "copy"
+        assert cmd[cmd.index("-protocol_whitelist") + 1] == "http,https,tcp,tls,crypto"
 
 
 class TestListVideosEndpoint:
@@ -447,28 +431,26 @@ class TestProcessVideoEndpoint:
 
     @pytest.mark.asyncio
     async def test_process_video_background_task(self):
-        """/process schedules the real process_video_background pipeline
-        (process_video_pipeline was a dead stub, deleted in AKHIL-414)"""
-        from fastapi import BackgroundTasks
+        """/process queues the real analysis as a job (it used to start it at once, so five requests meant
+        five analyses at the same time); the video keeps its state until a worker takes the job"""
         from src.api.processing import process_video
-        from src.models import VideoStatus
 
-        mock_video = Mock(file_path="./data/uploads/vid-1.mp4", processing_status=None)
+        mock_video = Mock(file_path="./data/uploads/vid-1.mp4", processing_status=VideoStatus.PENDING)
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_video
-        background_tasks = BackgroundTasks()
+        job = Mock(id="job-1")
 
         with patch("src.core.database.get_db", _mock_get_db(mock_db)), \
-             patch("src.api.videos.process_video_background", new=AsyncMock()) as mock_pipeline:
-            response = await process_video(video_id="vid-1", background_tasks=background_tasks, request=None)
+             patch("src.services.job_queue.enqueue", return_value=(job, True)) as mock_enqueue, \
+             patch("src.services.job_queue.notify") as mock_notify, \
+             patch("src.api.videos._position_of", return_value=2):
+            response = await process_video(video_id="vid-1", request=None)
 
-        assert response.status == "processing"
-        assert mock_video.processing_status == VideoStatus.PROCESSING
-        assert len(background_tasks.tasks) == 1
-        # process_video imports process_video_background locally, so the
-        # scheduled callable should be this exact patched mock
-        assert background_tasks.tasks[0].func is mock_pipeline
-        assert background_tasks.tasks[0].args == ("vid-1",)
+        assert response.status == "queued" and response.job_id == "job-1" and response.queue_position == 2
+        assert "position 2" in response.message
+        assert mock_video.processing_status == VideoStatus.PENDING
+        assert mock_enqueue.call_args[0][1] is mock_video and mock_enqueue.call_args[0][2] == "process"
+        mock_notify.assert_called_once()
 
 
 class TestReprocessVideoEndpoint:
