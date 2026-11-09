@@ -102,14 +102,26 @@ class ContentBasedSceneDetector(SceneDetector):
 
             logger.info(f"Detected {len(scene_list)} scenes (FPS={fps})")
 
+            # PySceneDetect lists only the cuts it found, so a video that is one
+            # continuous shot (a talking head, a screen recording, a short
+            # clip) comes back with no scenes at all. That is one scene
+            # covering the whole video, not an error.
+            boundaries = [
+                (a.get_seconds(), b.get_seconds(), a.get_frames(), b.get_frames())
+                for a, b in scene_list
+            ]
+            if not boundaries:
+                first = start_time or 0.0
+                last = end_time if end_time is not None else video.duration.get_seconds()
+                if last > first:
+                    boundaries = [(
+                        first, last, int(round(first * fps)), int(round(last * fps))
+                    )]
+                    logger.info("No cuts found: treating the video as a single scene")
+
             # Convert to Scene objects
             scenes = []
-            for idx, (start_frame_obj, end_frame_obj) in enumerate(scene_list, start=1):
-                start_frame_num = start_frame_obj.get_frames()
-                end_frame_num = end_frame_obj.get_frames()
-
-                start_seconds = start_frame_obj.get_seconds()
-                end_seconds = end_frame_obj.get_seconds()
+            for idx, (start_seconds, end_seconds, start_frame_num, end_frame_num) in enumerate(boundaries, start=1):
                 duration = end_seconds - start_seconds
 
                 scene = Scene(
@@ -138,7 +150,7 @@ class ContentBasedSceneDetector(SceneDetector):
 
             logger.info(
                 f"Scene detection complete: {len(scenes)} final scenes "
-                f"(average duration: {sum(s.duration for s in scenes) / len(scenes):.2f}s)"
+                f"(average duration: {sum(s.duration for s in scenes) / max(len(scenes), 1):.2f}s)"
             )
 
             return scenes
@@ -199,9 +211,10 @@ class ContentBasedSceneDetector(SceneDetector):
         Returns:
             Processed scenes
         """
-        # Filter short scenes
-        if self.config.min_scene_length > 0:
-            scenes = self.filter_short_scenes(scenes)
+        # Filter short scenes (but never throw away every scene of a short video)
+        if self.config.min_scene_length > 0 and scenes:
+            kept = self.filter_short_scenes(scenes)
+            scenes = kept or [max(scenes, key=lambda s: s.duration)]
 
         # Split long scenes if configured
         if self.config.max_scene_length:
@@ -245,6 +258,7 @@ class ContentBasedSceneDetector(SceneDetector):
 
                 # Score based on scene count and average duration
                 # Prefer moderate number of scenes with reasonable durations
+                avg_duration = 0.0
                 if len(scenes) == 0:
                     score = float('inf')
                 else:

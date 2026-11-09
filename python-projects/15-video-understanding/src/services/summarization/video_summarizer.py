@@ -4,6 +4,8 @@ Use transcript and scene descriptions to create comprehensive summaries
 """
 
 import logging
+
+from src.utils.input_checks import clean_llm_text
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
@@ -129,7 +131,7 @@ class VideoSummarizer:
                 system_prompt=self._get_system_prompt(),
             )
 
-            summary_text = response["text"]
+            summary_text = clean_llm_text(response["text"])
             tokens_used = response.get("tokens", {})
             cost_usd = self.llm_client.estimate_cost(tokens_used)
         else:

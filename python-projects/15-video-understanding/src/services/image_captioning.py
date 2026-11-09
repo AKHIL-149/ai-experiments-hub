@@ -3,13 +3,55 @@ Image captioning service
 Generates natural language descriptions of images using vision-language models
 """
 
+import json
 import logging
+import os
+import re
+import urllib.request
 from pathlib import Path
 from typing import List, Optional, Dict
 from dataclasses import dataclass
 import base64
 
 logger = logging.getLogger(__name__)
+
+
+DEFAULT_CAPTION_PROMPT = (
+    "Describe this video frame in one or two plain sentences (under 40 words). "
+    "If it is a slide or a screen, say what it shows and quote its title. "
+    "Say only what you can actually see."
+)
+
+
+def clean_caption(text: Optional[str], max_chars: int = 300) -> str:
+    """
+    Tidy a model's caption: one line, no wrapping quotes, and no runaway
+    repetition. BLIP answers 'traceability for react react react ...' (the
+    same word 100+ times) for a slide with a short title; the repeated run is
+    cut and what came before it kept.
+    """
+    cleaned = re.sub(r"\s+", " ", (text or "")).strip().strip("\"'")
+    words = cleaned.split(" ") if cleaned else []
+    out: List[str] = []
+    run = 0
+    for word in words:
+        run = run + 1 if out and word.lower() == out[-1].lower() else 1
+        if run > 2:       # a word said a third time in a row is a loop: keep it once
+            while len(out) >= 2 and out[-1].lower() == out[-2].lower():
+                out.pop()
+            break
+        out.append(word)
+    cleaned = " ".join(out)
+    if len(cleaned) > max_chars:
+        cut = cleaned[:max_chars]
+        stop = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+        cleaned = cut[: stop + 1] if stop > max_chars // 2 else cut.rsplit(" ", 1)[0] + "…"
+    return cleaned
+
+
+# Models that can look at an image, in the order they are preferred when the
+# configured one is not installed
+_VISION_FAMILIES = ("qwen3-vl", "qwen2.5vl", "qwen2-vl", "llama3.2-vision", "llava", "minicpm-v", "moondream", "gemma3")
 
 
 @dataclass
@@ -31,7 +73,10 @@ class ImageCaptioningService:
         self,
         api_key: Optional[str] = None,
         model: str = "gpt-4-vision",
-        use_local: bool = False
+        use_local: bool = False,
+        provider: Optional[str] = None,
+        ollama_model: Optional[str] = None,
+        ollama_url: Optional[str] = None,
     ):
         """
         Initialize image captioning service
@@ -45,6 +90,47 @@ class ImageCaptioningService:
         self.model = model
         self.use_local = use_local
         self.local_model = None
+        self.provider = provider
+        self.ollama_model = ollama_model
+        self.ollama_url = (ollama_url or os.getenv("OLLAMA_API_URL", "http://localhost:11434")).rstrip("/")
+        self._ollama_checked = False
+        self._ollama_usable = False
+
+    @classmethod
+    def from_settings(cls) -> "ImageCaptioningService":
+        """Captioner that follows VISION_PROVIDER / VISION_MODEL (BLIP as the fallback)"""
+        from src.core.config import settings
+        return cls(
+            use_local=True,
+            provider=(settings.vision_provider or "").strip().lower() or None,
+            ollama_model=settings.vision_model,
+        )
+
+    def _resolve_ollama(self) -> bool:
+        """Is Ollama reachable with a model that can see? (checked once)"""
+        if self._ollama_checked:
+            return self._ollama_usable
+        self._ollama_checked = True
+        try:
+            with urllib.request.urlopen(f"{self.ollama_url}/api/tags", timeout=5) as response:
+                installed = [m["name"] for m in json.load(response).get("models", [])]
+        except Exception as e:
+            logger.warning(f"Ollama is not reachable ({e}); captions will come from BLIP")
+            return False
+
+        wanted = self.ollama_model or ""
+        match = next((n for n in installed if n == wanted or n == f"{wanted}:latest" or n.split(":")[0] == wanted), None)
+        if match is None:
+            match = next((n for family in _VISION_FAMILIES for n in installed if n.startswith(family)), None)
+            if match:
+                logger.warning(f"Vision model '{wanted}' is not installed; using '{match}' instead")
+        if match is None:
+            logger.warning(f"No vision model is installed in Ollama (wanted '{wanted}', try: ollama pull {wanted or 'llava'}); captions will come from BLIP")
+            return False
+        self.ollama_model = match
+        self._ollama_usable = True
+        logger.info(f"Captioning frames with Ollama model '{match}'")
+        return True
 
     def caption_image(
         self,
@@ -71,6 +157,13 @@ class ImageCaptioningService:
             raise ValueError(f"Image not found: {image_path}")
 
         logger.info(f"Generating caption for {image_path}")
+
+        if self.provider == "ollama" and self._resolve_ollama():
+            try:
+                return self._caption_ollama(image_path, prompt)
+            except Exception as e:
+                logger.warning(f"Ollama captioning failed for {image_path.name} ({e}); using BLIP for this frame")
+                return self._caption_local(image_path, None)
 
         if self.use_local or not self.api_key:
             return self._caption_local(image_path, prompt)
@@ -111,6 +204,31 @@ class ImageCaptioningService:
 
         logger.info(f"Caption generation complete: {len(captions)} captions")
         return captions
+
+    def _caption_ollama(self, image_path: Path, prompt: Optional[str]) -> ImageCaption:
+        """Caption with a local Ollama vision model"""
+        with open(image_path, "rb") as f:
+            image_b64 = base64.b64encode(f.read()).decode("ascii")
+        body = {
+            "model": self.ollama_model,
+            "stream": False,
+            "think": False,
+            # a 'thinking' model spends part of this budget before it answers,
+            # and an answer cut off by the budget would come back empty
+            "options": {"temperature": 0, "num_predict": 1200},
+            "messages": [{"role": "user", "content": prompt or DEFAULT_CAPTION_PROMPT, "images": [image_b64]}],
+        }
+        request = urllib.request.Request(
+            f"{self.ollama_url}/api/chat", json.dumps(body).encode(), {"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(request, timeout=180) as response:
+            data = json.load(response)
+        text = clean_caption((data.get("message") or {}).get("content"))
+        if not text:
+            raise RuntimeError("the model returned no text")
+        return ImageCaption(
+            text=text, confidence=None, model=f"ollama:{self.ollama_model}", metadata={"prompt": prompt}
+        )
 
     def _caption_api(
         self,
@@ -216,7 +334,7 @@ class ImageCaptioningService:
                 inputs = self.processor(image, return_tensors="pt")
 
             outputs = self.local_model.generate(**inputs, max_length=50)
-            caption_text = self.processor.decode(outputs[0], skip_special_tokens=True)
+            caption_text = clean_caption(self.processor.decode(outputs[0], skip_special_tokens=True))
 
             return ImageCaption(
                 text=caption_text,

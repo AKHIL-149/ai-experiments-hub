@@ -179,7 +179,7 @@ async def websocket_process_updates(websocket: WebSocket, video_id: str):
             "event": "connected",
             "video_id": video_id,
             "message": f"Connected to processing updates for video {video_id}",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }, websocket)
 
         # Keep connection alive and handle incoming messages
@@ -193,7 +193,7 @@ async def websocket_process_updates(websocket: WebSocket, video_id: str):
                 if message.get("type") == "ping":
                     await manager.send_personal_message({
                         "type": "pong",
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                     }, websocket)
 
             except WebSocketDisconnect:
@@ -239,7 +239,7 @@ async def websocket_notifications(websocket: WebSocket):
         await manager.send_personal_message({
             "event": "connected",
             "message": "Connected to notifications",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }, websocket)
 
         # Keep connection alive
@@ -252,7 +252,7 @@ async def websocket_notifications(websocket: WebSocket):
                 if message.get("type") == "ping":
                     await manager.send_personal_message({
                         "type": "pong",
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                     }, websocket)
 
             except WebSocketDisconnect:
@@ -274,6 +274,21 @@ async def websocket_notifications(websocket: WebSocket):
 # ============================================================================
 
 
+# The newest progress of each video that is being processed, so GET .../status
+# can answer with it (the WebSocket is push only). Single process by design.
+_latest_progress: dict = {}
+_MAX_TRACKED = 200
+
+
+def get_latest_progress(video_id: str) -> Optional[dict]:
+    """The last {stage, progress, message} sent for a video, or None"""
+    return _latest_progress.get(video_id)
+
+
+def forget_progress(video_id: str) -> None:
+    _latest_progress.pop(video_id, None)
+
+
 async def send_progress_update(
     video_id: str,
     stage: str,
@@ -291,13 +306,17 @@ async def send_progress_update(
         message: Human-readable message
         metadata: Optional additional data
     """
+    _latest_progress[video_id] = {"stage": stage, "progress": progress, "message": message}
+    while len(_latest_progress) > _MAX_TRACKED:
+        _latest_progress.pop(next(iter(_latest_progress)))
+
     update = {
         "event": "progress",
         "video_id": video_id,
         "stage": stage,
         "progress": progress,
         "message": message,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "metadata": metadata or {},
     }
 
@@ -325,7 +344,7 @@ async def send_stage_complete(
         "video_id": video_id,
         "stage": stage,
         "message": message,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "results": results or {},
     }
 
@@ -346,11 +365,12 @@ async def send_processing_complete(
         message: Completion message
         summary: Optional processing summary
     """
+    forget_progress(video_id)
     update = {
         "event": "complete",
         "video_id": video_id,
         "message": message,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "summary": summary or {},
     }
 
@@ -382,12 +402,13 @@ async def send_processing_error(
         error_message: Error description
         error_details: Optional error details
     """
+    forget_progress(video_id)
     update = {
         "event": "error",
         "video_id": video_id,
         "stage": stage,
         "message": error_message,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "error_details": error_details or {},
     }
 
@@ -424,7 +445,7 @@ async def send_notification(
         "type": notification_type,
         "title": title,
         "message": message,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "metadata": metadata or {},
     }
 

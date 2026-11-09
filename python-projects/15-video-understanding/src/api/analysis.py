@@ -179,6 +179,24 @@ async def get_video_summary(
         )
 
 
+def _require_processed_video(video_id: str) -> None:
+    """404 for an unknown video, 400 until processing has finished, so a
+    background job is never queued for something that cannot run"""
+    from src.core.database import get_db
+    from src.models import Video, VideoStatus
+
+    with get_db() as db:
+        video = db.query(Video).filter(Video.external_id == video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        if video.processing_status != VideoStatus.COMPLETED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Video is not fully processed yet (status: {video.processing_status.value})",
+            )
+
+
+
 @router.post("/{video_id}/summarize", response_model=SummaryResponse)
 async def generate_video_summary(
     video_id: str,
@@ -199,13 +217,7 @@ async def generate_video_summary(
     try:
         logger.info(f"Generating {request.summary_type} summary for video {video_id}")
 
-        # TODO: Verify video exists and is processed
-        # video = db.query(Video).filter(Video.id == video_id).first()
-        # if not video:
-        #     raise HTTPException(status_code=404, detail="Video not found")
-        #
-        # if video.processing_status != "completed":
-        #     raise HTTPException(status_code=400, detail="Video not fully processed")
+        _require_processed_video(video_id)
 
         # Schedule summary generation
         background_tasks.add_task(
@@ -218,7 +230,7 @@ async def generate_video_summary(
             video_id=video_id,
             summary_type=request.summary_type,
             content="Summary generation started...",
-            generated_at=datetime.now(),
+            generated_at=datetime.utcnow(),
         )
 
     except HTTPException:
@@ -412,7 +424,7 @@ async def generate_video_highlights(
     try:
         logger.info(f"Generating highlights for video {video_id}")
 
-        # TODO: Verify video exists and is processed
+        _require_processed_video(video_id)
 
         # Schedule highlight generation
         background_tasks.add_task(
@@ -568,6 +580,17 @@ async def filter_video_timeline(
 
             events = _build_timeline_events(db, video)
             duration = video.duration_seconds or 0.0
+
+        known_types = {"scene", "speech", "highlight", "chapter"}
+        unknown = sorted(set(request.event_types or []) - known_types)
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown event type(s): {', '.join(unknown)}. Use: {', '.join(sorted(known_types))}",
+            )
+        if (request.start_time is not None and request.end_time is not None
+                and request.end_time < request.start_time):
+            raise HTTPException(status_code=400, detail="end_time must not be before start_time")
 
         if request.event_types:
             events = [e for e in events if e.event_type in request.event_types]
@@ -965,6 +988,12 @@ async def generate_chapters_task(video_id: str):
                     "end_time": s.end_time,
                     "importance_score": score,
                     "description": s.description,
+                    "spoken_text": " ".join(
+                        t.text.strip() for t in sorted(
+                            (t for t in transcript_rows if s.start_time <= t.start_time < s.end_time),
+                            key=lambda t: t.start_time,
+                        )
+                    )[:300],
                     "keyframe_path": s.keyframe_path,
                 })
 

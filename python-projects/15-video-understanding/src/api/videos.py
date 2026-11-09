@@ -3,6 +3,7 @@ Video management API endpoints
 Upload, retrieve, and manage videos
 """
 
+import asyncio
 import logging
 import os
 import uuid
@@ -12,6 +13,10 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 from src.core.database import get_db
+from src.utils.input_checks import (
+    InvalidMedia, probe_media, short_error, is_youtube_url, check_public_http_url,
+    clean_title, clean_description, fit_segments_to_duration,
+)
 from src.models import Video, VideoStatus, SourceType
 
 logger = logging.getLogger(__name__)
@@ -141,24 +146,46 @@ async def upload_video(
         import uuid
         video_id = str(uuid.uuid4())
 
-        # Use title or filename
-        video_title = title or os.path.splitext(file.filename)[0]
+        # Use title or filename (never a directory part of the filename)
+        video_title = clean_title(title, file.filename)
+        description = clean_description(description)
 
-        # Save uploaded file
+        # Save uploaded file in chunks so a huge upload is refused without
+        # being held in memory, and a refused one leaves nothing behind
+        from src.core.config import settings
+        max_bytes = settings.max_video_size_mb * 1024 * 1024
         upload_dir = "./uploads/videos"
         os.makedirs(upload_dir, exist_ok=True)
 
         file_path = os.path.join(upload_dir, f"{video_id}{file_ext}")
 
-        # Write file
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        written = 0
+        try:
+            with open(file_path, "wb") as f:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Video is larger than the {settings.max_video_size_mb} MB limit",
+                        )
+                    f.write(chunk)
+
+            # The extension proves nothing: ask ffprobe what the file is
+            try:
+                media = await asyncio.to_thread(probe_media, file_path)
+            except InvalidMedia as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        except BaseException:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise
 
         logger.info(f"Saved video to {file_path}")
-
-        # Get video duration using ffprobe
-        duration = await get_video_duration(file_path)
+        duration = media.duration
 
         with get_db() as db:
             video = Video(
@@ -186,7 +213,7 @@ async def upload_video(
             message=status_msg,
             file_path=file_path,
             duration=duration,
-            created_at=datetime.now(),
+            created_at=datetime.utcnow(),
         )
 
     except HTTPException:
@@ -216,7 +243,7 @@ async def process_youtube_video(
         logger.info(f"Processing YouTube video: {request.url}")
 
         # Validate YouTube URL
-        if not ("youtube.com" in request.url or "youtu.be" in request.url):
+        if not is_youtube_url(request.url):
             raise HTTPException(
                 status_code=400,
                 detail="Invalid YouTube URL"
@@ -229,7 +256,7 @@ async def process_youtube_video(
         with get_db() as db:
             video = Video(
                 external_id=video_id,
-                title=request.title or "YouTube Video",
+                title=clean_title(request.title, None) if request.title else "YouTube Video",
                 source_type=SourceType.YOUTUBE,
                 source_url=request.url,
                 processing_status=VideoStatus.DOWNLOADING,
@@ -251,7 +278,7 @@ async def process_youtube_video(
             title=request.title or "YouTube Video",
             status="downloading",
             message="YouTube video download started",
-            created_at=datetime.now(),
+            created_at=datetime.utcnow(),
         )
 
     except HTTPException:
@@ -283,11 +310,14 @@ async def process_streaming_video(
         logger.info(f"Processing streaming video: {request.url}")
 
         # Validate URL
-        if not (request.url.startswith("http://") or request.url.startswith("https://")):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid streaming URL (must be HTTP/HTTPS)"
+        try:
+            request.url = await asyncio.wait_for(
+                asyncio.to_thread(check_public_http_url, request.url), timeout=8
             )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=400, detail="The streaming URL's host did not answer in time")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
         # Generate video ID
         import uuid
@@ -296,7 +326,7 @@ async def process_streaming_video(
         with get_db() as db:
             video = Video(
                 external_id=video_id,
-                title=request.title or "Streaming Video",
+                title=clean_title(request.title, None) if request.title else "Streaming Video",
                 source_type=SourceType.STREAM,
                 source_url=request.url,
                 processing_status=VideoStatus.DOWNLOADING,
@@ -317,7 +347,7 @@ async def process_streaming_video(
             title=request.title or "Streaming Video",
             status="downloading",
             message="Streaming video download started",
-            created_at=datetime.now(),
+            created_at=datetime.utcnow(),
         )
 
     except HTTPException:
@@ -451,6 +481,17 @@ async def delete_video(
         )
 
 
+def _processing_started_at(video) -> Optional[datetime]:
+    """When the latest processing run began, else when the video was added"""
+    stamp = (video.extra_metadata or {}).get("processing_started_at")
+    if stamp:
+        try:
+            return datetime.fromisoformat(stamp)
+        except ValueError:
+            pass
+    return video.created_at
+
+
 @router.get("/{video_id}/status", response_model=VideoStatusResponse)
 async def get_video_status(video_id: str):
     """
@@ -466,13 +507,18 @@ async def get_video_status(video_id: str):
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
+            from src.api.websockets import get_latest_progress
+            live = get_latest_progress(video_id) if video.processing_status == VideoStatus.PROCESSING else None
+            progress = 100.0 if video.processing_status == VideoStatus.COMPLETED else (
+                float(live["progress"]) if live else 0.0
+            )
             return VideoStatusResponse(
                 video_id=video_id,
                 status=video.processing_status.value,
-                progress=100.0 if video.processing_status == VideoStatus.COMPLETED else 0.0,
-                stage=video.processing_status.value,
+                progress=progress,
+                stage=live["stage"] if live else video.processing_status.value,
                 error_message=video.error_message,
-                started_at=video.created_at,
+                started_at=_processing_started_at(video),
                 completed_at=video.processed_at,
             )
 
@@ -590,6 +636,12 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     processor.extract_audio(path, audio_path)
     transcriber = TranscriptionService(prefer_local=True, model_name=settings.whisper_model)
     transcription = transcriber.transcribe(audio_path, use_local=True)
+    try:
+        transcription.segments = fit_segments_to_duration(
+            transcription.segments, probe_media(str(path)).duration
+        )
+    except Exception as e:
+        logger.warning(f"Could not check transcript segments against the video length: {e}")
 
     # Real speaker diarization (pyannote.audio), if a HF token is configured
     if settings.diarization_use_auth_token and settings.hf_token:
@@ -612,9 +664,9 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
         logger.warning(f"Action recognition failed: {e}")
         all_actions = []
 
-    # Real per-scene keyframe extraction, captioning (local BLIP), and
+    # Real per-scene keyframe extraction, captioning (the configured Ollama vision model, BLIP as fallback), and
     # visual understanding (objects/faces/OCR) + audio energy
-    captioner = ImageCaptioningService(use_local=True)
+    captioner = ImageCaptioningService.from_settings()
     object_detector = ObjectDetectionService()
     face_detector = FaceDetectionService(backend="opencv")
     ocr = OCRService(engine="easyocr")
@@ -752,6 +804,12 @@ async def process_video_background(video_id: str):
             if not video:
                 raise RuntimeError(f"Video {video_id} not found in database")
             video.processing_status = VideoStatus.PROCESSING
+            video.error_message = None
+            # when this run began (created_at is when the file was uploaded)
+            video.extra_metadata = {
+                **(video.extra_metadata or {}),
+                "processing_started_at": datetime.utcnow().isoformat(),
+            }
             file_path = video.file_path
 
             # Clear any prior analysis before regenerating, so calling this
@@ -968,7 +1026,7 @@ async def process_video_background(video_id: str):
                 frame_count = len(frames_with_clip)
 
             video.processing_status = VideoStatus.COMPLETED
-            video.processed_at = datetime.now()
+            video.processed_at = datetime.utcnow()
 
         await send_stage_complete(
             video_id=video_id,
@@ -1022,11 +1080,11 @@ async def process_video_background(video_id: str):
             video = db.query(Video).filter(Video.external_id == video_id).first()
             if video:
                 video.processing_status = VideoStatus.FAILED
-                video.error_message = str(e)
+                video.error_message = short_error(e)
         await send_processing_error(
             video_id=video_id,
             stage="unknown",
-            error_message=str(e),
+            error_message=short_error(e),
         )
 
 
@@ -1114,11 +1172,11 @@ async def download_youtube_video(
             video = db.query(Video).filter(Video.external_id == video_id).first()
             if video:
                 video.processing_status = VideoStatus.FAILED
-                video.error_message = str(e)
+                video.error_message = short_error(e)
         await send_processing_error(
             video_id=video_id,
             stage="download",
-            error_message=f"Download failed: {str(e)}",
+            error_message=f"Download failed: {short_error(e)}",
         )
 
 
@@ -1152,6 +1210,9 @@ async def download_streaming_video(
 
         cmd = [
             "ffmpeg",
+            # a playlist (m3u8) can name other files: allow only the network
+            # protocols, never file: or anything local
+            "-protocol_whitelist", "http,https,tcp,tls,crypto",
             "-i", url,
             "-t", str(MAX_STREAM_DURATION_SECONDS),
             "-c", "copy",
@@ -1198,9 +1259,9 @@ async def download_streaming_video(
             video = db.query(Video).filter(Video.external_id == video_id).first()
             if video:
                 video.processing_status = VideoStatus.FAILED
-                video.error_message = str(e)
+                video.error_message = short_error(e)
         await send_processing_error(
             video_id=video_id,
             stage="download",
-            error_message=f"Stream download failed: {str(e)}",
+            error_message=f"Stream download failed: {short_error(e)}",
         )

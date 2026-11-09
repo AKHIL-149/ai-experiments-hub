@@ -32,6 +32,26 @@ class FaceDetectionResult:
     metadata: Optional[Dict[str, any]] = None
 
 
+def merge_overlapping_boxes(boxes, overlap: float = 0.5):
+    """
+    Keep one box per face: of two boxes that overlap by more than `overlap`
+    of the smaller one's area, only the larger survives.
+    boxes are (x, y, w, h); returns a new list, largest first.
+    """
+    kept = []
+    for x, y, w, h in sorted(boxes, key=lambda b: b[2] * b[3], reverse=True):
+        duplicate = False
+        for kx, ky, kw, kh in kept:
+            ix = max(0, min(x + w, kx + kw) - max(x, kx))
+            iy = max(0, min(y + h, ky + kh) - max(y, ky))
+            if w * h and (ix * iy) / (w * h) > overlap:
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append((x, y, w, h))
+    return kept
+
+
 class FaceDetectionService:
     """
     Detect and analyze faces in images
@@ -148,9 +168,10 @@ class FaceDetectionService:
             minSize=(30, 30)
         )
 
-        # Convert to DetectedFace objects
+        # Convert to DetectedFace objects (the cascade reports the same face
+        # several times at different sizes: keep one box per face)
         faces = []
-        for (x, y, w, h) in detected:
+        for (x, y, w, h) in merge_overlapping_boxes([tuple(int(v) for v in b) for b in detected]):
             face = DetectedFace(
                 bbox=(int(x), int(y), int(w), int(h)),
                 confidence=1.0  # OpenCV doesn't provide confidence

@@ -4,6 +4,7 @@ Generate chapter titles and descriptions for video navigation
 """
 
 import logging
+import re
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
 
@@ -45,6 +46,29 @@ class ChapterCollection:
     tokens_used: Dict[str, int] = field(default_factory=dict)
 
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+_DANGLING = {
+    "a", "an", "the", "in", "of", "on", "at", "to", "with", "and", "or", "for", "by",
+    "is", "are", "as", "from", "that", "this", "it", "its", "but", "so",
+}
+
+
+def title_from_text(text: Optional[str], max_words: int = 8) -> Optional[str]:
+    """
+    A short title from the start of some text: its first sentence, at most
+    max_words words, never ending on 'a', 'of' or similar, first letter capital.
+    """
+    if not text:
+        return None
+    sentence = re.split(r"(?<=[.!?])\s+", text.strip(), maxsplit=1)[0]
+    words = sentence.split()[:max_words]
+    while words and words[-1].strip(".,;:!?-").lower() in _DANGLING:
+        words.pop()
+    if len(words) < 2:
+        return None
+    title = " ".join(words).rstrip(".,;:!?- ")
+    return title[0].upper() + title[1:]
 
 
 class ChapterGenerator:
@@ -379,11 +403,15 @@ class ChapterGenerator:
                 topic = title.split(":", 1)[1].strip()
                 return f"Chapter {chapter.chapter_number}: {topic}"
 
-        # Check for description
-        if description:
-            # Take first few words
-            words = description.split()[:4]
-            return f"Chapter {chapter.chapter_number}: {' '.join(words)}"
+        # What is said where the chapter starts says more than a caption of
+        # the picture does ("Welcome to Trial Data Lab" vs "a woman in a")
+        spoken = (
+            first_scene.get("spoken_text") if isinstance(first_scene, dict)
+            else getattr(first_scene, "spoken_text", None)
+        )
+        topic = title_from_text(spoken) or title_from_text(description, max_words=6)
+        if topic:
+            return f"Chapter {chapter.chapter_number}: {topic}"
 
         # Fallback
         return f"Chapter {chapter.chapter_number}"

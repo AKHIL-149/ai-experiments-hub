@@ -4,7 +4,7 @@ Create, manage, and download video clips
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Literal
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -23,13 +23,15 @@ router = APIRouter(prefix="/api", tags=["clips"])
 
 class CreateClipRequest(BaseModel):
     """Request to create video clip"""
-    title: Optional[str] = Field(None, description="Clip title")
-    description: Optional[str] = Field(None, description="Clip description")
+    title: Optional[str] = Field(None, max_length=200, description="Clip title")
+    description: Optional[str] = Field(None, max_length=2000, description="Clip description")
     start_time: float = Field(..., ge=0.0, description="Start timestamp (seconds)")
     end_time: float = Field(..., gt=0.0, description="End timestamp (seconds)")
     include_audio: bool = Field(True, description="Include audio in clip")
-    format: str = Field("mp4", description="Output format (mp4, webm, gif)")
-    resolution: Optional[str] = Field(None, description="Resolution (720p, 1080p, original)")
+    format: Literal["mp4", "webm", "gif"] = Field("mp4", description="Output format (mp4, webm, gif)")
+    resolution: Optional[Literal["480p", "720p", "1080p", "original"]] = Field(
+        None, description="Resolution (480p, 720p, 1080p, original)"
+    )
     add_fade: bool = Field(False, description="Add fade in/out effects")
     add_subtitles: bool = Field(False, description="Include subtitles from transcript")
 
@@ -154,6 +156,20 @@ async def create_clip(
                 raise HTTPException(status_code=404, detail="Video not found")
             if not video.file_path:
                 raise HTTPException(status_code=400, detail="Video has no source file")
+            # A clip can only come from footage that exists: 55-300 s of a
+            # 60 s video used to be stored as a 245 s clip of 5 s
+            length = video.duration_seconds or 0.0
+            if length and request.start_time >= length:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"start_time ({request.start_time:g}s) is past the end of the video ({length:.1f}s)",
+                )
+            if length and request.end_time > length + 0.5:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"end_time ({request.end_time:g}s) is past the end of the video ({length:.1f}s)",
+                )
+            request.end_time = min(request.end_time, length) if length else request.end_time
 
             import uuid
             clip_id = str(uuid.uuid4())
@@ -191,7 +207,7 @@ async def create_clip(
             format=request.format,
             resolution=request.resolution or "original",
             status="pending",
-            created_at=datetime.now(),
+            created_at=datetime.utcnow(),
         )
 
     except HTTPException:
@@ -370,7 +386,7 @@ async def create_highlight_reel(
             format="mp4",
             resolution="original",
             status="pending",
-            created_at=datetime.now(),
+            created_at=datetime.utcnow(),
         )
 
     except HTTPException:
@@ -552,7 +568,7 @@ async def download_clip(clip_id: str):
 
             return FileResponse(
                 path=clip.file_path,
-                media_type="video/mp4",
+                media_type={"webm": "video/webm", "gif": "image/gif"}.get(clip.format, "video/mp4"),
                 filename=f"{clip.title}.{clip.format}",
             )
 
@@ -679,7 +695,7 @@ async def create_clip_task(
             clip_row.file_size = metadata.file_size_bytes
             clip_row.thumbnail_path = thumbnail_path
             clip_row.status = ClipStatus.COMPLETED
-            clip_row.completed_at = datetime.now()
+            clip_row.completed_at = datetime.utcnow()
 
         logger.info(f"Clip {clip_id} created successfully: {metadata.output_path}")
 
@@ -759,7 +775,7 @@ async def create_highlight_reel_task(
             reel_row.file_path = reel_meta.output_path
             reel_row.file_size = reel_meta.file_size_bytes
             reel_row.status = ClipStatus.COMPLETED
-            reel_row.completed_at = datetime.now()
+            reel_row.completed_at = datetime.utcnow()
 
         logger.info(f"Highlight reel {reel_id} created successfully: {reel_meta.output_path}")
 

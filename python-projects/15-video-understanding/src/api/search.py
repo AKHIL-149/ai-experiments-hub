@@ -539,7 +539,8 @@ def _run_rag_answer(question: str, context_text: str) -> str:
         f"Question: {question}\n\nAnswer:"
     )
     response = llm.generate(prompt=prompt, max_tokens=500, temperature=0.3, system_prompt=system_prompt)
-    return response["text"].strip()
+    from src.utils.input_checks import clean_llm_text
+    return clean_llm_text(response["text"])
 
 
 @router.post("/query", response_model=VideoQueryResponse)
@@ -614,10 +615,22 @@ async def query_videos(request: VideoQueryRequest):
                 for v in db.query(Video).filter(Video.external_id.in_(ext_ids)).all()
             } if ext_ids else {}
 
-        context_text = "\n\n".join(
-            f"[{titles.get(s['video_id'], 'video')} @ {s['timestamp']:.0f}s]: {s['content']}"
-            for s in raw_sources
-        )
+        from src.models import Transcript
+        from src.utils.qa_context import build_context
+
+        with get_db() as db:
+            rows = (
+                db.query(Video.external_id, Transcript.start_time, Transcript.end_time, Transcript.text)
+                .join(Transcript, Transcript.video_id == Video.id)
+                .filter(Video.external_id.in_(ext_ids))
+                .order_by(Video.external_id, Transcript.start_time)
+                .all()
+            ) if ext_ids else []
+        segments_by_video = {}
+        for external_id, seg_start, seg_end, seg_text in rows:
+            segments_by_video.setdefault(external_id, []).append((seg_start, seg_end, seg_text))
+
+        context_text = build_context(raw_sources, segments_by_video, titles)
 
         answer = await asyncio.to_thread(_run_rag_answer, request.question, context_text)
         processing_time = (datetime.now() - start_time).total_seconds() * 1000

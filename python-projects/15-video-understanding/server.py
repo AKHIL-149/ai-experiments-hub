@@ -115,13 +115,16 @@ app = FastAPI(
 # CORS middleware - Allow frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
+    # Only the origins in CORS_ORIGINS (plus the dev frontend on loopback).
+    # "*" with credentials made the server answer any website that asked, so a
+    # page open in the same browser could read and delete videos here.
+    allow_origins=sorted({
+        *settings.cors_origins,
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
-        "*",  # Allow all origins in development
-    ],
+        "http://127.0.0.1:8000",
+    }),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -147,7 +150,7 @@ async def root(request: Request):
     # Check if client accepts HTML (browser request)
     accept_header = request.headers.get("accept", "")
     if "text/html" in accept_header and os.path.exists("frontend/index.html"):
-        return FileResponse("frontend/index.html")
+        return FileResponse("frontend/index.html", headers={"Cache-Control": "no-cache"})
 
     # Return JSON for API clients
     return {
@@ -245,9 +248,23 @@ if os.path.exists("data/clips"):
 if os.path.exists("data/thumbnails"):
     app.mount("/thumbnails", StaticFiles(directory="data/thumbnails"), name="thumbnails")
 
+class RevalidatingStaticFiles(StaticFiles):
+    """
+    Frontend files the browser must re-check on every load. Sent with no
+    Cache-Control at all, a browser kept running its old app.js after a fix
+    (a page that had the XSS fix on disk still ran the vulnerable copy). The
+    files keep their ETag, so an unchanged file is a cheap 304.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # Serve frontend files (fixes tracking prevention by using same origin)
 if os.path.exists("frontend"):
-    app.mount("/static", StaticFiles(directory="frontend"), name="frontend")
+    app.mount("/static", RevalidatingStaticFiles(directory="frontend"), name="frontend")
 
 
 # ============================================================================
@@ -269,7 +286,7 @@ async def not_found_handler(request, exc):
 
     # For frontend routes, serve index.html (SPA handling)
     if os.path.exists("frontend/index.html"):
-        return FileResponse("frontend/index.html")
+        return FileResponse("frontend/index.html", headers={"Cache-Control": "no-cache"})
 
     # Fallback to JSON error if no frontend
     return JSONResponse(

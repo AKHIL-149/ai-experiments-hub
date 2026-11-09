@@ -340,7 +340,7 @@ function handleProcessingUpdate(data) {
         const stagesDiv = document.getElementById('progress-stages');
         const completionEl = document.createElement('div');
         completionEl.className = 'stage complete';
-        completionEl.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${message}</strong>`;
+        completionEl.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${esc(message)}</strong>`;
         completionEl.style.color = 'var(--success-color)';
         completionEl.style.fontSize = '1.1rem';
         stagesDiv.appendChild(completionEl);
@@ -425,7 +425,7 @@ function addStageComplete(stage, message) {
 
     const stageEl = document.createElement('div');
     stageEl.className = 'stage complete';
-    stageEl.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+    stageEl.innerHTML = `<i class="fas fa-check-circle"></i> ${esc(message)}`;
     stagesDiv.appendChild(stageEl);
     console.log(`✅ Stage added to UI: ${message}`);
 }
@@ -548,14 +548,14 @@ function displaySearchResults(data) {
             <div class="result-card">
                 <div class="result-header">
                     <div>
-                        <span class="result-badge">${result.result_type}</span>
-                        <h4>${result.video_title}</h4>
+                        <span class="result-badge">${esc(result.result_type)}</span>
+                        <h4>${esc(result.video_title)}</h4>
                     </div>
                     <div>
                         <strong>Score:</strong> ${(result.similarity_score * 100).toFixed(1)}%
                     </div>
                 </div>
-                <p>${result.content}</p>
+                <p>${esc(result.content)}</p>
                 <div class="result-meta">
                     <span><i class="fas fa-clock"></i> ${formatTime(result.timestamp)}</span>
                 </div>
@@ -573,7 +573,7 @@ function displayQueryResult(data) {
         <div class="query-result">
             <div class="result-card">
                 <h3>Answer</h3>
-                <p style="font-size: 1.125rem; margin: 1rem 0;">${data.answer}</p>
+                <p style="font-size: 1.125rem; margin: 1rem 0;">${esc(data.answer)}</p>
                 <div style="margin-top: 1rem;">
                     <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%
                 </div>
@@ -582,8 +582,8 @@ function displayQueryResult(data) {
                         <h4>Sources:</h4>
                         ${data.sources.map(source => `
                             <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-lighter); border-radius: 0.5rem;">
-                                <div><strong>${source.source_type}</strong> @ ${formatTime(source.timestamp)}</div>
-                                <div style="color: var(--text-muted);">${source.content.substring(0, 150)}...</div>
+                                <div><strong>${esc(source.source_type)}</strong> @ ${formatTime(source.timestamp)}</div>
+                                <div style="color: var(--text-muted);">${esc(source.content.substring(0, 150))}...</div>
                             </div>
                         `).join('')}
                     </div>
@@ -612,16 +612,16 @@ async function loadVideos() {
         }
 
         const html = data.videos.map(video => `
-            <div class="video-card" onclick="showVideoDetails('${video.video_id}')">
+            <div class="video-card" onclick="showVideoDetails('${esc(video.video_id)}')">
                 <div class="video-thumbnail">
                     <i class="fas fa-film" style="font-size: 3rem; color: var(--text-muted);"></i>
                 </div>
                 <div class="video-info">
-                    <div class="video-title">${video.title}</div>
+                    <div class="video-title">${esc(video.title)}</div>
                     <div class="video-meta">
                         <span><i class="fas fa-clock"></i> ${formatTime(video.duration_seconds)}</span>
-                        <span class="video-status status-${video.processing_status}">
-                            ${video.processing_status}
+                        <span class="video-status status-${esc(video.processing_status)}">
+                            ${esc(video.processing_status)}
                         </span>
                     </div>
                 </div>
@@ -642,30 +642,30 @@ async function showVideoDetails(videoId) {
         const details = document.getElementById('video-details');
 
         details.innerHTML = `
-            <h2>${video.title}</h2>
-            ${video.description ? `<p>${video.description}</p>` : ''}
+            <h2>${esc(video.title)}</h2>
+            ${video.description ? `<p>${esc(video.description)}</p>` : ''}
 
             <div style="margin-top: 2rem;">
                 <h3>Video Information</h3>
                 <div style="margin-top: 1rem;">
                     <div><strong>Duration:</strong> ${formatTime(video.duration_seconds)}</div>
-                    <div><strong>Status:</strong> ${video.processing_status}</div>
-                    <div><strong>Source:</strong> ${video.source_type}</div>
-                    <div><strong>Created:</strong> ${new Date(video.created_at).toLocaleString()}</div>
+                    <div><strong>Status:</strong> ${esc(video.processing_status)}</div>
+                    <div><strong>Source:</strong> ${esc(video.source_type)}</div>
+                    <div><strong>Created:</strong> ${serverDate(video.created_at).toLocaleString()}</div>
                 </div>
             </div>
 
             <div style="margin-top: 2rem; display: flex; gap: 1rem;">
-                <button class="btn btn-primary" onclick="viewSummary('${videoId}')">
+                <button class="btn btn-primary" onclick="viewSummary('${esc(videoId)}')">
                     <i class="fas fa-file-alt"></i> View Summary
                 </button>
-                <button class="btn btn-primary" onclick="viewHighlights('${videoId}')">
+                <button class="btn btn-primary" onclick="viewHighlights('${esc(videoId)}')">
                     <i class="fas fa-star"></i> View Highlights
                 </button>
-                <button class="btn btn-primary" onclick="viewClips('${videoId}')">
+                <button class="btn btn-primary" onclick="viewClips('${esc(videoId)}')">
                     <i class="fas fa-cut"></i> View Clips
                 </button>
-                <button class="btn btn-sm" onclick="deleteVideo('${videoId}')">
+                <button class="btn btn-sm" onclick="deleteVideo('${esc(videoId)}')">
                     <i class="fas fa-trash"></i> Delete
                 </button>
             </div>
@@ -689,7 +689,7 @@ async function viewSummary(videoId) {
             ? `
                 <h3 style="margin-top: 1.5rem;">Key Points</h3>
                 <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
-                    ${summary.key_points.map(p => `<li style="margin-bottom: 0.5rem;">${p}</li>`).join('')}
+                    ${summary.key_points.map(p => `<li style="margin-bottom: 0.5rem;">${esc(p)}</li>`).join('')}
                 </ul>
             `
             : '';
@@ -697,11 +697,11 @@ async function viewSummary(videoId) {
         document.getElementById('summary-details').innerHTML = `
             <h2><i class="fas fa-file-alt"></i> Video Summary</h2>
             <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
-                ${summary.summary_type} summary
+                ${esc(summary.summary_type)} summary
                 ${summary.duration_covered ? ` &middot; covers ${formatTime(summary.duration_covered)}` : ''}
-                &middot; generated ${new Date(summary.generated_at).toLocaleString()}
+                &middot; generated ${serverDate(summary.generated_at).toLocaleString()}
             </div>
-            <p style="margin-top: 1.5rem; white-space: pre-wrap; line-height: 1.6;">${summary.content}</p>
+            <p style="margin-top: 1.5rem; white-space: pre-wrap; line-height: 1.6;">${esc(summary.content)}</p>
             ${keyPointsHtml}
         `;
 
@@ -732,26 +732,27 @@ async function viewHighlights(videoId) {
                     ${data.highlights.map(h => `
                         <div style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem; display: flex; gap: 1rem;">
                             ${h.thumbnail_path ? `
-                                <img src="/api/videos/${videoId}/highlights/${h.highlight_id}/thumbnail"
+                                <img src="/api/videos/${esc(videoId)}/highlights/${esc(h.highlight_id)}/thumbnail"
                                      alt="Highlight thumbnail"
                                      style="width: 120px; height: 68px; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; background: #111;"
                                      onerror="this.style.display='none'">
                             ` : ''}
                             <div style="flex: 1; min-width: 0;">
                                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                    <strong>${h.title}</strong>
+                                    <strong>${esc(h.title)}</strong>
                                     <span style="color: var(--text-muted); font-size: 0.85rem;">
                                         ${formatTime(h.start_time)} - ${formatTime(h.end_time)}
                                     </span>
                                 </div>
-                                ${h.description ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">${h.description}</p>` : ''}
+                                ${h.description ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">${esc(h.description)}</p>` : ''}
                                 <div style="margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
-                                    <span class="result-badge">${h.highlight_type}</span>
+                                    <span class="result-badge">${esc(h.highlight_type)}</span>
                                     <span style="color: var(--text-muted);" title="Relative to the most notable moments in this video">
                                         confidence: ${Math.round(h.importance_score * 100)}%
                                     </span>
                                     <button class="btn btn-sm" style="margin-left: auto;"
-                                            onclick="createClipFromHighlight('${videoId}', ${h.start_time}, ${h.end_time}, '${(h.title || 'Highlight clip').replace(/'/g, "\\'")}', this)">
+                                            data-title="${esc(h.title || 'Highlight clip')}"
+                                            onclick="createClipFromHighlight('${esc(videoId)}', ${Number(h.start_time)}, ${Number(h.end_time)}, this.dataset.title, this)">
                                         <i class="fas fa-cut"></i> Create Clip
                                     </button>
                                 </div>
@@ -792,12 +793,12 @@ function clipStatusBadge(status) {
         processing: 'var(--text-muted)',
         pending: 'var(--text-muted)',
     };
-    return `<span style="color: ${colors[status] || 'var(--text-muted)'};">${status}</span>`;
+    return `<span style="color: ${colors[status] || 'var(--text-muted)'};">${esc(status)}</span>`;
 }
 
 function renderClipCard(c) {
     const thumb = c.status === 'completed'
-        ? `<img src="/api/clips/${c.clip_id}/thumbnail" alt="Clip thumbnail"
+        ? `<img src="/api/clips/${esc(c.clip_id)}/thumbnail" alt="Clip thumbnail"
                 style="width: 120px; height: 68px; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; background: #111;"
                 onerror="this.style.display='none'">`
         : `<div style="width: 120px; height: 68px; border-radius: 0.35rem; flex-shrink: 0; background: #111;
@@ -806,23 +807,23 @@ function renderClipCard(c) {
            </div>`;
 
     return `
-        <div id="clip-card-${c.clip_id}" style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem; display: flex; gap: 1rem;">
+        <div id="clip-card-${esc(c.clip_id)}" style="border: 1px solid var(--border-color, #333); border-radius: 0.5rem; padding: 1rem; display: flex; gap: 1rem;">
             ${thumb}
             <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                    <strong>${c.title}</strong>
+                    <strong>${esc(c.title)}</strong>
                     <span style="color: var(--text-muted); font-size: 0.85rem;">
                         ${formatTime(c.start_time)} - ${formatTime(c.end_time)}
                     </span>
                 </div>
                 <div style="margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem;">
                     ${clipStatusBadge(c.status)}
-                    ${c.error_message ? `<span style="color: var(--danger-color, #e53935);">${c.error_message}</span>` : ''}
+                    ${c.error_message ? `<span style="color: var(--danger-color, #e53935);">${esc(c.error_message)}</span>` : ''}
                     ${c.status === 'completed' ? `
-                        <a href="/api/clips/${c.clip_id}/download" style="margin-left: auto;">
+                        <a href="/api/clips/${esc(c.clip_id)}/download" style="margin-left: auto;">
                             <i class="fas fa-download"></i> Download
                         </a>
-                        <button class="btn btn-sm" onclick="deleteClip('${c.clip_id}', '${c.video_id}')">
+                        <button class="btn btn-sm" onclick="deleteClip('${esc(c.clip_id)}', '${esc(c.video_id)}')">
                             <i class="fas fa-trash"></i>
                         </button>
                     ` : ''}
@@ -864,7 +865,7 @@ async function createClipFromHighlight(videoId, startTime, endTime, title, butto
         if (finalClip && finalClip.status === 'completed') {
             showToast('Clip ready!', 'success');
             if (buttonEl) {
-                buttonEl.outerHTML = `<a href="/api/clips/${clip.clip_id}/download" class="btn btn-sm" style="margin-left: auto;">
+                buttonEl.outerHTML = `<a href="/api/clips/${esc(clip.clip_id)}/download" class="btn btn-sm" style="margin-left: auto;">
                     <i class="fas fa-download"></i> Download Clip
                 </a>`;
             }
@@ -923,7 +924,7 @@ async function viewClips(videoId) {
                         <label style="display: block; font-size: 0.85rem; color: var(--text-muted);">Title (optional)</label>
                         <input id="clip-title-input" type="text" placeholder="My clip" style="width: 100%;">
                     </div>
-                    <button class="btn btn-primary" id="clip-create-btn" onclick="submitManualClip('${videoId}')">
+                    <button class="btn btn-primary" id="clip-create-btn" onclick="submitManualClip('${esc(videoId)}')">
                         <i class="fas fa-cut"></i> Create Clip
                     </button>
                 </div>
@@ -1011,16 +1012,38 @@ function showToast(message, type = 'info') {
                  type === 'error' ? 'exclamation-circle' :
                  'info-circle';
 
-    toast.innerHTML = `
-        <i class="fas fa-${icon}"></i>
-        <span>${message}</span>
-    `;
+    const iconEl = document.createElement('i');
+    iconEl.className = `fas fa-${icon}`;
+    const textEl = document.createElement('span');
+    textEl.textContent = message;
+    toast.append(iconEl, textEl);
 
     container.appendChild(toast);
 
     setTimeout(() => {
         toast.remove();
     }, 5000);
+}
+
+// Everything the server sends back (titles, descriptions, answers, error
+// text) was typed by a user or written by a model, so it is escaped before it
+// is put into HTML: a title like <img src=x onerror=...> must show as text.
+function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+const esc = escapeHtml;
+
+// The server stores and sends UTC times without a "Z" (2026-11-09T05:03:12).
+// new Date() reads that as local time, so a video processed at 11 PM showed
+// "5:03 AM". Treat a time with no zone as UTC.
+function serverDate(value) {
+    const text = String(value || '');
+    return new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(text) || !text ? text : text + 'Z');
 }
 
 function formatTime(seconds) {

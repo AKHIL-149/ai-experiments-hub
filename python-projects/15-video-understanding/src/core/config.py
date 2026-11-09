@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development", description="Application environment")
     debug: bool = Field(default=True, description="Debug mode")
     secret_key: str = Field(default="dev-secret-key-change-in-production", description="Secret key for JWT")
-    api_host: str = Field(default="0.0.0.0", description="API host")
+    api_host: str = Field(default="127.0.0.1", description="API host (0.0.0.0 exposes the API to the network)")
     api_port: int = Field(default=8000, description="API port")
 
     # Database Configuration
