@@ -237,6 +237,20 @@ curl -b jar http://localhost:8000/api/videos
 
 Not built: password change or reset, e-mail, a list of your devices, per-account storage quotas (only video counts), an admin screen.
 
+## Audio Files
+
+Podcasts, lecture recordings, voice memos and audio-only `.mp4` files are processed too. Upload any of `.mp3 .wav .m4a .aac .flac .ogg .opus .wma` (or a video container that holds only sound); what the file really contains decides the type, not its name, so an audio-only `.mp4` is audio and an `.mp3` with cover art is audio (the picture is not a video stream). On YouTube choose **Audio only (mp3)** in the quality list (`download_quality: "audio"`) to download just the sound. `media_type` (`video` or `audio`) is on every video in the API; the Videos page shows a music note instead of a film strip.
+
+With no picture there is no frame extraction, scene detection, captioning, object/face/OCR/CLIP analysis or action recognition. What runs:
+
+- **Transcription** (Whisper), speakers if `HF_TOKEN` is set, and the same checks as for video (segments past the end are dropped).
+- **Sections instead of scenes.** The speech is cut into sections at pauses (a pause of 1.5 s or more once the section is 20 s long; never longer than 90 s, so a speaker who does not pause still gets sections; audio with no speech is cut into windows of about a minute). Each section has its audio energy, and the summary, chapters, highlights and timeline work from them unchanged. The `/scenes` endpoint lists the sections.
+- **Search and Q&A** use the transcript embeddings (there are no frame embeddings, so frame search finds nothing in audio).
+- **Clips of audio are mp3.** `POST /api/videos/{id}/clip` gives an mp3 by default for audio (fades work); asking for mp4, webm or gif is `400`, and an mp3 cannot have `include_audio: false`. For a *video*, `format: "mp3"` takes just the sound. A highlight reel of audio clips is one mp3 (the clips follow each other, no transition); a reel cannot mix sound and picture clips. Audio clips have no thumbnail.
+- Highlights are labelled "Dialogue Highlight", never "Action", because there is no motion.
+
+Limits: a recording is only as good as its transcript (Whisper "base" by default); music with no speech gets sections but no chapters of substance; the sections are found from pauses, not from topics, so a topic change in the middle of a long section does not start a new one; transcription is one long step that cannot be interrupted, so cancelling a long recording takes effect after it.
+
 ## Job Queue
 
 Downloads and video analysis do not run inside the request that asked for them. Every upload, YouTube/stream link, `/process` and `/reprocess` puts a **job** in a queue, and a few workers take jobs one by one.
@@ -258,13 +272,13 @@ Limits of this design: the workers live in the API process (run one server proce
 
 ## Inputs, Limits and What to Expect
 
-Written from running the platform on real videos (a 60 s 1080p explainer, a 4-minute lecture, a 5.8 s phone clip, audio-only and invalid files).
+Written from running the platform on real videos (a 60 s 1080p explainer, a 4-minute lecture, a 5.8 s phone clip, audio-only and invalid files) and on real audio (a 4-minute lecture recording and speech generated with macOS `say`).
 
 ### What the API accepts
 
 | Input | Rule | Answer when it breaks the rule |
 |---|---|---|
-| Upload | `.mp4 .avi .mov .mkv .webm`, **and** ffprobe must find a video stream with a length. A text file, empty file or random bytes named `.mp4` are not videos | `400` with one line (`The file is not a valid video…`, `The file has no video stream (audio-only files are not supported)`); nothing is left on disk |
+| Upload | video `.mp4 .avi .mov .mkv .webm` or audio `.mp3 .wav .m4a .aac .flac .ogg .opus .wma`, **and** ffprobe must find a video or audio stream with a length. A text file, empty file or random bytes named `.mp4` or `.mp3` are not media | `400` with one line (`The file is not a valid video or audio file…`, `The file has no video or audio stream`); nothing is left on disk |
 | Upload size | `MAX_VIDEO_SIZE_MB` (default 500), read in chunks | `413` |
 | Title / description | trimmed, at most 200 / 2000 characters; a directory in the file name (`../../x.mp4`) is dropped (title `x`) | |
 | YouTube URL | the **host** must be YouTube (`youtube.com`, `youtu.be`, …); `evil.example/?youtube.com` is refused | `400` |
@@ -307,7 +321,7 @@ For accurate slide and screen descriptions set `VISION_MODEL=qwen3-vl:8b` (`olla
 - **Faces** use OpenCV's Haar cascade (`FACE` backend `opencv`). It repeats one face as several boxes (now merged) but also reports false faces, e.g. on a blazer, and misses faces in small collage panels or side views, so a face count is only a rough signal. The `mtcnn` backend needs its package installed.
 - `scene_type` is always `unknown`; scenes are not classified.
 - Highlights are labelled "Action Highlight" from motion energy, which also fires for a talking head.
-- Audio-only files are refused; there is no transcribe-only mode.
+- Audio files are analysed from the transcript only (see Audio Files): no topics-based sectioning, and no frame search.
 - Analysis is queued (see Job Queue) but runs inside the API process. A 4-minute 1080p video took about 4.5 minutes, a 60 s video under 2 minutes.
 - Sign-in is cookie based and the server speaks plain HTTP: put it behind HTTPS (and set `COOKIE_SECURE=true`) before exposing it beyond your own machine. It listens on `127.0.0.1` by default; with `API_HOST=0.0.0.0` the sign-in page and API are reachable from your network.
 - The page shows everything the server sends as text (titles, summaries, answers, errors are never interpreted as HTML).
@@ -366,7 +380,8 @@ pytest tests/test_scene_detection.py
 pytest tests/test_input_checks.py tests/test_single_shot_scenes.py tests/test_qa_context.py \
        tests/test_captions.py tests/test_chapter_titles_and_faces.py tests/test_frontend_escaping.py \
        tests/api/test_hardening.py tests/api/test_accounts.py tests/test_frontend_auth.py \
-       tests/api/test_job_queue.py tests/test_frontend_queue.py
+       tests/api/test_job_queue.py tests/test_frontend_queue.py \
+       tests/api/test_audio.py tests/test_audio_sections.py tests/test_frontend_audio.py
 ```
 
 ### Code Formatting
