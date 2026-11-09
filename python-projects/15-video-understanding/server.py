@@ -2,6 +2,7 @@
 FastAPI server for Video Understanding & Summarization Platform
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -31,11 +32,41 @@ from src.api import (
     search_router,
     clips_router,
     websockets_router,
+    auth_router,
 )
+from src.core.login_gate import LoginGateMiddleware
+from src.services.video_cleanup import (
+    ensure_account_schema, purge_dead_sessions, purge_expired_guests,
+)
+
+# The page files are found next to this file, not relative to wherever the server was started from
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
+FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html")
+FRONTEND_LOGIN = os.path.join(FRONTEND_DIR, "login.html")
 
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_once() -> None:
+    from src.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        purge_expired_guests(db)
+        purge_dead_sessions(db)
+    finally:
+        db.close()
+
+
+async def _cleanup_loop() -> None:
+    """Remove expired guests (and what they uploaded) and dead sign-ins, now and then every hour"""
+    while True:
+        try:
+            await asyncio.to_thread(_cleanup_once)
+        except Exception as e:
+            logger.warning(f"Cleanup failed: {e}")
+        await asyncio.sleep(3600)
 
 
 @asynccontextmanager
@@ -74,11 +105,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.warning(f"Could not create database tables: {e}")
             logger.warning("Server will run without database (API endpoints will return errors)")
 
+    # Accounts: the tables are created above in debug mode; a database that already existed also needs
+    # videos.user_id (the Alembic migration adds it as well)
+    try:
+        import src.models  # noqa: F401  (registers every table, users included)
+        Base.metadata.create_all(bind=engine)
+        ensure_account_schema(engine)
+    except Exception as e:
+        logger.warning(f"Could not prepare the account tables: {e}")
+
+    cleanup_task = asyncio.create_task(_cleanup_loop())
+
     logger.info("✅ Application startup complete")
 
     yield
 
     # Shutdown
+    cleanup_task.cancel()
     logger.info("🛑 Shutting down Video Understanding Platform...")
     logger.info("✅ Application shutdown complete")
 
@@ -111,6 +154,10 @@ app = FastAPI(
 # ============================================================================
 # Middleware Configuration
 # ============================================================================
+
+# Sign-in gate: added first = innermost, so CORS headers, the rate limiter and logging also cover the
+# 401s it answers
+app.add_middleware(LoginGateMiddleware)
 
 # CORS middleware - Allow frontend access
 app.add_middleware(
@@ -149,8 +196,8 @@ async def root(request: Request):
     """Root endpoint - Serve frontend or API info"""
     # Check if client accepts HTML (browser request)
     accept_header = request.headers.get("accept", "")
-    if "text/html" in accept_header and os.path.exists("frontend/index.html"):
-        return FileResponse("frontend/index.html", headers={"Cache-Control": "no-cache"})
+    if "text/html" in accept_header and os.path.exists(FRONTEND_INDEX):
+        return FileResponse(FRONTEND_INDEX, headers={"Cache-Control": "no-cache"})
 
     # Return JSON for API clients
     return {
@@ -167,6 +214,11 @@ async def root(request: Request):
             "websocket": "/api/ws",
         }
     }
+
+
+@app.get("/login")
+async def login_page():
+    return FileResponse(FRONTEND_LOGIN, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health")
@@ -227,6 +279,7 @@ async def api_info():
 # ============================================================================
 
 # Include all API routers
+app.include_router(auth_router)
 app.include_router(videos_router)
 app.include_router(processing_router)
 app.include_router(analysis_router)
@@ -238,15 +291,9 @@ app.include_router(websockets_router)
 # Static Files
 # ============================================================================
 
-# Serve uploaded files and generated content
-if os.path.exists("data/uploads"):
-    app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
-
-if os.path.exists("data/clips"):
-    app.mount("/clips", StaticFiles(directory="data/clips"), name="clips")
-
-if os.path.exists("data/thumbnails"):
-    app.mount("/thumbnails", StaticFiles(directory="data/thumbnails"), name="thumbnails")
+# /uploads, /clips and /thumbnails used to be mounted here: anyone could fetch any file by name without
+# signing in. Files now only leave through the endpoints that check who owns them
+# (/api/clips/{id}/download, /api/videos/{id}/frames/..., highlight thumbnails).
 
 class RevalidatingStaticFiles(StaticFiles):
     """
@@ -263,8 +310,8 @@ class RevalidatingStaticFiles(StaticFiles):
 
 
 # Serve frontend files (fixes tracking prevention by using same origin)
-if os.path.exists("frontend"):
-    app.mount("/static", RevalidatingStaticFiles(directory="frontend"), name="frontend")
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/static", RevalidatingStaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 
 # ============================================================================
@@ -285,8 +332,8 @@ async def not_found_handler(request, exc):
         )
 
     # For frontend routes, serve index.html (SPA handling)
-    if os.path.exists("frontend/index.html"):
-        return FileResponse("frontend/index.html", headers={"Cache-Control": "no-cache"})
+    if os.path.exists(FRONTEND_INDEX):
+        return FileResponse(FRONTEND_INDEX, headers={"Cache-Control": "no-cache"})
 
     # Fallback to JSON error if no frontend
     return JSONResponse(

@@ -8,6 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel, Field
 from datetime import datetime
+from src.core.access import find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ async def process_video(
         from src.api.videos import process_video_background
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
             if not video.file_path:
@@ -205,7 +206,7 @@ async def reprocess_video(
         from src.api.videos import process_video_background
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
             if not video.file_path:
@@ -257,7 +258,7 @@ async def get_video_scenes(video_id: str):
         from src.models import Video, Scene
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -317,7 +318,7 @@ async def get_video_transcript(
         from src.models import Video, Transcript
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -386,7 +387,7 @@ async def get_video_frames(
         from src.models import Video, Frame
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -449,7 +450,10 @@ async def get_frame_image(video_id: str, frame_id: str):
 
     try:
         with get_db() as db:
-            frame = db.query(Frame).filter(Frame.id == int(frame_id)).first()
+            video = find_video(db, video_id)
+            frame = find_frame(db, int(frame_id)) if video else None
+            if frame is not None and frame.video_id != video.id:
+                frame = None  # a frame of another video is not reachable through this video's URL
             if not frame or not frame.file_path or not os_module.path.exists(frame.file_path):
                 raise HTTPException(status_code=404, detail="Frame image not found")
 

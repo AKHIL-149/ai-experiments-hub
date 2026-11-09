@@ -664,6 +664,7 @@ class VideoVectorStore(VectorStore):
         query_embedding: np.ndarray,
         n_results: int = 10,
         video_id: Optional[str] = None,
+        video_ids: Optional[List[str]] = None,
         time_range: Optional[tuple] = None,
     ) -> SearchResult:
         """
@@ -673,6 +674,7 @@ class VideoVectorStore(VectorStore):
             query_embedding: Query embedding
             n_results: Number of results
             video_id: Filter by video ID
+            video_ids: Only these videos (used to keep an account to its own videos)
             time_range: Filter by time range (start, end)
 
         Returns:
@@ -687,6 +689,8 @@ class VideoVectorStore(VectorStore):
         where = {}
         if video_id:
             where["video_id"] = video_id
+        elif video_ids:
+            where["video_id"] = {"$in": list(video_ids)}
 
         if time_range:
             where["timestamp"] = {"$gte": time_range[0], "$lte": time_range[1]}
@@ -702,6 +706,7 @@ class VideoVectorStore(VectorStore):
         query_embedding: np.ndarray,
         n_results: int = 10,
         video_id: Optional[str] = None,
+        video_ids: Optional[List[str]] = None,
         speaker: Optional[str] = None,
     ) -> SearchResult:
         """
@@ -711,6 +716,7 @@ class VideoVectorStore(VectorStore):
             query_embedding: Query embedding
             n_results: Number of results
             video_id: Filter by video ID
+            video_ids: Only these videos (used to keep an account to its own videos)
             speaker: Filter by speaker
 
         Returns:
@@ -725,6 +731,8 @@ class VideoVectorStore(VectorStore):
         where = {}
         if video_id:
             where["video_id"] = video_id
+        elif video_ids:
+            where["video_id"] = {"$in": list(video_ids)}
         if speaker:
             where["speaker"] = speaker
 
@@ -739,6 +747,7 @@ class VideoVectorStore(VectorStore):
         query_embedding: np.ndarray,
         n_results: int = 10,
         video_id: Optional[str] = None,
+        video_ids: Optional[List[str]] = None,
         min_duration: Optional[float] = None,
     ) -> SearchResult:
         """
@@ -748,6 +757,7 @@ class VideoVectorStore(VectorStore):
             query_embedding: Query embedding
             n_results: Number of results
             video_id: Filter by video ID
+            video_ids: Only these videos (used to keep an account to its own videos)
             min_duration: Minimum scene duration
 
         Returns:
@@ -762,6 +772,8 @@ class VideoVectorStore(VectorStore):
         where = {}
         if video_id:
             where["video_id"] = video_id
+        elif video_ids:
+            where["video_id"] = {"$in": list(video_ids)}
         if min_duration:
             where["duration"] = {"$gte": min_duration}
 

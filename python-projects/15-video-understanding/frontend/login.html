@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - Video Understanding Platform</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/login.css?v=2">
+</head>
+<body class="login-body">
+    <main class="login-card">
+        <h1 class="login-title">Video Understanding Platform</h1>
+        <p class="login-sub">Sign in to see your videos. Each account only sees its own.</p>
+
+        <div class="login-tabs" role="tablist">
+            <button type="button" id="tab-signin" class="login-tab active" role="tab" aria-selected="true">Sign in</button>
+            <button type="button" id="tab-register" class="login-tab" role="tab" aria-selected="false">Create account</button>
+        </div>
+
+        <form id="login-form" autocomplete="on" novalidate>
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" maxlength="32" required autofocus>
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+            <p id="password-hint" class="login-hint" hidden></p>
+
+            <div id="name-row" hidden>
+                <label for="display-name">Display name <span class="login-hint">(optional)</span></label>
+                <input id="display-name" name="display_name" type="text" maxlength="80" autocomplete="name">
+            </div>
+
+            <p id="login-error" class="login-error" role="alert" hidden></p>
+            <button type="submit" id="submit" class="btn btn-primary login-wide">Sign in</button>
+        </form>
+
+        <div id="guest-box" class="login-guest" hidden>
+            <div class="login-or"><span>or</span></div>
+            <button type="button" id="guest-btn" class="btn login-wide">Continue as guest</button>
+            <p id="guest-note" class="login-hint"></p>
+        </div>
+    </main>
+    <script src="/static/login.js?v=1"></script>
+</body>
+</html>

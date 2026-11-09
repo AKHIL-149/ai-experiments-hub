@@ -107,6 +107,18 @@ class Settings(BaseSettings):
     )
     cors_allow_credentials: bool = Field(default=True, description="CORS allow credentials")
 
+    # Accounts
+    require_login: bool = Field(default=True, description="Every API call needs a signed-in account (false = single-user local mode)")
+    session_days: int = Field(default=14, description="How long a sign-in lasts")
+    cookie_secure: bool = Field(default=False, description="Mark the session cookie Secure (set true behind HTTPS)")
+    admin_usernames: str = Field(default="", description="Comma-separated usernames that become administrators")
+    allow_registration: bool = Field(default=True, description="Allow new accounts to be created")
+    allow_guests: bool = Field(default=True, description="Allow Continue as Guest")
+    guest_ttl_hours: int = Field(default=24, description="Guests and their videos are deleted after this many hours")
+    guest_max_videos: int = Field(default=3, description="Videos a guest may keep at once")
+    guest_max_video_size_mb: int = Field(default=50, description="Largest upload for a guest")
+    max_videos_per_user: int = Field(default=100, description="Videos a signed-in user may keep at once")
+
     # Rate Limiting
     rate_limit_enabled: bool = Field(default=True, description="Enable rate limiting")
     rate_limit_per_minute: int = Field(default=60, description="Requests per minute limit")

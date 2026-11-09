@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from datetime import datetime
+from src.core.auth import current_caller
+from src.core.access import can_see_clip, find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +153,7 @@ async def create_clip(
         from src.models import Video, Clip, ClipStatus
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
             if not video.file_path:
@@ -261,7 +263,7 @@ async def create_clips_batch(
             import uuid
             reel_id = str(uuid.uuid4())
             with get_db() as db:
-                source_video = db.query(Video).filter(Video.external_id == video_id).first()
+                source_video = find_video(db, video_id)
                 db.add(ClipModel(
                     external_id=reel_id,
                     video_id=source_video.id,
@@ -333,7 +335,9 @@ async def create_highlight_reel(
         from src.models import Video
 
         with get_db() as db:
-            clips = db.query(ClipModel).filter(ClipModel.external_id.in_(request.clip_ids)).all()
+            # find_clip answers None for another account's clip: reported as "not found", like a missing one
+            clips = [c for c in db.query(ClipModel).filter(ClipModel.external_id.in_(request.clip_ids)).all()
+                     if can_see_clip(db, c)]
             if len(clips) != len(request.clip_ids):
                 raise HTTPException(status_code=404, detail="One or more clips not found")
             not_ready = [c.external_id for c in clips if c.status != ClipStatus.COMPLETED]
@@ -429,8 +433,12 @@ async def list_clips(
 
         with get_db() as db:
             query = db.query(ClipModel)
+            caller = current_caller()
+            if caller is None or not caller.is_admin:
+                # only clips of videos this account owns (a clip belongs to whoever owns its video)
+                query = query.filter(ClipModel.video_id.in_(scope_videos(db.query(Video)).with_entities(Video.id)))
             if video_id:
-                video = db.query(Video).filter(Video.external_id == video_id).first()
+                video = find_video(db, video_id)
                 query = query.filter(ClipModel.video_id == (video.id if video else -1))
             if status:
                 query = query.filter(ClipModel.status == ClipStatus(status))
@@ -475,7 +483,7 @@ async def get_clip(clip_id: str):
         from src.models import Clip as ClipModel
 
         with get_db() as db:
-            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            clip = find_clip(db, clip_id)
             if not clip:
                 raise HTTPException(status_code=404, detail="Clip not found")
             return _clip_to_response(clip, db)
@@ -511,7 +519,7 @@ async def delete_clip(
         from src.models import Clip as ClipModel
 
         with get_db() as db:
-            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            clip = find_clip(db, clip_id)
             if not clip:
                 raise HTTPException(status_code=404, detail="Clip not found")
 
@@ -558,7 +566,7 @@ async def download_clip(clip_id: str):
         from src.models import Clip as ClipModel, ClipStatus
 
         with get_db() as db:
-            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            clip = find_clip(db, clip_id)
             if not clip:
                 raise HTTPException(status_code=404, detail="Clip not found")
             if clip.status != ClipStatus.COMPLETED:
@@ -599,7 +607,7 @@ async def get_clip_thumbnail(clip_id: str):
         from src.models import Clip as ClipModel
 
         with get_db() as db:
-            clip = db.query(ClipModel).filter(ClipModel.external_id == clip_id).first()
+            clip = find_clip(db, clip_id)
             if not clip or not clip.thumbnail_path or not os_module.path.exists(clip.thumbnail_path):
                 raise HTTPException(status_code=404, detail="Thumbnail not found")
 

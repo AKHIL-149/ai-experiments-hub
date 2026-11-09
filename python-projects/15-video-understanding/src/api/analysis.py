@@ -8,6 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel, Field
 from datetime import datetime
+from src.core.access import find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ async def get_video_summary(
         from src.models import Video, Summary, SummaryType
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -186,7 +187,7 @@ def _require_processed_video(video_id: str) -> None:
     from src.models import Video, VideoStatus
 
     with get_db() as db:
-        video = db.query(Video).filter(Video.external_id == video_id).first()
+        video = find_video(db, video_id)
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
         if video.processing_status != VideoStatus.COMPLETED:
@@ -259,7 +260,7 @@ async def get_video_chapters(video_id: str):
         from src.models import Video, Chapter as ChapterModel
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -329,7 +330,7 @@ async def get_video_highlights(
         from src.models import Video, Highlight as HighlightModel, HighlightType as HighlightTypeDB
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -390,7 +391,12 @@ async def get_highlight_thumbnail(video_id: str, highlight_id: str):
 
     try:
         with get_db() as db:
-            highlight = db.query(HighlightModel).filter(HighlightModel.id == int(highlight_id)).first()
+            video = find_video(db, video_id)
+            highlight = (
+                db.query(HighlightModel)
+                .filter(HighlightModel.id == int(highlight_id), HighlightModel.video_id == (video.id if video else -1))
+                .first()
+            )
             if not highlight or not highlight.thumbnail_path or not os_module.path.exists(highlight.thumbnail_path):
                 raise HTTPException(status_code=404, detail="Thumbnail not found")
 
@@ -527,7 +533,7 @@ async def get_video_timeline(video_id: str):
         from src.models import Video
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -574,7 +580,7 @@ async def filter_video_timeline(
         from src.models import Video
 
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 

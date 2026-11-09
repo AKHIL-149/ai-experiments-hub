@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Enum, Text, JSON
+    Column, Integer, String, Float, DateTime, Enum, Text, JSON, ForeignKey
 )
 from sqlalchemy.orm import relationship
 
@@ -65,6 +65,9 @@ class Video(Base):
 
     # Public identifier used in API URLs and on-disk file names (UUID)
     external_id = Column(String(64), unique=True, nullable=True, index=True)
+
+    # Who the video belongs to (NULL: uploaded before accounts existed; the first account adopts it)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Basic information
     title = Column(String(500), nullable=False, index=True)

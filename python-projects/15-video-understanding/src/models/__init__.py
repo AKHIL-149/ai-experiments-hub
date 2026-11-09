@@ -11,6 +11,7 @@ from src.models.highlight import Highlight, HighlightType
 from src.models.embedding import VideoEmbedding, EmbeddingType
 from src.models.chapter import Chapter
 from src.models.clip import Clip, ClipStatus
+from src.models.user import User, UserSession
 
 __all__ = [
     "Video",
@@ -31,4 +32,6 @@ __all__ = [
     "Chapter",
     "Clip",
     "ClipStatus",
+    "User",
+    "UserSession",
 ]

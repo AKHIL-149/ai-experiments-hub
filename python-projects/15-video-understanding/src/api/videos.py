@@ -12,6 +12,9 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks,
 from pydantic import BaseModel, Field
 from datetime import datetime
 
+from src.core.auth import current_caller
+from src.services.video_cleanup import purge_video
+from src.core.access import find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video
 from src.core.database import get_db
 from src.utils.input_checks import (
     InvalidMedia, probe_media, short_error, is_youtube_url, check_public_http_url,
@@ -110,6 +113,28 @@ def _video_to_response_dict(video: Video) -> dict:
 # ============================================================================
 
 
+def _upload_allowance() -> tuple:
+    """
+    (owner id, largest upload in MB) for the current caller, or an HTTP error when they may not add a video.
+    Guests get a small allowance because their videos exist only to try the platform.
+    """
+    from src.core.config import settings
+    caller = current_caller()
+    if caller is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    max_mb = settings.max_video_size_mb
+    if caller.is_guest:
+        max_mb = min(max_mb, settings.guest_max_video_size_mb)
+    if caller.user_id is not None and not caller.is_admin:
+        limit = settings.guest_max_videos if caller.is_guest else settings.max_videos_per_user
+        with get_db() as db:
+            count = db.query(Video).filter(Video.user_id == caller.user_id).count()
+        if count >= limit:
+            hint = "delete one or create an account" if caller.is_guest else "delete one first"
+            raise HTTPException(status_code=403, detail=f"You can keep at most {limit} videos: {hint}")
+    return caller.user_id, max_mb
+
+
 @router.post("/upload", response_model=VideoUploadResponse)
 async def upload_video(
     background_tasks: BackgroundTasks,
@@ -130,6 +155,7 @@ async def upload_video(
     """
     try:
         logger.info(f"Uploading video: {file.filename}")
+        owner_id, max_mb = _upload_allowance()
 
         # Validate file type
         allowed_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
@@ -153,7 +179,7 @@ async def upload_video(
         # Save uploaded file in chunks so a huge upload is refused without
         # being held in memory, and a refused one leaves nothing behind
         from src.core.config import settings
-        max_bytes = settings.max_video_size_mb * 1024 * 1024
+        max_bytes = max_mb * 1024 * 1024
         upload_dir = "./uploads/videos"
         os.makedirs(upload_dir, exist_ok=True)
 
@@ -170,7 +196,7 @@ async def upload_video(
                     if written > max_bytes:
                         raise HTTPException(
                             status_code=413,
-                            detail=f"Video is larger than the {settings.max_video_size_mb} MB limit",
+                            detail=f"Video is larger than the {max_mb} MB limit",
                         )
                     f.write(chunk)
 
@@ -190,6 +216,7 @@ async def upload_video(
         with get_db() as db:
             video = Video(
                 external_id=video_id,
+                user_id=owner_id,
                 title=video_title,
                 description=description,
                 source_type=SourceType.LOCAL,
@@ -249,6 +276,8 @@ async def process_youtube_video(
                 detail="Invalid YouTube URL"
             )
 
+        owner_id, _ = _upload_allowance()
+
         # Generate video ID
         import uuid
         video_id = str(uuid.uuid4())
@@ -256,6 +285,7 @@ async def process_youtube_video(
         with get_db() as db:
             video = Video(
                 external_id=video_id,
+                user_id=owner_id,
                 title=clean_title(request.title, None) if request.title else "YouTube Video",
                 source_type=SourceType.YOUTUBE,
                 source_url=request.url,
@@ -319,6 +349,8 @@ async def process_streaming_video(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+        owner_id, _ = _upload_allowance()
+
         # Generate video ID
         import uuid
         video_id = str(uuid.uuid4())
@@ -326,6 +358,7 @@ async def process_streaming_video(
         with get_db() as db:
             video = Video(
                 external_id=video_id,
+                user_id=owner_id,
                 title=clean_title(request.title, None) if request.title else "Streaming Video",
                 source_type=SourceType.STREAM,
                 source_url=request.url,
@@ -384,7 +417,7 @@ async def list_videos(
     """
     try:
         with get_db() as db:
-            query = db.query(Video)
+            query = scope_videos(db.query(Video))
             if status:
                 query = query.filter(Video.processing_status == VideoStatus(status))
             if source_type:
@@ -425,7 +458,7 @@ async def get_video(video_id: str):
     """
     try:
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
@@ -456,14 +489,12 @@ async def delete_video(
     """
     try:
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
-            if delete_files and video.file_path and os.path.exists(video.file_path):
-                os.remove(video.file_path)
-
-            db.delete(video)
+            # the upload, frames, clips, thumbnails and search embeddings go too (only the upload used to)
+            purge_video(db, video, delete_files=delete_files)
 
         return DeleteResponse(
             video_id=video_id,
@@ -503,7 +534,7 @@ async def get_video_status(video_id: str):
     """
     try:
         with get_db() as db:
-            video = db.query(Video).filter(Video.external_id == video_id).first()
+            video = find_video(db, video_id)
             if not video:
                 raise HTTPException(status_code=404, detail="Video not found")
 

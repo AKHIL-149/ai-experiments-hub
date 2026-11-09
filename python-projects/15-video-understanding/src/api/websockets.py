@@ -10,6 +10,8 @@ from typing import Dict, Set, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from datetime import datetime
 
+from src.core.auth import current_caller
+
 logger = logging.getLogger(__name__)
 
 # Create router
@@ -34,8 +36,13 @@ class ConnectionManager:
         self.active_connections: Dict[str, Set[WebSocket]] = {}
         # All active connections
         self.all_connections: Set[WebSocket] = set()
+        # connection -> (account id, is administrator): a notification about a video goes to its owner only
+        self.owners: Dict[WebSocket, tuple] = {}
 
-    async def connect(self, websocket: WebSocket, resource_id: Optional[str] = None):
+    async def connect(
+        self, websocket: WebSocket, resource_id: Optional[str] = None,
+        owner_id: Optional[int] = None, is_admin: bool = False,
+    ):
         """
         Accept and register a new WebSocket connection
 
@@ -46,6 +53,7 @@ class ConnectionManager:
         await websocket.accept()
 
         self.all_connections.add(websocket)
+        self.owners[websocket] = (owner_id, is_admin)
 
         if resource_id:
             if resource_id not in self.active_connections:
@@ -63,6 +71,7 @@ class ConnectionManager:
             resource_id: Resource ID the connection was subscribed to
         """
         self.all_connections.discard(websocket)
+        self.owners.pop(websocket, None)
 
         if resource_id and resource_id in self.active_connections:
             self.active_connections[resource_id].discard(websocket)
@@ -112,6 +121,17 @@ class ConnectionManager:
         for connection in disconnected:
             self.disconnect(connection, resource_id)
 
+    async def broadcast_to_owner(self, message: dict, owner_id: Optional[int]):
+        """Send to the connections of one account (and of administrators), nobody else"""
+        for connection in list(self.all_connections):
+            conn_owner, is_admin = self.owners.get(connection, (None, False))
+            if is_admin or (owner_id is not None and conn_owner == owner_id):
+                try:
+                    await connection.send_json(message)
+                except Exception as e:
+                    logger.error(f"Failed to send to connection: {e}")
+                    self.disconnect(connection)
+
     async def broadcast_to_all(self, message: dict):
         """
         Broadcast message to all active connections
@@ -143,6 +163,39 @@ manager = ConnectionManager()
 # ============================================================================
 
 
+def _may_watch(video_id: str) -> bool:
+    from src.core.database import SessionLocal
+    from src.core.access import find_video
+    db = SessionLocal()
+    try:
+        return find_video(db, video_id) is not None
+    finally:
+        db.close()
+
+
+def _owner_of(video_id: str) -> Optional[int]:
+    from src.core.database import SessionLocal
+    from src.models.video import Video
+    db = SessionLocal()
+    try:
+        row = db.query(Video.user_id).filter(Video.external_id == video_id).first()
+        return row[0] if row else None
+    finally:
+        db.close()
+
+
+async def _authorize(websocket: WebSocket, video_id: Optional[str] = None):
+    """The signed-in caller, or None after refusing the connection (4401 not signed in, 4404 not your video)"""
+    caller = current_caller()
+    if caller is None:
+        await websocket.close(code=4401)
+        return None
+    if video_id is not None and not await asyncio.to_thread(_may_watch, video_id):
+        await websocket.close(code=4404)
+        return None
+    return caller
+
+
 @router.websocket("/api/ws/process/{video_id}")
 async def websocket_process_updates(websocket: WebSocket, video_id: str):
     """
@@ -171,7 +224,10 @@ async def websocket_process_updates(websocket: WebSocket, video_id: str):
     };
     ```
     """
-    await manager.connect(websocket, video_id)
+    caller = await _authorize(websocket, video_id)
+    if caller is None:
+        return
+    await manager.connect(websocket, video_id, caller.user_id, caller.is_admin)
 
     try:
         # Send initial connection confirmation
@@ -232,7 +288,10 @@ async def websocket_notifications(websocket: WebSocket):
         "metadata": dict
     }
     """
-    await manager.connect(websocket)
+    caller = await _authorize(websocket)
+    if caller is None:
+        return
+    await manager.connect(websocket, owner_id=caller.user_id, is_admin=caller.is_admin)
 
     try:
         # Send initial connection confirmation
@@ -382,6 +441,7 @@ async def send_processing_complete(
         title="Processing Complete",
         message=f"Video {video_id} has finished processing",
         metadata={"video_id": video_id},
+        video_id=video_id,
     )
 
     logger.info(f"Processing complete: {video_id}")
@@ -420,6 +480,7 @@ async def send_processing_error(
         title="Processing Error",
         message=f"Error processing video {video_id}: {error_message}",
         metadata={"video_id": video_id, "stage": stage},
+        video_id=video_id,
     )
 
     logger.error(f"Processing error: {video_id} - {stage} - {error_message}")
@@ -430,9 +491,11 @@ async def send_notification(
     title: str,
     message: str,
     metadata: Optional[dict] = None,
+    video_id: Optional[str] = None,
 ):
     """
-    Send general notification to all connected clients
+    Send a notification: to the owner of `video_id` (and administrators) when it is about a video,
+    otherwise to every connected client
 
     Args:
         notification_type: Type of notification (info, success, warning, error)
@@ -449,7 +512,10 @@ async def send_notification(
         "metadata": metadata or {},
     }
 
-    await manager.broadcast_to_all(notification)
+    if video_id:
+        await manager.broadcast_to_owner(notification, await asyncio.to_thread(_owner_of, video_id))
+    else:
+        await manager.broadcast_to_all(notification)
     logger.info(f"Notification sent: {notification_type} - {title}")
 
 

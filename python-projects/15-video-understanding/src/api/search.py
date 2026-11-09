@@ -8,6 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from datetime import datetime
+from src.core.access import find_video, find_clip, find_frame, scope_videos, restrict_video_ids, can_see_video, scoped_store
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,7 @@ async def semantic_search(request: SemanticSearchRequest):
         embed_model = _get_embedding_model()
         query_vector = embed_model.encode([request.query])[0]
 
-        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store = scoped_store(VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory)), request.video_ids)
         store.initialize_collections()
 
         raw_hits = []  # (similarity, result_type, timestamp, content, video_id, metadata)
@@ -290,7 +291,7 @@ async def search_frames(request: FrameSearchRequest):
         clip_model = _get_clip_model()
         query_vector = clip_model.encode_text(request.query)
 
-        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store = scoped_store(VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory)), request.video_ids)
         store.initialize_collections()
 
         video_id_filter = request.video_ids[0] if request.video_ids and len(request.video_ids) == 1 else None
@@ -401,7 +402,7 @@ async def search_transcript(request: TranscriptSearchRequest):
                 embed_model = _get_embedding_model()
                 query_vector = embed_model.encode([request.query])[0]
 
-                store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+                store = scoped_store(VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory)), request.video_ids)
                 store.initialize_collections()
 
                 video_id_filter = request.video_ids[0] if request.video_ids and len(request.video_ids) == 1 else None
@@ -427,11 +428,13 @@ async def search_transcript(request: TranscriptSearchRequest):
                     matches = [m for m in matches if m["video_id"] in request.video_ids]
             else:
                 # keyword / fuzzy: case-insensitive substring match against Postgres
-                query_db = db.query(Transcript).filter(Transcript.text.ilike(f"%{request.query}%"))
+                query_db = scope_videos(
+                    db.query(Transcript).join(Video, Transcript.video_id == Video.id)
+                ).filter(Transcript.text.ilike(f"%{request.query}%"))
                 if request.speaker_id:
                     query_db = query_db.filter(Transcript.speaker_id == request.speaker_id)
                 if request.video_ids:
-                    query_db = query_db.join(Video).filter(Video.external_id.in_(request.video_ids))
+                    query_db = query_db.filter(Video.external_id.in_(request.video_ids))
                 rows = query_db.limit(request.top_k).all()
                 matches = [
                     {
@@ -571,7 +574,7 @@ async def query_videos(request: VideoQueryRequest):
         embed_model = _get_embedding_model()
         query_vector = embed_model.encode([request.question])[0]
 
-        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store = scoped_store(VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory)), ([request.video_id] if request.video_id else None))
         store.initialize_collections()
 
         transcript_hits = store.search_transcripts(
@@ -688,7 +691,7 @@ async def ask_video_question(
         from src.models import Video
 
         with get_db() as db:
-            if not db.query(Video).filter(Video.external_id == video_id).first():
+            if not find_video(db, video_id):
                 raise HTTPException(status_code=404, detail="Video not found")
 
         # Override video_id in request
@@ -747,11 +750,11 @@ async def find_similar_videos(
         from src.core.vector_store import VideoVectorStore
 
         with get_db() as db:
-            ref_video = db.query(Video).filter(Video.external_id == video_id).first()
+            ref_video = find_video(db, video_id)
             if not ref_video:
                 raise HTTPException(status_code=404, detail="Video not found")
 
-        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store = scoped_store(VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory)), None)
         store.initialize_collections()
 
         ref_embeddings = store.get_video_embeddings(video_id)
@@ -855,7 +858,7 @@ async def temporal_search(
         embed_model = _get_embedding_model()
         query_vector = embed_model.encode([query])[0]
 
-        store = VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory))
+        store = scoped_store(VideoVectorStore(persist_directory=Path(settings.chroma_persist_directory)), video_ids)
         store.initialize_collections()
 
         raw_hits = []  # (similarity, result_type, timestamp, content, video_id, metadata)

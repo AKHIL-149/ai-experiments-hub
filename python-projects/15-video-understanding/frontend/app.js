@@ -1,5 +1,6 @@
 // Configuration - use same origin to avoid CORS/tracking prevention
-const API_BASE_URL = window.location.origin.includes(':8000') ? window.location.origin : 'http://localhost:8000';
+// The page and the API are the same server, whatever port or host it runs on (the sign-in cookie only travels same-origin)
+const API_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
 const WS_BASE_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://');
 let currentVideo = null;
 let ws = null;
@@ -9,11 +10,52 @@ let ws = null;
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    loadCurrentUser();
     initializeApp();
     setupEventListeners();
     loadServerStatus();
     loadVideos();
 });
+
+// Who is signed in: shown in the header, with Sign out (and a reminder to guests that their videos expire)
+async function loadCurrentUser() {
+    let me;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include' });
+        if (response.status === 401) { goToLogin(); return; }
+        if (!response.ok) return;
+        me = await response.json();
+    } catch (e) { return; }
+
+    const chip = document.getElementById('user-chip');
+    if (!chip) return;
+    chip.textContent = '';
+    const name = document.createElement('strong');
+    name.textContent = me.display_name || me.username;
+    chip.appendChild(name);
+    if (me.local_mode) return;  // single-user mode: nobody to sign out
+
+    if (me.is_guest) {
+        const banner = document.getElementById('guest-banner');
+        if (banner) {
+            banner.hidden = false;
+            banner.textContent = 'You are a guest: your videos are deleted after ' + (me.guest_ttl_hours || 24) + ' hours. ';
+            const link = document.createElement('a');
+            link.href = '/login?next=/';
+            link.textContent = 'Create an account to keep them';
+            link.addEventListener('click', (e) => { e.preventDefault(); location.href = '/login?next=/'; });
+            banner.appendChild(link);
+        }
+    }
+    const out = document.createElement('button');
+    out.type = 'button';
+    out.textContent = 'Sign out';
+    out.addEventListener('click', async () => {
+        try { await fetch(`${API_BASE_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }); } catch (e) {}
+        location.replace('/login');
+    });
+    chip.appendChild(out);
+}
 
 function initializeApp() {
     // Setup navigation
@@ -113,9 +155,16 @@ function switchUploadTab(tab) {
 // API Functions
 // ============================================================================
 
+// Not signed in (or the sign-in ended): go to the sign-in page, and come back here afterwards
+function goToLogin() {
+    if (location.pathname === '/login') return;
+    location.replace('/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash));
+}
+
 async function apiCall(endpoint, options = {}) {
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            credentials: 'include',
             ...options,
             headers: {
                 'Content-Type': 'application/json',
@@ -123,6 +172,10 @@ async function apiCall(endpoint, options = {}) {
             },
         });
 
+        if (response.status === 401) {
+            goToLogin();
+            throw new Error('Please sign in');
+        }
         if (!response.ok) {
             const error = await response.json().catch(() => ({ error: 'Unknown error' }));
             throw new Error(error.message || error.detail || 'Request failed');
@@ -203,8 +256,10 @@ async function uploadFile() {
 
         const response = await fetch(`${API_BASE_URL}/api/videos/upload`, {
             method: 'POST',
+            credentials: 'include',
             body: formData,
         });
+        if (response.status === 401) { goToLogin(); return; }
 
         const result = await response.json();
 

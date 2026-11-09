@@ -8,6 +8,7 @@ from src.api.analysis import router as analysis_router
 from src.api.search import router as search_router
 from src.api.clips import router as clips_router
 from src.api.websockets import router as websockets_router
+from src.api.auth import router as auth_router
 
 __all__ = [
     'videos_router',
@@ -16,4 +17,5 @@ __all__ = [
     'search_router',
     'clips_router',
     'websockets_router',
+    'auth_router',
 ]
