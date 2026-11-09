@@ -46,10 +46,60 @@ class TestProbeMedia:
         path = make_media(tmp_path / "v.mp4", "-f", "lavfi", "-i", "color=c=red:s=160x120:d=1", "-pix_fmt", "yuv420p")
         assert probe_media(path).has_audio is False
 
-    def test_audio_only_mp4_is_refused(self, tmp_path):
+    def test_audio_only_mp4_is_audio(self, tmp_path):
         path = make_media(tmp_path / "a.mp4", "-f", "lavfi", "-i", "sine=d=2", "-vn")
-        with pytest.raises(InvalidMedia, match="no video stream"):
-            probe_media(path)
+        info = probe_media(path)
+        assert info.kind == "audio" and not info.has_video and info.has_audio
+        assert (info.width, info.height) == (None, None) and 1.5 < info.duration < 2.5
+
+    @pytest.mark.parametrize("name,codec", [
+        ("a.mp3", ["-c:a", "libmp3lame"]), ("a.wav", []), ("a.m4a", ["-c:a", "aac"]), ("a.flac", ["-c:a", "flac"]),
+        ("a.ogg", ["-c:a", "libopus"]), ("a.opus", ["-c:a", "libopus"]), ("a.aac", ["-c:a", "aac", "-f", "adts"]),
+    ])
+    def test_audio_files_are_audio(self, tmp_path, name, codec):
+        path = make_media(tmp_path / name, "-f", "lavfi", "-i", "sine=d=2", *codec)
+        info = probe_media(path)
+        assert info.kind == "audio" and info.has_audio and not info.has_video
+        assert 1.5 < info.duration < 2.5
+
+    def test_cover_art_in_an_mp3_is_not_a_video(self, tmp_path):
+        tone = make_media(tmp_path / "tone.mp3", "-f", "lavfi", "-i", "sine=d=2", "-c:a", "libmp3lame")
+        cover = make_media(tmp_path / "cover.jpg", "-f", "lavfi", "-i", "color=c=red:s=64x64:d=1", "-frames:v", "1")
+        art = tmp_path / "art.mp3"
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-i", tone, "-i", cover, "-map", "0", "-map", "1", "-c", "copy",
+                        "-id3v2_version", "3", "-disposition:v", "attached_pic", str(art)], check=True, capture_output=True)
+        # ffprobe lists the picture as a video stream; it must not turn a podcast into a "video"
+        raw = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(art)],
+                             capture_output=True, text=True).stdout
+        assert "video" in raw
+        assert probe_media(str(art)).kind == "audio"
+
+    def test_a_video_stays_a_video_with_or_without_sound(self, tmp_path):
+        silent = make_media(tmp_path / "s.mp4", "-f", "lavfi", "-i", "color=c=red:s=160x120:d=1", "-pix_fmt", "yuv420p")
+        assert probe_media(silent).kind == "video" and probe_media(silent).has_video
+        sound = make_media(tmp_path / "v.mkv", "-f", "lavfi", "-i", "color=c=blue:s=160x120:d=1", "-f", "lavfi",
+                           "-i", "sine=d=1", "-shortest", "-pix_fmt", "yuv420p")
+        assert probe_media(sound).kind == "video"
+
+    def test_a_file_with_neither_video_nor_sound_is_refused(self, monkeypatch):
+        # a container that holds only a data or subtitle stream (or only cover art) is not media we can analyse
+        import json as _json
+        import src.utils.input_checks as checks
+
+        def fake_run(*args, **kwargs):
+            return NS(returncode=0, stdout=_json.dumps({
+                "streams": [{"codec_type": "data"}, {"codec_type": "video", "disposition": {"attached_pic": 1}}],
+                "format": {"duration": "5"}}))
+
+        monkeypatch.setattr(checks.subprocess, "run", fake_run)
+        with pytest.raises(InvalidMedia, match="no video or audio stream"):
+            probe_media("x.mp3")
+
+    def test_the_extensions_the_upload_accepts(self):
+        from src.utils.input_checks import ALLOWED_EXTENSIONS, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+        assert set(VIDEO_EXTENSIONS) == {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+        assert {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"} == set(AUDIO_EXTENSIONS)
+        assert set(ALLOWED_EXTENSIONS) == set(VIDEO_EXTENSIONS) | set(AUDIO_EXTENSIONS)
 
     @pytest.mark.parametrize("name,content", [
         ("text.mp4", b"this is not a video"),

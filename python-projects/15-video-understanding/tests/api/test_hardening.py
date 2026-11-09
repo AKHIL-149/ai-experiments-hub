@@ -97,12 +97,20 @@ class TestUpload:
         session.add.assert_not_called()
 
     @needs_ffmpeg
-    def test_an_audio_only_file_is_refused_clearly(self, client, uploads, tmp_path):
+    def test_an_audio_only_file_is_accepted_as_audio(self, client, uploads, tmp_path):
         folder, session = uploads
         audio = tmp_path / "a.mp4"
         subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=2", "-vn", str(audio)], check=True)
         response = upload(client, "talk.mp4", audio.read_bytes())
-        assert response.status_code == 400 and "no video stream" in response.json()["detail"]
+        assert response.status_code == 200 and response.json()["media_type"] == "audio"
+        assert "Audio uploaded" in response.json()["message"]
+        assert session.add.call_args[0][0].media_type == "audio"
+
+    @needs_ffmpeg
+    def test_a_text_file_named_mp3_is_refused(self, client, uploads):
+        folder, session = uploads
+        response = upload(client, "song.mp3", b"this is not audio")
+        assert response.status_code == 400 and "not a valid video or audio file" in response.json()["detail"]
         session.add.assert_not_called()
 
     def test_wrong_extension(self, client, uploads):
