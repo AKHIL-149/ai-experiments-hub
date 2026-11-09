@@ -75,6 +75,7 @@ def _fake_video(**overrides):
     video.id = 1
     video.external_id = "vid-abc"
     video.file_path = "./data/uploads/vid-abc.mp4"
+    video.duration_seconds = 120.0     # a real row always has a number (or None), never a Mock
     for k, v in overrides.items():
         setattr(video, k, v)
     return video
