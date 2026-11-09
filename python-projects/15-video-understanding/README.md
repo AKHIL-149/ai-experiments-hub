@@ -201,6 +201,62 @@ curl -X POST http://localhost:8000/api/videos/{video_id}/highlights/generate \
 └── pyproject.toml     # Project configuration
 ```
 
+## Inputs, Limits and What to Expect
+
+Written from running the platform on real videos (a 60 s 1080p explainer, a 4-minute lecture, a 5.8 s phone clip, audio-only and invalid files).
+
+### What the API accepts
+
+| Input | Rule | Answer when it breaks the rule |
+|---|---|---|
+| Upload | `.mp4 .avi .mov .mkv .webm`, **and** ffprobe must find a video stream with a length. A text file, empty file or random bytes named `.mp4` are not videos | `400` with one line (`The file is not a valid video…`, `The file has no video stream (audio-only files are not supported)`); nothing is left on disk |
+| Upload size | `MAX_VIDEO_SIZE_MB` (default 500), read in chunks | `413` |
+| Title / description | trimmed, at most 200 / 2000 characters; a directory in the file name (`../../x.mp4`) is dropped (title `x`) | |
+| YouTube URL | the **host** must be YouTube (`youtube.com`, `youtu.be`, …); `evil.example/?youtube.com` is refused | `400` |
+| Stream URL | `http(s)` only, and every address it resolves to must be public. `127.0.0.1`, `localhost`, `10.x`, `192.168.x`, `169.254.169.254` (cloud credentials) are refused. ffmpeg is also limited to network protocols (current ffmpeg already refuses `file:` entries in a playlist; this is a second layer for other builds) | `400` |
+| Clip | `end_time` must not be past the end of the video (up to 0.5 s over is clamped); `format` mp4/webm/gif; `resolution` 480p/720p/1080p/original | `400` / `422` |
+| Timeline filter | `event_types` from `scene speech highlight chapter` | `400` |
+| Highlights / summary generation | the video must exist and be fully processed (they run in the background and answer immediately) | `404` / `400` |
+
+A stream URL check cannot stop a public host that later redirects to, or re-resolves to, an internal address. Do not give the server access to networks you would not want reached.
+
+### Processing status
+
+`GET /api/videos/{id}/status` returns the live `stage` and `progress` (10 frame extraction, 10-70 per scene, 80 embeddings, 100 done) while a video is processed; it is the same information the WebSocket pushes. `started_at` is when the current run began, `completed_at` when it ended. All stored times are UTC.
+
+A video that is one continuous shot (no cuts) is one scene covering the whole video. A failed video shows one readable line in `error_message`, not a tool dump with server paths.
+
+### Frame descriptions (vision model)
+
+Scene captions come from the model in `VISION_PROVIDER=ollama` / `VISION_MODEL`, with BLIP-base only as the fallback when Ollama or the model is missing (a missing model falls back to any installed vision model, with a warning in the log). Captions that loop ("react react react …") are cut.
+
+Measured on the same four keyframes (slides and photos) on an Apple-silicon laptop:
+
+| Model | Speed per frame | What it did |
+|---|---|---|
+| `llava:latest` (default) | 3-6 s | Reads slide titles ("HOW DATA BECOMES EVIDENCE") but adds details that are not there (a "navigation bar", a wrong top colour) and ignores "one or two sentences"; can misread a title ("LOCOR MODEL" for "#1 OCR MODEL") |
+| `qwen3-vl:8b` | 20-28 s | Accurate: quotes the slide titles and boxes, describes the collage correctly. About 4x slower, so a 4-minute video with 22 scenes takes roughly 8 minutes longer |
+| BLIP-base (fallback) | ~1 s | "how to use a data flow chart in java" for a data-flow slide (it went into the summary), "traceability for react react …" for a title slide |
+
+For accurate slide and screen descriptions set `VISION_MODEL=qwen3-vl:8b` (`ollama pull qwen3-vl:8b`) and accept the longer processing time.
+
+### Question answering, summaries, chapters
+
+- Answers use the matching transcript lines **plus the line before and after each**, read in time order. Without the neighbours, a question whose answer ends in the next line ("…stronger evidence. That is" / "the foundation of reliable clinical research.") was answered with the wrong thing.
+- The model's own preamble line ("Here is a summary of the video in 2-3 paragraphs:") is removed from summaries and answers.
+- Chapter titles come from what is said where the chapter starts ("Welcome to Trial Data Lab"), else from the scene description, and never end on "a" or "of".
+- Transcript segments are kept inside the video: Whisper can invent a segment that starts after the audio ends or runs far past it.
+
+### Known limits
+
+- **Faces** use OpenCV's Haar cascade (`FACE` backend `opencv`). It repeats one face as several boxes (now merged) but also reports false faces, e.g. on a blazer, and misses faces in small collage panels or side views, so a face count is only a rough signal. The `mtcnn` backend needs its package installed.
+- `scene_type` is always `unknown`; scenes are not classified.
+- Highlights are labelled "Action Highlight" from motion energy, which also fires for a talking head.
+- Audio-only files are refused; there is no transcribe-only mode.
+- Processing runs in the API process, one video at a time per request; there is no job queue. A 4-minute 1080p video took about 4.5 minutes, a 60 s video under 2 minutes.
+- The API has no sign-in. It listens on `127.0.0.1` by default and only answers web pages from `CORS_ORIGINS`; if you set `API_HOST=0.0.0.0`, anyone on your network can upload, read and delete videos.
+- The page shows everything the server sends as text (titles, summaries, answers, errors are never interpreted as HTML).
+
 ## Performance
 
 ### Processing Speed (10-minute video)
@@ -250,6 +306,11 @@ pytest --cov=src --cov-report=html
 
 # Run specific test file
 pytest tests/test_scene_detection.py
+
+# The checks written from real-video testing (ffmpeg and node are used when installed)
+pytest tests/test_input_checks.py tests/test_single_shot_scenes.py tests/test_qa_context.py \
+       tests/test_captions.py tests/test_chapter_titles_and_faces.py tests/test_frontend_escaping.py \
+       tests/api/test_hardening.py
 ```
 
 ### Code Formatting
