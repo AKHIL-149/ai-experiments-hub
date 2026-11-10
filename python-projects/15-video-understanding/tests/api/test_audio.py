@@ -164,6 +164,15 @@ class TestAudioAnalysis:
             assert item["activity_ratio"] == 0.0 and item["dominant_action"] is None
         assert calls == [(i, len(scenes)) for i in range(len(scenes))]   # progress after every section
 
+    def test_sections_with_speech_are_dialogue_and_the_rest_unknown(self, speech, monkeypatch):
+        from src.api.videos import _run_video_analysis
+        spoken = _run_video_analysis(str(speech), "aud-t1", None, None, "audio")["scenes"]
+        assert {item["scene"].scene_type.value for item in spoken} == {"dialogue"}
+        monkeypatch.setattr(FakeTranscriber, "transcribe", lambda self, path, use_local=True: NS(
+            segments=[], language="en", duration=120.0))
+        music = _run_video_analysis(str(speech), "aud-t2", None, None, "audio")["scenes"]
+        assert {item["scene"].scene_type.value for item in music} == {"unknown"}
+
     def test_a_long_speaker_with_no_pauses_still_gets_sections(self, speech, monkeypatch):
         from src.api.videos import _run_video_analysis
         monkeypatch.setattr(FakeTranscriber, "transcribe", lambda self, path, use_local=True: NS(
