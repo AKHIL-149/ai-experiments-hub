@@ -146,6 +146,10 @@ faiss_index/
 models/
 !**/src/models/
 !**/src/models/**
+# project 15 ships one small model (python-projects/15-video-understanding/models/README.md)
+!python-projects/15-video-understanding/models/
+!python-projects/15-video-understanding/models/README.md
+!python-projects/15-video-understanding/models/*.onnx
 *.h5
 *.pkl
 *.pickle

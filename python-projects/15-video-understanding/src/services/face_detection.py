@@ -11,6 +11,18 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+YUNET_FILE = "face_detection_yunet_2023mar.onnx"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+YUNET_MIN_CONFIDENCE = 0.7     # real faces scored 0.8-0.95 and the false ones (window frames, wall patterns) 0.6-0.65
+YUNET_MIN_FACE_PX = 16         # a face smaller than this on its shorter side is a speck, not something to report
+YUNET_MAX_SIDE = 1280          # larger pictures are shrunk to this before looking (the boxes are scaled back)
+_warned_no_model = False
+
+
+def default_yunet_path() -> Path:
+    """models/face_detection_yunet_2023mar.onnx next to the code (not relative to wherever the server started)"""
+    return PROJECT_ROOT / "models" / YUNET_FILE
+
 
 @dataclass
 class DetectedFace:
@@ -61,18 +73,51 @@ class FaceDetectionService:
     def __init__(
         self,
         backend: str = "opencv",
-        min_confidence: float = 0.5
+        min_confidence: float = 0.5,
+        model_path: Optional[Path] = None,
     ):
         """
         Initialize face detection service
 
         Args:
-            backend: Detection backend (opencv, mtcnn, retinaface)
+            backend: yunet (OpenCV's YuNet network: accurate, finds small and side-on faces, needs the model
+                file), opencv (the old Haar cascade: many false faces, misses side-on ones), mtcnn, or auto
+                (yunet when its model file is there, else opencv)
             min_confidence: Minimum detection confidence
+            model_path: Where the YuNet model file is (default: models/ in the project)
         """
         self.backend = backend
         self.min_confidence = min_confidence
+        self.model_path = Path(model_path) if model_path else default_yunet_path()
         self.detector = None
+        if backend == "auto":
+            self.backend = self._resolve_auto()
+
+    def _resolve_auto(self) -> str:
+        global _warned_no_model
+        try:
+            import cv2
+            if hasattr(cv2, "FaceDetectorYN") and self.model_path.exists():
+                return "yunet"
+        except ImportError:
+            pass
+        if not _warned_no_model:
+            _warned_no_model = True
+            logger.warning(
+                f"Face model {self.model_path} not found: using the old Haar detector, which reports false "
+                f"faces and misses small ones (see README, 'Faces')"
+            )
+        return "opencv"
+
+    @classmethod
+    def from_settings(cls) -> "FaceDetectionService":
+        """The detector the settings ask for (FACE_BACKEND, FACE_MODEL_PATH, FACE_MIN_CONFIDENCE)"""
+        from src.core.config import settings
+        return cls(
+            backend=settings.face_backend,
+            min_confidence=settings.face_min_confidence,
+            model_path=Path(settings.face_model_path) if settings.face_model_path else None,
+        )
 
     def detect_faces(
         self,
@@ -101,7 +146,9 @@ class FaceDetectionService:
         logger.info(f"Detecting faces in {image_path}")
 
         try:
-            if self.backend == "opencv":
+            if self.backend == "yunet":
+                result = self._detect_yunet(image_path)
+            elif self.backend == "opencv":
                 result = self._detect_opencv(image_path)
             elif self.backend == "mtcnn":
                 result = self._detect_mtcnn(image_path, extract_landmarks)
@@ -146,6 +193,58 @@ class FaceDetectionService:
                 ))
 
         return results
+
+    def _detect_yunet(self, image_path: Path) -> FaceDetectionResult:
+        """
+        Detect faces with YuNet (a small convolutional network, 0.2 MB, run by OpenCV).
+
+        On the keyframes of real videos the Haar cascade reported faces on window frames, chairs and wall
+        patterns, and missed faces with sunglasses or turned away; YuNet found those faces and reported none of
+        the false ones above a score of 0.7.
+        """
+        import cv2
+
+        if not self.model_path.exists():
+            logger.warning(f"Face model {self.model_path} not found: using the Haar detector")
+            return self._detect_opencv(image_path)
+
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise ValueError(f"Could not read image: {image_path}")
+        height, width = image.shape[:2]
+
+        scale = 1.0
+        if max(height, width) > YUNET_MAX_SIDE:
+            scale = YUNET_MAX_SIDE / max(height, width)
+            image = cv2.resize(image, (int(round(width * scale)), int(round(height * scale))), interpolation=cv2.INTER_AREA)
+        small_h, small_w = image.shape[:2]
+
+        if self.detector is None:
+            self.detector = cv2.FaceDetectorYN.create(str(self.model_path), "", (small_w, small_h), 0.5, 0.3, 5000)
+        self.detector.setInputSize((small_w, small_h))
+        _, rows = self.detector.detect(image)
+
+        faces: List[DetectedFace] = []
+        for row in (rows if rows is not None else []):
+            score = float(row[14])
+            x, y, w, h = (float(v) / scale for v in row[:4])
+            x, y = max(0.0, x), max(0.0, y)
+            w, h = min(w, width - x), min(h, height - y)   # a box may hang over the edge of the picture
+            if score < self.min_confidence or min(w, h) < YUNET_MIN_FACE_PX:
+                continue
+            marks = [(int(round(float(row[4 + 2 * i]) / scale)), int(round(float(row[5 + 2 * i]) / scale))) for i in range(5)]
+            faces.append(DetectedFace(
+                bbox=(int(round(x)), int(round(y)), int(round(w)), int(round(h))),
+                confidence=round(score, 4),
+                landmarks=dict(zip(("right_eye", "left_eye", "nose", "right_mouth", "left_mouth"), marks)),
+                metadata={"backend": "yunet"},
+            ))
+        faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
+
+        return FaceDetectionResult(
+            image_path=image_path, faces=faces, num_faces=len(faces), model="yunet",
+            metadata={"image_size": (height, width)},
+        )
 
     def _detect_opencv(self, image_path: Path) -> FaceDetectionResult:
         """Detect faces using OpenCV Haar Cascade"""

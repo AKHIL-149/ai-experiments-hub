@@ -677,6 +677,26 @@ def _aggregate_scene_actions(actions: list, start_time: float, end_time: float) 
     return {"activity_ratio": activity_ratio, "dominant_action": dominant_action}
 
 
+def _detect_scenes(path):
+    """
+    Cut a video into scenes with the detector the settings choose. The default (robust) finds hard cuts,
+    dissolves, fades and slide changes; PySceneDetect's ContentDetector, which finds hard cuts only, is the
+    fallback when the robust detector cannot read the video, and can be chosen with SCENE_DETECTOR=content.
+    """
+    from src.core.config import settings
+    from src.services.scene_detection.base import SceneDetectorConfig
+    from src.services.scene_detection.content_detector import ContentBasedSceneDetector
+    from src.services.scene_detection.robust_detector import RobustSceneDetector
+
+    config = SceneDetectorConfig(threshold=settings.scene_threshold, min_scene_length=settings.min_scene_length)
+    if settings.scene_detector == "robust":
+        try:
+            return RobustSceneDetector(config).detect_scenes(path)
+        except Exception as e:
+            logger.warning(f"The robust scene detector failed ({e}): using the content detector")
+    return ContentBasedSceneDetector(config).detect_scenes(path)
+
+
 def _apply_diarization(audio_path, transcription) -> None:
     """Label transcript segments with speakers (pyannote.audio), if a HuggingFace token is configured"""
     from src.core.config import settings
@@ -709,6 +729,8 @@ def _run_audio_analysis(audio_file: str, media_uuid: str, progress_callback=None
     from src.services.transcription_service import TranscriptionService
     from src.services.audio_features import AudioFeatureExtractor
     from src.utils.audio_sections import build_sections, sections_to_scenes
+    from src.services.scene_detection.base import SceneType
+    from src.services.scene_detection.scene_typing import speech_ratio
 
     path = Path(audio_file)
     checkpoint = check_cancel or (lambda: None)
@@ -727,6 +749,9 @@ def _run_audio_analysis(audio_file: str, media_uuid: str, progress_callback=None
     _apply_diarization(audio_path, transcription)
 
     scenes = sections_to_scenes(build_sections(transcription.segments, duration))
+    for section in scenes:   # sound with speech is dialogue; music and silence stay unknown
+        if speech_ratio(transcription.segments, section.start_time, section.end_time) >= 0.5:
+            section.scene_type = SceneType.DIALOGUE
     audio_extractor = AudioFeatureExtractor()
     results = []
     for index, scene in enumerate(scenes):
@@ -775,8 +800,7 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     from pathlib import Path
     from src.core.config import settings
     from src.core.video_processor import create_video_processor
-    from src.services.scene_detection.content_detector import ContentBasedSceneDetector
-    from src.services.scene_detection.base import SceneDetectorConfig
+    from src.services.scene_detection.scene_typing import classify_scene, speech_ratio
     from src.services.transcription_service import TranscriptionService
     from src.services.image_captioning import ImageCaptioningService
     from src.services.object_detection import ObjectDetectionService
@@ -794,14 +818,8 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     sampled_frames = processor.extract_frames(path, frames_dir, fps=0.2)
     checkpoint()
 
-    # Real scene detection (histogram-based content detector)
-    detector = ContentBasedSceneDetector(
-        SceneDetectorConfig(
-            threshold=settings.scene_threshold,
-            min_scene_length=settings.min_scene_length,
-        )
-    )
-    scenes = detector.detect_scenes(path)
+    # Scene detection (cuts, dissolves, fades, slide changes)
+    scenes = _detect_scenes(path)
     checkpoint()
 
     # Real audio transcription (local Whisper)
@@ -832,7 +850,7 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
     # visual understanding (objects/faces/OCR) + audio energy
     captioner = ImageCaptioningService.from_settings()
     object_detector = ObjectDetectionService()
-    face_detector = FaceDetectionService(backend="opencv")
+    face_detector = FaceDetectionService.from_settings()
     ocr = OCRService(engine="easyocr")
     audio_extractor = AudioFeatureExtractor()
     clip_model = _get_clip_model()
@@ -885,6 +903,14 @@ def _run_video_analysis(video_path: str, video_uuid: str, progress_callback=None
             audio_energy = min(1.0, features.rms_energy * 10)
         except Exception as e:
             logger.warning(f"Audio feature extraction failed for scene {scene.scene_id}: {e}")
+
+        # what kind of scene: still, a person talking, movement, action
+        motion = (getattr(scene, "metadata", None) or {}).get("motion")
+        if motion is None:   # the content detector does not measure it: use the motion-based action recognition
+            motion = action_summary["activity_ratio"] * 0.05
+        scene.scene_type = classify_scene(
+            motion, speech_ratio(transcription.segments, scene.start_time, scene.end_time), len(faces), audio_energy,
+        )
 
         scene_results.append({
             "scene": scene,

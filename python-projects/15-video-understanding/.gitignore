@@ -76,7 +76,7 @@ htmlcov/
 *.ipynb_checkpoints
 
 # Model Weights & Cache (exclude ML model files, not source code)
-/models/
+/models/*
 *.pth
 *.pt
 *.onnx
@@ -157,3 +157,7 @@ secrets/
 # Benchmark Results
 benchmark_results/
 performance_data/
+
+# the one small model the platform ships with (see models/README.md)
+!/models/README.md
+!/models/face_detection_yunet_2023mar.onnx

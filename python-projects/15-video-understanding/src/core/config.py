@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     scene_threshold: float = Field(default=27.0, description="Scene detection threshold")
     min_scene_length: float = Field(default=1.0, description="Minimum scene length in seconds")
 
+    # Faces and scenes
+    face_backend: str = Field(default="auto", description="Face detector: auto (YuNet if its model file exists, else Haar), yunet, opencv")
+    face_model_path: Optional[str] = Field(default=None, description="YuNet model file (default: models/face_detection_yunet_2023mar.onnx)")
+    face_min_confidence: float = Field(default=0.7, description="Faces scored below this are dropped (YuNet)")
+    scene_detector: str = Field(default="robust", description="Scene detector: robust (cuts, dissolves, slide changes) or content (PySceneDetect ContentDetector)")
+
     # Speaker Diarization
     diarization_model: str = Field(default="pyannote/speaker-diarization-3.1", description="Diarization model")
     diarization_use_auth_token: bool = Field(default=False, description="Use HuggingFace auth token")
