@@ -251,6 +251,41 @@ With no picture there is no frame extraction, scene detection, captioning, objec
 
 Limits: a recording is only as good as its transcript (Whisper "base" by default); music with no speech gets sections but no chapters of substance; the sections are found from pauses, not from topics, so a topic change in the middle of a long section does not start a new one; transcription is one long step that cannot be interrupted, so cancelling a long recording takes effect after it.
 
+## Faces and Scenes
+
+### Faces
+
+Faces in each scene's keyframe are found with **YuNet**, a 0.2 MB face detector from OpenCV's model zoo that ships in `models/` (see `models/README.md` for its source, license and checksum). It replaced OpenCV's Haar cascade, which on the keyframes of the real test videos reported faces on window frames, chairs and wall patterns (643 "faces" against 452 now) and missed faces with sunglasses, small faces and faces turned away; on the same frames YuNet found those faces and, at a score of 0.7, none of the false ones. `FACE_BACKEND=auto` (default) uses YuNet when the model file is there and falls back to the Haar cascade, with one warning in the log, when it is not; `yunet` and `opencv` force one. `FACE_MIN_CONFIDENCE` (0.7) drops weaker faces, `FACE_MODEL_PATH` points at another copy of the model. Each face has its box, its score and five landmarks (eyes, nose, mouth corners); pictures larger than 1280 px are shrunk for speed and the boxes scaled back, and a face under 16 px is not reported.
+
+### Scenes
+
+Scenes used to come from PySceneDetect's `ContentDetector` alone. Measured on videos with known boundaries it found hard cuts between very different shots and missed **slide changes** (a new layout on the same background), **dissolves and fades**, and it called a one-frame **white flash** a cut. `SCENE_DETECTOR=robust` (default) uses a detector that looks at a small grayscale copy of the video, ten times a second (ffmpeg decodes it, 4-10x faster than `ContentDetector` on the same videos):
+
+- **cuts** are a frame that differs from the one before it while its neighbours do not (a spike); a spike that is undone within a few frames is a flash, not a cut; a small change must stand out clearly (a new slide in a still picture) while a bigger one only a little (a cut in lively footage), so a hand gesture is not a scene;
+- **dissolves, fades and wipes** are a bump in the difference between the picture half a second before and half a second after (taken from the middle of five frames so a flash cannot fake it), clearly bigger than that difference anywhere nearby, so a pan or a zoom is not one. A dissolve is found at its middle and `transition_type` says `cut`, `dissolve` or `fade` (a fade through black);
+- the keyframe of a scene is the frame closest to its typical picture, taken from its middle part and not from a half-dissolved edge.
+
+| Measured on videos with known boundaries | PySceneDetect `ContentDetector` | `robust` |
+|---|---|---|
+| ffmpeg-made shots, slides, dissolves, fades, a flash, a zoom (25 boundaries, 3 videos with nothing to find) | precision 0.88, recall 0.60 | precision 1.00, recall 0.84 |
+| pieces of the real test videos joined with cuts, dissolves and fades (19 boundaries) | precision 1.00, recall 0.68 | precision 1.00, recall 1.00 |
+
+On the long real videos it found 93-100 % of the boundaries `ContentDetector` found, plus slide changes and builds `ContentDetector` missed (a 7-minute animated explainer: 141 scenes against 85; every one of 6 sampled extra boundaries was a real change of what is on screen) and it missed some cuts in a very fast music video (7 of 96). More scenes means more keyframes to caption, so an animated explainer takes proportionally longer to process; `SCENE_DETECTOR=content` brings the old behaviour back, and it is also the fallback if the robust detector cannot read a video.
+
+Limits: a dissolve between two pictures that both change fast (a zoom into a zoom) is not found (the synthetic fractal cases are the 4 misses in the first row); wipes are found as dissolves; two cuts less than 0.2 s apart count as one; the scene detector sees pictures only, so a change of topic with the same slide is one scene.
+
+### Scene types
+
+`scene_type` was always `unknown`. Each scene now gets one from three things the pipeline knows about it: how much its picture moves (the mean frame-to-frame change the detector measures, about 0.000 for slides and screen recordings, 0.003-0.017 for a person talking to a camera, 0.02-0.05 for a fast-cut music video), how much of it is speech, and whether a face is in it:
+
+| Type | When |
+|---|---|
+| `static` | the picture does not move (a slide, a screen), with or without narration |
+| `dialogue` | a face on screen and speech over at least 40 % of the scene, with the modest movement of a person talking |
+| `motion` | lively movement that is neither of the others |
+| `action` | fast, high-energy movement (and, when there is speech, loud audio) |
+| `unknown` | audio files have sections, not scenes: sections with speech are `dialogue`, music and silence stay `unknown` |
+
 ## Job Queue
 
 Downloads and video analysis do not run inside the request that asked for them. Every upload, YouTube/stream link, `/process` and `/reprocess` puts a **job** in a queue, and a few workers take jobs one by one.
@@ -318,8 +353,8 @@ For accurate slide and screen descriptions set `VISION_MODEL=qwen3-vl:8b` (`olla
 
 ### Known limits
 
-- **Faces** use OpenCV's Haar cascade (`FACE` backend `opencv`). It repeats one face as several boxes (now merged) but also reports false faces, e.g. on a blazer, and misses faces in small collage panels or side views, so a face count is only a rough signal. The `mtcnn` backend needs its package installed.
-- `scene_type` is always `unknown`; scenes are not classified.
+- **Faces** are found with YuNet (see Faces and Scenes). Without the model file the old Haar cascade runs and a face count is only a rough signal; faces are detected in each scene's keyframe only, so a face that appears in another part of a scene is not counted. The `mtcnn` backend needs its package installed.
+- Scene types come from motion, speech and faces with fixed thresholds measured on a handful of real videos; a different kind of footage may sit on the other side of a threshold.
 - Highlights are labelled "Action Highlight" from motion energy, which also fires for a talking head.
 - Audio files are analysed from the transcript only (see Audio Files): no topics-based sectioning, and no frame search.
 - Analysis is queued (see Job Queue) but runs inside the API process. A 4-minute 1080p video took about 4.5 minutes, a 60 s video under 2 minutes.
@@ -381,7 +416,8 @@ pytest tests/test_input_checks.py tests/test_single_shot_scenes.py tests/test_qa
        tests/test_captions.py tests/test_chapter_titles_and_faces.py tests/test_frontend_escaping.py \
        tests/api/test_hardening.py tests/api/test_accounts.py tests/test_frontend_auth.py \
        tests/api/test_job_queue.py tests/test_frontend_queue.py \
-       tests/api/test_audio.py tests/test_audio_sections.py tests/test_frontend_audio.py
+       tests/api/test_audio.py tests/test_audio_sections.py tests/test_frontend_audio.py \
+       tests/test_scene_boundaries.py tests/test_scene_typing.py tests/test_faces_yunet.py tests/test_scene_pipeline.py
 ```
 
 ### Code Formatting
