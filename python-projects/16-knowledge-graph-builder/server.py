@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
-from src.api import documents, graph
+from src.api import documents, graph, resolution
 from src.core.config import get_settings
 from src.core.database import init_db
 from src.services.llm import llm_status
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Knowledge Graph Builder", version="0.1.0", lifespan=lifespan)
 app.include_router(documents.router)
 app.include_router(graph.router)
+app.include_router(resolution.router)
 
 
 @app.get("/api/health")

@@ -13,6 +13,7 @@ from src.models.graph import Chunk, Document, DocumentStatus, Entity, Fact, Fact
 from src.services.chunker import chunk_text
 from src.services.extraction import ExtractedFact, extract_chunk
 from src.services.llm import LLMClient, LLMError, get_llm
+from src.services.resolution import find_by_alias, run_resolution
 from src.services.text_utils import entity_key, strip_article
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,8 @@ def get_or_create_entity(db: Session, name: str, etype: str) -> Entity:
     name = strip_article(" ".join(name.split()))
     key = entity_key(name)
     entity = db.execute(select(Entity).where(Entity.key == key)).scalar_one_or_none()
+    if entity is None:
+        entity = find_by_alias(db, key)  # a name that was merged into another entity earlier
     if entity is None:
         entity = Entity(name=name[:300], key=key[:300], type=etype)
         db.add(entity)
@@ -165,6 +168,15 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
     doc.status, doc.finished_at = DocumentStatus.COMPLETED, _now()
     doc.stats = {**totals, "rejected": dict(rejected), "adjusted": dict(adjusted)}
     db.commit()
+    if settings.auto_resolve:
+        try:
+            summary = run_resolution(db, auto=True)
+            db.commit()
+            doc.stats = {**doc.stats, "resolution": {"auto_merged": summary.auto_merged, "suggestions": summary.suggestions_new}}
+            db.commit()
+        except Exception:  # resolution is a bonus step: the document is already read and stored
+            log.exception("Entity resolution failed after document %s", doc.id)
+            db.rollback()
 
 
 def recover_interrupted() -> int:

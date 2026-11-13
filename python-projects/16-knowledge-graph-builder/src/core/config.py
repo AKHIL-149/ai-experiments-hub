@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     chunk_overlap_chars: int = Field(default=200, ge=0)
     verify_facts: bool = True
     gleaning_passes: int = Field(default=1, ge=0, le=3, description="Extra 'what did you miss?' calls per chunk")
+    auto_resolve: bool = Field(default=True, description="After each document, merge entities whose names are the same apart from case, titles, suffixes")
+    resolution_use_llm: bool = Field(default=False, description="Ask the model for a second opinion on suggested merges")
     max_upload_mb: int = 20
     max_document_chars: int = Field(default=100_000, description="Longest text accepted (a model reads ~1,500 characters per call)")
 

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.core.database import get_db
 from src.models.graph import ENTITY_TYPES, Chunk, Document, Entity, Fact, FactSource
+from src.models.resolution import EntityAlias
 from src.services import graph_store
 
 router = APIRouter(prefix="/api", tags=["graph"])
@@ -46,7 +47,8 @@ def get_entity(entity_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Entity not found")
     out = db.execute(select(Fact).where(Fact.subject_id == e.id).order_by(Fact.predicate)).scalars().all()
     inc = db.execute(select(Fact).where(Fact.object_id == e.id).order_by(Fact.predicate)).scalars().all()
-    return {**_entity(e), "outgoing": [graph_store.fact_to_dict(f) for f in out],
+    aliases = db.execute(select(EntityAlias.name).where(EntityAlias.entity_id == e.id).order_by(EntityAlias.name)).scalars().all()
+    return {**_entity(e), "aliases": list(aliases), "outgoing": [graph_store.fact_to_dict(f) for f in out],
             "incoming": [graph_store.fact_to_dict(f) for f in inc]}
 
 

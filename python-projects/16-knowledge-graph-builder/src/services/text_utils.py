@@ -15,8 +15,13 @@ def fold(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
 
 
+def strip_accents(text: str) -> str:
+    """'Zürich' -> 'Zurich'"""
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
 def words(text: str) -> list[str]:
-    return _WORD.findall(fold(text).replace("'s ", " ").replace("'s", ""))
+    return _WORD.findall(strip_accents(fold(text)).replace("'s ", " ").replace("'s", ""))
 
 
 def words_and_commas(text: str) -> list[str]:
