@@ -14,7 +14,7 @@ S2 = "Dana Reyes served as CTO of Acme from 2019 to 2022."
 
 
 def settings(**kw):
-    return Settings(_env_file=None, verify_facts=False, gleaning_passes=0, **kw)
+    return Settings(_env_file=None, verify_facts=False, gleaning_passes=0, **{"auto_resolve": False, **kw})
 
 
 def script(*raws):
@@ -170,7 +170,7 @@ def test_missing_document_and_missing_api_key_are_handled(factory, db):
 def test_verification_runs_per_fact_and_marks_sources_verified(factory, db):
     doc_id = add_doc(db)
     llm = script(ACQ, CTO)
-    pipeline.process_document(doc_id, llm, Settings(_env_file=None, verify_facts=True, gleaning_passes=0))
+    pipeline.process_document(doc_id, llm, Settings(_env_file=None, verify_facts=True, gleaning_passes=0, auto_resolve=False))
     assert llm.count("verify") == 2
     assert all(s.verified for s in db.execute(select(FactSource)).scalars())
 

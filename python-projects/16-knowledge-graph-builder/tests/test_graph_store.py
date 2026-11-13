@@ -22,7 +22,7 @@ def build(db, factory, monkeypatch=None):
         rel("Acme", "reported revenue", "12M", "Acme reported revenue of 12M in 2021.", "2021", otype="value", stype=o),
         rel("Zed", "works at", "Omega", "Zed works at Omega.", otype=o),
     ]
-    pipeline.process_document(d.id, FakeLLM(extract=lambda p: {"relations": raws}), Settings(_env_file=None, verify_facts=False, gleaning_passes=0))
+    pipeline.process_document(d.id, FakeLLM(extract=lambda p: {"relations": raws}), Settings(_env_file=None, verify_facts=False, gleaning_passes=0, auto_resolve=False))
     return d.id
 
 

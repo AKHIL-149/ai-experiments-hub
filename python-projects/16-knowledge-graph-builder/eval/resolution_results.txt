@@ -1,0 +1,71 @@
+## rules only
+{
+ "entities": 53,
+ "true_pairs": 41,
+ "auto_pairs": 18,
+ "auto_pairs_correct": 18,
+ "unsure_pairs_left": 14,
+ "suggested": 18,
+ "suggested_correct": 13,
+ "auto_precision": 1.0,
+ "auto_share_of_true_pairs": 0.439,
+ "suggestion_precision": 0.722,
+ "suggestion_recall": 0.929
+}
+
+auto_wrong:
+
+suggested_wrong:
+   'ACME' ~ 'Acme Labs'
+   'Bob Turing' ~ 'Turing'
+   'Brandt' ~ 'Elena Brandt'
+   'Henric III' ~ 'Henric III of Karelia'
+   'Maria Lopez' ~ 'Maria Lopes'
+
+missed:
+   'Beta Systems' ~ 'Beta'
+
+## rules + llama3.1:8b second opinion
+{
+ "entities": 53,
+ "true_pairs": 41,
+ "auto_pairs": 18,
+ "auto_pairs_correct": 18,
+ "unsure_pairs_left": 14,
+ "suggested": 14,
+ "suggested_correct": 12,
+ "auto_precision": 1.0,
+ "auto_share_of_true_pairs": 0.439,
+ "suggestion_precision": 0.857,
+ "suggestion_recall": 0.857
+}
+
+auto_wrong:
+
+suggested_wrong:
+   'Henric III' ~ 'Henric III of Karelia'
+   'Maria Lopez' ~ 'Maria Lopes'
+
+missed:
+   'Aldermoor' ~ 'City of Aldermoor'
+   'Beta Systems' ~ 'Beta'
+
+model verdicts:
+   yes 'the Bombe' ~ 'Bombe machine'
+   no 'Widget-X' ~ 'Widget-X Sensor'
+   no 'Maria Lopez' ~ 'Maria Lopes'
+   no 'ACME' ~ 'Acme Labs'
+   no 'Bob Turing' ~ 'Turing'
+   no 'Nordwind Robotics AG' ~ 'Nordwin Robotics'
+   no 'Jonas Brandt' ~ 'Brandt'
+   no 'Henric III' ~ 'Henric III of Karelia'
+   no 'Zeta-9' ~ 'Zeta-9 processor'
+   yes 'Henric III' ~ 'King Henric III of Vestland'
+   yes 'Oslo' ~ 'Oslo, Norway'
+   no 'Alan M. Turing' ~ 'A. Turing'
+   no 'ETH Zurich' ~ 'ETH'
+   no 'Brandt' ~ 'Elena Brandt'
+   no 'Aldermoor' ~ 'City of Aldermoor'
+   no 'Orbis Logistics' ~ 'Orbis Logistic'
+   no 'IBM' ~ 'International Business Machines'
+   yes 'MIT' ~ 'Massachusetts Institute of Technology'

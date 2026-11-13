@@ -31,7 +31,7 @@ def client(factory, monkeypatch):
 
     llm = FakeLLM(extract=lambda p: {"relations": RAWS})
     monkeypatch.setattr(pipeline, "get_llm", lambda settings=None: llm)
-    monkeypatch.setattr(pipeline, "get_settings", lambda: config.Settings(_env_file=None, verify_facts=False, gleaning_passes=0))
+    monkeypatch.setattr(pipeline, "get_settings", lambda: config.Settings(_env_file=None, verify_facts=False, gleaning_passes=0, auto_resolve=False))
     server.app.dependency_overrides[get_db] = override
     c = TestClient(server.app)  # no 'with': the real database is not initialised
     c.llm = llm

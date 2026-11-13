@@ -1,0 +1,657 @@
+{
+ "note": "Hand-labelled entity clusters: names in the same cluster are one real thing. Synthetic, written by the project author.",
+ "entities": [
+  {
+   "name": "Acme Corp",
+   "type": "organization",
+   "cluster": "acme-corp",
+   "docs": [],
+   "facts": [
+    [
+     "acquired",
+     "Beta Systems"
+    ],
+    [
+     "based in",
+     "Oslo"
+    ]
+   ]
+  },
+  {
+   "name": "Acme Inc.",
+   "type": "organization",
+   "cluster": "acme-corp",
+   "docs": [],
+   "facts": [
+    [
+     "acquired",
+     "Beta Systems"
+    ],
+    [
+     "based in",
+     "Oslo"
+    ]
+   ]
+  },
+  {
+   "name": "ACME",
+   "type": "organization",
+   "cluster": "acme-corp",
+   "docs": [],
+   "facts": [
+    [
+     "acquired",
+     "Beta Systems"
+    ],
+    [
+     "based in",
+     "Oslo"
+    ]
+   ]
+  },
+  {
+   "name": "The Acme Company",
+   "type": "organization",
+   "cluster": "acme-corp",
+   "docs": [],
+   "facts": [
+    [
+     "acquired",
+     "Beta Systems"
+    ],
+    [
+     "based in",
+     "Oslo"
+    ]
+   ]
+  },
+  {
+   "name": "Acme",
+   "type": "organization",
+   "cluster": "acme-corp",
+   "docs": [],
+   "facts": [
+    [
+     "acquired",
+     "Beta Systems"
+    ]
+   ]
+  },
+  {
+   "name": "Acme Labs",
+   "type": "organization",
+   "cluster": "acme-labs",
+   "docs": [],
+   "facts": [
+    [
+     "researches",
+     "batteries"
+    ],
+    [
+     "based in",
+     "Austin"
+    ]
+   ]
+  },
+  {
+   "name": "Alan Turing",
+   "type": "person",
+   "cluster": "turing",
+   "docs": [
+    "d1"
+   ],
+   "facts": [
+    [
+     "worked at",
+     "Bletchley Park"
+    ],
+    [
+     "designed",
+     "the Bombe"
+    ]
+   ]
+  },
+  {
+   "name": "Turing",
+   "type": "person",
+   "cluster": "turing",
+   "docs": [
+    "d1"
+   ],
+   "facts": [
+    [
+     "worked at",
+     "Bletchley Park"
+    ]
+   ]
+  },
+  {
+   "name": "A. Turing",
+   "type": "person",
+   "cluster": "turing",
+   "docs": [
+    "d2"
+   ],
+   "facts": [
+    [
+     "worked at",
+     "Bletchley Park"
+    ]
+   ]
+  },
+  {
+   "name": "Dr. Alan M. Turing",
+   "type": "person",
+   "cluster": "turing",
+   "docs": [
+    "d2"
+   ],
+   "facts": [
+    [
+     "worked at",
+     "Bletchley Park"
+    ]
+   ]
+  },
+  {
+   "name": "Alan M. Turing",
+   "type": "person",
+   "cluster": "turing",
+   "docs": [
+    "d2"
+   ],
+   "facts": [
+    [
+     "worked at",
+     "Bletchley Park"
+    ]
+   ]
+  },
+  {
+   "name": "Bob Turing",
+   "type": "person",
+   "cluster": "bob-turing",
+   "docs": [
+    "d3"
+   ],
+   "facts": [
+    [
+     "plays",
+     "chess"
+    ]
+   ]
+  },
+  {
+   "name": "Jonas Brandt",
+   "type": "person",
+   "cluster": "jonas",
+   "docs": [],
+   "facts": [
+    [
+     "works at",
+     "Kestrel Institute"
+    ]
+   ]
+  },
+  {
+   "name": "Brandt",
+   "type": "person",
+   "cluster": "jonas",
+   "docs": [],
+   "facts": [
+    [
+     "works at",
+     "Kestrel Institute"
+    ]
+   ]
+  },
+  {
+   "name": "Elena Brandt",
+   "type": "person",
+   "cluster": "elena",
+   "docs": [],
+   "facts": [
+    [
+     "designed",
+     "Harbor Library"
+    ]
+   ]
+  },
+  {
+   "name": "Widget-X",
+   "type": "product",
+   "cluster": "widget-x",
+   "docs": [],
+   "facts": [
+    [
+     "made by",
+     "Beta Systems"
+    ]
+   ]
+  },
+  {
+   "name": "Widget-X Sensor",
+   "type": "product",
+   "cluster": "widget-x",
+   "docs": [],
+   "facts": [
+    [
+     "made by",
+     "Beta Systems"
+    ]
+   ]
+  },
+  {
+   "name": "Widget-W",
+   "type": "product",
+   "cluster": "widget-w",
+   "docs": [],
+   "facts": [
+    [
+     "replaced by",
+     "Widget-X"
+    ]
+   ]
+  },
+  {
+   "name": "Zeta-9",
+   "type": "product",
+   "cluster": "zeta-9",
+   "docs": [],
+   "facts": [
+    [
+     "produced by",
+     "Orion Semiconductors"
+    ]
+   ]
+  },
+  {
+   "name": "Zeta-9 processor",
+   "type": "product",
+   "cluster": "zeta-9",
+   "docs": [],
+   "facts": [
+    [
+     "produced by",
+     "Orion Semiconductors"
+    ]
+   ]
+  },
+  {
+   "name": "Zeta-8",
+   "type": "product",
+   "cluster": "zeta-8",
+   "docs": [],
+   "facts": [
+    [
+     "produced by",
+     "Orion Semiconductors"
+    ]
+   ]
+  },
+  {
+   "name": "Henric III",
+   "type": "person",
+   "cluster": "henric-3",
+   "docs": [],
+   "facts": [
+    [
+     "ruled",
+     "Vestland"
+    ]
+   ]
+  },
+  {
+   "name": "King Henric III of Vestland",
+   "type": "person",
+   "cluster": "henric-3",
+   "docs": [],
+   "facts": [
+    [
+     "ruled",
+     "Vestland"
+    ]
+   ]
+  },
+  {
+   "name": "Henric II",
+   "type": "person",
+   "cluster": "henric-2",
+   "docs": [],
+   "facts": [
+    [
+     "ruled",
+     "Vestland"
+    ]
+   ]
+  },
+  {
+   "name": "Henric III of Karelia",
+   "type": "person",
+   "cluster": "henric-3-karelia",
+   "docs": [],
+   "facts": [
+    [
+     "ruled",
+     "Karelia"
+    ]
+   ]
+  },
+  {
+   "name": "IBM",
+   "type": "organization",
+   "cluster": "ibm",
+   "docs": [],
+   "facts": [
+    [
+     "makes",
+     "computers"
+    ]
+   ]
+  },
+  {
+   "name": "International Business Machines",
+   "type": "organization",
+   "cluster": "ibm",
+   "docs": [],
+   "facts": [
+    [
+     "makes",
+     "computers"
+    ]
+   ]
+  },
+  {
+   "name": "MIT",
+   "type": "organization",
+   "cluster": "mit",
+   "docs": [],
+   "facts": [
+    [
+     "located in",
+     "Cambridge"
+    ]
+   ]
+  },
+  {
+   "name": "Massachusetts Institute of Technology",
+   "type": "organization",
+   "cluster": "mit",
+   "docs": [],
+   "facts": [
+    [
+     "located in",
+     "Cambridge"
+    ]
+   ]
+  },
+  {
+   "name": "ETH Zurich",
+   "type": "organization",
+   "cluster": "eth",
+   "docs": [],
+   "facts": [
+    [
+     "located in",
+     "Zurich"
+    ]
+   ]
+  },
+  {
+   "name": "ETH Zürich",
+   "type": "organization",
+   "cluster": "eth",
+   "docs": [],
+   "facts": [
+    [
+     "located in",
+     "Zurich"
+    ]
+   ]
+  },
+  {
+   "name": "ETH",
+   "type": "organization",
+   "cluster": "eth",
+   "docs": [],
+   "facts": [
+    [
+     "located in",
+     "Zurich"
+    ]
+   ]
+  },
+  {
+   "name": "Nordwind Robotics",
+   "type": "organization",
+   "cluster": "nordwind",
+   "docs": [],
+   "facts": [
+    [
+     "builds",
+     "warehouse robots"
+    ]
+   ]
+  },
+  {
+   "name": "Nordwind Robotics AG",
+   "type": "organization",
+   "cluster": "nordwind",
+   "docs": [],
+   "facts": [
+    [
+     "builds",
+     "warehouse robots"
+    ]
+   ]
+  },
+  {
+   "name": "Nordwin Robotics",
+   "type": "organization",
+   "cluster": "nordwind",
+   "docs": [],
+   "facts": [
+    [
+     "builds",
+     "warehouse robots"
+    ]
+   ]
+  },
+  {
+   "name": "Orbis Logistics",
+   "type": "organization",
+   "cluster": "orbis",
+   "docs": [],
+   "facts": [
+    [
+     "headquartered in",
+     "Rotterdam"
+    ]
+   ]
+  },
+  {
+   "name": "Orbis Logistic",
+   "type": "organization",
+   "cluster": "orbis",
+   "docs": [],
+   "facts": [
+    [
+     "headquartered in",
+     "Rotterdam"
+    ]
+   ]
+  },
+  {
+   "name": "Oslo",
+   "type": "place",
+   "cluster": "oslo",
+   "docs": [],
+   "facts": []
+  },
+  {
+   "name": "Oslo, Norway",
+   "type": "place",
+   "cluster": "oslo",
+   "docs": [],
+   "facts": []
+  },
+  {
+   "name": "Aldermoor",
+   "type": "place",
+   "cluster": "aldermoor",
+   "docs": [],
+   "facts": []
+  },
+  {
+   "name": "City of Aldermoor",
+   "type": "place",
+   "cluster": "aldermoor",
+   "docs": [],
+   "facts": []
+  },
+  {
+   "name": "University of Aldermoor",
+   "type": "organization",
+   "cluster": "univ-aldermoor",
+   "docs": [],
+   "facts": [
+    [
+     "located in",
+     "Aldermoor"
+    ]
+   ]
+  },
+  {
+   "name": "Maria Lopez",
+   "type": "person",
+   "cluster": "maria-lopez",
+   "docs": [],
+   "facts": [
+    [
+     "founded",
+     "Acme Corp"
+    ]
+   ]
+  },
+  {
+   "name": "Maria Lopes",
+   "type": "person",
+   "cluster": "maria-lopes",
+   "docs": [],
+   "facts": [
+    [
+     "teaches",
+     "physics"
+    ]
+   ]
+  },
+  {
+   "name": "Apollo 11",
+   "type": "event",
+   "cluster": "apollo-11",
+   "docs": [],
+   "facts": [
+    [
+     "landed on",
+     "the Moon"
+    ]
+   ]
+  },
+  {
+   "name": "Apollo 13",
+   "type": "event",
+   "cluster": "apollo-13",
+   "docs": [],
+   "facts": [
+    [
+     "returned from",
+     "the Moon"
+    ]
+   ]
+  },
+  {
+   "name": "Beta Systems",
+   "type": "organization",
+   "cluster": "beta",
+   "docs": [],
+   "facts": [
+    [
+     "makes",
+     "Widget-X"
+    ]
+   ]
+  },
+  {
+   "name": "Beta Systems GmbH",
+   "type": "organization",
+   "cluster": "beta",
+   "docs": [],
+   "facts": [
+    [
+     "makes",
+     "Widget-X"
+    ]
+   ]
+  },
+  {
+   "name": "Beta",
+   "type": "organization",
+   "cluster": "beta",
+   "docs": [],
+   "facts": [
+    [
+     "makes",
+     "Widget-X"
+    ]
+   ]
+  },
+  {
+   "name": "Beta Group",
+   "type": "organization",
+   "cluster": "beta-group",
+   "docs": [],
+   "facts": [
+    [
+     "invests in",
+     "Pharma"
+    ]
+   ]
+  },
+  {
+   "name": "Bombe",
+   "type": "concept",
+   "cluster": "bombe",
+   "docs": [],
+   "facts": [
+    [
+     "designed by",
+     "Turing"
+    ]
+   ]
+  },
+  {
+   "name": "the Bombe",
+   "type": "product",
+   "cluster": "bombe",
+   "docs": [],
+   "facts": [
+    [
+     "designed by",
+     "Alan Turing"
+    ]
+   ]
+  },
+  {
+   "name": "Bombe machine",
+   "type": "product",
+   "cluster": "bombe",
+   "docs": [],
+   "facts": [
+    [
+     "designed by",
+     "Alan Turing"
+    ]
+   ]
+  }
+ ]
+}
