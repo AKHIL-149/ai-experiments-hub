@@ -1,0 +1,9 @@
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/uploads/
+.env
+__pycache__/
+.pytest_cache/
+*.log
