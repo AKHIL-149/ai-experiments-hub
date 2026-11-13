@@ -1,0 +1,31 @@
+model=llama3.1:8b verify=False gleaning=0
+
+== company_news.txt  (28.6s)  matched 7/10  predicate ok 7  dates ok 5/6  good 7  bad 0
+   MISSED   Tessel AI -> Helsinki  ..
+   MISSED   Orbis Logistics -> Rotterdam  ..
+   MISSED   Ingrid Solheim -> Nordwind Robotics  2012..
+
+== bios.txt  (24.9s)  matched 7/7  predicate ok 7  dates ok 5/5  good 7  bad 0
+
+== product_spec.md  (19.5s)  matched 3/7  predicate ok 3  dates ok 0/0  good 4  bad 1
+   MISSED   Beta Systems -> Widget-X  ..
+   MISSED   Widget-X -> Zeta-9  ..  (pronoun)
+   MISSED   Orion Semiconductors -> Zeta-9  ..
+   MISSED   Widget-X -> Widget-W  2021..
+   BAD      Zeta-9 processor | manufactured | Beta Systems  ..  <- reversed direction
+
+== history.txt  (16.4s)  matched 4/6  predicate ok 4  dates ok 3/3  good 4  bad 1
+   MISSED   Treaty of Aldermoor -> Thirty Years of Salt  ..
+   MISSED   Henric III -> Vestland  1631..1659
+   BAD      King Henric III of Vestland | ruled | Vestland  1631..1659  <- not in gold (check by hand)
+
+== science.txt  (14.6s)  matched 3/5  predicate ok 3  dates ok 2/2  good 4  bad 1
+   MISSED   Tomas Reyes -> Lena Hartmann  ..  (pronoun)
+   MISSED   European Physical Society -> Lena Hartmann  2020..
+   BAD      Professor Lena Hartmann | awarded | the Hartmann Prize  2020..  <- reversed direction
+
+== traps.txt  (8.3s)  matched 2/3  predicate ok 2  dates ok 1/1  good 2  bad 0
+   MISSED   Priya Nair -> Vantor Energy  2005..
+
+TOTAL {"required": 38, "matched": 26, "predicate_ok": 26, "dated": 17, "date_ok": 16, "bad": 3, "recall": 0.684, "recall_non_pronoun": 0.714, "precision": 0.903, "predicate_accuracy": 1.0, "date_accuracy": 0.941}
+kinds: {'reversed': 2, 'optional_match': 2, 'unlisted': 1} | rejected by the checks: {'subject_not_in_evidence': 1, 'reversed_word_order': 2, '(adjusted) quote_widened_to_previous_sentence': 3, '(adjusted) date_dropped_not_in_evidence': 1, '(adjusted) passive_swapped': 2}

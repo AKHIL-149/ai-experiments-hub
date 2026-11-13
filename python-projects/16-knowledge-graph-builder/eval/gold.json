@@ -1,0 +1,1430 @@
+{
+ "company_news.txt": {
+  "required": [
+   {
+    "subject": [
+     "Ingrid Solheim"
+    ],
+    "object": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "predicates": [
+     "found"
+    ],
+    "from": "2012",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "object": [
+     "340",
+     "340 people"
+    ],
+    "predicates": [
+     "employ",
+     "has",
+     "staff",
+     "people"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": true
+   },
+   {
+    "subject": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "object": [
+     "Tessel AI"
+    ],
+    "predicates": [
+     "acquir",
+     "bought",
+     "purchas"
+    ],
+    "from": "2019-06",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tessel AI"
+    ],
+    "object": [
+     "Helsinki"
+    ],
+    "predicates": [
+     "based",
+     "located",
+     "headquarter"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Marcus Veld"
+    ],
+    "object": [
+     "Tessel AI"
+    ],
+    "predicates": [
+     "creat",
+     "found",
+     "start"
+    ],
+    "from": "2016",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Marcus Veld"
+    ],
+    "object": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "predicates": [
+     "became",
+     "chief technology",
+     "cto",
+     "held",
+     "served"
+    ],
+    "from": "",
+    "to": "2023",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "object": [
+     "48M"
+    ],
+    "predicates": [
+     "revenue",
+     "reported"
+    ],
+    "from": "2021",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": true
+   },
+   {
+    "subject": [
+     "Orbis Logistics"
+    ],
+    "object": [
+     "Rotterdam"
+    ],
+    "predicates": [
+     "headquarter",
+     "based",
+     "located"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Orbis Logistics"
+    ],
+    "object": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "predicates": [
+     "sign",
+     "contract",
+     "supply"
+    ],
+    "from": "2022",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Ingrid Solheim"
+    ],
+    "object": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "predicates": [
+     "chief executive",
+     "ceo",
+     "served",
+     "lead",
+     "head"
+    ],
+    "from": "2012",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "optional": [
+   {
+    "subject": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "object": [
+     "Bergen"
+    ],
+    "predicates": [
+     "found",
+     "based",
+     "located"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "object": [
+     "warehouse robots"
+    ],
+    "predicates": [
+     "build",
+     "make",
+     "manufactur"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Marcus Veld"
+    ],
+    "object": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "predicates": [
+     "joined",
+     "work"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Ingrid Solheim"
+    ],
+    "object": [
+     "Bergen"
+    ],
+    "predicates": [
+     "found"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tessel AI"
+    ],
+    "object": [
+     "Nordwind Robotics",
+     "Nordwind"
+    ],
+    "predicates": [
+     "acquir"
+    ],
+    "from": "2019-06",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "traps": []
+ },
+ "bios.txt": {
+  "required": [
+   {
+    "subject": [
+     "Amara Osei",
+     "Dr. Amara Osei"
+    ],
+    "object": [
+     "University of Accra"
+    ],
+    "predicates": [
+     "studied",
+     "study",
+     "attend"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Amara Osei",
+     "Dr. Amara Osei"
+    ],
+    "object": [
+     "ETH Zurich"
+    ],
+    "predicates": [
+     "complet",
+     "doctorate",
+     "earned",
+     "studied",
+     "phd",
+     "graduat"
+    ],
+    "from": "2009",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Amara Osei",
+     "Dr. Amara Osei"
+    ],
+    "object": [
+     "Kestrel Institute"
+    ],
+    "predicates": [
+     "join",
+     "work"
+    ],
+    "from": "2011",
+    "to": "",
+    "symmetric": false,
+    "pronoun": true,
+    "value": false
+   },
+   {
+    "subject": [
+     "Amara Osei",
+     "Dr. Amara Osei"
+    ],
+    "object": [
+     "Quantum Lab",
+     "Kestrel Institute's Quantum Lab"
+    ],
+    "predicates": [
+     "director",
+     "became",
+     "led",
+     "lead",
+     "head"
+    ],
+    "from": "2015",
+    "to": "2020",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Jonas Brandt"
+    ],
+    "object": [
+     "Kestrel Institute"
+    ],
+    "predicates": [
+     "work"
+    ],
+    "from": "2013",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Jonas Brandt"
+    ],
+    "object": [
+     "Elena Brandt"
+    ],
+    "predicates": [
+     "married"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": true,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Elena Brandt"
+    ],
+    "object": [
+     "Harbor Library",
+     "Harbor Library in Porto"
+    ],
+    "predicates": [
+     "design"
+    ],
+    "from": "2018",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "optional": [
+   {
+    "subject": [
+     "Elena Brandt"
+    ],
+    "object": [
+     "Lisbon"
+    ],
+    "predicates": [
+     "from",
+     "live",
+     "born",
+     "architect"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Harbor Library"
+    ],
+    "object": [
+     "Porto"
+    ],
+    "predicates": [
+     "located",
+     "in",
+     "design"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Elena Brandt"
+    ],
+    "object": [
+     "Porto"
+    ],
+    "predicates": [
+     "design"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Amara Osei"
+    ],
+    "object": [
+     "physics"
+    ],
+    "predicates": [
+     "study"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Elena Brandt"
+    ],
+    "object": [
+     "architect"
+    ],
+    "predicates": [
+     "is",
+     "architect"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": true
+   },
+   {
+    "subject": [
+     "Jonas Brandt"
+    ],
+    "object": [
+     "Amara Osei"
+    ],
+    "predicates": [
+     "colleague"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": true,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Amara Osei"
+    ],
+    "object": [
+     "Jonas Brandt"
+    ],
+    "predicates": [
+     "colleague"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": true,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "traps": []
+ },
+ "product_spec.md": {
+  "required": [
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Widget-X",
+     "Widget-X sensor"
+    ],
+    "predicates": [
+     "manufactur",
+     "make",
+     "produc"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X",
+     "Widget-X sensor"
+    ],
+    "object": [
+     "Zeta-9",
+     "Zeta-9 processor"
+    ],
+    "predicates": [
+     "use"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": true,
+    "value": false
+   },
+   {
+    "subject": [
+     "Orion Semiconductors"
+    ],
+    "object": [
+     "Zeta-9",
+     "Zeta-9 processor"
+    ],
+    "predicates": [
+     "produc",
+     "manufactur",
+     "make"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X"
+    ],
+    "object": [
+     "Widget-W"
+    ],
+    "predicates": [
+     "replac"
+    ],
+    "from": "2021",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Nordwind Robotics"
+    ],
+    "predicates": [
+     "sell",
+     "sold",
+     "suppl"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Orbis Logistics"
+    ],
+    "predicates": [
+     "sell",
+     "sold",
+     "suppl"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X",
+     "Widget-X sensor",
+     "sensor"
+    ],
+    "object": [
+     "ISO 13849"
+    ],
+    "predicates": [
+     "compl"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "optional": [
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Munich"
+    ],
+    "predicates": [
+     "in",
+     "based",
+     "located",
+     "manufactur"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X"
+    ],
+    "object": [
+     "Munich"
+    ],
+    "predicates": [
+     "manufactur",
+     "made",
+     "produc"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Widget-X firmware updates",
+     "firmware updates",
+     "Firmware updates for the Widget-X"
+    ],
+    "predicates": [
+     "publish"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Widget-X"
+    ],
+    "predicates": [
+     "sell",
+     "sold",
+     "publish",
+     "suppl"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X"
+    ],
+    "object": [
+     "Nordwind Robotics"
+    ],
+    "predicates": [
+     "sold"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X"
+    ],
+    "object": [
+     "Orbis Logistics"
+    ],
+    "predicates": [
+     "sold"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Widget-X"
+    ],
+    "object": [
+     "ISO 13849 safety standard"
+    ],
+    "predicates": [
+     "compl"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Beta Systems"
+    ],
+    "object": [
+     "Zeta-9"
+    ],
+    "predicates": [
+     "use"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "traps": []
+ },
+ "history.txt": {
+  "required": [
+   {
+    "subject": [
+     "Henric III",
+     "King Henric III",
+     "King Henric III of Vestland"
+    ],
+    "object": [
+     "Treaty of Aldermoor",
+     "The Treaty of Aldermoor"
+    ],
+    "predicates": [
+     "sign"
+    ],
+    "from": "1648",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Sofia",
+     "Queen Sofia",
+     "Queen Sofia of Karelia",
+     "Sofia of Karelia"
+    ],
+    "object": [
+     "Treaty of Aldermoor",
+     "The Treaty of Aldermoor"
+    ],
+    "predicates": [
+     "sign"
+    ],
+    "from": "1648",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Treaty of Aldermoor",
+     "The Treaty of Aldermoor"
+    ],
+    "object": [
+     "Thirty Years of Salt"
+    ],
+    "predicates": [
+     "end"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Henric III",
+     "King Henric III",
+     "King Henric III of Vestland"
+    ],
+    "object": [
+     "Vestland"
+    ],
+    "predicates": [
+     "rule",
+     "reign",
+     "king"
+    ],
+    "from": "1631",
+    "to": "1659",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Margit",
+     "Queen Margit"
+    ],
+    "object": [
+     "University of Aldermoor"
+    ],
+    "predicates": [
+     "found"
+    ],
+    "from": "1664",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "University of Aldermoor",
+     "The university"
+    ],
+    "object": [
+     "Aldermoor"
+    ],
+    "predicates": [
+     "locat",
+     "in"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "optional": [
+   {
+    "subject": [
+     "Thirty Years of Salt"
+    ],
+    "object": [
+     "1618"
+    ],
+    "predicates": [
+     "began",
+     "start"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": true
+   },
+   {
+    "subject": [
+     "Thirty Years of Salt"
+    ],
+    "object": [
+     "1618"
+    ],
+    "predicates": [
+     "began",
+     "start"
+    ],
+    "from": "1618",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Margit",
+     "Queen Margit"
+    ],
+    "object": [
+     "Henric III"
+    ],
+    "predicates": [
+     "succe"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Henric III"
+    ],
+    "object": [
+     "Margit"
+    ],
+    "predicates": [
+     "succe"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "University of Aldermoor"
+    ],
+    "object": [
+     "Treaty of Aldermoor"
+    ],
+    "predicates": [
+     "name"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Treaty of Aldermoor"
+    ],
+    "object": [
+     "Aldermoor"
+    ],
+    "predicates": [
+     "sign",
+     "in"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Henric III"
+    ],
+    "object": [
+     "Aldermoor"
+    ],
+    "predicates": [
+     "sign"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Sofia",
+     "Queen Sofia"
+    ],
+    "object": [
+     "Aldermoor"
+    ],
+    "predicates": [
+     "sign"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Sofia of Karelia",
+     "Queen Sofia"
+    ],
+    "object": [
+     "Karelia"
+    ],
+    "predicates": [
+     "queen",
+     "of",
+     "rule"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Henric III",
+     "King Henric III"
+    ],
+    "object": [
+     "Vestland"
+    ],
+    "predicates": [
+     "king",
+     "of"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Henric III",
+     "King Henric III",
+     "King Henric III of Vestland"
+    ],
+    "object": [
+     "1659"
+    ],
+    "predicates": [
+     "die",
+     "death"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": true
+   }
+  ],
+  "traps": []
+ },
+ "science.txt": {
+  "required": [
+   {
+    "subject": [
+     "Lena Hartmann",
+     "Professor Lena Hartmann"
+    ],
+    "object": [
+     "Lumen effect"
+    ],
+    "predicates": [
+     "discover"
+    ],
+    "from": "2014",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tomas Reyes"
+    ],
+    "object": [
+     "Lena Hartmann"
+    ],
+    "predicates": [
+     "student"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": true,
+    "value": false
+   },
+   {
+    "subject": [
+     "Lumen effect"
+    ],
+    "object": [
+     "Nature Photonics"
+    ],
+    "predicates": [
+     "report",
+     "publish"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Lena Hartmann"
+    ],
+    "object": [
+     "German Academy of Sciences"
+    ],
+    "predicates": [
+     "member"
+    ],
+    "from": "2017",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "European Physical Society"
+    ],
+    "object": [
+     "Lena Hartmann"
+    ],
+    "predicates": [
+     "award"
+    ],
+    "from": "2020",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "optional": [
+   {
+    "subject": [
+     "Lena Hartmann",
+     "Professor Lena Hartmann"
+    ],
+    "object": [
+     "Max Planck Institute"
+    ],
+    "predicates": [
+     "at",
+     "work",
+     "affiliat"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tomas Reyes"
+    ],
+    "object": [
+     "Oslo Institute of Physics"
+    ],
+    "predicates": [
+     "extend",
+     "work"
+    ],
+    "from": "2016",
+    "to": "2019",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tomas Reyes"
+    ],
+    "object": [
+     "Lumen effect"
+    ],
+    "predicates": [
+     "extend"
+    ],
+    "from": "2016",
+    "to": "2019",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tomas Reyes"
+    ],
+    "object": [
+     "the work"
+    ],
+    "predicates": [
+     "extend"
+    ],
+    "from": "2016",
+    "to": "2019",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tomas Reyes"
+    ],
+    "object": [
+     "Lumen effect"
+    ],
+    "predicates": [
+     "extend"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "European Physical Society"
+    ],
+    "object": [
+     "Hartmann Prize"
+    ],
+    "predicates": [
+     "award"
+    ],
+    "from": "2020",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Hartmann Prize"
+    ],
+    "object": [
+     "Lena Hartmann"
+    ],
+    "predicates": [
+     "award"
+    ],
+    "from": "2020",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Tomas Reyes"
+    ],
+    "object": [
+     "Oslo Institute of Physics"
+    ],
+    "predicates": [
+     "extend",
+     "work"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "traps": []
+ },
+ "traps.txt": {
+  "required": [
+   {
+    "subject": [
+     "Priya Nair"
+    ],
+    "object": [
+     "Vantor Energy"
+    ],
+    "predicates": [
+     "found"
+    ],
+    "from": "2005",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Calder Group"
+    ],
+    "object": [
+     "Solis Grid"
+    ],
+    "predicates": [
+     "acquir",
+     "bought"
+    ],
+    "from": "2023",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   },
+   {
+    "subject": [
+     "Solis Grid"
+    ],
+    "object": [
+     "Madrid"
+    ],
+    "predicates": [
+     "based",
+     "located"
+    ],
+    "from": "",
+    "to": "",
+    "symmetric": false,
+    "pronoun": false,
+    "value": false
+   }
+  ],
+  "optional": [],
+  "traps": [
+   {
+    "note": "negated: Vantor did NOT acquire Solis Grid",
+    "subject": [
+     "Vantor Energy"
+    ],
+    "object": [
+     "Solis Grid"
+    ],
+    "any_direction": true
+   },
+   {
+    "note": "only possible: might buy a stake in Helio Storage",
+    "subject": [
+     "Vantor Energy"
+    ],
+    "object": [
+     "Helio Storage"
+    ],
+    "any_direction": true
+   },
+   {
+    "note": "rumour/plan: Karl Meyer plans to resign",
+    "subject": [
+     "Karl Meyer"
+    ],
+    "object": [
+     "Vantor Energy"
+    ],
+    "any_direction": true
+   }
+  ]
+ }
+}

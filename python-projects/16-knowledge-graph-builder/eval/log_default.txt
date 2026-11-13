@@ -1,0 +1,31 @@
+model=llama3.1:8b verify=True gleaning=1
+
+== company_news.txt  (35.9s)  matched 8/10  predicate ok 8  dates ok 5/6  good 9  bad 0
+   MISSED   Orbis Logistics -> Rotterdam  ..
+   MISSED   Ingrid Solheim -> Nordwind Robotics  2012..
+
+== bios.txt  (34.3s)  matched 7/7  predicate ok 7  dates ok 5/5  good 8  bad 0
+
+== product_spec.md  (28.7s)  matched 5/7  predicate ok 5  dates ok 1/1  good 7  bad 0
+   MISSED   Beta Systems -> Widget-X  ..
+   MISSED   Widget-X -> Zeta-9  ..  (pronoun)
+
+== history.txt  (27.5s)  matched 3/6  predicate ok 3  dates ok 3/3  good 3  bad 2
+   MISSED   Treaty of Aldermoor -> Thirty Years of Salt  ..
+   MISSED   Henric III -> Vestland  1631..1659
+   MISSED   University of Aldermoor -> Aldermoor  ..
+   BAD      King Henric III of Vestland | ruled | Vestland  1631..1659  <- not in gold (check by hand)
+   BAD      King Henric III of Vestland | died | 1659  ..1659  <- not in gold (check by hand)
+
+== science.txt  (20.5s)  matched 2/5  predicate ok 2  dates ok 1/1  good 3  bad 1
+   MISSED   Lena Hartmann -> Lumen effect  2014..
+   MISSED   Tomas Reyes -> Lena Hartmann  ..  (pronoun)
+   MISSED   European Physical Society -> Lena Hartmann  2020..
+   BAD      Professor Lena Hartmann | awarded | the Hartmann Prize  2020..  <- reversed direction
+
+== traps.txt  (17.2s)  matched 2/3  predicate ok 2  dates ok 1/1  good 2  bad 1
+   MISSED   Priya Nair -> Vantor Energy  2005..
+   BAD      Vantor Energy | might buy a stake in | Helio Storage  ..  <- trap: only possible: might buy a stake in Helio Storage
+
+TOTAL {"required": 38, "matched": 27, "predicate_ok": 27, "dated": 17, "date_ok": 16, "bad": 4, "recall": 0.711, "recall_non_pronoun": 0.743, "precision": 0.889, "predicate_accuracy": 1.0, "date_accuracy": 0.941}
+kinds: {'optional_match': 5, 'unlisted': 2, 'reversed': 1, 'trap_hit': 1} | rejected by the checks: {'duplicate_in_chunk': 3, 'subject_not_in_evidence': 1, 'reversed_word_order': 2, 'verify_unsupported': 5, 'malformed': 1, '(adjusted) quote_widened_to_previous_sentence': 4, '(adjusted) date_dropped_not_in_evidence': 2, '(adjusted) found_by_gleaning': 10, '(adjusted) passive_swapped': 3}

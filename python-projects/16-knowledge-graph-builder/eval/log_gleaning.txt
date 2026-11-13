@@ -1,0 +1,31 @@
+model=llama3.1:8b verify=False gleaning=1
+
+== company_news.txt  (29.4s)  matched 8/10  predicate ok 8  dates ok 5/6  good 9  bad 0
+   MISSED   Orbis Logistics -> Rotterdam  ..
+   MISSED   Ingrid Solheim -> Nordwind Robotics  2012..
+
+== bios.txt  (28.3s)  matched 7/7  predicate ok 7  dates ok 5/5  good 8  bad 0
+
+== product_spec.md  (23.9s)  matched 5/7  predicate ok 5  dates ok 1/1  good 7  bad 1
+   MISSED   Beta Systems -> Widget-X  ..
+   MISSED   Widget-X -> Zeta-9  ..  (pronoun)
+   BAD      Zeta-9 processor | manufactured | Beta Systems  ..  <- reversed direction
+
+== history.txt  (22.6s)  matched 4/6  predicate ok 4  dates ok 3/3  good 5  bad 2
+   MISSED   Treaty of Aldermoor -> Thirty Years of Salt  ..
+   MISSED   Henric III -> Vestland  1631..1659
+   BAD      King Henric III of Vestland | ruled | Vestland  1631..1659  <- not in gold (check by hand)
+   BAD      King Henric III of Vestland | died | 1659  ..1659  <- not in gold (check by hand)
+
+== science.txt  (17.0s)  matched 3/5  predicate ok 3  dates ok 2/2  good 4  bad 1
+   MISSED   Tomas Reyes -> Lena Hartmann  ..  (pronoun)
+   MISSED   European Physical Society -> Lena Hartmann  2020..
+   BAD      Professor Lena Hartmann | awarded | the Hartmann Prize  2020..  <- reversed direction
+
+== traps.txt  (13.0s)  matched 2/3  predicate ok 2  dates ok 1/1  good 2  bad 2
+   MISSED   Priya Nair -> Vantor Energy  2005..
+   BAD      Karl Meyer | plans to resign from | Vantor Energy  ..  <- trap: rumour/plan: Karl Meyer plans to resign
+   BAD      Vantor Energy | might buy a stake in | Helio Storage  ..  <- trap: only possible: might buy a stake in Helio Storage
+
+TOTAL {"required": 38, "matched": 29, "predicate_ok": 29, "dated": 18, "date_ok": 17, "bad": 6, "recall": 0.763, "recall_non_pronoun": 0.8, "precision": 0.854, "predicate_accuracy": 1.0, "date_accuracy": 0.944}
+kinds: {'optional_match': 6, 'reversed': 2, 'unlisted': 2, 'trap_hit': 2} | rejected by the checks: {'duplicate_in_chunk': 3, 'subject_not_in_evidence': 1, 'reversed_word_order': 2, 'malformed': 1, '(adjusted) quote_widened_to_previous_sentence': 4, '(adjusted) date_dropped_not_in_evidence': 2, '(adjusted) found_by_gleaning': 10, '(adjusted) passive_swapped': 3}

@@ -1,0 +1,700 @@
+{
+ "model": "llama3.1:8b",
+ "verify": true,
+ "gleaning": 1,
+ "total": {
+  "required": 38,
+  "matched": 27,
+  "predicate_ok": 27,
+  "dated": 17,
+  "date_ok": 16,
+  "matched_non_pronoun": 26,
+  "required_non_pronoun": 35,
+  "good_unique": 32,
+  "bad": 4,
+  "k_optional_match": 5,
+  "k_unlisted": 2,
+  "k_reversed": 1,
+  "k_trap_hit": 1,
+  "recall": 0.711,
+  "recall_non_pronoun": 0.743,
+  "precision": 0.889,
+  "predicate_accuracy": 1.0,
+  "date_accuracy": 0.941
+ },
+ "rejected": {
+  "duplicate_in_chunk": 3,
+  "subject_not_in_evidence": 1,
+  "reversed_word_order": 2,
+  "verify_unsupported": 5,
+  "malformed": 1,
+  "(adjusted) quote_widened_to_previous_sentence": 4,
+  "(adjusted) date_dropped_not_in_evidence": 2,
+  "(adjusted) found_by_gleaning": 10,
+  "(adjusted) passive_swapped": 3
+ },
+ "per_doc": {
+  "company_news.txt": {
+   "required": 10,
+   "matched": 8,
+   "predicate_ok": 8,
+   "dated": 6,
+   "date_ok": 5,
+   "matched_non_pronoun": 8,
+   "required_non_pronoun": 10,
+   "good_unique": 9,
+   "bad": 0,
+   "kinds": {
+    "optional_match": 1
+   },
+   "bad_facts": [],
+   "missed": [
+    {
+     "subject": [
+      "Orbis Logistics"
+     ],
+     "object": [
+      "Rotterdam"
+     ],
+     "predicates": [
+      "headquarter",
+      "based",
+      "located"
+     ],
+     "from": "",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    },
+    {
+     "subject": [
+      "Ingrid Solheim"
+     ],
+     "object": [
+      "Nordwind Robotics",
+      "Nordwind"
+     ],
+     "predicates": [
+      "chief executive",
+      "ceo",
+      "served",
+      "lead",
+      "head"
+     ],
+     "from": "2012",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    }
+   ]
+  },
+  "bios.txt": {
+   "required": 7,
+   "matched": 7,
+   "predicate_ok": 7,
+   "dated": 5,
+   "date_ok": 5,
+   "matched_non_pronoun": 6,
+   "required_non_pronoun": 6,
+   "good_unique": 8,
+   "bad": 0,
+   "kinds": {
+    "optional_match": 1
+   },
+   "bad_facts": [],
+   "missed": []
+  },
+  "product_spec.md": {
+   "required": 7,
+   "matched": 5,
+   "predicate_ok": 5,
+   "dated": 1,
+   "date_ok": 1,
+   "matched_non_pronoun": 5,
+   "required_non_pronoun": 6,
+   "good_unique": 7,
+   "bad": 0,
+   "kinds": {
+    "optional_match": 2
+   },
+   "bad_facts": [],
+   "missed": [
+    {
+     "subject": [
+      "Beta Systems"
+     ],
+     "object": [
+      "Widget-X",
+      "Widget-X sensor"
+     ],
+     "predicates": [
+      "manufactur",
+      "make",
+      "produc"
+     ],
+     "from": "",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    },
+    {
+     "subject": [
+      "Widget-X",
+      "Widget-X sensor"
+     ],
+     "object": [
+      "Zeta-9",
+      "Zeta-9 processor"
+     ],
+     "predicates": [
+      "use"
+     ],
+     "from": "",
+     "to": "",
+     "symmetric": false,
+     "pronoun": true,
+     "value": false
+    }
+   ]
+  },
+  "history.txt": {
+   "required": 6,
+   "matched": 3,
+   "predicate_ok": 3,
+   "dated": 3,
+   "date_ok": 3,
+   "matched_non_pronoun": 3,
+   "required_non_pronoun": 6,
+   "good_unique": 3,
+   "bad": 2,
+   "kinds": {
+    "unlisted": 2
+   },
+   "bad_facts": [
+    {
+     "subject": "King Henric III of Vestland",
+     "predicate": "ruled",
+     "object": "Vestland",
+     "valid_from": "1631",
+     "valid_to": "1659",
+     "evidence": "Henric III ruled Vestland from 1631 until his death in 1659.",
+     "why": "not in gold (check by hand)"
+    },
+    {
+     "subject": "King Henric III of Vestland",
+     "predicate": "died",
+     "object": "1659",
+     "valid_from": "",
+     "valid_to": "1659",
+     "evidence": "Henric III ruled Vestland from 1631 until his death in 1659.",
+     "why": "not in gold (check by hand)"
+    }
+   ],
+   "missed": [
+    {
+     "subject": [
+      "Treaty of Aldermoor",
+      "The Treaty of Aldermoor"
+     ],
+     "object": [
+      "Thirty Years of Salt"
+     ],
+     "predicates": [
+      "end"
+     ],
+     "from": "",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    },
+    {
+     "subject": [
+      "Henric III",
+      "King Henric III"
+     ],
+     "object": [
+      "Vestland"
+     ],
+     "predicates": [
+      "rule",
+      "reign",
+      "king"
+     ],
+     "from": "1631",
+     "to": "1659",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    },
+    {
+     "subject": [
+      "University of Aldermoor",
+      "The university"
+     ],
+     "object": [
+      "Aldermoor"
+     ],
+     "predicates": [
+      "locat",
+      "in"
+     ],
+     "from": "",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    }
+   ]
+  },
+  "science.txt": {
+   "required": 5,
+   "matched": 2,
+   "predicate_ok": 2,
+   "dated": 1,
+   "date_ok": 1,
+   "matched_non_pronoun": 2,
+   "required_non_pronoun": 4,
+   "good_unique": 3,
+   "bad": 1,
+   "kinds": {
+    "optional_match": 1,
+    "reversed": 1
+   },
+   "bad_facts": [
+    {
+     "subject": "Professor Lena Hartmann",
+     "predicate": "awarded",
+     "object": "the Hartmann Prize",
+     "valid_from": "2020",
+     "valid_to": "",
+     "evidence": "In 2020, the Hartmann Prize was awarded to Lena Hartmann by the European Physical Society.",
+     "why": "reversed direction"
+    }
+   ],
+   "missed": [
+    {
+     "subject": [
+      "Lena Hartmann",
+      "Professor Lena Hartmann"
+     ],
+     "object": [
+      "Lumen effect"
+     ],
+     "predicates": [
+      "discover"
+     ],
+     "from": "2014",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    },
+    {
+     "subject": [
+      "Tomas Reyes"
+     ],
+     "object": [
+      "Lena Hartmann"
+     ],
+     "predicates": [
+      "student"
+     ],
+     "from": "",
+     "to": "",
+     "symmetric": false,
+     "pronoun": true,
+     "value": false
+    },
+    {
+     "subject": [
+      "European Physical Society"
+     ],
+     "object": [
+      "Lena Hartmann"
+     ],
+     "predicates": [
+      "award"
+     ],
+     "from": "2020",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    }
+   ]
+  },
+  "traps.txt": {
+   "required": 3,
+   "matched": 2,
+   "predicate_ok": 2,
+   "dated": 1,
+   "date_ok": 1,
+   "matched_non_pronoun": 2,
+   "required_non_pronoun": 3,
+   "good_unique": 2,
+   "bad": 1,
+   "kinds": {
+    "trap_hit": 1
+   },
+   "bad_facts": [
+    {
+     "subject": "Vantor Energy",
+     "predicate": "might buy a stake in",
+     "object": "Helio Storage",
+     "valid_from": "",
+     "valid_to": "",
+     "evidence": "Analysts say Vantor Energy might buy a stake in Helio Storage if prices fall.",
+     "why": "trap: only possible: might buy a stake in Helio Storage"
+    }
+   ],
+   "missed": [
+    {
+     "subject": [
+      "Priya Nair"
+     ],
+     "object": [
+      "Vantor Energy"
+     ],
+     "predicates": [
+      "found"
+     ],
+     "from": "2005",
+     "to": "",
+     "symmetric": false,
+     "pronoun": false,
+     "value": false
+    }
+   ]
+  }
+ },
+ "extracted": {
+  "company_news.txt": [
+   {
+    "subject": "Ingrid Solheim",
+    "predicate": "founded",
+    "object": "Nordwind Robotics",
+    "valid_from": "2012",
+    "valid_to": "",
+    "evidence": "Nordwind Robotics was founded in 2012 by Ingrid Solheim in Bergen."
+   },
+   {
+    "subject": "Nordwind Robotics",
+    "predicate": "employs",
+    "object": "340",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Nordwind Robotics was founded in 2012 by Ingrid Solheim in Bergen. The company builds warehouse robots and employs 340 people."
+   },
+   {
+    "subject": "Nordwind Robotics",
+    "predicate": "acquired",
+    "object": "Tessel AI",
+    "valid_from": "2019",
+    "valid_to": "",
+    "evidence": "In June 2019, Nordwind Robotics acquired Tessel AI, a vision-software startup based in Helsinki."
+   },
+   {
+    "subject": "Marcus Veld",
+    "predicate": "created",
+    "object": "Tessel AI",
+    "valid_from": "2016",
+    "valid_to": "",
+    "evidence": "Tessel AI had been created by Marcus Veld in 2016."
+   },
+   {
+    "subject": "Marcus Veld",
+    "predicate": "became chief technology officer of",
+    "object": "Nordwind Robotics",
+    "valid_from": "",
+    "valid_to": "2023",
+    "evidence": "After the acquisition, Marcus Veld became Chief Technology Officer of Nordwind Robotics, a role he held until 2023."
+   },
+   {
+    "subject": "Nordwind Robotics",
+    "predicate": "reported revenue of",
+    "object": "48M",
+    "valid_from": "2021",
+    "valid_to": "",
+    "evidence": "In 2021, Nordwind Robotics reported revenue of 48M."
+   },
+   {
+    "subject": "Orbis Logistics",
+    "predicate": "signed a supply contract with",
+    "object": "Nordwind Robotics",
+    "valid_from": "2022",
+    "valid_to": "",
+    "evidence": "Orbis Logistics, a shipping company headquartered in Rotterdam, signed a supply contract with Nordwind Robotics in 2022."
+   },
+   {
+    "subject": "Ingrid Solheim",
+    "predicate": "served as chief executive of",
+    "object": "Nordwind Robotics",
+    "valid_from": "2012",
+    "valid_to": "",
+    "evidence": "Ingrid Solheim has served as chief executive of Nordwind Robotics since 2012."
+   },
+   {
+    "subject": "Nordwind Robotics",
+    "predicate": "builds",
+    "object": "warehouse robots",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Nordwind Robotics was founded in 2012 by Ingrid Solheim in Bergen. The company builds warehouse robots and employs 340 people."
+   },
+   {
+    "subject": "Tessel AI",
+    "predicate": "based in",
+    "object": "Helsinki",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "In June 2019, Nordwind Robotics acquired Tessel AI, a vision-software startup based in Helsinki."
+   }
+  ],
+  "bios.txt": [
+   {
+    "subject": "Dr. Amara Osei",
+    "predicate": "studied physics at",
+    "object": "University of Accra",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Dr. Amara Osei studied physics at the University of Accra and completed her doctorate at ETH Zurich in 2009."
+   },
+   {
+    "subject": "Dr. Amara Osei",
+    "predicate": "completed her doctorate at",
+    "object": "ETH Zurich",
+    "valid_from": "2009",
+    "valid_to": "",
+    "evidence": "Dr. Amara Osei studied physics at the University of Accra and completed her doctorate at ETH Zurich in 2009."
+   },
+   {
+    "subject": "Dr. Amara Osei",
+    "predicate": "joined",
+    "object": "Kestrel Institute",
+    "valid_from": "2011",
+    "valid_to": "",
+    "evidence": "Amara Osei studied physics at the University of Accra and completed her doctorate at ETH Zurich in 2009. She joined the Kestrel Institute in 2011."
+   },
+   {
+    "subject": "Dr. Amara Osei",
+    "predicate": "became director of",
+    "object": "Kestrel Institute's Quantum Lab",
+    "valid_from": "2015",
+    "valid_to": "2020",
+    "evidence": "In 2015, Amara Osei became director of the Kestrel Institute's Quantum Lab, which she led until 2020."
+   },
+   {
+    "subject": "Dr. Amara Osei",
+    "predicate": "led",
+    "object": "Kestrel Institute's Quantum Lab",
+    "valid_from": "2015",
+    "valid_to": "2020",
+    "evidence": "In 2015, Amara Osei became director of the Kestrel Institute's Quantum Lab, which she led until 2020."
+   },
+   {
+    "subject": "Jonas Brandt",
+    "predicate": "worked at",
+    "object": "Kestrel Institute",
+    "valid_from": "2013",
+    "valid_to": "",
+    "evidence": "Her colleague Jonas Brandt has worked at the Kestrel Institute since 2013."
+   },
+   {
+    "subject": "Jonas Brandt",
+    "predicate": "married to",
+    "object": "Elena Brandt",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Jonas Brandt is married to Elena Brandt, an architect from Lisbon."
+   },
+   {
+    "subject": "Elena Brandt",
+    "predicate": "designed",
+    "object": "Harbor Library in Porto",
+    "valid_from": "2018",
+    "valid_to": "",
+    "evidence": "Elena Brandt designed the Harbor Library in Porto in 2018."
+   },
+   {
+    "subject": "Elena Brandt",
+    "predicate": "an architect from",
+    "object": "Lisbon",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Jonas Brandt is married to Elena Brandt, an architect from Lisbon."
+   }
+  ],
+  "product_spec.md": [
+   {
+    "subject": "Beta Systems",
+    "predicate": "sells to",
+    "object": "Nordwind Robotics",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Beta Systems sells the Widget-X to Nordwind Robotics and to Orbis Logistics."
+   },
+   {
+    "subject": "Beta Systems",
+    "predicate": "sells to",
+    "object": "Orbis Logistics",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Beta Systems sells the Widget-X to Nordwind Robotics and to Orbis Logistics."
+   },
+   {
+    "subject": "Widget-X Sensor",
+    "predicate": "complies with",
+    "object": "ISO 13849 safety standard",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "The sensor complies with the ISO 13849 safety standard."
+   },
+   {
+    "subject": "Beta Systems",
+    "predicate": "published",
+    "object": "firmware updates",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Firmware updates for the Widget-X are published by Beta Systems every quarter."
+   },
+   {
+    "subject": "Widget-X Sensor",
+    "predicate": "replaced",
+    "object": "Widget-W",
+    "valid_from": "2021",
+    "valid_to": "",
+    "evidence": "The Widget-X replaced the Widget-W in 2021."
+   },
+   {
+    "subject": "Beta Systems",
+    "predicate": "located in",
+    "object": "Munich",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "The Widget-X sensor is manufactured by Beta Systems in Munich."
+   },
+   {
+    "subject": "Orion Semiconductors",
+    "predicate": "produced",
+    "object": "Zeta-9 processor",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "It uses the Zeta-9 processor, which is produced by Orion Semiconductors."
+   }
+  ],
+  "history.txt": [
+   {
+    "subject": "King Henric III of Vestland",
+    "predicate": "signed",
+    "object": "The Treaty of Aldermoor",
+    "valid_from": "1648",
+    "valid_to": "",
+    "evidence": "The Treaty of Aldermoor was signed in 1648 in the city of Aldermoor by King Henric III of Vestland and Queen Sofia of Karelia."
+   },
+   {
+    "subject": "Queen Sofia of Karelia",
+    "predicate": "signed",
+    "object": "The Treaty of Aldermoor",
+    "valid_from": "1648",
+    "valid_to": "",
+    "evidence": "The Treaty of Aldermoor was signed in 1648 in the city of Aldermoor by King Henric III of Vestland and Queen Sofia of Karelia."
+   },
+   {
+    "subject": "King Henric III of Vestland",
+    "predicate": "ruled",
+    "object": "Vestland",
+    "valid_from": "1631",
+    "valid_to": "1659",
+    "evidence": "Henric III ruled Vestland from 1631 until his death in 1659."
+   },
+   {
+    "subject": "Queen Margit",
+    "predicate": "founded",
+    "object": "The University of Aldermoor",
+    "valid_from": "1664",
+    "valid_to": "",
+    "evidence": "His successor, Queen Margit, founded the University of Aldermoor in 1664."
+   },
+   {
+    "subject": "King Henric III of Vestland",
+    "predicate": "died",
+    "object": "1659",
+    "valid_from": "",
+    "valid_to": "1659",
+    "evidence": "Henric III ruled Vestland from 1631 until his death in 1659."
+   }
+  ],
+  "science.txt": [
+   {
+    "subject": "Tomas Reyes",
+    "predicate": "extended the work at",
+    "object": "the Oslo Institute of Physics",
+    "valid_from": "2016",
+    "valid_to": "2019",
+    "evidence": "Her doctoral student Tomas Reyes extended the work at the Oslo Institute of Physics between 2016 and 2019."
+   },
+   {
+    "subject": "the Lumen effect",
+    "predicate": "reported in",
+    "object": "the journal Nature Photonics",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "The Lumen effect was first reported in the journal Nature Photonics."
+   },
+   {
+    "subject": "Professor Lena Hartmann",
+    "predicate": "a member of",
+    "object": "the German Academy of Sciences",
+    "valid_from": "2017",
+    "valid_to": "",
+    "evidence": "Lena Hartmann has been a member of the German Academy of Sciences since 2017."
+   },
+   {
+    "subject": "Professor Lena Hartmann",
+    "predicate": "awarded",
+    "object": "the Hartmann Prize",
+    "valid_from": "2020",
+    "valid_to": "",
+    "evidence": "In 2020, the Hartmann Prize was awarded to Lena Hartmann by the European Physical Society."
+   }
+  ],
+  "traps.txt": [
+   {
+    "subject": "Solis Grid",
+    "predicate": "based in",
+    "object": "Madrid",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Solis Grid, which is based in Madrid, was acquired by Calder Group in 2023."
+   },
+   {
+    "subject": "Calder Group",
+    "predicate": "acquired",
+    "object": "Solis Grid",
+    "valid_from": "2023",
+    "valid_to": "",
+    "evidence": "Solis Grid, which is based in Madrid, was acquired by Calder Group in 2023."
+   },
+   {
+    "subject": "Vantor Energy",
+    "predicate": "might buy a stake in",
+    "object": "Helio Storage",
+    "valid_from": "",
+    "valid_to": "",
+    "evidence": "Analysts say Vantor Energy might buy a stake in Helio Storage if prices fall."
+   }
+  ]
+ },
+ "elapsed": {
+  "company_news.txt": 35.9,
+  "bios.txt": 34.3,
+  "product_spec.md": 28.7,
+  "history.txt": 27.5,
+  "science.txt": 20.5,
+  "traps.txt": 17.2
+ }
+}
