@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
 
+    embedding_model: str = Field(default="nomic-embed-text", description="Ollama embedding model for passages, facts and questions")
+    index_chunks: bool = Field(default=True, description="Embed passages while reading a document (needed for passage search)")
+    ask_max_facts: int = Field(default=30, ge=5, le=100, description="Most facts handed to the model for one question")
+    ask_top_chunks: int = Field(default=4, ge=1, le=12, description="Passages added by passage search / hybrid")
+    ask_max_hops: int = Field(default=2, ge=1, le=4, description="How far around the entities of a question the facts are collected")
+    predicate_threshold: float = Field(default=0.62, ge=0.0, le=1.0, description="How alike a relation word and a stored predicate must be")
     chunk_chars: int = Field(default=1500, ge=300)
     chunk_overlap_chars: int = Field(default=200, ge=0)
     verify_facts: bool = True

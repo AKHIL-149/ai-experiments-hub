@@ -11,6 +11,7 @@ from src.core import database
 from src.core.config import Settings, get_settings
 from src.models.graph import Chunk, Document, DocumentStatus, Entity, Fact, FactSource
 from src.services.chunker import chunk_text
+from src.services.embedding import Embedder, EmbeddingError, ensure_chunk_embeddings, get_embedder
 from src.services.extraction import ExtractedFact, extract_chunk
 from src.services.llm import LLMClient, LLMError, get_llm
 from src.services.resolution import find_by_alias, run_resolution
@@ -168,6 +169,16 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
     doc.status, doc.finished_at = DocumentStatus.COMPLETED, _now()
     doc.stats = {**totals, "rejected": dict(rejected), "adjusted": dict(adjusted)}
     db.commit()
+    if settings.index_chunks:
+        embedder = get_embedder(settings)
+        if embedder is not None:
+            try:  # passage search needs these; a missing embedding model must not fail a document that is already read
+                ensure_chunk_embeddings(db, embedder, doc.id)
+                db.commit()
+            except EmbeddingError as exc:
+                db.rollback()
+                doc.stats = {**doc.stats, "embedding_error": str(exc)}
+                db.commit()
     if settings.auto_resolve:
         try:
             summary = run_resolution(db, auto=True)
