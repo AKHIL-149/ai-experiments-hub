@@ -4,13 +4,13 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 and will answer multi-hop questions over it and show it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 and 2 of 8 are built (extraction and graph store; entity resolution).** The rest is not built yet.
+**Status: steps 1 to 3 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG).** The rest is not built yet.
 
 | Step | What | State |
 |---|---|---|
 | 1 | Extraction and graph store | done |
 | 2 | Entity resolution ("Acme Corp" = "Acme Inc." = "ACME") | done |
-| 3 | Queries and graph-RAG (multi-hop questions with cited sources) | not started |
+| 3 | Queries and graph-RAG (multi-hop questions with cited sources) | done |
 | 4 | Accounts and background job queue (pattern from project 15) | not started |
 | 5 | Visual explorer (React + D3.js, "Paper Light" theme) | not started |
 | 6 | Temporal facts ("who was CTO in 2021?") | not started |
@@ -60,7 +60,7 @@ There is no UI yet (step 5): use `/docs` or curl.
    - passive wording ("was founded by") is turned around so the subject is always the one doing it
    - a word-order check rejects relations written the wrong way round, without calling the model
    - vague predicates ("is", "has", "related to") are refused
-6. **Double-check with the model** (`VERIFY_FACTS=true`): one short yes/no call per fact, "is this statement true according to the quote?". It catches negations and plans ("did not acquire", "might buy"); it is not reliable at direction, which is why step 5 has the word-order check.
+6. **Double-check** (`VERIFY_FACTS=true`). A fact whose quote states it in the claim's own words, close together, in the claim's order, with nothing doubtful in the quote ("not", "might", "plans", "rumour") needs no model ("Veltra Dynamics is headquartered in Kellmar."). The rest get one short yes/no call, "is this statement true according to the quote?", which catches negations and plans ("did not acquire", "might buy"); it is not reliable at direction, which is why step 5 has the word-order check. Participle predicates are phrased with an "is" ("Sofia is born in Oslin"), because the bare "Sofia born in Oslin" made the model say no to true facts.
 7. **Store**: entities (matched by normalised name, leading "the/a/an" removed), facts, and one source row per quote (document, passage, exact text, whether the double-check passed). The same fact found again only adds a source. The same statement with and without a date becomes one fact; different periods stay different facts.
 8. **Resolve entities** (see "Entity resolution" below): merge the same name written differently, suggest the unsure pairs.
 
@@ -113,6 +113,55 @@ Pairs are counted after the automatic merges, so "Acme Corp", "ACME" and "Acme I
 - Every run compares all candidate pairs; it was tested on dozens of entities, not on tens of thousands. A word shared by more than 200 names (like "University") is not used to pair entities.
 - No UI for reviewing suggestions yet (step 5): use `/docs` or curl.
 
+## Questions and graph-RAG (step 3)
+
+`POST /api/ask {"question": "...", "mode": "auto|graph|subgraph|hybrid|vector", "document_id": null}` answers from the graph and cites the quotes behind every fact it used.
+
+| Mode | What it does |
+|---|---|
+| `vector` | The baseline: the passages closest to the question (embeddings, `nomic-embed-text`), as a plain RAG assistant does. My own re-implementation with the same model and embeddings, not project 4's code |
+| `subgraph` | Finds the entities the question names, collects the facts within 2 links, keeps the 30 that fit the question best |
+| `graph` (= `auto`) | The model turns the question into a **chain of relations** ("acquired" backwards, then "founded" backwards); **code walks that chain** through the graph and keeps only the facts on the way; if the chain breaks it falls back to `subgraph` and tells the model so |
+| `hybrid` | `graph` plus the closest passages |
+
+How a question is handled:
+1. **Entity linking** (no model): the question's words are matched to entity names and aliases, longest match first, then a part of a name ("Turing"), then near spellings. Question words and short words are ignored; a word shared by more than 3 names is too generic.
+2. **Plan** (model): `{"start": ["Veltra Dynamics"], "steps": [{"relation": "acquired", "direction": "out"}, {"relation": "founded", "direction": "in"}]}`. "How is A connected to B?" is detected by wording and answered with the shortest paths between them, without asking the model for a plan.
+3. **Walk** (code): each step keeps the facts whose predicate is close to the relation (same word stem, or embedding similarity above `PREDICATE_THRESHOLD`: "bought" finds "acquired"). A wrong direction is tried the other way round and reported. Only chains that reach the end are kept, so the model sees the facts on the path, not everything nearby.
+4. **Answer** (model): it gets numbered facts (`F1`, with the source quote) and passages (`P1`), must answer only from them, may say "not found", and says which labels it used. Labels it was never given are dropped and reported. The reply includes the answer, the citations (fact, quote, document, passage), and the reasoning: entities found, the plan, each step's links, any fallback and why, which documents the evidence came from.
+
+Without a model: `POST /api/query/chain` follows a chain you write, `GET /api/query/path?from=&to=` finds how two entities connect, `GET /api/query/link?q=` shows which entities a text is matched to. `GET /api/index/status` and `POST /api/index/rebuild` show and fill the embeddings (passages are embedded while a document is read; fact vectors are made on first use and kept).
+
+### Measured: graph questions against passage search
+
+Corpus: 18 short fictional documents (so the model cannot know the answers), read by the real pipeline into 30 facts; `eval/qa/`. Questions need 1 to 4 hops across documents, include list and "how are A and B connected" questions, and 5 that the documents cannot answer (including near-misses: "invested in" for "acquired", the CEO of the parent company, the relation the wrong way round). Answers are judged by whether the gold names appear (and for unanswerable ones, whether the system says it is not in the documents). All systems use `llama3.1:8b`, temperature 0.
+
+| Correct answers | `vector` (passages) | `subgraph` | `graph` | `hybrid` |
+|---|---|---|---|---|
+| **Held-out set** (13 questions written before the final changes, run once) | 8 | 11 | **11** | 10 |
+| 2+ hops (held-out, 7 questions) | 3 | 5 | 4 | 5 |
+| Unanswerable (held-out, 4) | 2 | 3 | **4** | 2 |
+| **Development set** (25 questions; prompts were tuned on it, so optimistic) | 14 | 20 | **23** | 23 |
+| 2+ hops (development, 11 questions) | 5 | 10 | **10** | 10 |
+| Unanswerable (development, 5) | 3 | 2 | **5** | 5 |
+| Average seconds per answer | 1.5 | 2.1 | 2.7 | 2.9 |
+
+What to take from it:
+- **Questions that need facts from several documents** are where the graph wins: passage search answered 5 of 11 development questions with 2+ hops and 3 of 7 held-out ones; the graph modes 10 of 11 and 4-5 of 7. Passage search fails when no single passage is close to the whole question.
+- **One-hop questions** are a tie (the passages answer them too).
+- **"Not found"** was the weak spot of the first version: the graph modes gave plausible but unsupported answers ("Lena Marsh" as the CEO of Soro Labs; she heads its parent company), 1 of 5 correct against passage search's 3 of 5. Telling the model when the chain could not be followed, and a rule that a different entity or relation does not answer the question, brought it to 5 of 5 on the development set and 4 of 4 held-out. Those changes were made after seeing the development failures.
+- The remaining misses are the planner's: a 4-hop question where it stopped one relation short (asked for the country, answered the city), and a question whose answer needs the same-university relation in both directions. `hybrid` was less reliable than `graph` on questions that cannot be answered, because near-miss passages invite an answer; that is why `auto` is `graph`.
+- Runs vary by about one question (`vector` scored 15 and then 14 of 25 on the same questions).
+- **It depends on extraction.** The first read of this corpus lost three facts to the double-check (a bug found by this evaluation, fixed in this step), and then the questions needing them failed. A fact the pipeline did not extract cannot be found; passage search does not have that dependency. The 38 questions are small numbers and the corpus is synthetic and short.
+
+### Limits of question answering
+
+- The plan comes from a small local model: it can pick the wrong relation or stop early on long chains (4+ hops were 1 of 3 correct in the graph modes).
+- Relation matching uses word stems and embeddings; unusual wording of a relation can miss ("is employed by" for "works at" worked, but there are no guarantees).
+- No aggregation (counts, "which is largest"), no comparison, and no reasoning with dates beyond what a fact states.
+- The answer is generated text: a citation proves the quote was offered to the model, not that the answer follows from it.
+- Questions about a scope other than one document or the whole graph are not supported.
+
 ## API
 
 | Endpoint | |
@@ -131,6 +180,9 @@ Pairs are counted after the automatic merges, so "Acme Corp", "ACME" and "Acme I
 | `POST /api/resolution/suggestions/{id}/accept` (`{"keep_id"}` optional) / `.../reject` | decide a suggestion |
 | `POST /api/entities/merge` (`{"keep_id", "absorb_id"}`) | merge by hand (refused for different types or entities a fact links) |
 | `GET /api/resolution/merges`, `POST /api/resolution/merges/{id}/undo` | history and undo |
+| `POST /api/ask` | answer a question with citations and the reasoning behind it |
+| `GET /api/query/link?q=`, `GET /api/query/path?from=&to=`, `POST /api/query/chain` | entity linking, paths, chains of relations (no model) |
+| `GET /api/index/status`, `POST /api/index/rebuild` | passage and fact embeddings |
 | `GET /api/health` | whether the configured model is reachable and installed |
 
 A document left "processing" by a restart is marked failed with a reason and can be read again. If the model is not
@@ -139,7 +191,7 @@ running, the document fails with "Cannot reach Ollama ... (ollama serve)" instea
 ## Settings (`.env`)
 
 See `.env.template`. The ones that matter: `LLM_PROVIDER` (ollama, anthropic, openai), `OLLAMA_MODEL`, `VERIFY_FACTS`,
-`GLEANING_PASSES`, `AUTO_RESOLVE`, `RESOLUTION_USE_LLM`, `CHUNK_CHARS`, `MAX_DOCUMENT_CHARS` (100,000), `MAX_UPLOAD_MB`. The Anthropic and OpenAI clients exist
+`GLEANING_PASSES`, `AUTO_RESOLVE`, `RESOLUTION_USE_LLM`, `EMBEDDING_MODEL`, `INDEX_CHUNKS`, `ASK_MAX_FACTS`, `ASK_TOP_CHUNKS`, `ASK_MAX_HOPS`, `PREDICATE_THRESHOLD`, `CHUNK_CHARS`, `MAX_DOCUMENT_CHARS` (100,000), `MAX_UPLOAD_MB`. The Anthropic and OpenAI clients exist
 but were **never run against the live services**.
 
 ## Measured accuracy
@@ -153,7 +205,8 @@ Run it yourself: `python3 -m eval.run_eval --model llama3.1:8b --verify --gleani
 | First version: basic prompt, basic checks | 47% | 77% | |
 | Checks only (no second pass, no double-check) | 71% | 93% | 112 s |
 | + "what did you miss?" pass | 79% | 90% | 134 s |
-| **+ double-check (default)** | **74%** | **94%** | 164 s |
+| + double-check (the version of step 1) | 74% | 94% | 164 s |
+| **+ double-check by wording first (default)** | **76%** | **95%** | 166 s |
 
 Among the facts it found, the relationship wording matched my list of accepted wordings every time and the dates were
 exactly right 94% of the time (17 of 18).
@@ -188,12 +241,12 @@ How much to trust these numbers:
 ## Tests
 
 ```bash
-python3 -m pytest                 # 267 tests, about 3 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 412 tests, about 4 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
-The tests were break-tested: 125 deliberate small bugs were put into the code one at a time (removing a check, flipping a
-comparison, skipping a cleanup), and the tests caught all of them (the first round of the resolution code missed 12; each got a test or the dead code was deleted). Testing and the real-document run found four real problems, now fixed: a Latin-1
+The tests were break-tested: about 190 deliberate small bugs were put into the code one at a time (removing a check, flipping a
+comparison, skipping a cleanup), and the tests caught all of them (the first round of the resolution code missed 12; each got a test or the dead code was deleted). Step 3's code (embeddings, entity linking, chain walking, question answering, the endpoints) accounts for about 70 of them; its first pass missed 11, each got a test or the dead code was deleted. Testing and the real-document run found four real problems, now fixed: a Latin-1
 text file decoded as garbage, a duplicate source row that crashed storing a fact seen twice in one batch, and a name rule that
 rejected most sentences saying "Turing" for "Alan Turing", and a word-order check that wrongly rejected
 "Acme, founded by Maria, acquired Beta".
@@ -205,10 +258,13 @@ server.py                    FastAPI app
 src/core/                    settings, database
 src/models/graph.py          Document, Chunk, Entity, Fact, FactSource
 src/models/resolution.py     EntityAlias, MergeSuggestion, MergeRecord
+src/models/embedding.py      Embedding (passage and fact vectors)
 src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), extraction (prompts + checks),
-                             pipeline (document -> graph), resolution (merge/suggest/undo), graph_store (NetworkX views), text_utils
-src/api/                     documents.py, graph.py, resolution.py
+                             pipeline (document -> graph), resolution (merge/suggest/undo), graph_store (NetworkX views), text_utils,
+                             embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations)
+src/api/                     documents.py, graph.py, resolution.py, query.py
 eval/                        labelled documents (docs/), gold.json, scoring, run_eval.py, rescore.py, saved results;
-                             entities.json + run_resolution_eval.py for resolution
+                             entities.json + run_resolution_eval.py for resolution;
+                             qa/ (18 documents, two question sets, saved results) + run_qa_eval.py for questions
 tests/
 ```
