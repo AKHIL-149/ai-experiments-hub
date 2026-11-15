@@ -229,15 +229,21 @@ def check_candidate(raw, chunk: str, rejected: Counter, use_context: bool = True
     return ExtractedFact(subject, stype, predicate, obj, otype, start, end, evidence)
 
 
-def _find(ws: list[str], name: str) -> int | None:
-    """Word position of the name in the quote (its longest leading run of words that occurs in a row)"""
+def _find_span(ws: list[str], name: str) -> tuple[int, int] | None:
+    """Where the name sits in the quote as (first word, one past the last word): its longest leading run of words in a row"""
     core = core_words(name)
     for k in range(len(core), 0, -1):
         part = core[:k]
         for i in range(len(ws) - k + 1):
             if ws[i:i + k] == part:
-                return i
+                return i, i + k
     return None
+
+
+def _find(ws: list[str], name: str) -> int | None:
+    """Word position of the name in the quote"""
+    span = _find_span(ws, name)
+    return span[0] if span else None
 
 
 def word_order_ok(subject: str, obj: str, evidence: str) -> bool:
@@ -259,11 +265,71 @@ def word_order_ok(subject: str, obj: str, evidence: str) -> bool:
     return True
 
 
+STATIVE_PARTICIPLES = {"born", "located", "based", "headquartered", "situated", "owned", "educated", "named", "known", "registered",
+                       "incorporated", "raised", "buried", "married", "employed", "listed", "licensed", "headquarters"}
+
+
+def statement(fact: ExtractedFact) -> str:
+    """The claim as a sentence for the double-check. A bare 'Sofia Brandt born in Oslin' reads as broken English and the
+    model then says no, so participle predicates get an 'is'."""
+    first = fact.predicate.split()[0] if fact.predicate else ""
+    verb = f"is {fact.predicate}" if first in STATIVE_PARTICIPLES else fact.predicate
+    return f"{fact.subject} {verb} {fact.object}"
+
+
+DOUBT_WORDS = {
+    "not", "never", "no", "cannot", "didn", "doesn", "don", "wasn", "weren", "isn", "aren", "hasn", "haven", "hadn", "won",
+    "wouldn", "couldn", "shouldn", "might", "may", "could", "would", "should", "will", "plan", "plans", "planned", "planning",
+    "if", "rumour", "rumours", "rumor", "rumors", "allegedly", "reportedly", "unconfirmed", "claim", "claims", "claimed",
+    "expected", "likely", "possibly", "perhaps", "considering", "intends", "intend", "hopes", "hope", "wants", "want",
+}
+
+
+def literally_stated(fact: ExtractedFact) -> bool:
+    """The quote says it in the claim's own words, in the claim's order, and nothing in it expresses doubt, negation
+    or a plan: 'Veltra Dynamics is headquartered in Kellmar.' needs no second opinion from a model."""
+    if fact.object_type == "value":
+        return False
+    ws = words_and_commas(fact.evidence)
+    if any(w in DOUBT_WORDS for w in ws):
+        return False
+    subj, obj = _find_span(ws, fact.subject), _find_span(ws, fact.object)
+    if subj is None or obj is None:
+        return False
+    needed = [stem_word(w) for w in words(fact.predicate) if w not in _FILLER]
+    if not needed:
+        return False
+    # the predicate's words must follow the subject closely and lead to the object, in order
+    stemmed = [stem_word(w) for w in ws]
+    pos, first, last = subj[1], None, None
+    for stem_ in needed:
+        try:
+            pos = stemmed.index(stem_, pos, obj[0])
+        except ValueError:
+            return False
+        first = pos if first is None else first
+        last, pos = pos, pos + 1
+    return first - subj[1] <= LITERAL_GAP and obj[0] - last - 1 <= LITERAL_GAP
+
+
+LITERAL_GAP = 3  # words allowed between the subject and the predicate, and between the predicate and the object
+
+
+_FILLER = {"of", "at", "by", "in", "to", "the", "a", "an", "for", "with", "from", "on", "as", "is", "was"}
+
+
+def stem_word(word: str) -> str:
+    for suffix in ("ations", "ation", "ings", "ing", "ers", "er", "ed", "es", "s", "d"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[:-len(suffix)]
+    return word
+
+
 def verify_fact(llm: LLMClient, fact: ExtractedFact) -> str:
     """Second opinion on one fact from the model: 'supported' or 'unsupported' (anything odd counts as unsupported)"""
     prompt = (
         f"Quote: {fact.evidence}\n\n"
-        f"Statement: {fact.subject} {fact.predicate} {fact.object}\n\n"
+        f"Statement: {statement(fact)}\n\n"
         "Is the statement true according to the quote? It is NOT true if the quote says it the opposite way round, "
         "denies it, or only says it might or will happen. Answer yes or no."
     )
@@ -358,6 +424,11 @@ def extract_chunk(llm: LLMClient, chunk: str, verify: bool = True, use_context: 
             result.rejected["reversed_word_order"] += 1  # always on: it costs nothing and needs no model
             continue
         if verify:
+            if literally_stated(fact):
+                fact.verified = True  # the quote itself says it; no need to ask a model
+                result.facts.append(fact)
+                result.adjusted["verified_by_wording"] += 1
+                continue
             if verify_fact(llm, fact) != "supported":
                 result.rejected["verify_unsupported"] += 1
                 continue
