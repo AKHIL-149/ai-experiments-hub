@@ -1,0 +1,329 @@
+{
+ "note": "Fictional corpus written by the project author. gold = strings that must all appear in a correct answer; empty gold = the system must say it is not in the documents.",
+ "questions": [
+  {
+   "id": "q01",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "Who founded Soro Labs?",
+   "gold": [
+    "Imani Okafor"
+   ],
+   "support": [
+    "d02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q02",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "When did Veltra Dynamics acquire Soro Labs?",
+   "gold": [
+    "2018"
+   ],
+   "support": [
+    "d01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q03",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "Where is the University of Tamsen located?",
+   "gold": [
+    "Kellmar"
+   ],
+   "support": [
+    "d04"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q04",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "Who is the chief executive of Veltra Dynamics?",
+   "gold": [
+    "Lena Marsh"
+   ],
+   "support": [
+    "d08"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q05",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "In what year did Auric Energy acquire Kinetra Systems?",
+   "gold": [
+    "2021"
+   ],
+   "support": [
+    "d06"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q06",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "When did Marlow Foods acquire Tidewell Media?",
+   "gold": [
+    "2017"
+   ],
+   "support": [
+    "d13"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q07",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who founded the company that Veltra Dynamics acquired?",
+   "gold": [
+    "Imani Okafor"
+   ],
+   "support": [
+    "d01",
+    "d02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q08",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Which university did the founder of Soro Labs attend?",
+   "gold": [
+    "University of Tamsen"
+   ],
+   "support": [
+    "d02",
+    "d03"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q09",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Which company acquired the startup founded by Dmitri Volkov?",
+   "gold": [
+    "Auric Energy"
+   ],
+   "support": [
+    "d06"
+   ],
+   "note": "both facts are in one passage"
+  },
+  {
+   "id": "q10",
+   "hops": 2,
+   "kind": "chain",
+   "question": "In which city is the university that Imani Okafor attended?",
+   "gold": [
+    "Kellmar"
+   ],
+   "support": [
+    "d03",
+    "d04"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q11",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Where is the institute that Dmitri Volkov studied at located?",
+   "gold": [
+    "Oslin"
+   ],
+   "support": [
+    "d07"
+   ],
+   "note": "both facts are in one passage"
+  },
+  {
+   "id": "q12",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who founded the company that Marlow Foods acquired?",
+   "gold": [
+    "Tobias Marsh"
+   ],
+   "support": [
+    "d13",
+    "d09"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q13",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which city is the university attended by the founder of Soro Labs?",
+   "gold": [
+    "Kellmar"
+   ],
+   "support": [
+    "d02",
+    "d03",
+    "d04"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q14",
+   "hops": 3,
+   "kind": "chain",
+   "question": "Who works at the company that acquired Kinetra Systems?",
+   "gold": [
+    "Sofia Brandt"
+   ],
+   "support": [
+    "d06",
+    "d12"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q15",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which city is the institute attended by the founder of Kinetra Systems?",
+   "gold": [
+    "Oslin"
+   ],
+   "support": [
+    "d06",
+    "d07"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q16",
+   "hops": 4,
+   "kind": "chain",
+   "question": "In which country is the university attended by the founder of the company that Veltra Dynamics acquired?",
+   "gold": [
+    "Dravia"
+   ],
+   "support": [
+    "d01",
+    "d02",
+    "d03",
+    "d04",
+    "d05"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q17",
+   "hops": 4,
+   "kind": "chain",
+   "question": "In which city was the person who works at the company that acquired Kinetra Systems born?",
+   "gold": [
+    "Oslin"
+   ],
+   "support": [
+    "d06",
+    "d12",
+    "d16"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q18",
+   "hops": 1,
+   "kind": "list",
+   "question": "Who studied at the University of Tamsen?",
+   "gold": [
+    "Imani Okafor",
+    "Noor Haddad"
+   ],
+   "support": [
+    "d03",
+    "d14"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q19",
+   "hops": 1,
+   "kind": "list",
+   "question": "Which companies did Veltra Dynamics acquire or invest in?",
+   "gold": [
+    "Soro Labs",
+    "Pennant Robotics"
+   ],
+   "support": [
+    "d01",
+    "d10"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q20",
+   "hops": 2,
+   "kind": "path",
+   "question": "How is Imani Okafor connected to Veltra Dynamics?",
+   "gold": [
+    "Soro Labs"
+   ],
+   "support": [
+    "d01",
+    "d02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "q21",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Who is the CEO of Soro Labs?",
+   "gold": [],
+   "support": [],
+   "note": "the graph says who founded it, not who runs it"
+  },
+  {
+   "id": "q22",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "In which year was Veltra Dynamics founded?",
+   "gold": [],
+   "support": [],
+   "note": ""
+  },
+  {
+   "id": "q23",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which company did Sofia Brandt found?",
+   "gold": [],
+   "support": [],
+   "note": "she works at Auric Energy"
+  },
+  {
+   "id": "q24",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Where was Lena Marsh born?",
+   "gold": [],
+   "support": [],
+   "note": ""
+  },
+  {
+   "id": "q25",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which company acquired Pennant Robotics?",
+   "gold": [],
+   "support": [],
+   "note": "Veltra Dynamics only invested in it"
+  }
+ ]
+}

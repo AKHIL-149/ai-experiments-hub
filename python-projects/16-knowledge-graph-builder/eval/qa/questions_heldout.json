@@ -1,0 +1,168 @@
+{
+ "note": "Written after the first run of questions.json and before any change made in response to it; run once on the final code.",
+ "questions": [
+  {
+   "id": "h01",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who is the founder of the company that Auric Energy acquired?",
+   "gold": [
+    "Dmitri Volkov"
+   ],
+   "support": [
+    "d06"
+   ],
+   "note": "both facts in one passage"
+  },
+  {
+   "id": "h02",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Which college did the founder of Pennant Robotics attend?",
+   "gold": [
+    "Northfield College"
+   ],
+   "support": [
+    "d10",
+    "d11"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h03",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which city is the college attended by the founder of Pennant Robotics?",
+   "gold": [
+    "Kellmar"
+   ],
+   "support": [
+    "d10",
+    "d11",
+    "d04"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h04",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Where is the company that acquired Kinetra Systems headquartered?",
+   "gold": [
+    "Port Verra"
+   ],
+   "support": [
+    "d06",
+    "d12"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h05",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which country is the city where the company that acquired Kinetra Systems is headquartered?",
+   "gold": [
+    "Elmora"
+   ],
+   "support": [
+    "d06",
+    "d12",
+    "d15"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h06",
+   "hops": 1,
+   "kind": "list",
+   "question": "Which companies did Marlow Foods or Veltra Dynamics acquire?",
+   "gold": [
+    "Tidewell Media",
+    "Soro Labs"
+   ],
+   "support": [
+    "d13",
+    "d01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h07",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "When was Pennant Robotics founded?",
+   "gold": [
+    "2019"
+   ],
+   "support": [
+    "d10"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h08",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who studied at the same university as Imani Okafor?",
+   "gold": [
+    "Noor Haddad"
+   ],
+   "support": [
+    "d03",
+    "d14"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h09",
+   "hops": 2,
+   "kind": "path",
+   "question": "What is the connection between Noor Haddad and Tobias Marsh?",
+   "gold": [
+    "Tidewell Media"
+   ],
+   "support": [
+    "d13",
+    "d09"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h10",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Who is the chief executive of Auric Energy?",
+   "gold": [],
+   "support": [],
+   "note": ""
+  },
+  {
+   "id": "h11",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which university did Sofia Brandt attend?",
+   "gold": [],
+   "support": [],
+   "note": ""
+  },
+  {
+   "id": "h12",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which company did Tobias Marsh acquire?",
+   "gold": [],
+   "support": [],
+   "note": "he founded Tidewell Media; Marlow Foods acquired it"
+  },
+  {
+   "id": "h13",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "In which year did Kinetra Systems acquire Auric Energy?",
+   "gold": [],
+   "support": [],
+   "note": "the other way round: Auric Energy acquired Kinetra Systems"
+  }
+ ]
+}

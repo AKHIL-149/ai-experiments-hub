@@ -169,9 +169,10 @@ def test_missing_document_and_missing_api_key_are_handled(factory, db):
 
 def test_verification_runs_per_fact_and_marks_sources_verified(factory, db):
     doc_id = add_doc(db)
-    llm = script(ACQ, CTO)
+    bought = {**ACQ, "predicate": "bought"}                    # not the quote's own word, so the model double-checks it
+    llm = script(bought, CTO)                                  # CTO is stated literally: verified by its wording alone
     pipeline.process_document(doc_id, llm, Settings(_env_file=None, verify_facts=True, gleaning_passes=0, auto_resolve=False))
-    assert llm.count("verify") == 2
+    assert llm.count("verify") == 1
     assert all(s.verified for s in db.execute(select(FactSource)).scalars())
 
 

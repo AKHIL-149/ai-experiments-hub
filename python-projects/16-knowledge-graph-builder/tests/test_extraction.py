@@ -3,7 +3,8 @@ from collections import Counter
 import pytest
 
 from src.services import extraction
-from src.services.extraction import check_candidate, extract_chunk, fix_passive, normalize_predicate, word_order_ok
+from src.services.extraction import (ExtractedFact, check_candidate, extract_chunk, fix_passive, literally_stated, normalize_predicate,
+                                     statement, word_order_ok)
 from src.services.llm import LLMBadOutput, LLMError
 from tests.conftest import FakeLLM, rel
 
@@ -161,10 +162,10 @@ def test_extract_chunk_keeps_checked_facts_and_counts_the_rest():
 
 def test_verification_removes_unsupported_facts_and_marks_the_rest_verified():
     verdicts = iter(["supported", "unsupported"])
-    raws = [good(), good(predicate="bought")]
+    raws = [good(predicate="took over"), good(predicate="bought")]      # worded differently from the quote, so the model is asked
     llm = FakeLLM(extract=lambda p: {"relations": raws}, verify=lambda p: next(verdicts))
     r = extract_chunk(llm, CHUNK, verify=True)
-    assert [f.predicate for f in r.facts] == ["acquired"] and r.facts[0].verified
+    assert [f.predicate for f in r.facts] == ["took over"] and r.facts[0].verified
     assert r.rejected == Counter(verify_unsupported=1) and llm.count("verify") == 2
 
 
@@ -175,15 +176,15 @@ def test_verification_off_makes_no_extra_calls_and_marks_nothing_verified():
 
 
 def test_unknown_verdict_counts_as_unsupported():
-    llm = FakeLLM(extract=lambda p: {"relations": [good()]}, verify=lambda p: {"answer": "maybe"})
+    llm = FakeLLM(extract=lambda p: {"relations": [good(predicate="bought")]}, verify=lambda p: {"answer": "maybe"})
     assert extract_chunk(llm, CHUNK).rejected == Counter(verify_unsupported=1)
 
 
 def test_verification_prompt_names_the_claim_and_the_quote():
-    llm = FakeLLM(extract=lambda p: {"relations": [good()]})
+    llm = FakeLLM(extract=lambda p: {"relations": [good(predicate="bought")]})
     extract_chunk(llm, CHUNK)
     prompt = next(p for k, p in llm.calls if k == "verify")
-    assert S1 in prompt and "Acme Corp" in prompt and "acquired" in prompt and "Beta Systems" in prompt
+    assert S1 in prompt and "Statement: Acme Corp bought Beta Systems" in prompt
 
 
 def test_bad_json_is_retried_once_then_reported():
@@ -246,7 +247,7 @@ class FlakyVerifier(FakeLLM):
     """Extraction works; each verification call takes the next scripted answer (an exception is raised)"""
 
     def __init__(self, answers):
-        super().__init__(extract=lambda p: {"relations": [good()]})
+        super().__init__(extract=lambda p: {"relations": [good(predicate="bought")]})
         self.answers = iter(answers)
 
     def generate_json(self, system, prompt, schema):
@@ -333,3 +334,66 @@ def test_same_statement_found_with_and_without_dates_keeps_the_dated_one():
     other_period = rel("Acme Corp", "acquired", "Beta Systems", S1, "2010", otype="organization", stype="organization")
     r = extract_chunk(FakeLLM(extract=lambda p: {"relations": [dated, other_period]}), CHUNK, verify=False)
     assert [f.valid_from for f in r.facts] == ["2020-03", "2010"]  # different periods are different facts
+
+
+# ---------------------------------------------------------------- the quote already says it
+
+def fact(subject, predicate, obj, evidence, otype="organization"):
+    return ExtractedFact(subject, "organization", predicate, obj, otype, "", "", evidence)
+
+
+@pytest.mark.parametrize("pred,quote,expected", [
+    ("acquired", "Acme acquired Beta in 2020.", True),
+    ("headquartered in", "Veltra Dynamics is headquartered in Kellmar.", True),
+    ("works at", "Sofia works at Acme.", True),
+    ("founded", "Acme, founded by Maria in 2010, acquired Beta.", False),          # 'founded' is not what links Acme and Beta
+    ("bought", "Acme acquired Beta in 2020.", False),                              # different word: ask the model
+    ("acquired", "Acme did not acquire Beta.", False),                             # doubt, negation, plans and rumours go to the model
+    ("acquired", "Acme might acquire Beta.", False),
+    ("acquired", "According to rumours, Acme acquired Beta.", False),
+    ("acquired", "Acme plans to acquire Beta.", False),
+    ("acquired", "Beta acquired Acme.", False),                                    # wrong way round
+    ("is", "Acme is Beta.", False),
+    ("acquired", "Acme, a company that makes sensors and robots for the shipping industry, acquired Beta.", False),   # too far from the subject
+    ("acquired", "Acme acquired, after a long and difficult negotiation about the price, Beta.", False),            # too far from the object
+    ("acquired", "Acme later also acquired Beta.", True),
+])
+def test_literally_stated(pred, quote, expected):
+    assert literally_stated(fact("Acme", pred, "Beta", quote) if "Veltra" not in quote and "Sofia" not in quote
+                            else (fact("Veltra Dynamics", pred, "Kellmar", quote) if "Veltra" in quote else fact("Sofia", pred, "Acme", quote))) is expected
+
+
+def test_a_value_is_never_literal():
+    assert not literally_stated(fact("Acme", "employs", "340", "Acme employs 340 people.", "value"))
+
+
+def test_literal_facts_skip_the_model_and_are_counted():
+    chunk = "Acme acquired Beta Systems in March 2020."
+    literal = rel("Acme", "acquired", "Beta Systems", chunk, "2020-03", otype="organization", stype="organization")
+    other = {**literal, "predicate": "bought"}
+    llm = FakeLLM(extract=lambda p: {"relations": [literal, other]}, verify=lambda p: "unsupported")
+    r = extract_chunk(llm, chunk, verify=True)
+    assert [f.predicate for f in r.facts] == ["acquired"] and r.facts[0].verified
+    assert llm.count("verify") == 1 and r.adjusted["verified_by_wording"] == 1 and r.rejected["verify_unsupported"] == 1
+
+
+def test_a_clause_between_subject_and_verb_sends_the_fact_to_the_model():
+    llm = FakeLLM(extract=lambda p: {"relations": [good()]}, verify=lambda p: "supported")
+    r = extract_chunk(llm, CHUNK, verify=True)          # 'Acme Corp, founded in 2010 by Maria Lopez, acquired Beta Systems'
+    assert len(r.facts) == 1 and llm.count("verify") == 1 and r.adjusted["verified_by_wording"] == 0
+
+
+def test_doubt_in_the_quote_still_goes_to_the_model():
+    chunk = "Analysts say Acme might acquire Beta Systems in 2020."
+    raw = rel("Acme", "acquire", "Beta Systems", chunk, otype="organization", stype="organization")
+    llm = FakeLLM(extract=lambda p: {"relations": [raw]}, verify=lambda p: "unsupported")
+    r = extract_chunk(llm, chunk, verify=True)
+    assert r.facts == [] and llm.count("verify") == 1
+
+
+@pytest.mark.parametrize("pred,expected", [
+    ("born in", "Sofia is born in Oslin"), ("located in", "Sofia is located in Oslin"), ("headquartered in", "Sofia is headquartered in Oslin"),
+    ("studied at", "Sofia studied at Oslin"), ("founded", "Sofia founded Oslin"), ("owned by", "Sofia is owned by Oslin"),
+])
+def test_statement_reads_as_a_sentence(pred, expected):
+    assert statement(fact("Sofia", pred, "Oslin", "x")) == expected

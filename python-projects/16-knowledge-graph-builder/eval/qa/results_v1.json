@@ -1,0 +1,2699 @@
+{
+ "modes": [
+  "vector",
+  "subgraph",
+  "graph",
+  "hybrid"
+ ],
+ "summary": {
+  "vector": {
+   "all": "15/25",
+   "1 hop": "7/8",
+   "2 hops": "4/6",
+   "3+ hops": "1/5",
+   "path": "0/1",
+   "answerable": "12/20",
+   "unanswerable": "3/5",
+   "support documents retrieved": "12/20",
+   "avg seconds": 1.7
+  },
+  "subgraph": {
+   "all": "19/25",
+   "1 hop": "8/8",
+   "2 hops": "6/6",
+   "3+ hops": "4/5",
+   "path": "0/1",
+   "answerable": "18/20",
+   "unanswerable": "1/5",
+   "support documents retrieved": "19/20",
+   "avg seconds": 2.2
+  },
+  "graph": {
+   "all": "19/25",
+   "1 hop": "8/8",
+   "2 hops": "6/6",
+   "3+ hops": "4/5",
+   "path": "0/1",
+   "answerable": "18/20",
+   "unanswerable": "1/5",
+   "support documents retrieved": "18/20",
+   "avg seconds": 2.8
+  },
+  "hybrid": {
+   "all": "20/25",
+   "1 hop": "8/8",
+   "2 hops": "6/6",
+   "3+ hops": "4/5",
+   "path": "0/1",
+   "answerable": "18/20",
+   "unanswerable": "2/5",
+   "support documents retrieved": "18/20",
+   "avg seconds": 3.0
+  }
+ },
+ "results": [
+  {
+   "id": "q01",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "Who founded Soro Labs?",
+   "gold": [
+    "Imani Okafor"
+   ],
+   "vector": {
+    "answer": "Imani Okafor, 2011",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 7.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d06",
+     "d10"
+    ]
+   },
+   "subgraph": {
+    "answer": "Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02"
+    ]
+   },
+   "hybrid": {
+    "answer": "Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d06",
+     "d10"
+    ]
+   }
+  },
+  {
+   "id": "q02",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "When did Veltra Dynamics acquire Soro Labs?",
+   "gold": [
+    "2018"
+   ],
+   "vector": {
+    "answer": "2018",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "2018",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "2018",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics",
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01"
+    ]
+   },
+   "hybrid": {
+    "answer": "2018",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.6,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics",
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d08",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q03",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "Where is the University of Tamsen located?",
+   "gold": [
+    "Kellmar"
+   ],
+   "vector": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d03",
+     "d04",
+     "d07",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d13",
+     "d14",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "University of Tamsen"
+     ],
+     "steps": [
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d04"
+    ]
+   },
+   "hybrid": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "University of Tamsen"
+     ],
+     "steps": [
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d03",
+     "d04",
+     "d07",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "q04",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "Who is the chief executive of Veltra Dynamics?",
+   "gold": [
+    "Lena Marsh"
+   ],
+   "vector": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.4,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "chief executive",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d08"
+    ]
+   },
+   "hybrid": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.4,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "chief executive",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q05",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "In what year did Auric Energy acquire Kinetra Systems?",
+   "gold": [
+    "2021"
+   ],
+   "vector": {
+    "answer": "2021",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.4,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "2021",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.1,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d07",
+     "d09",
+     "d12",
+     "d15",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "2021",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Auric Energy",
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06"
+    ]
+   },
+   "hybrid": {
+    "answer": "2021",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Auric Energy",
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q06",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "When did Marlow Foods acquire Tidewell Media?",
+   "gold": [
+    "2017"
+   ],
+   "vector": {
+    "answer": "2017",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d09",
+     "d12",
+     "d13"
+    ]
+   },
+   "subgraph": {
+    "answer": "2017",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d09",
+     "d12",
+     "d13",
+     "d14",
+     "d15"
+    ]
+   },
+   "graph": {
+    "answer": "2017",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.6,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Marlow Foods",
+      "Tidewell Media"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d13"
+    ]
+   },
+   "hybrid": {
+    "answer": "2017",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Marlow Foods",
+      "Tidewell Media"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d09",
+     "d12",
+     "d13"
+    ]
+   }
+  },
+  {
+   "id": "q07",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who founded the company that Veltra Dynamics acquired?",
+   "gold": [
+    "Imani Okafor"
+   ],
+   "vector": {
+    "answer": "Dmitri Volkov",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02"
+    ]
+   },
+   "hybrid": {
+    "answer": "Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.9,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q08",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Which university did the founder of Soro Labs attend?",
+   "gold": [
+    "University of Tamsen"
+   ],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.1,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d07",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "University of Tamsen",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "University of Tamsen",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.9,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d03"
+    ]
+   },
+   "hybrid": {
+    "answer": "University of Tamsen",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d07",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "q09",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Which company acquired the startup founded by Dmitri Volkov?",
+   "gold": [
+    "Auric Energy"
+   ],
+   "vector": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d07",
+     "d10"
+    ]
+   },
+   "subgraph": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07"
+    ]
+   },
+   "graph": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Dmitri Volkov"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "out"
+      },
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06"
+    ]
+   },
+   "hybrid": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.3,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Dmitri Volkov"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "out"
+      },
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d07",
+     "d10"
+    ]
+   }
+  },
+  {
+   "id": "q10",
+   "hops": 2,
+   "kind": "chain",
+   "question": "In which city is the university that Imani Okafor attended?",
+   "gold": [
+    "Kellmar"
+   ],
+   "vector": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d02",
+     "d03",
+     "d04",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.0,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d14",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Imani Okafor"
+     ],
+     "steps": [
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d03",
+     "d04"
+    ]
+   },
+   "hybrid": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Imani Okafor"
+     ],
+     "steps": [
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d03",
+     "d04",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "q11",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Where is the institute that Dmitri Volkov studied at located?",
+   "gold": [
+    "Oslin"
+   ],
+   "vector": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d04",
+     "d07",
+     "d11",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Oslin, Dravia",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.0,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.3,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Dmitri Volkov"
+     ],
+     "steps": [
+      {
+       "relation": "studied at",
+       "direction": "in"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d07"
+    ]
+   },
+   "hybrid": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Dmitri Volkov"
+     ],
+     "steps": [
+      {
+       "relation": "studied at",
+       "direction": "in"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d04",
+     "d07",
+     "d11",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "q12",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who founded the company that Marlow Foods acquired?",
+   "gold": [
+    "Tobias Marsh"
+   ],
+   "vector": {
+    "answer": "Tobias Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d02",
+     "d06",
+     "d09",
+     "d13"
+    ]
+   },
+   "subgraph": {
+    "answer": "Tobias Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d09",
+     "d13",
+     "d14"
+    ]
+   },
+   "graph": {
+    "answer": "Tobias Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Marlow Foods"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d09",
+     "d13"
+    ]
+   },
+   "hybrid": {
+    "answer": "Tobias Marsh",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.6,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Marlow Foods"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d06",
+     "d09",
+     "d13"
+    ]
+   }
+  },
+  {
+   "id": "q13",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which city is the university attended by the founder of Soro Labs?",
+   "gold": [
+    "Kellmar"
+   ],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.4,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d07",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.7,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d03",
+     "d04"
+    ]
+   },
+   "hybrid": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d07",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "q14",
+   "hops": 3,
+   "kind": "chain",
+   "question": "Who works at the company that acquired Kinetra Systems?",
+   "gold": [
+    "Sofia Brandt"
+   ],
+   "vector": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Sofia Brandt",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d12"
+    ]
+   },
+   "graph": {
+    "answer": "Sofia Brandt",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "works at",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06",
+     "d12"
+    ]
+   },
+   "hybrid": {
+    "answer": "Sofia Brandt",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "works at",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d12",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q15",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which city is the institute attended by the founder of Kinetra Systems?",
+   "gold": [
+    "Oslin"
+   ],
+   "vector": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d02",
+     "d06",
+     "d07",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.0,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.8,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06",
+     "d07"
+    ]
+   },
+   "hybrid": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 4.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d06",
+     "d07",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q16",
+   "hops": 4,
+   "kind": "chain",
+   "question": "In which country is the university attended by the founder of the company that Veltra Dynamics acquired?",
+   "gold": [
+    "Dravia"
+   ],
+   "vector": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Dravia",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 4.3,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04"
+    ]
+   },
+   "hybrid": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 4.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q17",
+   "hops": 4,
+   "kind": "chain",
+   "question": "In which city was the person who works at the company that acquired Kinetra Systems born?",
+   "gold": [
+    "Oslin"
+   ],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.4,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Port Verra",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d12"
+    ]
+   },
+   "graph": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "works at",
+       "direction": "in"
+      },
+      {
+       "relation": "born in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06",
+     "d12",
+     "d16"
+    ]
+   },
+   "hybrid": {
+    "answer": "Oslin",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "works at",
+       "direction": "in"
+      },
+      {
+       "relation": "born in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d12",
+     "d16",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q18",
+   "hops": 1,
+   "kind": "list",
+   "question": "Who studied at the University of Tamsen?",
+   "gold": [
+    "Imani Okafor",
+    "Noor Haddad"
+   ],
+   "vector": {
+    "answer": "Noor Haddad, Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.9,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d03",
+     "d04",
+     "d07",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Noor Haddad, Imani Okafor",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d13",
+     "d14",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Imani Okafor, Noor Haddad",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.9,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "University of Tamsen"
+     ],
+     "steps": [
+      {
+       "relation": "studied at",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d03",
+     "d14"
+    ]
+   },
+   "hybrid": {
+    "answer": "Imani Okafor, Noor Haddad",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.3,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "University of Tamsen"
+     ],
+     "steps": [
+      {
+       "relation": "studied at",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d03",
+     "d04",
+     "d07",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "q19",
+   "hops": 1,
+   "kind": "list",
+   "question": "Which companies did Veltra Dynamics acquire or invest in?",
+   "gold": [
+    "Soro Labs",
+    "Pennant Robotics"
+   ],
+   "vector": {
+    "answer": "Soro Labs",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Soro Labs, Pennant Robotics",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Soro Labs, Pennant Robotics",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": "step 2: nothing matches 'invested in'",
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      },
+      {
+       "relation": "invested in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "hybrid": {
+    "answer": "Soro Labs, Pennant Robotics",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.5,
+    "fallback": "step 2: nothing matches 'invested in'",
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      },
+      {
+       "relation": "invested in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d06",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q20",
+   "hops": 2,
+   "kind": "path",
+   "question": "How is Imani Okafor connected to Veltra Dynamics?",
+   "gold": [
+    "Soro Labs"
+   ],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d03",
+     "d08",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "acquisition",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d14",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.4,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Imani Okafor",
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "works at",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d03"
+    ]
+   },
+   "hybrid": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.5,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Imani Okafor",
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "works at",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d03",
+     "d08",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q21",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Who is the CEO of Soro Labs?",
+   "gold": [],
+   "vector": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d06",
+     "d08"
+    ]
+   },
+   "subgraph": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": true,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": true,
+    "seconds": 2.1,
+    "fallback": "step 1: nothing matches 'works at'",
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "works at",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "hybrid": {
+    "answer": "Lena Marsh",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": "step 1: nothing matches 'works at'",
+    "plan": {
+     "start": [
+      "Soro Labs"
+     ],
+     "steps": [
+      {
+       "relation": "works at",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d06",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q22",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "In which year was Veltra Dynamics founded?",
+   "gold": [],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "not found",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": true,
+    "seconds": 2.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": true,
+    "seconds": 2.0,
+    "fallback": "step 1: nothing matches 'founded'",
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "hybrid": {
+    "answer": "not found",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": true,
+    "seconds": 2.3,
+    "fallback": "step 1: nothing matches 'founded'",
+    "plan": {
+     "start": [
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q23",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which company did Sofia Brandt found?",
+   "gold": [],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d02",
+     "d06",
+     "d12",
+     "d16"
+    ]
+   },
+   "subgraph": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.4,
+    "fallback": "step 1: nothing matches 'founded'",
+    "plan": {
+     "start": [
+      "Sofia Brandt"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   },
+   "hybrid": {
+    "answer": "Auric Energy",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": "step 1: nothing matches 'founded'",
+    "plan": {
+     "start": [
+      "Sofia Brandt"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   }
+  },
+  {
+   "id": "q24",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Where was Lena Marsh born?",
+   "gold": [],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d08",
+     "d09",
+     "d16",
+     "d17"
+    ]
+   },
+   "subgraph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.1,
+    "fallback": "step 1: nothing matches 'born in'",
+    "plan": {
+     "start": [
+      "Lena Marsh"
+     ],
+     "steps": [
+      {
+       "relation": "born in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d10",
+     "d18"
+    ]
+   },
+   "hybrid": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.4,
+    "fallback": "step 1: nothing matches 'born in'",
+    "plan": {
+     "start": [
+      "Lena Marsh"
+     ],
+     "steps": [
+      {
+       "relation": "born in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d09",
+     "d10",
+     "d16",
+     "d17",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "q25",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which company acquired Pennant Robotics?",
+   "gold": [],
+   "vector": {
+    "answer": "Veltra Dynamics",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d10",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Veltra Dynamics",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d04",
+     "d08",
+     "d10",
+     "d11",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Veltra Dynamics",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.5,
+    "fallback": "step 1: nothing matches 'acquired'",
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d04",
+     "d08",
+     "d10",
+     "d11",
+     "d18"
+    ]
+   },
+   "hybrid": {
+    "answer": "Veltra Dynamics",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": "step 1: nothing matches 'acquired'",
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d04",
+     "d06",
+     "d08",
+     "d10",
+     "d11",
+     "d18"
+    ]
+   }
+  }
+ ]
+}

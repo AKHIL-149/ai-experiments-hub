@@ -112,39 +112,6 @@ def test_fuzzy_spelling_needs_enough_letters_and_a_high_ratio():
 
 # ---------------------------------------------------------------- database helpers
 
-@pytest.fixture
-def world(db):
-    doc = Document(title="D", text="x" * 50, char_count=50, status=DocumentStatus.COMPLETED)
-    db.add(doc)
-    db.flush()
-    chunk = Chunk(document_id=doc.id, index=0, start=0, end=50, text="x" * 50)
-    db.add(chunk)
-    db.commit()
-
-    class W:
-        pass
-    w = W()
-    w.doc, w.chunk, w.db = doc.id, chunk.id, db
-
-    def ent(name, etype="organization"):
-        e = Entity(name=name, key=resolution.entity_key(name), type=etype)
-        db.add(e)
-        db.flush()
-        return e
-
-    def fact(s, p, o=None, value="", frm="", to="", quote=None, doc=None, chunk=None, id=None):
-        f = Fact(subject_id=s.id, predicate=p, object_id=o.id if o else None, object_value=value, valid_from=frm, valid_to=to,
-                 **({"id": id} if id else {}))
-        db.add(f)
-        db.flush()
-        db.add(FactSource(fact_id=f.id, document_id=doc or w.doc, chunk_id=chunk or w.chunk, evidence=quote or f"{s.name} {p} {o.name if o else value}"))
-        db.flush()
-        return f
-
-    w.ent, w.fact = ent, fact
-    return w
-
-
 def snapshot(db):
     return {
         "entities": sorted((e.id, e.name, e.key, e.type) for e in db.execute(select(Entity)).scalars()),

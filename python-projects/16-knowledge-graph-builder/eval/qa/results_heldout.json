@@ -1,0 +1,1356 @@
+{
+ "modes": [
+  "vector",
+  "subgraph",
+  "graph",
+  "hybrid"
+ ],
+ "summary": {
+  "vector": {
+   "all": "8/13",
+   "1 hop": "2/2",
+   "2 hops": "3/4",
+   "3+ hops": "0/2",
+   "path": "1/1",
+   "answerable": "6/9",
+   "unanswerable": "2/4",
+   "support documents retrieved": "6/9",
+   "avg seconds": 1.6
+  },
+  "subgraph": {
+   "all": "11/13",
+   "1 hop": "2/2",
+   "2 hops": "4/4",
+   "3+ hops": "1/2",
+   "path": "1/1",
+   "answerable": "8/9",
+   "unanswerable": "3/4",
+   "support documents retrieved": "8/9",
+   "avg seconds": 2.0
+  },
+  "graph": {
+   "all": "11/13",
+   "1 hop": "2/2",
+   "2 hops": "3/4",
+   "3+ hops": "1/2",
+   "path": "1/1",
+   "answerable": "7/9",
+   "unanswerable": "4/4",
+   "support documents retrieved": "7/9",
+   "avg seconds": 2.6
+  },
+  "hybrid": {
+   "all": "10/13",
+   "1 hop": "2/2",
+   "2 hops": "4/4",
+   "3+ hops": "1/2",
+   "path": "1/1",
+   "answerable": "8/9",
+   "unanswerable": "2/4",
+   "support documents retrieved": "8/9",
+   "avg seconds": 2.9
+  }
+ },
+ "results": [
+  {
+   "id": "h01",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who is the founder of the company that Auric Energy acquired?",
+   "gold": [
+    "Dmitri Volkov"
+   ],
+   "vector": {
+    "answer": "Dmitri Volkov",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d13"
+    ]
+   },
+   "subgraph": {
+    "answer": "Dmitri Volkov",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d09",
+     "d12",
+     "d15",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "Dmitri Volkov",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.7,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Auric Energy"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06"
+    ]
+   },
+   "hybrid": {
+    "answer": "Dmitri Volkov",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Auric Energy"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d13"
+    ]
+   }
+  },
+  {
+   "id": "h02",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Which college did the founder of Pennant Robotics attend?",
+   "gold": [
+    "Northfield College"
+   ],
+   "vector": {
+    "answer": "Northfield College",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d10",
+     "d11"
+    ]
+   },
+   "subgraph": {
+    "answer": "Northfield College",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.1,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Northfield College",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.6,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d10",
+     "d11"
+    ]
+   },
+   "hybrid": {
+    "answer": "Northfield College",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d10",
+     "d11"
+    ]
+   }
+  },
+  {
+   "id": "h03",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which city is the college attended by the founder of Pennant Robotics?",
+   "gold": [
+    "Kellmar"
+   ],
+   "vector": {
+    "answer": "Northfield",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d10",
+     "d11"
+    ]
+   },
+   "subgraph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d04",
+     "d05",
+     "d08",
+     "d10",
+     "d11",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.4,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d04",
+     "d10",
+     "d11"
+    ]
+   },
+   "hybrid": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.4,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      },
+      {
+       "relation": "attended",
+       "direction": "out"
+      },
+      {
+       "relation": "located in",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d04",
+     "d06",
+     "d07",
+     "d10",
+     "d11"
+    ]
+   }
+  },
+  {
+   "id": "h04",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Where is the company that acquired Kinetra Systems headquartered?",
+   "gold": [
+    "Port Verra"
+   ],
+   "vector": {
+    "answer": "Kellmar",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d10",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Port Verra",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d12"
+    ]
+   },
+   "graph": {
+    "answer": "Port Verra",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "headquartered",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06",
+     "d12"
+    ]
+   },
+   "hybrid": {
+    "answer": "Port Verra",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "headquartered",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d10",
+     "d12",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "h05",
+   "hops": 3,
+   "kind": "chain",
+   "question": "In which country is the city where the company that acquired Kinetra Systems is headquartered?",
+   "gold": [
+    "Elmora"
+   ],
+   "vector": {
+    "answer": "Dravia",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d17",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Port Verra",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.5,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d07",
+     "d12"
+    ]
+   },
+   "graph": {
+    "answer": "Port Verra",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.0,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "headquartered",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06",
+     "d12"
+    ]
+   },
+   "hybrid": {
+    "answer": "Dravia",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 3.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "in"
+      },
+      {
+       "relation": "headquartered",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d17",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "h06",
+   "hops": 1,
+   "kind": "list",
+   "question": "Which companies did Marlow Foods or Veltra Dynamics acquire?",
+   "gold": [
+    "Tidewell Media",
+    "Soro Labs"
+   ],
+   "vector": {
+    "answer": "Tidewell Media, Soro Labs",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d13",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "Marlow Foods acquired Tidewell Media, Veltra Dynamics acquired Soro Labs",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 4.0,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d05",
+     "d08",
+     "d09",
+     "d10",
+     "d11",
+     "d13",
+     "d14",
+     "d17",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "Tidewell Media, Soro Labs",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Marlow Foods",
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d13"
+    ]
+   },
+   "hybrid": {
+    "answer": "Marlow Foods acquired Tidewell Media, Veltra Dynamics acquired Soro Labs",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 3.8,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Marlow Foods",
+      "Veltra Dynamics"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d13",
+     "d18"
+    ]
+   }
+  },
+  {
+   "id": "h07",
+   "hops": 1,
+   "kind": "lookup",
+   "question": "When was Pennant Robotics founded?",
+   "gold": [
+    "2019"
+   ],
+   "vector": {
+    "answer": "2019",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d06",
+     "d10"
+    ]
+   },
+   "subgraph": {
+    "answer": "2019",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.0,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d04",
+     "d08",
+     "d10",
+     "d11",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "2019",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.1,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d10"
+    ]
+   },
+   "hybrid": {
+    "answer": "2019",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.6,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Pennant Robotics"
+     ],
+     "steps": [
+      {
+       "relation": "founded",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d06",
+     "d10"
+    ]
+   }
+  },
+  {
+   "id": "h08",
+   "hops": 2,
+   "kind": "chain",
+   "question": "Who studied at the same university as Imani Okafor?",
+   "gold": [
+    "Noor Haddad"
+   ],
+   "vector": {
+    "answer": "Noor Haddad",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d02",
+     "d03",
+     "d11",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Noor Haddad",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 2.1,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d02",
+     "d03",
+     "d04",
+     "d14",
+     "d18"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": false,
+    "correct": false,
+    "retrieved_all_support": false,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Imani Okafor"
+     ],
+     "steps": [
+      {
+       "relation": "studied at",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d03"
+    ]
+   },
+   "hybrid": {
+    "answer": "Noor Haddad, University of Tamsen",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Imani Okafor"
+     ],
+     "steps": [
+      {
+       "relation": "studied at",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d02",
+     "d03",
+     "d11",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "h09",
+   "hops": 2,
+   "kind": "path",
+   "question": "What is the connection between Noor Haddad and Tobias Marsh?",
+   "gold": [
+    "Tidewell Media"
+   ],
+   "vector": {
+    "answer": "Marlow Foods acquired Tidewell Media in 2017",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 1.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d08",
+     "d09",
+     "d13",
+     "d14"
+    ]
+   },
+   "subgraph": {
+    "answer": "Marlow Foods acquired Tidewell Media in 2017.",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": false,
+    "uncited": false,
+    "seconds": 2.2,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d03",
+     "d04",
+     "d09",
+     "d13",
+     "d14"
+    ]
+   },
+   "graph": {
+    "answer": "Tidewell Media",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d09",
+     "d13"
+    ]
+   },
+   "hybrid": {
+    "answer": "Tidewell Media",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": true,
+    "cited_all_support": true,
+    "uncited": false,
+    "seconds": 1.8,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d08",
+     "d09",
+     "d13",
+     "d14"
+    ]
+   }
+  },
+  {
+   "id": "h10",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Who is the chief executive of Auric Energy?",
+   "gold": [],
+   "vector": {
+    "answer": "not found",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d06",
+     "d08",
+     "d10",
+     "d12"
+    ]
+   },
+   "subgraph": {
+    "answer": "not found",
+    "found": true,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": true,
+    "seconds": 1.6,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d09",
+     "d12",
+     "d15",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.9,
+    "fallback": "step 1: nothing matches 'chief executive'",
+    "plan": {
+     "start": [
+      "Auric Energy"
+     ],
+     "steps": [
+      {
+       "relation": "chief executive",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d09",
+     "d12",
+     "d15",
+     "d16"
+    ]
+   },
+   "hybrid": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.4,
+    "fallback": "step 1: nothing matches 'chief executive'",
+    "plan": {
+     "start": [
+      "Auric Energy"
+     ],
+     "steps": [
+      {
+       "relation": "chief executive",
+       "direction": "in"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d08",
+     "d09",
+     "d10",
+     "d12",
+     "d15",
+     "d16"
+    ]
+   }
+  },
+  {
+   "id": "h11",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which university did Sofia Brandt attend?",
+   "gold": [],
+   "vector": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d07",
+     "d11",
+     "d14",
+     "d16"
+    ]
+   },
+   "subgraph": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.4,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.6,
+    "fallback": "step 1: nothing matches 'attended'",
+    "plan": {
+     "start": [
+      "Sofia Brandt"
+     ],
+     "steps": [
+      {
+       "relation": "attended",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d12",
+     "d16"
+    ]
+   },
+   "hybrid": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": "step 1: nothing matches 'attended'",
+    "plan": {
+     "start": [
+      "Sofia Brandt"
+     ],
+     "steps": [
+      {
+       "relation": "attended",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d05",
+     "d06",
+     "d07",
+     "d11",
+     "d12",
+     "d14",
+     "d16"
+    ]
+   }
+  },
+  {
+   "id": "h12",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "Which company did Tobias Marsh acquire?",
+   "gold": [],
+   "vector": {
+    "answer": "Marlow Foods",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d09",
+     "d13"
+    ]
+   },
+   "subgraph": {
+    "answer": "Tidewell Media",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.7,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d09",
+     "d13"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.5,
+    "fallback": "step 1: nothing matches 'acquired'",
+    "plan": {
+     "start": [
+      "Tobias Marsh"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d09",
+     "d13"
+    ]
+   },
+   "hybrid": {
+    "answer": "Tidewell Media",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": "step 1: nothing matches 'acquired'",
+    "plan": {
+     "start": [
+      "Tobias Marsh"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d08",
+     "d09",
+     "d13"
+    ]
+   }
+  },
+  {
+   "id": "h13",
+   "hops": 0,
+   "kind": "unanswerable",
+   "question": "In which year did Kinetra Systems acquire Auric Energy?",
+   "gold": [],
+   "vector": {
+    "answer": "2021",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.3,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d18"
+    ]
+   },
+   "subgraph": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 1.9,
+    "fallback": null,
+    "plan": null,
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d07",
+     "d09",
+     "d12",
+     "d15",
+     "d16"
+    ]
+   },
+   "graph": {
+    "answer": "not found",
+    "found": false,
+    "correct": true,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.3,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems",
+      "Auric Energy"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d06"
+    ]
+   },
+   "hybrid": {
+    "answer": "2021",
+    "found": true,
+    "correct": false,
+    "retrieved_all_support": null,
+    "cited_all_support": null,
+    "uncited": false,
+    "seconds": 2.8,
+    "fallback": null,
+    "plan": {
+     "start": [
+      "Kinetra Systems",
+      "Auric Energy"
+     ],
+     "steps": [
+      {
+       "relation": "acquired",
+       "direction": "out"
+      }
+     ]
+    },
+    "evidence_documents": [
+     "d01",
+     "d06",
+     "d12",
+     "d18"
+    ]
+   }
+  }
+ ]
+}
