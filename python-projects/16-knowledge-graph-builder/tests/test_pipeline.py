@@ -191,18 +191,6 @@ def test_progress_is_committed_after_every_chunk(factory, db):
     assert [n for _, n in seen] == list(range(len(seen)))
 
 
-def test_recover_interrupted_marks_stuck_documents_failed(factory, db):
-    a, b, c = add_doc(db, title="a"), add_doc(db, title="b"), add_doc(db, title="c")
-    db.get(Document, a).status = DocumentStatus.PROCESSING
-    db.get(Document, c).status = DocumentStatus.COMPLETED
-    db.commit()
-    assert pipeline.recover_interrupted() == 2  # a (processing) and b (pending)
-    db.expire_all()
-    assert db.get(Document, a).status == DocumentStatus.FAILED and "restart" in db.get(Document, a).error
-    assert db.get(Document, b).status == DocumentStatus.FAILED
-    assert db.get(Document, c).status == DocumentStatus.COMPLETED
-
-
 def test_prune_orphans_leaves_used_entities(factory, db):
     doc_id = add_doc(db)
     pipeline.process_document(doc_id, script(ACQ), settings())
@@ -274,3 +262,22 @@ def test_leading_articles_do_not_make_separate_entities(factory, db):
     pipeline.process_document(doc_id, script(r1, r2), settings())
     bombes = db.execute(select(Entity).where(Entity.key == "bombe")).scalars().all()
     assert [e.name for e in bombes] == ["Bombe"] and db.scalar(select(func.count()).select_from(Entity)) == 3
+
+
+def test_a_stop_between_two_model_calls_inside_a_passage_leaves_nothing(factory, db):
+    from src.services.cancel import JobCancelled
+    doc_id = add_doc(db)
+    calls = {"n": 0}
+
+    def checkpoint():
+        calls["n"] += 1
+        if calls["n"] == 4:                    # checks: start, passage, first model call, then the gleaning call is the 4th
+            raise JobCancelled("cancelled")
+
+    llm = script(ACQ)
+    outcome = pipeline.process_document(doc_id, llm, Settings(_env_file=None, verify_facts=False, gleaning_passes=1, auto_resolve=False,
+                                                              index_chunks=False), checkpoint=checkpoint)
+    db.expire_all()
+    d = db.get(Document, doc_id)
+    assert outcome == "cancelled" and d.status == DocumentStatus.FAILED and d.error == "Cancelled"
+    assert counts(db)["Fact"] == 0 and counts(db)["Chunk"] == 0 and llm.count("extract") == 1

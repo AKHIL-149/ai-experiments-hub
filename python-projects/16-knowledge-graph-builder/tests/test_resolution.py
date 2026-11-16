@@ -413,7 +413,7 @@ class JudgeLLM(FakeLLM):
         self.answers = iter(answers)
         self.prompts = []
 
-    def generate_json(self, system, prompt, schema):
+    def generate_json(self, system, prompt, schema, max_tokens=None):
         self.prompts.append(prompt)
         a = next(self.answers)
         if isinstance(a, Exception):

@@ -250,7 +250,7 @@ class FlakyVerifier(FakeLLM):
         super().__init__(extract=lambda p: {"relations": [good(predicate="bought")]})
         self.answers = iter(answers)
 
-    def generate_json(self, system, prompt, schema):
+    def generate_json(self, system, prompt, schema, max_tokens=None):
         if system != extraction.VERIFY_SYSTEM:
             return super().generate_json(system, prompt, schema)
         self.calls.append(("verify", prompt))
@@ -397,3 +397,42 @@ def test_doubt_in_the_quote_still_goes_to_the_model():
 ])
 def test_statement_reads_as_a_sentence(pred, expected):
     assert statement(fact("Sofia", pred, "Oslin", "x")) == expected
+
+
+# ---------------------------------------------------------------- stopping in the middle of a passage
+
+def test_the_checkpoint_runs_before_every_model_call_and_can_stop_the_work():
+    from src.services.cancel import JobCancelled
+    seen = []
+    llm = FakeLLM(extract=lambda p: {"relations": [good(predicate="bought")]})
+    original = llm.generate_json
+
+    def spy(system, prompt, schema, max_tokens=None):
+        seen.append("verify" if system == extraction.VERIFY_SYSTEM else "extract")
+        return original(system, prompt, schema, max_tokens)
+    llm.generate_json = spy
+    marks = []
+    extract_chunk(llm, CHUNK, verify=True, gleaning_passes=1, checkpoint=lambda: marks.append(len(seen)))
+    assert seen == ["extract", "extract", "verify"] and marks == [0, 1, 2]       # one check before each of the three calls
+
+    def stop_after_the_first_answer():
+        if llm.count("extract") >= 1:
+            raise JobCancelled("cancelled")
+    llm = FakeLLM(extract=lambda p: {"relations": [good(predicate="bought")]})
+    with pytest.raises(JobCancelled):
+        extract_chunk(llm, CHUNK, verify=True, gleaning_passes=2, checkpoint=stop_after_the_first_answer)
+    assert llm.count("extract") == 1 and llm.count("verify") == 0               # it did not go on to gleaning or the double-check
+
+
+def test_a_retry_after_bad_output_also_checks_first():
+    marks = []
+    answers = iter([LLMBadOutput("x"), {"relations": []}])
+    llm = FakeLLM(extract=lambda p: (_ for _ in ()).throw(a) if isinstance(a := next(answers), Exception) else a)
+    extract_chunk(llm, CHUNK, verify=False, checkpoint=lambda: marks.append(1))
+    assert len(marks) == 2
+
+
+def test_the_double_check_asks_for_a_short_answer_and_extraction_for_the_default_length():
+    llm = FakeLLM(extract=lambda p: {"relations": [good(predicate="bought")]})
+    extract_chunk(llm, CHUNK, verify=True)
+    assert llm.max_tokens == [None, extraction.VERIFY_MAX_TOKENS] and extraction.VERIFY_MAX_TOKENS <= 64

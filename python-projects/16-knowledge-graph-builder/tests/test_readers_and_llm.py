@@ -88,7 +88,7 @@ def test_ollama_request_is_deterministic_and_uses_the_schema(monkeypatch):
     monkeypatch.setattr(llm_mod.httpx, "post", post)
     OllamaClient("http://x:11434/", "m", 4096, 5).generate_json("sys", "usr", {"type": "object"})
     assert sent["url"] == "http://x:11434/api/chat" and sent["json"]["format"] == {"type": "object"}
-    assert sent["json"]["options"] == {"temperature": 0, "num_ctx": 4096} and sent["json"]["stream"] is False
+    assert sent["json"]["options"] == {"temperature": 0, "num_ctx": 4096, "num_predict": 3072} and sent["json"]["stream"] is False
     assert [m["role"] for m in sent["json"]["messages"]] == ["system", "user"]
 
 
@@ -113,3 +113,34 @@ def test_ollama_status_checks_the_installed_models(monkeypatch):
     assert llm_status(Settings(_env_file=None))["ready"] is True
     r = llm_status(Settings(_env_file=None, ollama_model="other"))
     assert r["ready"] is False and "ollama pull other" in r["detail"]
+
+
+def test_every_call_is_capped_and_a_smaller_cap_can_be_asked_for(monkeypatch):
+    sent = []
+
+    def post(url, json=None, timeout=None):
+        sent.append(json["options"]["num_predict"])
+        return Resp(200, {"message": {"content": "{}"}})
+    monkeypatch.setattr(llm_mod.httpx, "post", post)
+    c = OllamaClient("http://x", "m", 4096, 5, max_tokens=1000)
+    c.generate_json("s", "p", {})
+    c.generate_json("s", "p", {}, max_tokens=48)
+    assert sent == [1000, 48]
+    assert get_llm(Settings(_env_file=None, llm_max_tokens=512)).max_tokens == 512
+
+
+@pytest.mark.parametrize("text,expected", [
+    ('{"relations": [{"s": "a"}, {"s": "b"}, {"s": "c', {"relations": [{"s": "a"}, {"s": "b"}]}),
+    ('{"relations": [{"s": "a", "n": {"x": 1}}, {"s": "b", "n"', {"relations": [{"s": "a", "n": {"x": 1}}]}),
+    ('{"relations": [{"s": "a } ] {"}, {"s": "b', {"relations": [{"s": "a } ] {"}]}),                     # braces inside a string are not structure
+    ('{"relations": [{"s": "say \\"hi\\""}, {"s":', {"relations": [{"s": 'say "hi"'}]}),                     # an escaped quote does not end the string
+    ('```json\n{"relations": [{"s": "a"}, {"s": "b', {"relations": [{"s": "a"}]}),
+])
+def test_a_reply_cut_off_by_the_token_cap_keeps_its_complete_elements(text, expected):
+    assert _parse_json(text) == expected
+
+
+@pytest.mark.parametrize("text", ['{"relations": [{"s": "a', '{"relations": [', '{"relations"', "no braces at all"])
+def test_a_reply_cut_off_before_any_element_is_complete_is_bad_output(text):
+    with pytest.raises(LLMBadOutput):
+        _parse_json(text)

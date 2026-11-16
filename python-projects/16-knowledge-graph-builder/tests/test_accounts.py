@@ -400,6 +400,7 @@ def test_startup_creates_the_tables_and_adopts_an_old_database(tmp_path, monkeyp
     from sqlalchemy.orm import sessionmaker
     from src.core import database
     use_settings(monkeypatch, require_login=True)
+    monkeypatch.setattr(server, "get_settings", lambda: Settings(_env_file=None, job_workers_enabled=False))   # no worker threads here
     engine = database.make_engine(f"sqlite:///{tmp_path}/fresh.db")
     monkeypatch.setattr(database, "engine", engine)
     monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=engine, autoflush=False, expire_on_commit=False))

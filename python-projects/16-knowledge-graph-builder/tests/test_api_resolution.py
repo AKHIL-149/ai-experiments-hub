@@ -148,7 +148,7 @@ def test_writes_wait_while_a_document_is_being_read(client):
 def test_run_with_the_model_asks_for_second_opinions_and_reports_an_unavailable_model(client, monkeypatch):
     seed(client.factory, [("Acme", "organization"), ("Acme Labs", "organization")])
     llm = FakeLLM()
-    llm.generate_json = lambda system, prompt, schema: {"same": "yes"}
+    llm.generate_json = lambda system, prompt, schema, max_tokens=None: {"same": "yes"}
     monkeypatch.setattr("src.api.resolution.get_llm", lambda settings=None: llm)
     r = client.post("/api/resolution/run", json={"use_llm": True}).json()
     assert r["judged"] == 1

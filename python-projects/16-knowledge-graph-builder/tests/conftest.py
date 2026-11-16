@@ -21,8 +21,10 @@ class FakeLLM:
         self.extract = extract or (lambda prompt: {"relations": []})
         self.verify = verify or (lambda prompt: "supported")
         self.calls = []
+        self.max_tokens = []     # the cap each call asked for
 
-    def generate_json(self, system, prompt, schema):
+    def generate_json(self, system, prompt, schema, max_tokens=None):
+        self.max_tokens.append(max_tokens)
         if system == extraction.VERIFY_SYSTEM:
             self.calls.append(("verify", prompt))
             out = self.verify(prompt)
@@ -152,7 +154,7 @@ class ScriptedLLM(FakeLLM):
         self.answer_fn = answer or (lambda prompt: {"found": False, "answer": "not found", "cited": []})
         self.prompts = {"plan": [], "answer": []}
 
-    def generate_json(self, system, prompt, schema):
+    def generate_json(self, system, prompt, schema, max_tokens=None):
         from src.services import ask
         if system == ask.PLAN_SYSTEM:
             self.prompts["plan"].append(prompt)
@@ -209,3 +211,10 @@ def fresh_throttles():
     from src.api import auth as auth_api
     for t in (auth_api.login_failures, auth_api.creations):
         t.events.clear()
+
+
+@pytest.fixture(autouse=True)
+def jobs_run_inline(monkeypatch):
+    """Without worker threads, a job runs in the request that enqueued it (as the old background task did); the queue tests turn this off"""
+    from src.services import job_queue
+    monkeypatch.setattr(job_queue, "INLINE", True)
