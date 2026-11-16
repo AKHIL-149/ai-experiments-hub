@@ -26,11 +26,19 @@ class Settings(BaseSettings):
     cookie_secure: bool = Field(default=False, description="True when served over HTTPS (the cookie then never travels over plain HTTP)")
     allowed_origins: str = Field(default="", description="Extra browser origins allowed to write (comma separated), e.g. http://localhost:3000")
 
+    # --- background jobs (step 4) ---
+    job_workers_enabled: bool = Field(default=True, description="False = no worker threads (tests, or a separate worker process)")
+    max_concurrent_documents: int = Field(default=1, ge=1, le=8, description="Documents read at the same time (a local model answers one request at a time)")
+    max_queued_jobs_per_user: int = Field(default=10, ge=1, description="Waiting plus running jobs one account may have")
+    job_max_attempts: int = Field(default=2, ge=1, description="Tries for a job whose worker died")
+    job_stale_seconds: int = Field(default=45, ge=10, description="A running job whose heartbeat is older than this is put back in the queue")
+
     llm_provider: str = Field(default="ollama", description="ollama | anthropic | openai")
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
     ollama_num_ctx: int = 8192
     ollama_timeout: float = 300.0
+    llm_max_tokens: int = Field(default=3072, ge=256, le=8192, description="Longest answer one model call may write (stops a repetition loop from running for minutes)")
     anthropic_api_key: Optional[str] = None
     anthropic_model: str = "claude-haiku-5-5"
     openai_api_key: Optional[str] = None
