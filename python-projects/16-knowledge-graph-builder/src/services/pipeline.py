@@ -19,22 +19,29 @@ from src.services.text_utils import entity_key, strip_article
 
 log = logging.getLogger(__name__)
 
-# One document at a time: a local model answers one request at a time anyway. A real job queue comes in step 4.
-_PROCESS_LOCK = threading.Lock()
+# One document at a time per owner: reading writes that owner's entities and facts, and merges / index rebuilds by the same
+# owner wait for it (HTTP 409). Different owners never touch each other's rows, so they do not block each other.
+_LOCKS: dict = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def owner_lock(owner_id) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(owner_id, threading.Lock())
 
 
 def _now():
     return datetime.now(timezone.utc)
 
 
-def get_or_create_entity(db: Session, name: str, etype: str) -> Entity:
+def get_or_create_entity(db: Session, name: str, etype: str, owner_id: int | None = None) -> Entity:
     name = strip_article(" ".join(name.split()))
     key = entity_key(name)
-    entity = db.execute(select(Entity).where(Entity.key == key)).scalar_one_or_none()
+    entity = db.execute(select(Entity).where(Entity.owner_id == owner_id, Entity.key == key)).scalar_one_or_none()
     if entity is None:
-        entity = find_by_alias(db, key)  # a name that was merged into another entity earlier
+        entity = find_by_alias(db, key, owner_id)  # a name that was merged into another entity earlier
     if entity is None:
-        entity = Entity(name=name[:300], key=key[:300], type=etype)
+        entity = Entity(owner_id=owner_id, name=name[:300], key=key[:300], type=etype)
         db.add(entity)
         db.flush()
     elif entity.type == "concept" and etype != "concept":
@@ -42,13 +49,13 @@ def get_or_create_entity(db: Session, name: str, etype: str) -> Entity:
     return entity
 
 
-def store_fact(db: Session, fact: ExtractedFact, document_id: str, chunk_id: str) -> tuple[Fact, bool]:
+def store_fact(db: Session, fact: ExtractedFact, document_id: str, chunk_id: str, owner_id: int | None = None) -> tuple[Fact, bool]:
     """Save a checked fact. The same statement found again only adds another source. Returns (fact, is_new)."""
-    subject = get_or_create_entity(db, fact.subject, fact.subject_type)
+    subject = get_or_create_entity(db, fact.subject, fact.subject_type, owner_id)
     if fact.object_type == "value":
         obj, value = None, " ".join(fact.object.split())[:300]
     else:
-        obj, value = get_or_create_entity(db, fact.object, fact.object_type), ""
+        obj, value = get_or_create_entity(db, fact.object, fact.object_type, owner_id), ""
     q = select(Fact).where(
         Fact.subject_id == subject.id, Fact.predicate == fact.predicate, Fact.object_value == value,
         Fact.valid_from == fact.valid_from, Fact.valid_to == fact.valid_to,
@@ -69,7 +76,7 @@ def store_fact(db: Session, fact: ExtractedFact, document_id: str, chunk_id: str
                 row.valid_from, row.valid_to = fact.valid_from, fact.valid_to
     is_new = row is None
     if is_new:
-        row = Fact(subject_id=subject.id, predicate=fact.predicate, object_id=obj.id if obj else None,
+        row = Fact(owner_id=owner_id, subject_id=subject.id, predicate=fact.predicate, object_id=obj.id if obj else None,
                    object_value=value, valid_from=fact.valid_from, valid_to=fact.valid_to)
         db.add(row)
         db.flush()
@@ -107,9 +114,14 @@ def clear_analysis(db: Session, doc: Document) -> None:
 
 def process_document(document_id: str, llm: LLMClient | None = None, settings: Settings | None = None,
                      verify: bool | None = None) -> None:
-    """Read one document into the graph. Never raises: problems end up in the document's status and error."""
+    """Read one document into its owner's graph. Never raises: problems end up in the document's status and error."""
     settings = settings or get_settings()
-    with _PROCESS_LOCK:
+    with database.SessionLocal() as probe:
+        doc = probe.get(Document, document_id)
+        if doc is None:
+            return
+        owner_id = doc.owner_id
+    with owner_lock(owner_id):
         db = database.SessionLocal()
         try:
             doc = db.get(Document, document_id)
@@ -159,7 +171,7 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
         if result.error:
             totals["chunk_errors"] += 1
         for fact in result.facts:
-            _, is_new = store_fact(db, fact, doc.id, row.id)
+            _, is_new = store_fact(db, fact, doc.id, row.id, doc.owner_id)
             totals["accepted"] += 1
             totals["new_facts"] += is_new
         doc.chunks_done += 1
@@ -181,7 +193,7 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
                 db.commit()
     if settings.auto_resolve:
         try:
-            summary = run_resolution(db, auto=True)
+            summary = run_resolution(db, auto=True, owner_id=doc.owner_id)
             db.commit()
             doc.stats = {**doc.stats, "resolution": {"auto_merged": summary.auto_merged, "suggestions": summary.suggestions_new}}
             db.commit()

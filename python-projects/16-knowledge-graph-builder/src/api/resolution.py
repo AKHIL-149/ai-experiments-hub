@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from src.api.deps import get_owner
 from src.core.config import get_settings
 from src.core.database import get_db
 from src.models.graph import Entity, Fact
@@ -36,15 +37,18 @@ def _record(r: MergeRecord) -> dict:
 
 
 class _Writer:
-    """Merges and undos change entities and facts, so they must not overlap with a document being read"""
+    """Merges and undos change a person's entities and facts, so they must not overlap with one of their documents being read"""
+
+    def __init__(self, owner: int | None):
+        self.lock = pipeline.owner_lock(owner)
 
     def __enter__(self):
-        if not pipeline._PROCESS_LOCK.acquire(blocking=False):
+        if not self.lock.acquire(blocking=False):
             raise HTTPException(409, "A document is being read. Try again when it finishes")
         return self
 
     def __exit__(self, *exc):
-        pipeline._PROCESS_LOCK.release()
+        self.lock.release()
 
 
 class RunIn(BaseModel):
@@ -53,7 +57,7 @@ class RunIn(BaseModel):
 
 
 @router.post("/resolution/run")
-def run(body: RunIn | None = None, db: Session = Depends(get_db)):
+def run(body: RunIn | None = None, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     body = body or RunIn()
     settings = get_settings()
     use_llm = settings.resolution_use_llm if body.use_llm is None else body.use_llm
@@ -63,19 +67,20 @@ def run(body: RunIn | None = None, db: Session = Depends(get_db)):
             llm = get_llm(settings)
         except LLMError as exc:
             raise HTTPException(503, str(exc))
-    with _Writer():
-        summary = resolution.run_resolution(db, auto=body.auto, llm=llm)
+    with _Writer(owner):
+        summary = resolution.run_resolution(db, auto=body.auto, llm=llm, owner_id=owner)
         db.commit()
     return summary.as_dict()
 
 
 @router.get("/resolution/suggestions")
-def suggestions(status: str = "pending", db: Session = Depends(get_db)):
+def suggestions(status: str = "pending", db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     try:
         st = SuggestionStatus(status)
     except ValueError:
         raise HTTPException(422, "status must be pending, accepted or rejected")
-    rows = db.execute(select(MergeSuggestion).where(MergeSuggestion.status == st).order_by(MergeSuggestion.score.desc())).scalars().all()
+    rows = db.execute(select(MergeSuggestion).where(MergeSuggestion.owner_id == owner, MergeSuggestion.status == st)
+                      .order_by(MergeSuggestion.score.desc())).scalars().all()
     return {"suggestions": [_suggestion(db, s) for s in rows]}
 
 
@@ -84,10 +89,10 @@ class AcceptIn(BaseModel):
 
 
 @router.post("/resolution/suggestions/{suggestion_id}/accept")
-def accept(suggestion_id: str, body: AcceptIn | None = None, db: Session = Depends(get_db)):
-    with _Writer():
+def accept(suggestion_id: str, body: AcceptIn | None = None, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    with _Writer(owner):
         try:
-            rec = resolution.accept_suggestion(db, suggestion_id, body.keep_id if body else None)
+            rec = resolution.accept_suggestion(db, suggestion_id, body.keep_id if body else None, owner_id=owner)
             db.commit()
         except resolution.MergeError as exc:
             db.rollback()
@@ -96,10 +101,10 @@ def accept(suggestion_id: str, body: AcceptIn | None = None, db: Session = Depen
 
 
 @router.post("/resolution/suggestions/{suggestion_id}/reject", status_code=204)
-def reject(suggestion_id: str, db: Session = Depends(get_db)):
-    with _Writer():
+def reject(suggestion_id: str, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    with _Writer(owner):
         try:
-            resolution.reject_suggestion(db, suggestion_id)
+            resolution.reject_suggestion(db, suggestion_id, owner_id=owner)
             db.commit()
         except resolution.MergeError as exc:
             db.rollback()
@@ -112,10 +117,10 @@ class MergeIn(BaseModel):
 
 
 @router.post("/entities/merge")
-def merge(body: MergeIn, db: Session = Depends(get_db)):
-    with _Writer():
+def merge(body: MergeIn, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    with _Writer(owner):
         try:
-            rec = resolution.merge_entities(db, body.keep_id, body.absorb_id, "manual")
+            rec = resolution.merge_entities(db, body.keep_id, body.absorb_id, "manual", owner_id=owner)
             db.commit()
         except resolution.MergeError as exc:
             db.rollback()
@@ -124,18 +129,18 @@ def merge(body: MergeIn, db: Session = Depends(get_db)):
 
 
 @router.get("/resolution/merges")
-def merges(include_undone: bool = False, db: Session = Depends(get_db)):
-    q = select(MergeRecord).order_by(MergeRecord.created_at.desc())
+def merges(include_undone: bool = False, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    q = select(MergeRecord).where(MergeRecord.owner_id == owner).order_by(MergeRecord.created_at.desc())
     if not include_undone:
         q = q.where(MergeRecord.undone_at.is_(None))
     return {"merges": [_record(r) for r in db.execute(q).scalars()]}
 
 
 @router.post("/resolution/merges/{record_id}/undo")
-def undo(record_id: str, db: Session = Depends(get_db)):
-    with _Writer():
+def undo(record_id: str, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    with _Writer(owner):
         try:
-            rec = resolution.undo_merge(db, record_id)
+            rec = resolution.undo_merge(db, record_id, owner_id=owner)
             db.commit()
         except resolution.MergeError as exc:
             db.rollback()

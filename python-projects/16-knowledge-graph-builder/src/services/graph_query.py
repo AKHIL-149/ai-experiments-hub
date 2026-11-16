@@ -63,15 +63,17 @@ class Seed:
 class GraphIndex:
     """The whole graph in memory for one question: entities, facts, who points at whom, and a name lookup"""
 
-    def __init__(self, db: Session, document_id: str | None = None):
-        self.entities: dict[str, Entity] = {e.id: e for e in db.execute(select(Entity)).scalars()}
+    def __init__(self, db: Session, document_id: str | None = None, *, owner_id: int | None = None):
+        self.owner_id = owner_id
+        self.entities: dict[str, Entity] = {e.id: e for e in db.execute(select(Entity).where(Entity.owner_id == owner_id)).scalars()}
         doc_of = defaultdict(set)
-        for fid, did in db.execute(select(FactSource.fact_id, FactSource.document_id)).all():
+        for fid, did in db.execute(select(FactSource.fact_id, FactSource.document_id).join(Fact, Fact.id == FactSource.fact_id)
+                                   .where(Fact.owner_id == owner_id)).all():
             doc_of[fid].add(did)
         self.facts: dict[str, FactView] = {}
         self.out: dict[str, list[FactView]] = defaultdict(list)
         self.inn: dict[str, list[FactView]] = defaultdict(list)
-        for f in db.execute(select(Fact)).scalars():
+        for f in db.execute(select(Fact).where(Fact.owner_id == owner_id)).scalars():
             docs = frozenset(doc_of.get(f.id, ()))
             if document_id and document_id not in docs:
                 continue
@@ -93,7 +95,7 @@ class GraphIndex:
                 self.surface[e.key].add(e.id)
                 for t in set(canonical_tokens(e.name, e.type)):
                     self.token_index[t].add(e.id)
-        for a in db.execute(select(EntityAlias)).scalars():
+        for a in db.execute(select(EntityAlias).where(EntityAlias.owner_id == owner_id)).scalars():
             if a.entity_id in self.used:
                 self.surface[a.key].add(a.entity_id)
         self._graph: nx.Graph | None = None

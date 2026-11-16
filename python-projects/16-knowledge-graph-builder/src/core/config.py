@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/kg.db"
     db_echo: bool = False
 
+    # --- accounts (step 4) ---
+    require_login: bool = Field(default=True, description="False = single-user mode: no sign-in, everything belongs to 'local'")
+    allow_registration: bool = True
+    allow_guests: bool = True
+    guest_ttl_hours: int = Field(default=24, ge=1, description="A guest account and its data are removed after this long")
+    guest_max_documents: int = Field(default=3, ge=1, description="Documents a guest may add")
+    session_days: int = Field(default=14, ge=1)
+    cookie_secure: bool = Field(default=False, description="True when served over HTTPS (the cookie then never travels over plain HTTP)")
+    allowed_origins: str = Field(default="", description="Extra browser origins allowed to write (comma separated), e.g. http://localhost:3000")
+
     llm_provider: str = Field(default="ollama", description="ollama | anthropic | openai")
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"

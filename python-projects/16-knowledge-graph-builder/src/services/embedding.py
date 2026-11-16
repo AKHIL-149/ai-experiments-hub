@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from src.core.config import Settings, get_settings
 from src.models.embedding import Embedding
-from src.models.graph import Chunk, Entity, Fact
+from src.models.graph import Chunk, Document, Entity, Fact
+
+
+_ANY = object()   # 'every owner' (used when reading a document's own passages, which are already its owner's)
 
 
 class EmbeddingError(RuntimeError):
@@ -98,12 +101,14 @@ def _hash(text: str) -> str:
     return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
-def ensure_chunk_embeddings(db: Session, embedder: Embedder, document_id: str | None = None) -> int:
+def ensure_chunk_embeddings(db: Session, embedder: Embedder, document_id: str | None = None, *, owner_id=_ANY) -> int:
     """Embed every passage that has no vector from this model yet. Returns how many were added."""
     have = select(Embedding.chunk_id).where(Embedding.model == embedder.name, Embedding.chunk_id.is_not(None))
     q = select(Chunk).where(~Chunk.id.in_(have))
     if document_id:
         q = q.where(Chunk.document_id == document_id)
+    if owner_id is not _ANY:
+        q = q.join(Document, Document.id == Chunk.document_id).where(Document.owner_id == owner_id)
     chunks = db.execute(q).scalars().all()
     if not chunks:
         return 0
@@ -143,10 +148,11 @@ def ensure_fact_embeddings(db: Session, embedder: Embedder, facts: list[Fact]) -
     return out
 
 
-def top_chunks(db: Session, embedder: Embedder, question: str, k: int, document_id: str | None = None) -> list[tuple[Chunk, float]]:
+def top_chunks(db: Session, embedder: Embedder, question: str, k: int, document_id: str | None = None, *, owner_id: int | None = None) -> list[tuple[Chunk, float]]:
     """The k passages closest to the question (passage search, as in a plain RAG assistant)"""
-    ensure_chunk_embeddings(db, embedder, document_id)
-    q = select(Chunk, Embedding.vector).join(Embedding, Embedding.chunk_id == Chunk.id).where(Embedding.model == embedder.name)
+    ensure_chunk_embeddings(db, embedder, document_id, owner_id=owner_id)
+    q = (select(Chunk, Embedding.vector).join(Embedding, Embedding.chunk_id == Chunk.id)
+         .join(Document, Document.id == Chunk.document_id).where(Embedding.model == embedder.name, Document.owner_id == owner_id))
     if document_id:
         q = q.where(Chunk.document_id == document_id)
     rows = db.execute(q).all()

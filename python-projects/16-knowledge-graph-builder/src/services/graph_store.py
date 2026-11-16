@@ -21,13 +21,14 @@ def fact_to_dict(f: Fact, source_count: int | None = None) -> dict:
     }
 
 
-def build_graph(db: Session, document_id: str | None = None, entity_type: str | None = None) -> nx.MultiDiGraph:
+def build_graph(db: Session, document_id: str | None = None, entity_type: str | None = None, *, owner_id: int | None = None) -> nx.MultiDiGraph:
     """Entities are nodes, entity-to-entity facts are edges. Facts with a plain value become node attributes."""
-    q = select(Fact)
+    q = select(Fact).where(Fact.owner_id == owner_id)
     if document_id:
         q = q.where(Fact.id.in_(select(FactSource.fact_id).where(FactSource.document_id == document_id)))
     g = nx.MultiDiGraph()
-    counts = dict(db.execute(select(FactSource.fact_id, func.count()).group_by(FactSource.fact_id)).all())
+    counts = dict(db.execute(select(FactSource.fact_id, func.count()).join(Fact, Fact.id == FactSource.fact_id)
+                             .where(Fact.owner_id == owner_id).group_by(FactSource.fact_id)).all())
     for f in db.execute(q).scalars():
         for e in (f.subject, f.object):
             if e is not None and e.id not in g:
@@ -65,21 +66,21 @@ def neighborhood(g: nx.MultiDiGraph, entity_id: str, depth: int = 1) -> nx.Multi
     return g.subgraph(reach.keys()).copy()
 
 
-def stats(db: Session) -> dict:
-    by_type = dict(db.execute(select(Entity.type, func.count()).group_by(Entity.type)).all())
+def stats(db: Session, *, owner_id: int | None = None) -> dict:
+    by_type = dict(db.execute(select(Entity.type, func.count()).where(Entity.owner_id == owner_id).group_by(Entity.type)).all())
     return {
         "entities": sum(by_type.values()),
         "entities_by_type": by_type,
-        "facts": db.scalar(select(func.count()).select_from(Fact)) or 0,
-        "sources": db.scalar(select(func.count()).select_from(FactSource)) or 0,
+        "facts": db.scalar(select(func.count()).select_from(Fact).where(Fact.owner_id == owner_id)) or 0,
+        "sources": db.scalar(select(func.count()).select_from(FactSource).join(Fact, Fact.id == FactSource.fact_id).where(Fact.owner_id == owner_id)) or 0,
         "top_predicates": [{"predicate": p, "count": c} for p, c in db.execute(
-            select(Fact.predicate, func.count().label("c")).group_by(Fact.predicate).order_by(func.count().desc()).limit(10))],
+            select(Fact.predicate, func.count().label("c")).where(Fact.owner_id == owner_id).group_by(Fact.predicate).order_by(func.count().desc()).limit(10))],
     }
 
 
-def search_entities(db: Session, q: str = "", entity_type: str | None = None, limit: int = 50) -> list[Entity]:
+def search_entities(db: Session, q: str = "", entity_type: str | None = None, limit: int = 50, *, owner_id: int | None = None) -> list[Entity]:
     from src.services.text_utils import entity_key
-    stmt = select(Entity)
+    stmt = select(Entity).where(Entity.owner_id == owner_id)
     if q.strip():
         stmt = stmt.where(or_(Entity.key.contains(entity_key(q)), Entity.name.ilike(f"%{q.strip()}%")))
     if entity_type:

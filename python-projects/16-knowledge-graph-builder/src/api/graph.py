@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.api.deps import get_owner
 from src.core.database import get_db
 from src.models.graph import ENTITY_TYPES, Chunk, Document, Entity, Fact, FactSource
 from src.models.resolution import EntityAlias
@@ -22,28 +23,31 @@ def _entity(e: Entity) -> dict:
 
 @router.get("/graph")
 def get_graph(document_id: str | None = None, type: str | None = None, limit: int = Query(300, ge=1, le=2000),
-              db: Session = Depends(get_db)):
+              db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     _check_type(type)
-    if document_id and db.get(Document, document_id) is None:
-        raise HTTPException(404, "Document not found")
-    return graph_store.graph_payload(graph_store.build_graph(db, document_id, type), limit)
+    if document_id:
+        doc = db.get(Document, document_id)
+        if doc is None or doc.owner_id != owner:
+            raise HTTPException(404, "Document not found")
+    return graph_store.graph_payload(graph_store.build_graph(db, document_id, type, owner_id=owner), limit)
 
 
 @router.get("/graph/stats")
-def get_stats(db: Session = Depends(get_db)):
-    return graph_store.stats(db)
+def get_stats(db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    return graph_store.stats(db, owner_id=owner)
 
 
 @router.get("/entities")
-def list_entities(q: str = "", type: str | None = None, limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)):
+def list_entities(q: str = "", type: str | None = None, limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db),
+                  owner: int | None = Depends(get_owner)):
     _check_type(type)
-    return {"entities": [_entity(e) for e in graph_store.search_entities(db, q, type, limit)]}
+    return {"entities": [_entity(e) for e in graph_store.search_entities(db, q, type, limit, owner_id=owner)]}
 
 
 @router.get("/entities/{entity_id}")
-def get_entity(entity_id: str, db: Session = Depends(get_db)):
+def get_entity(entity_id: str, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     e = db.get(Entity, entity_id)
-    if e is None:
+    if e is None or e.owner_id != owner:
         raise HTTPException(404, "Entity not found")
     out = db.execute(select(Fact).where(Fact.subject_id == e.id).order_by(Fact.predicate)).scalars().all()
     inc = db.execute(select(Fact).where(Fact.object_id == e.id).order_by(Fact.predicate)).scalars().all()
@@ -54,17 +58,18 @@ def get_entity(entity_id: str, db: Session = Depends(get_db)):
 
 @router.get("/entities/{entity_id}/neighborhood")
 def get_neighborhood(entity_id: str, depth: int = Query(1, ge=1, le=3), limit: int = Query(200, ge=1, le=1000),
-                     db: Session = Depends(get_db)):
-    if db.get(Entity, entity_id) is None:
+                     db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    e = db.get(Entity, entity_id)
+    if e is None or e.owner_id != owner:
         raise HTTPException(404, "Entity not found")
-    g = graph_store.neighborhood(graph_store.build_graph(db), entity_id, depth)
+    g = graph_store.neighborhood(graph_store.build_graph(db, owner_id=owner), entity_id, depth)
     return graph_store.graph_payload(g, limit)
 
 
 @router.get("/facts/{fact_id}")
-def get_fact(fact_id: str, db: Session = Depends(get_db)):
+def get_fact(fact_id: str, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     f = db.get(Fact, fact_id)
-    if f is None:
+    if f is None or f.owner_id != owner:
         raise HTTPException(404, "Fact not found")
     rows = db.execute(select(FactSource, Document.title, Chunk.text).join(Document, Document.id == FactSource.document_id)
                       .join(Chunk, Chunk.id == FactSource.chunk_id).where(FactSource.fact_id == f.id)).all()

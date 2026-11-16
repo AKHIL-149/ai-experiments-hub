@@ -175,12 +175,12 @@ def decide(a: EntityInfo, b: EntityInfo, *, ambiguous_with: int = 0, ambiguity_n
 
 # ---------------------------------------------------------------- loading and finding pairs
 
-def load_infos(db: Session) -> dict[str, EntityInfo]:
+def load_infos(db: Session, owner_id: int | None = None) -> dict[str, EntityInfo]:
     infos = {e.id: EntityInfo(e.id, e.name, e.type, canonical_tokens(e.name, e.type), qualifier_of(e.name, e.type),
                                     initials_of(e.name, e.type))
-             for e in db.execute(select(Entity)).scalars()}
+             for e in db.execute(select(Entity).where(Entity.owner_id == owner_id)).scalars()}
     links, neighbors, nfacts = defaultdict(set), defaultdict(set), defaultdict(int)
-    facts = db.execute(select(Fact.id, Fact.subject_id, Fact.predicate, Fact.object_id)).all()
+    facts = db.execute(select(Fact.id, Fact.subject_id, Fact.predicate, Fact.object_id).where(Fact.owner_id == owner_id)).all()
     for fid, s, p, o in facts:
         nfacts[s] += 1
         if o is not None:
@@ -190,7 +190,8 @@ def load_infos(db: Session) -> dict[str, EntityInfo]:
             neighbors[s].add(o)
             neighbors[o].add(s)
     fact_docs = defaultdict(set)
-    for fid, doc in db.execute(select(FactSource.fact_id, FactSource.document_id)).all():
+    for fid, doc in db.execute(select(FactSource.fact_id, FactSource.document_id).join(Fact, Fact.id == FactSource.fact_id)
+                               .where(Fact.owner_id == owner_id)).all():
         fact_docs[fid].add(doc)
     docs = defaultdict(set)
     for fid, s_id, p, o in facts:
@@ -319,14 +320,14 @@ def _fold(db: Session, f: Fact, twin: Fact, data: dict) -> None:
 
 
 def merge_entities(db: Session, keep_id: str, absorb_id: str, how: str = "manual", reasons: list | None = None,
-                   new_name: str | None = None) -> MergeRecord:
+                   new_name: str | None = None, owner_id: int | None = None) -> MergeRecord:
     """Fold `absorb` into `keep`: its facts move over, copies of the same fact become one (sources joined), its name
     becomes an alias. Raises MergeError when the two are linked by a fact or are of different types."""
     if keep_id == absorb_id:
         raise MergeError("Cannot merge an entity with itself")
     keep, absorbed = db.get(Entity, keep_id), db.get(Entity, absorb_id)
-    if keep is None or absorbed is None:
-        raise MergeError("Entity not found")
+    if keep is None or absorbed is None or keep.owner_id != owner_id or absorbed.owner_id != owner_id:
+        raise MergeError("Entity not found")  # another owner's entity is indistinguishable from one that does not exist
     if keep.type != absorbed.type and "concept" not in (keep.type, absorbed.type):
         raise MergeError(f"Different types ({keep.type} / {absorbed.type}); these are probably different things")
     linked = db.execute(select(Fact.id).where(or_(
@@ -374,8 +375,8 @@ def merge_entities(db: Session, keep_id: str, absorb_id: str, how: str = "manual
         data["aliases_moved"].append(alias.id)
         alias.entity_id = keep.id
     db.flush()
-    if absorbed.key != keep.key and not db.execute(select(EntityAlias.id).where(EntityAlias.key == absorbed.key)).first():
-        alias = EntityAlias(entity_id=keep.id, key=absorbed.key, name=absorbed.name)
+    if absorbed.key != keep.key and not db.execute(select(EntityAlias.id).where(EntityAlias.owner_id == owner_id, EntityAlias.key == absorbed.key)).first():
+        alias = EntityAlias(owner_id=owner_id, entity_id=keep.id, key=absorbed.key, name=absorbed.name)
         db.add(alias)
         db.flush()
         data["aliases_added"].append(alias.id)
@@ -384,7 +385,7 @@ def merge_entities(db: Session, keep_id: str, absorb_id: str, how: str = "manual
     if new_name and new_name != keep.name:
         keep.name = new_name
 
-    record = MergeRecord(keep_id=keep.id, absorbed_id=absorbed.id, keep_name=keep.name, absorbed_name=absorbed.name,
+    record = MergeRecord(owner_id=owner_id, keep_id=keep.id, absorbed_id=absorbed.id, keep_name=keep.name, absorbed_name=absorbed.name,
                          how=how, reasons=reasons or [], data=data)
     db.add(record)
     db.execute(delete(MergeSuggestion).where(or_(MergeSuggestion.entity_a_id == absorbed.id, MergeSuggestion.entity_b_id == absorbed.id)))
@@ -393,10 +394,10 @@ def merge_entities(db: Session, keep_id: str, absorb_id: str, how: str = "manual
     return record
 
 
-def undo_merge(db: Session, record_id: str) -> MergeRecord:
+def undo_merge(db: Session, record_id: str, owner_id: int | None = None) -> MergeRecord:
     """Give the absorbed entity back its own facts and name. Facts or documents deleted since are simply not restored."""
     record = db.get(MergeRecord, record_id)
-    if record is None:
+    if record is None or record.owner_id != owner_id:
         raise MergeError("Merge not found")
     if record.undone_at is not None:
         raise MergeError("This merge was already undone")
@@ -405,9 +406,9 @@ def undo_merge(db: Session, record_id: str) -> MergeRecord:
         raise MergeError("The entity this was merged into no longer exists")
     d = record.data
     a = d["absorbed"]
-    if db.get(Entity, a["id"]) is not None or db.execute(select(Entity.id).where(Entity.key == a["key"])).first():
+    if db.get(Entity, a["id"]) is not None or db.execute(select(Entity.id).where(Entity.owner_id == owner_id, Entity.key == a["key"])).first():
         raise MergeError("An entity with the original name exists again; cannot restore it")
-    db.add(Entity(id=a["id"], name=a["name"], key=a["key"], type=a["type"]))
+    db.add(Entity(id=a["id"], owner_id=owner_id, name=a["name"], key=a["key"], type=a["type"]))
     db.flush()
     for fid in d["subject_moves"]:
         f = db.get(Fact, fid)
@@ -428,7 +429,7 @@ def undo_merge(db: Session, record_id: str) -> MergeRecord:
         if row["id"] in d["object_moves"]:
             row["object_id"] = a["id"]
         if db.get(Fact, row["id"]) is None:
-            db.add(Fact(**row))
+            db.add(Fact(owner_id=owner_id, **row))
             db.flush()
         for sid in c["source_ids"]:
             src = db.get(FactSource, sid)
@@ -501,13 +502,13 @@ class RunSummary:
                                               "judged", "blocked", "merges")}
 
 
-def run_resolution(db: Session, *, auto: bool = True, llm: LLMClient | None = None) -> RunSummary:
+def run_resolution(db: Session, *, auto: bool = True, llm: LLMClient | None = None, owner_id: int | None = None) -> RunSummary:
     """Merge the safe pairs, and record the unsure ones as suggestions. Safe to run again at any time."""
     summary = RunSummary()
     for _ in range(10):  # merging can create new safe pairs ("Acme" -> "Acme Corp" -> ...); stop when nothing changes
-        infos = load_infos(db)
+        infos = load_infos(db, owner_id)
         rejected = {tuple(sorted((s.entity_a_id, s.entity_b_id))) for s in
-                    db.execute(select(MergeSuggestion).where(MergeSuggestion.status == SuggestionStatus.REJECTED)).scalars()}
+                    db.execute(select(MergeSuggestion).where(MergeSuggestion.owner_id == owner_id, MergeSuggestion.status == SuggestionStatus.REJECTED)).scalars()}
         decisions = evaluate(infos, rejected)
         summary.blocked = sum(1 for d in decisions.values() if d.kind == "never")
         autos = sorted(((p, d) for p, d in decisions.items() if d.kind == "auto"), key=lambda t: -t[1].score)
@@ -517,7 +518,7 @@ def run_resolution(db: Session, *, auto: bool = True, llm: LLMClient | None = No
         for (x, y), d in autos:
             keep, absorb = choose_keep(infos[x], infos[y])
             try:
-                rec = merge_entities(db, keep.id, absorb.id, "auto", d.reasons)
+                rec = merge_entities(db, keep.id, absorb.id, "auto", d.reasons, owner_id=owner_id)
             except MergeError:  # one of them was merged away earlier in this pass; the next pass pairs up what is left
                 continue
             changed = True
@@ -526,12 +527,12 @@ def run_resolution(db: Session, *, auto: bool = True, llm: LLMClient | None = No
         if not changed:
             break
 
-    infos = load_infos(db)
+    infos = load_infos(db, owner_id)
     rejected = {tuple(sorted((s.entity_a_id, s.entity_b_id))) for s in
-                db.execute(select(MergeSuggestion).where(MergeSuggestion.status == SuggestionStatus.REJECTED)).scalars()}
+                db.execute(select(MergeSuggestion).where(MergeSuggestion.owner_id == owner_id, MergeSuggestion.status == SuggestionStatus.REJECTED)).scalars()}
     decisions = {p: d for p, d in evaluate(infos, rejected).items() if d.kind == "suggest"}
     existing = {(s.entity_a_id, s.entity_b_id): s for s in
-                db.execute(select(MergeSuggestion).where(MergeSuggestion.status == SuggestionStatus.PENDING)).scalars()}
+                db.execute(select(MergeSuggestion).where(MergeSuggestion.owner_id == owner_id, MergeSuggestion.status == SuggestionStatus.PENDING)).scalars()}
     for pair, d in decisions.items():
         score, verdict = d.score, None
         row = existing.get(pair)
@@ -548,7 +549,7 @@ def run_resolution(db: Session, *, auto: bool = True, llm: LLMClient | None = No
                 summary.suggestions_dropped += 1
             continue
         if row is None:
-            db.add(MergeSuggestion(entity_a_id=pair[0], entity_b_id=pair[1], score=round(score, 3), reasons=d.reasons, llm_verdict=verdict))
+            db.add(MergeSuggestion(owner_id=owner_id, entity_a_id=pair[0], entity_b_id=pair[1], score=round(score, 3), reasons=d.reasons, llm_verdict=verdict))
             summary.suggestions_new += 1
         else:
             row.score, row.reasons, row.llm_verdict = round(score, 3), d.reasons, verdict
@@ -561,29 +562,29 @@ def run_resolution(db: Session, *, auto: bool = True, llm: LLMClient | None = No
     return summary
 
 
-def accept_suggestion(db: Session, suggestion_id: str, keep_id: str | None = None) -> MergeRecord:
+def accept_suggestion(db: Session, suggestion_id: str, keep_id: str | None = None, owner_id: int | None = None) -> MergeRecord:
     s = db.get(MergeSuggestion, suggestion_id)
-    if s is None:
+    if s is None or s.owner_id != owner_id:
         raise MergeError("Suggestion not found")
     if s.status != SuggestionStatus.PENDING:
         raise MergeError(f"This suggestion was already {s.status.value}")
     if keep_id not in (None, s.entity_a_id, s.entity_b_id):
         raise MergeError("keep_id must be one of the two entities")
-    infos = load_infos(db)
+    infos = load_infos(db, owner_id)
     a, b = infos.get(s.entity_a_id), infos.get(s.entity_b_id)
     if a is None or b is None:
         raise MergeError("One of the entities no longer exists")
     keep, absorb = choose_keep(a, b) if keep_id is None else ((a, b) if keep_id == a.id else (b, a))
-    rec = merge_entities(db, keep.id, absorb.id, "suggestion", s.reasons)
+    rec = merge_entities(db, keep.id, absorb.id, "suggestion", s.reasons, owner_id=owner_id)
     s = db.get(MergeSuggestion, suggestion_id)
     if s is not None:  # the merge deleted suggestions of the absorbed entity, including this one
         s.status, s.decided_at = SuggestionStatus.ACCEPTED, _now()
     return rec
 
 
-def reject_suggestion(db: Session, suggestion_id: str) -> None:
+def reject_suggestion(db: Session, suggestion_id: str, owner_id: int | None = None) -> None:
     s = db.get(MergeSuggestion, suggestion_id)
-    if s is None:
+    if s is None or s.owner_id != owner_id:
         raise MergeError("Suggestion not found")
     if s.status != SuggestionStatus.PENDING:
         raise MergeError(f"This suggestion was already {s.status.value}")
@@ -591,6 +592,6 @@ def reject_suggestion(db: Session, suggestion_id: str) -> None:
     db.flush()
 
 
-def find_by_alias(db: Session, key: str) -> Entity | None:
-    row = db.execute(select(EntityAlias).where(EntityAlias.key == key)).scalar_one_or_none()
+def find_by_alias(db: Session, key: str, owner_id: int | None = None) -> Entity | None:
+    row = db.execute(select(EntityAlias).where(EntityAlias.owner_id == owner_id, EntityAlias.key == key)).scalar_one_or_none()
     return db.get(Entity, row.entity_id) if row else None

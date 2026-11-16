@@ -220,17 +220,17 @@ def gather_graph(db: Session, index: gq.GraphIndex, question: str, llm: LLMClien
 
 
 def gather(db: Session, question: str, mode: str, llm: LLMClient, embedder: Embedder | None, settings: Settings,
-           document_id: str | None) -> Evidence:
+           document_id: str | None, owner_id: int | None = None) -> Evidence:
     if mode == "vector":
         if embedder is None:
             raise EmbeddingError("Passage search needs an embedding model")
-        chunks = top_chunks(db, embedder, question, settings.ask_top_chunks, document_id)
+        chunks = top_chunks(db, embedder, question, settings.ask_top_chunks, document_id, owner_id=owner_id)
         return Evidence(passages=chunks, reasoning={"seeds": [], "plan": None, "steps": [], "paths": [], "fallback": None})
-    index = gq.GraphIndex(db, document_id)
+    index = gq.GraphIndex(db, document_id, owner_id=owner_id)
     ev = gather_graph(db, index, question, llm, embedder, settings, use_plan=mode in ("graph", "hybrid"))
     if mode == "hybrid" and embedder is not None:
         try:
-            ev.passages = top_chunks(db, embedder, question, settings.ask_top_chunks, document_id)
+            ev.passages = top_chunks(db, embedder, question, settings.ask_top_chunks, document_id, owner_id=owner_id)
         except EmbeddingError as exc:
             ev.reasoning["passages_skipped"] = str(exc)
     return ev
@@ -277,11 +277,11 @@ def answer_from(llm: LLMClient, prompt: str) -> dict:
 
 
 def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embedder: Embedder | None, settings: Settings,
-        document_id: str | None = None) -> dict:
+        document_id: str | None = None, owner_id: int | None = None) -> dict:
     question = question.strip()
     mode_used = "graph" if mode == "auto" else mode
     t0 = time.time()
-    ev = gather(db, question, mode_used, llm, embedder, settings, document_id)
+    ev = gather(db, question, mode_used, llm, embedder, settings, document_id, owner_id)
     t1 = time.time()
     doc_ids = {d for f in ev.facts for d in f.docs} | {c.document_id for c, _ in ev.passages}
     titles = sorted(t for (t,) in db.execute(select(Document.title).where(Document.id.in_(doc_ids)))) if doc_ids else []

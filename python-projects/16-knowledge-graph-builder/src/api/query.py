@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.api.deps import get_owner
 from src.core.config import get_settings
 from src.core.database import get_db
 from src.models.embedding import Embedding
@@ -23,17 +24,19 @@ class AskIn(BaseModel):
 
 
 @router.post("/ask")
-def ask(body: AskIn, db: Session = Depends(get_db)):
+def ask(body: AskIn, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     if body.mode not in ask_service.MODES:
         raise HTTPException(422, f"mode must be one of: {', '.join(ask_service.MODES)}")
-    if body.document_id and db.get(Document, body.document_id) is None:
-        raise HTTPException(404, "Document not found")
+    if body.document_id:
+        doc = db.get(Document, body.document_id)
+        if doc is None or doc.owner_id != owner:
+            raise HTTPException(404, "Document not found")
     settings = get_settings()
     try:
         llm = get_llm(settings)
         embedder = get_embedder(settings)
         result = ask_service.ask(db, body.question, mode=body.mode, llm=llm, embedder=embedder, settings=settings,
-                                 document_id=body.document_id)
+                                 document_id=body.document_id, owner_id=owner)
         db.commit()  # fact vectors made on the way are kept
     except (LLMError, EmbeddingError) as exc:
         db.rollback()
@@ -42,9 +45,9 @@ def ask(body: AskIn, db: Session = Depends(get_db)):
 
 
 @router.get("/query/link")
-def link(q: str = Query(min_length=1), db: Session = Depends(get_db)):
+def link(q: str = Query(min_length=1), db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     """Which entities does this text name? (what a question is matched to)"""
-    index = gq.GraphIndex(db)
+    index = gq.GraphIndex(db, owner_id=owner)
     return {"entities": [{"entity_id": s.entity_id, "name": s.name, "how": s.how, "matched": s.matched,
                           "confidence": s.confidence, "also_could_be": s.alternatives} for s in index.link(q)]}
 
@@ -60,9 +63,9 @@ def _entity(index: gq.GraphIndex, ref: str):
 
 @router.get("/query/path")
 def path(source: str = Query(alias="from"), target: str = Query(alias="to"), max_hops: int = Query(4, ge=1, le=6),
-         limit: int = Query(3, ge=1, le=10), db: Session = Depends(get_db)):
+         limit: int = Query(3, ge=1, le=10), db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     """The shortest chains of facts between two entities (ids or names); no language model involved"""
-    index = gq.GraphIndex(db)
+    index = gq.GraphIndex(db, owner_id=owner)
     a, b = _entity(index, source), _entity(index, target)
     chains = index.paths(a, b, max_hops, limit)
     return {"from": index.name(a), "to": index.name(b),
@@ -81,10 +84,10 @@ class ChainIn(BaseModel):
 
 
 @router.post("/query/chain")
-def chain(body: ChainIn, db: Session = Depends(get_db)):
+def chain(body: ChainIn, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     """Follow a chain of relations from an entity: [{relation: 'founded', direction: 'in'}, ...]. No language model involved."""
     settings = get_settings()
-    index = gq.GraphIndex(db)
+    index = gq.GraphIndex(db, owner_id=owner)
     start = _entity(index, body.start)
     try:
         matcher = gq.PredicateMatcher(get_embedder(settings), [f.predicate for f in index.facts.values()])
@@ -98,34 +101,39 @@ def chain(body: ChainIn, db: Session = Depends(get_db)):
 
 
 @router.get("/index/status")
-def index_status(db: Session = Depends(get_db)):
+def index_status(db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     settings = get_settings()
     model = get_embedder(settings).name
-    chunks = db.scalar(select(func.count()).select_from(Chunk)) or 0
-    indexed = db.scalar(select(func.count()).select_from(Embedding).where(Embedding.model == model, Embedding.chunk_id.is_not(None))) or 0
-    facts = db.scalar(select(func.count()).select_from(Fact)) or 0
-    f_indexed = db.scalar(select(func.count()).select_from(Embedding).where(Embedding.model == model, Embedding.fact_id.is_not(None))) or 0
+    mine = select(Chunk.id).join(Document, Document.id == Chunk.document_id).where(Document.owner_id == owner)
+    chunks = db.scalar(select(func.count()).select_from(Chunk).join(Document, Document.id == Chunk.document_id).where(Document.owner_id == owner)) or 0
+    indexed = db.scalar(select(func.count()).select_from(Embedding).where(Embedding.model == model, Embedding.chunk_id.in_(mine))) or 0
+    facts = db.scalar(select(func.count()).select_from(Fact).where(Fact.owner_id == owner)) or 0
+    f_indexed = db.scalar(select(func.count()).select_from(Embedding).join(Fact, Fact.id == Embedding.fact_id)
+                          .where(Embedding.model == model, Fact.owner_id == owner)) or 0
     return {"model": model, "passages": chunks, "passages_indexed": indexed, "facts": facts, "facts_indexed": f_indexed}
 
 
 @router.post("/index/rebuild")
-def index_rebuild(db: Session = Depends(get_db)):
-    """Embed every passage and fact that has no vector yet (after a change of embedding model, or for old documents)"""
+def index_rebuild(db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    """Embed every passage and fact of yours that has no vector yet (after a change of embedding model, or for old documents)"""
     from src.services import pipeline
     settings = get_settings()
-    if not pipeline._PROCESS_LOCK.acquire(blocking=False):
+    lock = pipeline.owner_lock(owner)
+    if not lock.acquire(blocking=False):
         raise HTTPException(409, "A document is being read. Try again when it finishes")
     try:
         embedder = get_embedder(settings)
-        added_chunks = ensure_chunk_embeddings(db, embedder)
-        facts = db.execute(select(Fact)).scalars().all()
-        before = db.scalar(select(func.count()).select_from(Embedding).where(Embedding.fact_id.is_not(None), Embedding.model == embedder.name)) or 0
+        added_chunks = ensure_chunk_embeddings(db, embedder, owner_id=owner)
+        facts = db.execute(select(Fact).where(Fact.owner_id == owner)).scalars().all()
+        count = lambda: db.scalar(select(func.count()).select_from(Embedding).join(Fact, Fact.id == Embedding.fact_id)  # noqa: E731
+                                  .where(Embedding.model == embedder.name, Fact.owner_id == owner)) or 0
+        before = count()
         ensure_fact_embeddings(db, embedder, facts)
         db.commit()
-        after = db.scalar(select(func.count()).select_from(Embedding).where(Embedding.fact_id.is_not(None), Embedding.model == embedder.name)) or 0
+        after = count()
     except EmbeddingError as exc:
         db.rollback()
         raise HTTPException(503, str(exc))
     finally:
-        pipeline._PROCESS_LOCK.release()
+        lock.release()
     return {"model": embedder.name, "passages_added": added_chunks, "facts_added": after - before}
