@@ -2,6 +2,7 @@
 import logging
 import threading
 from collections import Counter
+from typing import Callable
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.core import database
 from src.core.config import Settings, get_settings
 from src.models.graph import Chunk, Document, DocumentStatus, Entity, Fact, FactSource
+from src.services.cancel import JobCancelled
 from src.services.chunker import chunk_text
 from src.services.embedding import Embedder, EmbeddingError, ensure_chunk_embeddings, get_embedder
 from src.services.extraction import ExtractedFact, extract_chunk
@@ -113,27 +115,49 @@ def clear_analysis(db: Session, doc: Document) -> None:
 
 
 def process_document(document_id: str, llm: LLMClient | None = None, settings: Settings | None = None,
-                     verify: bool | None = None) -> None:
-    """Read one document into its owner's graph. Never raises: problems end up in the document's status and error."""
+                     verify: bool | None = None, checkpoint: Callable[[], None] | None = None) -> str:
+    """Read one document into its owner's graph. Never raises: problems end up in the document's status and error.
+
+    `checkpoint` is called between the steps (before every passage); it raises JobCancelled to stop the work. A stopped
+    document keeps nothing it had read so far. Returns what happened: completed, failed, cancelled, shutdown, lost,
+    deleted or missing."""
     settings = settings or get_settings()
     with database.SessionLocal() as probe:
         doc = probe.get(Document, document_id)
         if doc is None:
-            return
+            return "missing"
         owner_id = doc.owner_id
     with owner_lock(owner_id):
         db = database.SessionLocal()
         try:
             doc = db.get(Document, document_id)
             if doc is None:
-                return
-            _run(db, doc, llm, settings, settings.verify_facts if verify is None else verify)
+                return "missing"
+            return _run(db, doc, llm, settings, settings.verify_facts if verify is None else verify, checkpoint or (lambda: None))
+        except JobCancelled as stop:
+            db.rollback()
+            _undo_partial(db, document_id, stop.reason)
+            return stop.reason
         except Exception:  # last resort: never leave a document stuck in "processing"
             log.exception("Unexpected failure while processing document %s", document_id)
             db.rollback()
             _fail(db, document_id, "Unexpected error while reading the document (see the server log)")
+            return "failed"
         finally:
             db.close()
+
+
+def _undo_partial(db: Session, document_id: str, reason: str) -> None:
+    """A stopped read leaves nothing behind. A cancelled document is marked as such; one stopped by a shutdown waits to run again."""
+    doc = db.get(Document, document_id)
+    if doc is None:
+        return
+    clear_analysis(db, doc)
+    if reason == "cancelled":
+        doc.status, doc.error, doc.finished_at = DocumentStatus.FAILED, "Cancelled", _now()
+    else:
+        doc.status, doc.error, doc.finished_at = DocumentStatus.PENDING, None, None
+    db.commit()
 
 
 def _fail(db: Session, document_id: str, message: str) -> None:
@@ -143,12 +167,13 @@ def _fail(db: Session, document_id: str, message: str) -> None:
         db.commit()
 
 
-def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, verify: bool) -> None:
+def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, verify: bool, checkpoint: Callable[[], None]) -> str:
     try:
         llm = llm or get_llm(settings)
     except LLMError as exc:
         _fail(db, doc.id, str(exc))
-        return
+        return "failed"
+    checkpoint()
     clear_analysis(db, doc)
     doc.status, doc.model, doc.finished_at = DocumentStatus.PROCESSING, llm.name, None
     chunks = chunk_text(doc.text, settings.chunk_chars, settings.chunk_overlap_chars)
@@ -159,12 +184,13 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
 
     totals, rejected, adjusted = Counter(), Counter(), Counter()
     for row in rows:
+        checkpoint()
         try:
-            result = extract_chunk(llm, row.text, verify, gleaning_passes=settings.gleaning_passes)
+            result = extract_chunk(llm, row.text, verify, gleaning_passes=settings.gleaning_passes, checkpoint=checkpoint)
         except LLMError as exc:  # model unreachable / timed out / unknown model: stop and say why
             db.rollback()
             _fail(db, doc.id, str(exc))
-            return
+            return "failed"
         totals["candidates"] += result.candidates
         rejected.update(result.rejected)
         adjusted.update(result.adjusted)
@@ -181,6 +207,7 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
     doc.status, doc.finished_at = DocumentStatus.COMPLETED, _now()
     doc.stats = {**totals, "rejected": dict(rejected), "adjusted": dict(adjusted)}
     db.commit()
+    checkpoint()
     if settings.index_chunks:
         embedder = get_embedder(settings)
         if embedder is not None:
@@ -191,6 +218,7 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
                 db.rollback()
                 doc.stats = {**doc.stats, "embedding_error": str(exc)}
                 db.commit()
+    checkpoint()
     if settings.auto_resolve:
         try:
             summary = run_resolution(db, auto=True, owner_id=doc.owner_id)
@@ -200,13 +228,4 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
         except Exception:  # resolution is a bonus step: the document is already read and stored
             log.exception("Entity resolution failed after document %s", doc.id)
             db.rollback()
-
-
-def recover_interrupted() -> int:
-    """After a restart: documents left 'processing' (or 'pending') were cut off; mark them so they can be run again"""
-    with database.session_scope() as db:
-        rows = db.execute(select(Document).where(Document.status.in_([DocumentStatus.PROCESSING, DocumentStatus.PENDING]))).scalars().all()
-        for doc in rows:
-            doc.status, doc.finished_at = DocumentStatus.FAILED, _now()
-            doc.error = "Interrupted by a server restart. Use 'Read again' to process it."
-        return len(rows)
+    return "completed"

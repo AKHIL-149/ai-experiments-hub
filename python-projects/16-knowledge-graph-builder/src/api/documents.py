@@ -9,13 +9,28 @@ from src.core.auth import current_caller
 from src.core.config import get_settings
 from src.core.database import get_db
 from src.models.graph import Document, DocumentStatus
-from src.services import pipeline
+from src.models.job import ACTIVE, Job
+from src.services import job_queue, pipeline
 from src.services.readers import ReadError, clean_text, read_bytes
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
-def document_to_dict(d: Document) -> dict:
+def job_to_dict(j: Job | None, positions: dict | None = None) -> dict | None:
+    if j is None:
+        return None
+    return {"id": j.id, "status": j.status, "attempts": j.attempts, "max_attempts": j.max_attempts, "error": j.error,
+            "cancel_requested": bool(j.cancel_requested), "position": (positions or {}).get(j.id),
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+            "started_at": j.started_at.isoformat() if j.started_at else None,
+            "finished_at": j.finished_at.isoformat() if j.finished_at else None}
+
+
+def latest_job(db: Session, document_id: str) -> Job | None:
+    return db.execute(select(Job).where(Job.document_id == document_id).order_by(Job.created_at.desc())).scalars().first()
+
+
+def document_to_dict(d: Document, job: Job | None = None, positions: dict | None = None) -> dict:
     return {
         "id": d.id, "title": d.title, "filename": d.filename, "status": d.status.value, "error": d.error,
         "char_count": d.char_count, "chunk_count": d.chunk_count, "chunks_done": d.chunks_done,
@@ -23,6 +38,7 @@ def document_to_dict(d: Document) -> dict:
         "stats": d.stats or {}, "model": d.model,
         "created_at": d.created_at.isoformat() if d.created_at else None,
         "finished_at": d.finished_at.isoformat() if d.finished_at else None,
+        "job": job_to_dict(job, positions),
     }
 
 
@@ -45,9 +61,16 @@ def _create(db: Session, bg: BackgroundTasks, title: str, filename: str | None, 
         raise HTTPException(413, f"The text has {len(text):,} characters; the limit is {settings.max_document_chars:,}")
     doc = Document(owner_id=owner, title=title.strip()[:300], filename=filename, text=text, char_count=len(text))
     db.add(doc)
+    db.flush()
+    try:
+        job, _ = job_queue.enqueue(db, doc)
+    except job_queue.QueueFull as exc:
+        db.rollback()
+        raise HTTPException(429, str(exc))
     db.commit()
-    bg.add_task(pipeline.process_document, doc.id)
-    return document_to_dict(doc)
+    out = document_to_dict(doc, job, job_queue.queue_positions(db))
+    job_queue.notify()
+    return out
 
 
 @router.post("", status_code=202)
@@ -71,7 +94,8 @@ def add_text(body: TextIn, bg: BackgroundTasks, db: Session = Depends(get_db), o
 @router.get("")
 def list_documents(db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     rows = db.execute(select(Document).where(Document.owner_id == owner).order_by(Document.created_at.desc())).scalars().all()
-    return {"documents": [document_to_dict(d) for d in rows]}
+    positions = job_queue.queue_positions(db)
+    return {"documents": [document_to_dict(d, latest_job(db, d.id), positions) for d in rows]}
 
 
 def _get(db: Session, document_id: str, owner: int | None) -> Document:
@@ -83,24 +107,32 @@ def _get(db: Session, document_id: str, owner: int | None) -> Document:
 
 @router.get("/{document_id}")
 def get_document(document_id: str, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
-    return document_to_dict(_get(db, document_id, owner))
+    doc = _get(db, document_id, owner)
+    return document_to_dict(doc, latest_job(db, doc.id), job_queue.queue_positions(db))
 
 
 @router.post("/{document_id}/reprocess", status_code=202)
 def reprocess(document_id: str, bg: BackgroundTasks, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     doc = _get(db, document_id, owner)
-    if doc.status in (DocumentStatus.PROCESSING, DocumentStatus.PENDING):
-        raise HTTPException(409, "The document is already being read")
-    doc.status, doc.error = DocumentStatus.PENDING, None
+    if doc.status in (DocumentStatus.PROCESSING, DocumentStatus.PENDING) or db.execute(
+            select(Job.id).where(Job.document_id == doc.id, Job.status.in_(ACTIVE))).first():
+        raise HTTPException(409, "The document is already waiting to be read or being read")
+    try:
+        job, _ = job_queue.enqueue(db, doc)
+    except job_queue.QueueFull as exc:
+        db.rollback()
+        raise HTTPException(429, str(exc))
     db.commit()
-    bg.add_task(pipeline.process_document, doc.id)
-    return document_to_dict(doc)
+    out = document_to_dict(doc, job, job_queue.queue_positions(db))
+    job_queue.notify()
+    return out
 
 
 @router.delete("/{document_id}", status_code=204)
 def delete_document(document_id: str, db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
     doc = _get(db, document_id, owner)
-    if doc.status in (DocumentStatus.PROCESSING, DocumentStatus.PENDING):
-        raise HTTPException(409, "The document is being read. Wait until it finishes, then delete it")
+    if doc.status in (DocumentStatus.PROCESSING, DocumentStatus.PENDING) or db.execute(
+            select(Job.id).where(Job.document_id == doc.id, Job.status.in_(ACTIVE))).first():
+        raise HTTPException(409, "The document is waiting or being read. Cancel it (or wait until it finishes), then delete it")
     pipeline.delete_document(db, doc)
     db.commit()
