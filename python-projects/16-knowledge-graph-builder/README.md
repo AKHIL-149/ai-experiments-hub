@@ -4,14 +4,14 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 and will answer multi-hop questions over it and show it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 to 3 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG), and step 4 is half built: accounts and private graphs are done, the background job queue is next.** The rest is not built yet.
+**Status: steps 1 to 4 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue).** The rest is not built yet.
 
 | Step | What | State |
 |---|---|---|
 | 1 | Extraction and graph store | done |
 | 2 | Entity resolution ("Acme Corp" = "Acme Inc." = "ACME") | done |
 | 3 | Queries and graph-RAG (multi-hop questions with cited sources) | done |
-| 4 | Accounts and background job queue (pattern from project 15) | accounts done, job queue next |
+| 4 | Accounts and background job queue (pattern from project 15) | done |
 | 5 | Visual explorer (React + D3.js, "Paper Light" theme) | not started |
 | 6 | Temporal facts ("who was CTO in 2021?") | not started |
 | 7 | Conflict detection and fact checking | not started |
@@ -183,13 +183,38 @@ and every endpoint and every query is limited to the caller's own rows.
 
 Tested by signing in as two accounts and trying every endpoint with the other's ids, names and documents (`tests/test_isolation.py`), and by breaking every owner check in the code one at a time (72 of them): the tests caught 62 directly; the other 10 are second layers that another filter already covers (for example, facts are filtered by owner and so are entities, so removing either alone changes nothing).
 
+## Background jobs (step 4)
+
+Uploading a document does not read it in the request. It adds a **job** (a row in `jobs`) and returns at once with the job's place in the queue;
+worker threads read documents one after another (`MAX_CONCURRENT_DOCUMENTS`, default 1: a local model answers one request at a time).
+
+- **Fair between accounts.** Round robin: the account served least recently goes first, and an account never has two documents read at once.
+  Ann uploads 3 documents, then Bob 2: they are read Ann, Bob, Ann, Bob, Ann (observed live). My first ordering, copied from project 15, let an
+  account with a backlog keep jumping ahead of newer accounts (its next job is always "first in its own line" and older); the tests found that.
+- **Limits.** An account may have `MAX_QUEUED_JOBS_PER_USER` (10) waiting or running jobs; more answers HTTP 429.
+- **See and cancel:** `GET /api/jobs` (`?status=active|queued|running|completed|failed|cancelled`), `GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel`.
+  Every document also carries its latest `job` (status, place in the queue, attempts). Cancelling a waiting job is immediate; a running one stops before its next model call and
+  leaves nothing behind (no half-read facts). Reading again (`POST /api/documents/{id}/reprocess`) queues a new job. A document that is waiting or being read cannot be deleted.
+- **Survives restarts.** Jobs are rows, so waiting jobs are still waiting after a restart. A running job beats a heartbeat from its own thread every 10 seconds (also during a long model call);
+  one whose heartbeat is older than `JOB_STALE_SECONDS` (45) is put back in the queue, up to `JOB_MAX_ATTEMPTS` (2) tries, then marked failed with the reason. On a normal stop (SIGTERM) a running job is handed
+  back to the queue and the try is not counted; documents left "pending" or "processing" with no job by an older version are marked interrupted at startup.
+- **A model call is now capped** (`LLM_MAX_TOKENS`, 3072; the double-check 48). The live run of a long passage showed why: one generation ran past the 300 second timeout and the read failed. A reply cut off by the cap keeps every complete fact.
+- Finished jobs older than 30 days are forgotten.
+
+Measured live (llama3.1:8b, two accounts, real worker threads): five documents interleaved Ann, Bob, Ann, Bob, Ann; a cancel during a long passage took 55 seconds to take effect (one model call; before the fix a call could run for 5+ minutes);
+`kill -9` of the server in the middle of a read was recovered after a restart (the job was re-queued by the reaper and read again, attempts 2, a heartbeat window of 20 seconds in that test); SIGTERM handed the job back in about 7 seconds with the try not counted.
+
+Limits: one server process is the tested setup (the claiming is safe across processes, but I did not run two); a read cannot be interrupted in the middle of a model call, so cancel and shutdown wait for the current call (up to the call's cap, about a minute);
+a very long passage of mixed content can take minutes to read (the model writes many facts and each is double-checked).
+
 ## API
 
 | Endpoint | |
 |---|---|
-| `POST /api/documents` (file) / `POST /api/documents/text` | add a document, read in the background |
+| `POST /api/documents` (file) / `POST /api/documents/text` | add a document; a job reads it in the background |
 | `GET /api/documents`, `GET /api/documents/{id}` | status, progress, stats, error |
-| `POST /api/documents/{id}/reprocess` | read again (replaces what was read before) |
+| `POST /api/documents/{id}/reprocess` | read again (a new job; replaces what was read before) |
+| `GET /api/jobs`, `GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel` | your jobs, their place in the queue, cancelling |
 | `DELETE /api/documents/{id}` | remove it and every fact only it supported |
 | `GET /api/graph?document_id=&type=&limit=` | the most connected `limit` entities and links between them |
 | `GET /api/graph/stats` | counts by type, top predicates |
@@ -206,13 +231,13 @@ Tested by signing in as two accounts and trying every endpoint with the other's 
 | `GET /api/index/status`, `POST /api/index/rebuild` | passage and fact embeddings |
 | `GET /api/health` | whether the configured model is reachable and installed |
 
-A document left "processing" by a restart is marked failed with a reason and can be read again. If the model is not
+If the model is not
 running, the document fails with "Cannot reach Ollama ... (ollama serve)" instead of hanging.
 
 ## Settings (`.env`)
 
 See `.env.template`. The ones that matter: `LLM_PROVIDER` (ollama, anthropic, openai), `OLLAMA_MODEL`, `VERIFY_FACTS`,
-`GLEANING_PASSES`, `AUTO_RESOLVE`, `RESOLUTION_USE_LLM`, `EMBEDDING_MODEL`, `INDEX_CHUNKS`, `ASK_MAX_FACTS`, `ASK_TOP_CHUNKS`, `ASK_MAX_HOPS`, `PREDICATE_THRESHOLD`, `CHUNK_CHARS`, `MAX_DOCUMENT_CHARS` (100,000), `MAX_UPLOAD_MB`. The Anthropic and OpenAI clients exist
+`GLEANING_PASSES`, `AUTO_RESOLVE`, `RESOLUTION_USE_LLM`, `MAX_CONCURRENT_DOCUMENTS`, `MAX_QUEUED_JOBS_PER_USER`, `JOB_STALE_SECONDS`, `LLM_MAX_TOKENS`, `EMBEDDING_MODEL`, `INDEX_CHUNKS`, `ASK_MAX_FACTS`, `ASK_TOP_CHUNKS`, `ASK_MAX_HOPS`, `PREDICATE_THRESHOLD`, `CHUNK_CHARS`, `MAX_DOCUMENT_CHARS` (100,000), `MAX_UPLOAD_MB`. The Anthropic and OpenAI clients exist
 but were **never run against the live services**.
 
 ## Measured accuracy
@@ -254,7 +279,7 @@ How much to trust these numbers:
   Lena Hartmann" read as Lena awarding it) and some plans written as "might buy" got through in the evaluation.
 - **Entity names are whatever the model wrote** (e.g. "journal Nature Photonics", "paper Computing Machinery and Intelligence"); resolution merges
   spellings of one name but does not clean up such prefixes.
-- **One document is read at a time** (a local model answers one request at a time). A real job queue comes in step 4.
+- **One document is read at a time by default** (a local model answers one request at a time); see Background jobs.
 - **Use HTTPS before exposing the server.** It speaks plain HTTP; sign-ins and passwords travel in the clear without a TLS proxy in front. Set `COOKIE_SECURE=true` once it is behind HTTPS. Registration is open by default (`ALLOW_REGISTRATION=false` closes it).
 - Dates are only recorded when the quote states them; "last year" or "since the merger" are not resolved.
 - English only (the prompts and the stop-word lists are English).
@@ -281,11 +306,13 @@ src/models/graph.py          Document, Chunk, Entity, Fact, FactSource
 src/models/resolution.py     EntityAlias, MergeSuggestion, MergeRecord
 src/models/embedding.py      Embedding (passage and fact vectors)
 src/models/user.py           User, UserSession
-alembic/                     migrations (0001 baseline of steps 1-3, 0002 accounts)
+src/models/job.py            Job
+alembic/                     migrations (0001 baseline of steps 1-3, 0002 accounts, 0003 jobs)
 src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), extraction (prompts + checks),
                              pipeline (document -> graph), resolution (merge/suggest/undo), graph_store (NetworkX views), text_utils,
-                             embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations)
-src/api/                     auth.py, deps.py, documents.py, graph.py, resolution.py, query.py
+                             embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations),
+                             job_queue (claiming, fair order, heartbeat, cancel, recovery), cancel
+src/api/                     auth.py, deps.py, documents.py, jobs.py, graph.py, resolution.py, query.py
 eval/                        labelled documents (docs/), gold.json, scoring, run_eval.py, rescore.py, saved results;
                              entities.json + run_resolution_eval.py for resolution;
                              qa/ (18 documents, two question sets, saved results) + run_qa_eval.py for questions
