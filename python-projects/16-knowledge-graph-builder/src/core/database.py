@@ -58,5 +58,7 @@ def session_scope():
 
 
 def init_db():
+    """Create or upgrade the tables (Alembic; see src/core/migrate.py)"""
     from src import models  # noqa: F401  (registers tables)
-    Base.metadata.create_all(bind=engine)
+    from src.core.migrate import upgrade_to_head
+    upgrade_to_head(engine)

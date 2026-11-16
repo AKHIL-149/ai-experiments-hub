@@ -27,9 +27,12 @@ class EntityAlias(Base):
     """Another way an entity's name was written. A later document using it lands on the same entity."""
     __tablename__ = "entity_aliases"
 
+    __table_args__ = (UniqueConstraint("owner_id", "key", name="uq_alias_owner_key"),)
+
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), index=True)
-    key: Mapped[str] = mapped_column(String(300), unique=True)
+    key: Mapped[str] = mapped_column(String(300))
     name: Mapped[str] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -39,6 +42,7 @@ class MergeSuggestion(Base):
     __table_args__ = (UniqueConstraint("entity_a_id", "entity_b_id", name="uq_merge_pair"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     entity_a_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), index=True)
     entity_b_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), index=True)
     score: Mapped[float] = mapped_column(Float)
@@ -54,6 +58,7 @@ class MergeRecord(Base):
     __tablename__ = "merge_records"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     keep_id: Mapped[str] = mapped_column(String(32), index=True)
     absorbed_id: Mapped[str] = mapped_column(String(32))
     keep_name: Mapped[str] = mapped_column(String(300))

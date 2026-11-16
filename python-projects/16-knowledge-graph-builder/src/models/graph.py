@@ -31,6 +31,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # None = no accounts (single-user mode)
     title: Mapped[str] = mapped_column(String(300))
     filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
     text: Mapped[str] = mapped_column(Text)
@@ -62,9 +63,10 @@ class Chunk(Base):
 
 class Entity(Base):
     __tablename__ = "entities"
-    __table_args__ = (UniqueConstraint("key", name="uq_entity_key"),)
+    __table_args__ = (UniqueConstraint("owner_id", "key", name="uq_entity_owner_key"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(300))  # display name (first form seen)
     key: Mapped[str] = mapped_column(String(300))  # normalised name used for exact matching (step 2 adds smarter matching)
     type: Mapped[str] = mapped_column(String(30), default="concept", index=True)
@@ -81,6 +83,7 @@ class Fact(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # the subject's owner
     subject_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"))
     predicate: Mapped[str] = mapped_column(String(80))
     object_id: Mapped[str] = mapped_column(String(32), ForeignKey("entities.id", ondelete="CASCADE"), nullable=True)
