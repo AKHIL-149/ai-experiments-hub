@@ -100,7 +100,7 @@ def plan_question(llm: LLMClient, question: str) -> Plan | None:
     """The model's chain of relations for the question; None when it did not give a usable one (bad output is retried once)"""
     for _ in range(2):
         try:
-            data = llm.generate_json(PLAN_SYSTEM, f"Q: {question}", PLAN_SCHEMA)
+            data = llm.generate_json(PLAN_SYSTEM, f"Q: {question}", PLAN_SCHEMA, max_tokens=384)
         except LLMBadOutput:
             continue
         start = [str(x).strip() for x in data.get("start", []) if isinstance(x, str) and x.strip()][:3]
@@ -266,7 +266,7 @@ def build_prompt(db: Session, question: str, ev: Evidence) -> tuple[str, dict[st
 def answer_from(llm: LLMClient, prompt: str) -> dict:
     for attempt in (1, 2):
         try:
-            data = llm.generate_json(ANSWER_SYSTEM, prompt, ANSWER_SCHEMA)
+            data = llm.generate_json(ANSWER_SYSTEM, prompt, ANSWER_SCHEMA, max_tokens=768)
             break
         except LLMBadOutput:
             if attempt == 2:

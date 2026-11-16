@@ -10,6 +10,7 @@ The model proposes (subject, predicate, object, dates, quote). Code then checks 
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Callable
 
 from src.models.graph import ENTITY_TYPES
 from src.services.chunker import sentence_spans
@@ -325,6 +326,9 @@ def stem_word(word: str) -> str:
     return word
 
 
+VERIFY_MAX_TOKENS = 48
+
+
 def verify_fact(llm: LLMClient, fact: ExtractedFact) -> str:
     """Second opinion on one fact from the model: 'supported' or 'unsupported' (anything odd counts as unsupported)"""
     prompt = (
@@ -335,7 +339,7 @@ def verify_fact(llm: LLMClient, fact: ExtractedFact) -> str:
     )
     for attempt in (1, 2):
         try:
-            answer = llm.generate_json(VERIFY_SYSTEM, prompt, VERIFY_SCHEMA).get("answer")
+            answer = llm.generate_json(VERIFY_SYSTEM, prompt, VERIFY_SCHEMA, max_tokens=VERIFY_MAX_TOKENS).get("answer")
             return "supported" if answer == "yes" else "unsupported"
         except LLMBadOutput:
             if attempt == 2:
@@ -343,10 +347,12 @@ def verify_fact(llm: LLMClient, fact: ExtractedFact) -> str:
     return "unsupported"
 
 
-def _ask(llm: LLMClient, prompt: str) -> tuple[list | None, str | None]:
+def _ask(llm: LLMClient, prompt: str, checkpoint: Callable[[], None] | None = None) -> tuple[list | None, str | None]:
     """One extraction call (bad JSON is retried once). Returns (raw relations, error message)."""
     err = None
     for _ in (1, 2):
+        if checkpoint:
+            checkpoint()
         try:
             data = llm.generate_json(EXTRACT_SYSTEM, prompt, RELATION_SCHEMA)
         except LLMBadOutput as exc:
@@ -365,7 +371,7 @@ def _found_list(facts: list[ExtractedFact]) -> str:
 
 
 def extract_chunk(llm: LLMClient, chunk: str, verify: bool = True, use_context: bool = True,
-                  gleaning_passes: int = 0) -> ChunkResult:
+                  gleaning_passes: int = 0, checkpoint: Callable[[], None] | None = None) -> ChunkResult:
     """Extract checked facts from one passage.
     Connection failures raise LLMError; bad output is retried once. A 'gleaning' pass shows the model what it
     found and asks for what it missed (small local models stop early)."""
@@ -401,7 +407,7 @@ def extract_chunk(llm: LLMClient, chunk: str, verify: bool = True, use_context: 
             candidates.append(fact)
 
     prompt = f"Passage:\n<<<\n{chunk}\n>>>"
-    raw_list, err = _ask(llm, prompt)
+    raw_list, err = _ask(llm, prompt, checkpoint)
     if raw_list is None:
         result.error = err
         return result
@@ -409,7 +415,7 @@ def extract_chunk(llm: LLMClient, chunk: str, verify: bool = True, use_context: 
     for _ in range(gleaning_passes):
         more, err = _ask(llm, prompt + f"\n\nFacts already found:\n{_found_list(candidates)}\n\n"
                          "Facts are often missed. List ONLY additional facts the passage states that are not in the list above "
-                         "(same rules). If nothing is missing, return an empty list.")
+                         "(same rules). If nothing is missing, return an empty list.", checkpoint)
         if more is None:  # a failed extra pass costs nothing already found
             result.rejected["gleaning_call_failed"] += 1
             break
@@ -429,6 +435,8 @@ def extract_chunk(llm: LLMClient, chunk: str, verify: bool = True, use_context: 
                 result.facts.append(fact)
                 result.adjusted["verified_by_wording"] += 1
                 continue
+            if checkpoint:
+                checkpoint()
             if verify_fact(llm, fact) != "supported":
                 result.rejected["verify_unsupported"] += 1
                 continue

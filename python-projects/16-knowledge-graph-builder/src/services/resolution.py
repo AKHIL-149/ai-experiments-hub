@@ -477,7 +477,7 @@ def judge_text(llm: LLMClient, a_name: str, a_type: str, a_facts: str, b_name: s
               "Do Entity 1 and Entity 2 refer to the same real-world thing? Different people, companies or products that "
               "merely share a word are NOT the same. Answer yes or no.")
     try:
-        answer = llm.generate_json(JUDGE_SYSTEM, prompt, JUDGE_SCHEMA).get("same")
+        answer = llm.generate_json(JUDGE_SYSTEM, prompt, JUDGE_SCHEMA, max_tokens=24).get("same")
     except (LLMBadOutput, LLMError):
         return None
     return answer if answer in ("yes", "no") else None
