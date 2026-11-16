@@ -4,14 +4,14 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 and will answer multi-hop questions over it and show it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 to 3 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG).** The rest is not built yet.
+**Status: steps 1 to 3 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG), and step 4 is half built: accounts and private graphs are done, the background job queue is next.** The rest is not built yet.
 
 | Step | What | State |
 |---|---|---|
 | 1 | Extraction and graph store | done |
 | 2 | Entity resolution ("Acme Corp" = "Acme Inc." = "ACME") | done |
 | 3 | Queries and graph-RAG (multi-hop questions with cited sources) | done |
-| 4 | Accounts and background job queue (pattern from project 15) | not started |
+| 4 | Accounts and background job queue (pattern from project 15) | accounts done, job queue next |
 | 5 | Visual explorer (React + D3.js, "Paper Light" theme) | not started |
 | 6 | Temporal facts ("who was CTO in 2021?") | not started |
 | 7 | Conflict detection and fact checking | not started |
@@ -25,7 +25,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | LLM for extraction | Local Ollama `llama3.1:8b` (the newest Llama that runs fast on 64 GB; Llama 4 Scout is 67 GB and does not fit, Llama 3.3 70B fits but is slow). Claude and OpenAI are switchable in settings |
 | Graph engine | NetworkX in memory, built from the database. No graph database server needed |
 | Neo4j / Memgraph | Export only (step 8). Neither is installed here, so the export will be checked for valid syntax but **not against a live database** |
-| Database | SQLite by default (any SQLAlchemy URL works). Tables are created at startup; migrations arrive with accounts in step 4 |
+| Database | SQLite by default (any SQLAlchemy URL works). Alembic migrations run at startup (`alembic/versions`); a database made by steps 1-3 is adopted and upgraded |
 | UI theme | "Paper Light" (background `#F7F6F2`, panels `#FFFFFF`, accent `#2F5FD0`; person `#2F5FD0`, organization `#0F9D8A`, place `#D9822B`, concept `#C2417C`) |
 
 ## Run it
@@ -39,10 +39,14 @@ python3 server.py            # http://127.0.0.1:8016  (API docs at /docs)
 ```
 
 ```bash
-curl -F "file=@report.pdf" localhost:8016/api/documents        # .txt .md .pdf .docx
-curl localhost:8016/api/documents/<id>                         # status, progress, stats
-curl localhost:8016/api/graph                                  # nodes + edges
+# sign in once (the cookie is kept in cookies.txt), then use it on every call
+curl -c cookies.txt -H 'Content-Type: application/json' -d '{"username":"ann","password":"correct horse"}' localhost:8016/api/auth/register
+curl -b cookies.txt -F "file=@report.pdf" localhost:8016/api/documents        # .txt .md .pdf .docx
+curl -b cookies.txt localhost:8016/api/documents/<id>                         # status, progress, stats
+curl -b cookies.txt localhost:8016/api/graph                                  # nodes + edges
 ```
+
+On your own machine you can skip sign-in with `REQUIRE_LOGIN=false` (everything then belongs to one local user).
 
 There is no UI yet (step 5): use `/docs` or curl.
 
@@ -162,6 +166,23 @@ What to take from it:
 - The answer is generated text: a citation proves the quote was offered to the model, not that the answer follows from it.
 - Questions about a scope other than one document or the whole graph are not supported.
 
+## Accounts (step 4)
+
+Every person has a private graph. Documents, entities, facts, aliases, merge suggestions and merge history belong to an account,
+and every endpoint and every query is limited to the caller's own rows.
+
+- **Sign-in** (`/api/auth/register`, `/login`, `/guest`, `/logout`, `/me`, `/config`): a random token in an HttpOnly, SameSite=Lax cookie (`kg_session`, `Secure` with `COOKIE_SECURE=true`). The database keeps only the SHA-256 of the token, so a leaked database holds nothing a browser can replay. Passwords are scrypt hashes; an unknown username and a wrong password take the same time and give the same answer.
+- **Guests** get a temporary account (24 hours, 3 documents by default) and can turn it into a real account later without losing their documents. Expired guests and everything they own are deleted (hourly, and at startup).
+- **The first real account adopts what was there before** (documents read before accounts existed have no owner). Guests never do.
+- **Another account's id answers 404**, exactly like an id that does not exist (a 403 would confirm that it is there). This holds for documents, entities, facts, merge suggestions, merge history, searches and chains; an entity of another account cannot be merged with one of yours even by id.
+- **A write from another website is refused** when the browser sends the cookie (`Origin`/`Referer` must be this site or in `ALLOWED_ORIGINS`). Scripts and curl send neither and pass.
+- **Throttles:** 8 wrong passwords per username and per address in 10 minutes, 20 new accounts or guests per address per hour (HTTP 429).
+- **Locks are per account:** a merge, undo, resolution run or index rebuild waits (HTTP 409) while one of the *same* account's documents is being read; other accounts are unaffected.
+- `GET /api/health` is public and says only that the server is up; the model's state is shown to signed-in callers.
+- There is no administrator: an account cannot see or change another's data, so there is nothing for one to do. Deleting an account (database level) deletes everything it owns.
+
+Tested by signing in as two accounts and trying every endpoint with the other's ids, names and documents (`tests/test_isolation.py`), and by breaking every owner check in the code one at a time (72 of them): the tests caught 62 directly; the other 10 are second layers that another filter already covers (for example, facts are filtered by owner and so are entities, so removing either alone changes nothing).
+
 ## API
 
 | Endpoint | |
@@ -234,14 +255,14 @@ How much to trust these numbers:
 - **Entity names are whatever the model wrote** (e.g. "journal Nature Photonics", "paper Computing Machinery and Intelligence"); resolution merges
   spellings of one name but does not clean up such prefixes.
 - **One document is read at a time** (a local model answers one request at a time). A real job queue comes in step 4.
-- **No accounts, no login yet.** The server binds 127.0.0.1 by default. Do not expose it before step 4.
+- **Use HTTPS before exposing the server.** It speaks plain HTTP; sign-ins and passwords travel in the clear without a TLS proxy in front. Set `COOKIE_SECURE=true` once it is behind HTTPS. Registration is open by default (`ALLOW_REGISTRATION=false` closes it).
 - Dates are only recorded when the quote states them; "last year" or "since the merger" are not resolved.
 - English only (the prompts and the stop-word lists are English).
 
 ## Tests
 
 ```bash
-python3 -m pytest                 # 412 tests, about 4 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 486 tests, about 4 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
@@ -255,14 +276,16 @@ rejected most sentences saying "Turing" for "Alan Turing", and a word-order chec
 
 ```
 server.py                    FastAPI app
-src/core/                    settings, database
+src/core/                    settings, database, migrate (Alembic), auth, login_gate
 src/models/graph.py          Document, Chunk, Entity, Fact, FactSource
 src/models/resolution.py     EntityAlias, MergeSuggestion, MergeRecord
 src/models/embedding.py      Embedding (passage and fact vectors)
+src/models/user.py           User, UserSession
+alembic/                     migrations (0001 baseline of steps 1-3, 0002 accounts)
 src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), extraction (prompts + checks),
                              pipeline (document -> graph), resolution (merge/suggest/undo), graph_store (NetworkX views), text_utils,
                              embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations)
-src/api/                     documents.py, graph.py, resolution.py, query.py
+src/api/                     auth.py, deps.py, documents.py, graph.py, resolution.py, query.py
 eval/                        labelled documents (docs/), gold.json, scoring, run_eval.py, rescore.py, saved results;
                              entities.json + run_resolution_eval.py for resolution;
                              qa/ (18 documents, two question sets, saved results) + run_qa_eval.py for questions
