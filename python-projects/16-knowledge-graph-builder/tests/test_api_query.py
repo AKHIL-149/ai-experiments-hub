@@ -135,11 +135,11 @@ def test_index_status_and_rebuild(client):
 
 
 def test_rebuild_waits_while_a_document_is_read_and_reports_an_embedding_outage(client, monkeypatch):
-    assert pipeline._PROCESS_LOCK.acquire(blocking=False)
+    assert pipeline.owner_lock(None).acquire(blocking=False)
     try:
         assert client.post("/api/index/rebuild").status_code == 409
     finally:
-        pipeline._PROCESS_LOCK.release()
+        pipeline.owner_lock(None).release()
 
     class Down(FakeEmbedder):
         def embed(self, texts, kind="document"):

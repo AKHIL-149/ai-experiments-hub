@@ -132,7 +132,7 @@ def test_undo_through_the_api(client):
 
 def test_writes_wait_while_a_document_is_being_read(client):
     ids, *_ = seed(client.factory, [("Acme", "organization"), ("Acme Corp", "organization")])
-    assert pipeline._PROCESS_LOCK.acquire(blocking=False)
+    assert pipeline.owner_lock(None).acquire(blocking=False)
     try:
         assert client.post("/api/resolution/run").status_code == 409
         assert client.post("/api/entities/merge", json={"keep_id": ids["Acme"], "absorb_id": ids["Acme Corp"]}).status_code == 409
@@ -141,7 +141,7 @@ def test_writes_wait_while_a_document_is_being_read(client):
         assert client.post("/api/resolution/merges/x/undo").status_code == 409
         assert client.get("/api/resolution/suggestions").status_code == 200   # reading is always fine
     finally:
-        pipeline._PROCESS_LOCK.release()
+        pipeline.owner_lock(None).release()
     assert client.post("/api/resolution/run").status_code == 200              # and the lock is free again afterwards
 
 

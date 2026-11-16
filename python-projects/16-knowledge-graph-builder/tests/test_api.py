@@ -85,10 +85,11 @@ def test_bad_uploads_are_refused_with_a_reason(client, name, data, status, fragm
 
 
 def test_size_limits(client, monkeypatch):
-    monkeypatch.setattr(config.get_settings(), "max_upload_mb", 1)
+    from src.api import documents as documents_api
+    monkeypatch.setattr(documents_api.get_settings(), "max_upload_mb", 1)
     r = client.post("/api/documents", files={"file": ("big.txt", b"a " * 600_000, "text/plain")})
     assert r.status_code == 413 and "1 MB" in r.json()["detail"]
-    monkeypatch.setattr(config.get_settings(), "max_document_chars", 100)
+    monkeypatch.setattr(documents_api.get_settings(), "max_document_chars", 100)
     r = client.post("/api/documents/text", json={"title": "x", "text": "word " * 100})
     assert r.status_code == 413
 

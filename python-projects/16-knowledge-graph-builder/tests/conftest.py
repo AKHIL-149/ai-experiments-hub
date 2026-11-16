@@ -187,3 +187,25 @@ def story(world):
     w.f_emp = world.fact(w.soro, "employs", value="40 people", title="d02")
     db.commit()
     return w
+
+
+def use_settings(monkeypatch, **overrides):
+    """Make the sign-in code (and anything else that asks) see these settings"""
+    from src.core.config import Settings
+    s = Settings(_env_file=None, **overrides)
+    for mod in ("src.core.auth", "src.core.login_gate", "src.api.auth", "src.api.documents"):
+        monkeypatch.setattr(f"{mod}.get_settings", lambda s=s: s)
+    return s
+
+
+@pytest.fixture(autouse=True)
+def single_user_mode(monkeypatch):
+    """Most tests run as the one local user (no sign-in); the accounts tests turn sign-in on"""
+    return use_settings(monkeypatch, require_login=False)
+
+
+@pytest.fixture(autouse=True)
+def fresh_throttles():
+    from src.api import auth as auth_api
+    for t in (auth_api.login_failures, auth_api.creations):
+        t.events.clear()
