@@ -7,3 +7,8 @@ data/uploads/
 __pycache__/
 .pytest_cache/
 *.log
+
+# the built frontend is committed (the server serves it; no Node needed to run the app)
+!frontend/dist/
+!frontend/dist/**
+frontend/node_modules/

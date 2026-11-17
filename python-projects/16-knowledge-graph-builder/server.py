@@ -14,6 +14,7 @@ from src.core.database import init_db
 from src.core.login_gate import LoginGateMiddleware
 from src.services.llm import llm_status
 from src.services import job_queue
+from src.web import mount_frontend
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("kg")
@@ -68,6 +69,9 @@ def health():
     if current_caller() is not None:
         out["llm"] = llm_status()
     return out
+
+
+mount_frontend(app)   # last: its catch-all route must come after every API route
 
 
 if __name__ == "__main__":
