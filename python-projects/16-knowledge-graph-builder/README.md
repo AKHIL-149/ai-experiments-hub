@@ -1,10 +1,10 @@
 # 16 - Knowledge Graph Builder & Query System
 
 Turns unstructured documents into a knowledge graph (entities, relationships, dates, and the exact quote behind every fact),
-and will answer multi-hop questions over it and show it in a visual explorer.
+answers multi-hop questions over it, and shows it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 to 4 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue).** The rest is not built yet.
+**Status: steps 1 to 5 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app).** The rest is not built yet.
 
 | Step | What | State |
 |---|---|---|
@@ -12,7 +12,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | 2 | Entity resolution ("Acme Corp" = "Acme Inc." = "ACME") | done |
 | 3 | Queries and graph-RAG (multi-hop questions with cited sources) | done |
 | 4 | Accounts and background job queue (pattern from project 15) | done |
-| 5 | Visual explorer (React + D3.js, "Paper Light" theme) | not started |
+| 5 | Visual explorer (React + D3.js, "Paper Light" theme) | done |
 | 6 | Temporal facts ("who was CTO in 2021?") | not started |
 | 7 | Conflict detection and fact checking | not started |
 | 8 | Export (Cypher, CSV, JSON) and final docs | not started |
@@ -21,7 +21,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
 | Topic | Decision |
 |---|---|
-| Language | Python backend (FastAPI), JavaScript frontend (React + D3.js, later) |
+| Language | Python backend (FastAPI), JavaScript frontend (React 19 + D3, built with Vite; the build is committed, so Node is only needed to change the UI) |
 | LLM for extraction | Local Ollama `llama3.1:8b` (the newest Llama that runs fast on 64 GB; Llama 4 Scout is 67 GB and does not fit, Llama 3.3 70B fits but is slow). Claude and OpenAI are switchable in settings |
 | Graph engine | NetworkX in memory, built from the database. No graph database server needed |
 | Neo4j / Memgraph | Export only (step 8). Neither is installed here, so the export will be checked for valid syntax but **not against a live database** |
@@ -35,7 +35,7 @@ cd python-projects/16-knowledge-graph-builder
 pip install -r requirements.txt
 ollama pull llama3.1:8b
 cp .env.template .env        # optional, everything has a default
-python3 server.py            # http://127.0.0.1:8016  (API docs at /docs)
+python3 server.py            # http://127.0.0.1:8016  (the web app; API docs at /docs)
 ```
 
 ```bash
@@ -48,7 +48,7 @@ curl -b cookies.txt localhost:8016/api/graph                                  # 
 
 On your own machine you can skip sign-in with `REQUIRE_LOGIN=false` (everything then belongs to one local user).
 
-There is no UI yet (step 5): use `/docs` or curl.
+The web app is at the same address (see Web app). Everything it does goes through the API below, so `/docs` and curl keep working.
 
 ## How a document becomes a graph
 
@@ -207,6 +207,36 @@ Measured live (llama3.1:8b, two accounts, real worker threads): five documents i
 Limits: one server process is the tested setup (the claiming is safe across processes, but I did not run two); a read cannot be interrupted in the middle of a model call, so cancel and shutdown wait for the current call (up to the call's cap, about a minute);
 a very long passage of mixed content can take minutes to read (the model writes many facts and each is double-checked).
 
+## Web app (step 5)
+
+Open `http://127.0.0.1:8016`. The server serves the built app from `frontend/dist`, so the sign-in cookie is same-origin (no CORS, no tokens in JavaScript).
+
+| Screen | What you can do |
+|---|---|
+| **Sign in** | sign in, create an account, or continue as a guest (the page says what a guest gets: temporary, a few documents). A guest sees how long is left and can create an account to keep the documents |
+| **Documents** | drop or choose files, or paste text; each card shows waiting / reading (passages done) / read / failed / cancelled, with the place in the queue; cancel, read again, delete (asks first), "View graph" for one document. Follows running jobs every 2 s |
+| **Graph** | the knowledge graph, coloured by type (Paper Light palette), arrows from subject to object. Drag to move, scroll to zoom, double-click (or press `E`) to bring in a node's neighbours. Click an entity for its facts (details, links from and to it, aliases), a line for the fact with every source quote and its passage. Search (what is on screen and the whole graph), filter by type and document, find the shortest path between two entities, merge two entities, ask about an entity, or switch to a **List** (tables of the same data, which is also the text version for screen readers) |
+| **Ask** | a question, a mode (graph / facts around / graph + passages / passages only) and a document to look in. "Compare with passage search" shows both answers side by side. Every citation shows its quote; "Show them in the graph" highlights the cited facts and dims the rest. "How this was answered" lists the entities found, the planned chain and each step |
+| **Review** | run the duplicate search (with or without the model's second opinion), merge a suggested pair keeping either name or mark it "different things", the merge history with Undo, and the pairs kept apart |
+
+How it is built: d3-force computes the layout, d3-zoom and d3-drag handle the pointer, and React draws the SVG (so labels, focus and clicks are ordinary DOM). Nodes keep their place when more of the graph is loaded. Screens are addressed by the URL fragment (`#/graph?entity=...`, `#/ask?q=...`), so reload, back and bookmarks work. Every graph node can be reached and operated with the keyboard (Tab, Enter or Space to select, `E` to expand).
+
+Security: the page is sent with a strict Content-Security-Policy (scripts only from this server, no inline script, no framing, no outside connections), `nosniff`, `X-Frame-Options: DENY`. Text from documents is only ever rendered as text (a document containing `<script>` is shown as that text). Assets are named by their content and cached for a year; the page itself is never cached. A missing `/assets/...` file is a 404, never the page.
+
+```bash
+# change the UI
+cd frontend
+npm install
+npm run dev        # http://127.0.0.1:5173, proxies /api to the server on 8016
+npm test           # 228 component and unit tests (jsdom)
+npm run build      # writes frontend/dist, which is committed: rebuild it after every change to frontend/src
+```
+
+Tested: 228 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
+Checked by hand in a browser against the real extracted documents (25 entities, 30 facts): signing up, the graph, an entity panel, and the question "In which city is the university attended by the founder of Soro Labs?" answered "Kellmar" with two cited quotes while passage search said "The documents do not say".
+
+Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; the UI has no temporal view, conflict view or export yet (steps 6 to 8); there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
+
 ## API
 
 | Endpoint | |
@@ -287,7 +317,7 @@ How much to trust these numbers:
 ## Tests
 
 ```bash
-python3 -m pytest                 # 486 tests, about 4 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 578 tests, about 20 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
@@ -313,6 +343,8 @@ src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), ex
                              embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations),
                              job_queue (claiming, fair order, heartbeat, cancel, recovery), cancel
 src/api/                     auth.py, deps.py, documents.py, jobs.py, graph.py, resolution.py, query.py
+src/web.py                   serves frontend/dist (page fallback, security headers, cached assets)
+frontend/                    React + D3 app: src/ (components, lib, router, api client), tests/ (vitest), dist/ (the committed build)
 eval/                        labelled documents (docs/), gold.json, scoring, run_eval.py, rescore.py, saved results;
                              entities.json + run_resolution_eval.py for resolution;
                              qa/ (18 documents, two question sets, saved results) + run_qa_eval.py for questions
