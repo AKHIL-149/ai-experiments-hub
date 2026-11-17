@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useAsync, useDebounced, useToast } from "../hooks";
 import { formatPeriod, plural } from "../lib/format";
+import { clampYear, timeSummary, validAt, yearOf } from "../lib/time";
 import { TYPE_ORDER, countByType, filterGraph, mergeGraph, pathHighlight, searchNodes, typeColor, typeLabel } from "../lib/graph";
 import EntityPanel from "./EntityPanel";
 import FactPanel from "./FactPanel";
@@ -44,6 +45,26 @@ function ListView({ graph, onSelectNode, onSelectEdge }) {
   );
 }
 
+/** "Any time", or one year to look at: facts dated outside it fade, the rest stay */
+function TimeControl({ at, setAt, span }) {
+  const has = span && span.first_year != null;
+  if (!has) return null;
+  const year = yearOf(at);
+  const set = (y) => setAt(String(clampYear(y, span)));
+  return (
+    <div className="row timebox" role="group" aria-label="Time">
+      <button className="chip" aria-pressed={at === ""} onClick={() => setAt("")}>Any time</button>
+      <button className="chip" aria-pressed={at === "now"} onClick={() => setAt("now")} title="Facts that have not ended">Now</button>
+      <button className="btn small ghost" aria-label="Previous year" disabled={at === "" || at === "now" || year <= span.first_year} onClick={() => set(year - 1)}>◀</button>
+      <label className="sr-only" htmlFor="graph-year">Year</label>
+      <input id="graph-year" type="range" min={span.first_year} max={span.last_year} value={year || span.last_year}
+        onChange={(e) => set(Number(e.target.value))} aria-valuetext={year ? String(year) : "no year chosen"} style={{ width: 130 }} />
+      <button className="btn small ghost" aria-label="Next year" disabled={at === "" || at === "now" || year >= span.last_year} onClick={() => set(year + 1)}>▶</button>
+      <span className="small" aria-live="polite" style={{ minWidth: "3.2rem" }}>{at === "now" ? "now" : year && at ? at : "any"}</span>
+    </div>
+  );
+}
+
 export default function GraphView({ params, go }) {
   const [graph, setGraph] = useState(EMPTY);
   const [meta, setMeta] = useState({ total_nodes: 0, total_edges: 0, truncated: false });
@@ -58,7 +79,14 @@ export default function GraphView({ params, go }) {
   const [view, setView] = useState("graph");
   const [fitSignal, setFitSignal] = useState(0);
   const [query, setQuery] = useState("");
+  const [at, setAt] = useState(validAt(params.at));        // "" = any time; else YYYY[-MM[-DD]] or "now"
+  const [timeCounts, setTimeCounts] = useState(null);
   const [toast, notify] = useToast();
+  const span = useAsync(() => api.stats().then((s) => s.time), []);
+  useEffect(() => { if (params.at !== undefined) setAt(validAt(params.at)); }, [params.at]);   // an address with a new time moves the control
+  const atApplied = useDebounced(at, 250);
+  const atRef = useRef(atApplied);
+  atRef.current = atApplied;
   const graphRef = useRef(graph);
   graphRef.current = graph;
   const docs = useAsync(() => api.documents(), []);
@@ -68,8 +96,9 @@ export default function GraphView({ params, go }) {
     setLoading(true);
     setError("");
     try {
-      const g = await api.graph({ documentId: docId || undefined, limit: LIMIT });
+      const g = await api.graph({ documentId: docId || undefined, limit: LIMIT, at: atRef.current });
       setGraph({ nodes: g.nodes, edges: g.edges });
+      setTimeCounts(g.time_counts || null);
       setMeta({ total_nodes: g.total_nodes, total_edges: g.total_edges, truncated: g.truncated });
       if (!keepSelection) { setSelected(null); setHighlight({ nodeIds: new Set(), edgeIds: new Set() }); setPathFrom(null); setPathNote(null); }
       setFitSignal((s) => s + 1);
@@ -80,12 +109,18 @@ export default function GraphView({ params, go }) {
     }
   }, [docId]);
   useEffect(() => { load(); }, [load]);
+  // moving the time reloads the same graph with the facts re-marked; what you selected stays selected
+  const firstAt = useRef(true);
+  useEffect(() => {
+    if (firstAt.current) { firstAt.current = false; return; }
+    load(true);
+  }, [atApplied]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- bring more of the graph on screen
   const addToGraph = useCallback((more) => setGraph((g) => mergeGraph(g, more)), []);
   const expand = useCallback(async (id, depth = 1) => {
     try {
-      const more = await api.neighborhood(id, depth, 200);
+      const more = await api.neighborhood(id, depth, 200, atRef.current);
       const before = graphRef.current.nodes.length;
       const merged = mergeGraph(graphRef.current, more);
       setGraph(merged);
@@ -130,7 +165,7 @@ export default function GraphView({ params, go }) {
     })();
     async function expandInto(id) {
       if (graphRef.current.nodes.some((n) => n.id === id)) return;
-      const more = await api.neighborhood(id, 1, 200);
+      const more = await api.neighborhood(id, 1, 200, atRef.current);
       const merged = mergeGraph(graphRef.current, more);
       graphRef.current = merged;
       setGraph(merged);
@@ -145,7 +180,7 @@ export default function GraphView({ params, go }) {
         if (!r.paths.length) { setPathNote({ text: "No connection within 4 links.", steps: [] }); setHighlight({ nodeIds: new Set([pathFrom, id]), edgeIds: new Set() }); }
         else {
           const depth = Math.min(2, Math.ceil(r.paths[0].length / 2));
-          const a = await api.neighborhood(pathFrom, depth, 200), b = await api.neighborhood(id, depth, 200);
+          const a = await api.neighborhood(pathFrom, depth, 200, atRef.current), b = await api.neighborhood(id, depth, 200, atRef.current);
           const merged = mergeGraph(mergeGraph(graphRef.current, a), b);
           graphRef.current = merged;
           setGraph(merged);
@@ -185,7 +220,7 @@ export default function GraphView({ params, go }) {
   const completedDocs = ((docs.data && docs.data.documents) || []).filter((d) => d.status === "completed");
 
   const panel = selected && (selected.kind === "node"
-    ? <EntityPanel id={selected.id} pathFrom={pathFrom} onExpand={(id) => expand(id)} onClose={() => setSelected(null)}
+    ? <EntityPanel id={selected.id} at={atApplied} pathFrom={pathFrom} onExpand={(id) => expand(id)} onClose={() => setSelected(null)}
         onAsk={(e) => go("ask", { q: `What do we know about ${e.name}?` })} onStartPath={(id) => { setPathFrom((p) => (p === id ? null : id)); setPathNote(null); }}
         onSelectFact={(id) => setSelected({ kind: "edge", id })} onSelectEntity={focusEntity}
         onMerged={async (keepId, name) => { notify(`Merged into “${name}”`); await load(true); setSelected({ kind: "node", id: keepId }); }} />
@@ -219,6 +254,7 @@ export default function GraphView({ params, go }) {
             </button>
           ))}
         </div>
+        <TimeControl at={at} setAt={setAt} span={span.data} />
         <span className="spacer" />
         <div className="row" role="group" aria-label="View">
           <button className="btn small" aria-pressed={view === "graph"} onClick={() => setView("graph")} style={view === "graph" ? { borderColor: "var(--accent)", color: "var(--accent)" } : undefined}>Graph</button>
@@ -250,6 +286,7 @@ export default function GraphView({ params, go }) {
           {!empty && (
             <div className="canvas-note" role="status">
               <span>{plural(shown.nodes.length, "entity", "entities")} · {plural(shown.edges.length, "fact")}</span>
+              {at && timeCounts && <span role="status" aria-label="Facts in the chosen time">In {at === "now" ? "now" : at}: {timeSummary(timeCounts)}{timeCounts.outside ? " (faded: dated outside)" : ""}</span>}
               {meta.truncated && <span className="muted">Showing the {LIMIT} best connected of {meta.total_nodes.toLocaleString()}. Search or open “Show neighbours” to reach the others.</span>}
               {pathFrom && <span className="chip tone-work">Pick the entity to connect to</span>}
               {(highlight.nodeIds.size > 0 || highlight.edgeIds.size > 0 || pathFrom) && <button className="btn small" onClick={clearHighlights}>Clear highlight</button>}

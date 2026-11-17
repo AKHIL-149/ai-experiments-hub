@@ -29,6 +29,16 @@ export default function ForceGraph({
   const hlNodes = highlightNodeIds || new Set();
   const hlEdges = highlightEdgeIds || new Set();
   const dimming = hlNodes.size > 0 || hlEdges.size > 0;
+  // with a chosen time: facts dated outside it are drawn faint, and so are entities that have nothing left in that time
+  const outsideNodes = useMemo(() => {
+    const live = new Set(), seen = new Set();
+    for (const e of edges) {
+      const a = endId(e.source), b = endId(e.target);
+      seen.add(a); seen.add(b);
+      if (e.time !== "outside") { live.add(a); live.add(b); }
+    }
+    return new Set([...seen].filter((id) => !live.has(id)));
+  }, [edges]);
 
   // ---- the simulation, made once
   useEffect(() => {
@@ -84,7 +94,7 @@ export default function ForceGraph({
     const list = [...next.values()];
     simLinks.current = edges
       .filter((e) => next.has(endId(e.source)) && next.has(endId(e.target)))
-      .map((e) => ({ id: e.id, predicate: e.predicate, valid_from: e.valid_from, valid_to: e.valid_to, source: endId(e.source), target: endId(e.target) }));
+      .map((e) => ({ id: e.id, predicate: e.predicate, valid_from: e.valid_from, valid_to: e.valid_to, time: e.time, source: endId(e.source), target: endId(e.target) }));
     sim.nodes(list);
     sim.force("link").links(simLinks.current);
     const calm = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -191,7 +201,7 @@ export default function ForceGraph({
               const dim = dimming && !hl && !sel;
               const text = l.predicate + (l.valid_from || l.valid_to ? ` · ${l.valid_from || ""}${l.valid_to ? `–${l.valid_to}` : ""}` : "");
               return (
-                <g key={l.id} className={`edge ${hl ? "hl" : ""} ${sel ? "sel" : ""} ${dim ? "dim" : ""}`} data-edge={l.id}
+                <g key={l.id} className={`edge ${hl ? "hl" : ""} ${sel ? "sel" : ""} ${dim ? "dim" : ""} ${l.time === "outside" && !sel ? "outside" : ""}`} data-edge={l.id}
                   onMouseEnter={() => setHoverEdge(l.id)} onMouseLeave={() => setHoverEdge((h) => (h === l.id ? null : h))}>
                   <path className="hit" d={g.d} onClick={() => onSelectEdge(l.id)} />
                   <path d={g.d} markerEnd={hl || sel ? "url(#arrow-hl)" : "url(#arrow)"} pointerEvents="none" />
@@ -208,7 +218,7 @@ export default function ForceGraph({
               return (
                 <g
                   key={n.id}
-                  className={`node ${sel ? "sel" : ""} ${hl ? "hl" : ""} ${dim ? "dim" : ""}`}
+                  className={`node ${sel ? "sel" : ""} ${hl ? "hl" : ""} ${dim ? "dim" : ""} ${outsideNodes.has(n.id) && !sel ? "outside" : ""}`}
                   data-id={n.id}
                   transform={`translate(${n.x},${n.y})`}
                   tabIndex={0}

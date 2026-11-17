@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useAsync, useDebounced } from "../hooks";
 import { formatPeriod, plural } from "../lib/format";
+import { timeLabel, timeSentence, timeTone } from "../lib/time";
 import TypeChip from "./TypeChip";
 
 function FactRow({ f, side, onSelectFact, onSelectEntity }) {
@@ -15,6 +16,33 @@ function FactRow({ f, side, onSelectFact, onSelectEntity }) {
       {when && <span className="chip" title="When the text says this held">{when}</span>}
       {f.source_count > 1 && <span className="muted small" title={`${f.source_count} places in your documents say this`}>×{f.source_count}</span>}
     </li>
+  );
+}
+
+/** Every fact about the entity in time order; with a chosen time each says whether it holds then */
+function Timeline({ id, at, entityName, onSelectFact }) {
+  const t = useAsync(() => api.timeline(id, at), [id, at]);
+  const facts = t.data ? t.data.facts : [];
+  return (
+    <div className="sect" aria-label="Timeline">
+      <h3>Timeline{at ? ` · ${at === "now" ? "now" : at}` : ""}</h3>
+      {t.loading && !t.data && <p className="muted" role="status">Loading…</p>}
+      {t.error && <div className="banner error" role="alert">{t.error}</div>}
+      {t.data && facts.length === 0 && <p className="muted">No facts.</p>}
+      <ol className="timeline">
+        {facts.map((f) => {
+          const when = formatPeriod(f.valid_from, f.valid_to);
+          const sentence = f.direction === "out" ? `${entityName} ${f.predicate} ${f.object}` : `${f.subject} ${f.predicate} ${entityName}`;
+          return (
+            <li key={f.id} className={f.time === "outside" ? "outside" : ""}>
+              <span className="when">{when || "no date"}</span>
+              <button className="linkbtn" onClick={() => onSelectFact(f.id)}>{sentence}</button>
+              {f.time && f.time !== "undated" && <span className={`chip tone-${timeTone(f.time)}`} title={timeSentence(f.time, t.data.window.label)}>{timeLabel(f.time)}</span>}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -75,9 +103,10 @@ function MergeBox({ entity, onMerged, onClose }) {
   );
 }
 
-export default function EntityPanel({ id, pathFrom, onExpand, onAsk, onStartPath, onSelectFact, onSelectEntity, onMerged, onClose }) {
+export default function EntityPanel({ id, at = "", pathFrom, onExpand, onAsk, onStartPath, onSelectFact, onSelectEntity, onMerged, onClose }) {
   const entity = useAsync(() => api.entity(id), [id]);
   const [merging, setMerging] = useState(false);
+  const [timeline, setTimeline] = useState(false);
   const e = entity.data;
   const attrs = e ? e.outgoing.filter((f) => f.object_is_value) : [];
   const out = e ? e.outgoing.filter((f) => !f.object_is_value) : [];
@@ -101,8 +130,10 @@ export default function EntityPanel({ id, pathFrom, onExpand, onAsk, onStartPath
             <button className="btn small" onClick={() => onExpand(e.id)}>Show neighbours</button>
             <button className="btn small" onClick={() => onAsk(e)}>Ask about this</button>
             <button className="btn small" onClick={() => onStartPath(e.id)} aria-pressed={pathFrom === e.id}>{pathFrom === e.id ? "Pick the other end…" : "Find a path to…"}</button>
+            <button className="btn small" onClick={() => setTimeline((m) => !m)} aria-expanded={timeline}>Timeline</button>
             <button className="btn small" onClick={() => setMerging((m) => !m)} aria-expanded={merging}>Merge…</button>
           </div>
+          {timeline && <Timeline id={e.id} at={at} entityName={e.name} onSelectFact={onSelectFact} />}
           {merging && <MergeBox entity={e} onClose={() => setMerging(false)} onMerged={(keepId, name) => { setMerging(false); onMerged(keepId, name); }} />}
           {attrs.length > 0 && (
             <div className="sect"><h3>Details</h3>

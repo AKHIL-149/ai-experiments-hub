@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAsync } from "../hooks";
 import { plural, prettifyFactText, truncate } from "../lib/format";
+import { atForAnswer, timeLabel, timeSentence, timeTone } from "../lib/time";
 import Source from "./Source";
 
 const MODES = [
@@ -19,6 +20,12 @@ function Reasoning({ r, timings }) {
       <div className="stack small" style={{ marginTop: "0.5rem" }}>
         <p><span className="muted">Mode:</span> {r.mode} · {plural(r.facts_considered || 0, "fact")} and {plural(r.passages_considered || 0, "passage")} shown to the model
           {timings && <> · {Math.round(((timings.retrieve || 0) + (timings.answer || 0)) / 100) / 10}s</>}</p>
+        {r.time && (
+          <div><strong>Time asked about</strong>
+            <p>{r.time.label} <span className="muted">(read from “{r.time.asked}”; the question was planned as “{r.time.question_used}”)</span>
+              {r.time.left_out > 0 && <> · {plural(r.time.left_out, "fact")} dated outside it {r.time.left_out === 1 ? "was" : "were"} left out</>}</p>
+          </div>
+        )}
         {r.seeds && r.seeds.length > 0 && (
           <div><strong>Entities found in the question</strong>
             <ul>{r.seeds.map((s) => <li key={s.entity_id}>{s.name} <span className="muted">({s.how}{s.also_could_be && s.also_could_be.length ? `; could also be ${s.also_could_be.join(", ")}` : ""})</span></li>)}</ul></div>
@@ -54,6 +61,7 @@ function AnswerCard({ title, result, go }) {
       </p>
       {!result.found && result.note && <p className="muted small">{result.note}</p>}
       {result.warning && <div className="banner warn" role="alert">{result.warning}</div>}
+      {result.time_caveat && <div className="banner warn" role="note">{result.time_caveat}</div>}
       {result.dropped_citations && result.dropped_citations.length > 0 && (
         <div className="banner warn">The model cited {result.dropped_citations.join(", ")}, which it was never given; those citations were removed.</div>
       )}
@@ -61,7 +69,7 @@ function AnswerCard({ title, result, go }) {
         <div>
           <div className="row" style={{ marginBottom: "0.3rem" }}>
             <h3 className="grow">{plural(cited.length, "citation")}</h3>
-            {factIds.length > 0 && <button className="btn small" onClick={() => go("graph", { facts: factIds.join(",") })}>Show them in the graph</button>}
+            {factIds.length > 0 && <button className="btn small" onClick={() => go("graph", { facts: factIds.join(","), at: atForAnswer(result.reasoning && result.reasoning.time) })}>Show them in the graph</button>}
           </div>
           {cited.map((c) => (
             <div className="cite" key={c.label}>
@@ -69,7 +77,8 @@ function AnswerCard({ title, result, go }) {
               <div className="stack" style={{ gap: "0.3rem" }}>
                 {c.kind === "fact" ? (
                   <>
-                    <div className="row wrap"><strong>{prettifyFactText(c.text)}</strong>{c.fact_id && <button className="linkbtn small" onClick={() => go("graph", { fact: c.fact_id })}>Open in the graph</button>}</div>
+                    <div className="row wrap"><strong>{prettifyFactText(c.text)}</strong>
+                      {c.time && <span className={`chip tone-${timeTone(c.time)}`} title={timeSentence(c.time, result.reasoning.time ? result.reasoning.time.label : undefined)}>{timeLabel(c.time)}</span>}{c.fact_id && <button className="linkbtn small" onClick={() => go("graph", { fact: c.fact_id })}>Open in the graph</button>}</div>
                     {c.quote && <Source source={{ document_title: c.document_title, quote: c.quote, verified: c.verified, passage: "" }} />}
                   </>
                 ) : (

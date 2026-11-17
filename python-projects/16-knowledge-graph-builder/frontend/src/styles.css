@@ -153,6 +153,9 @@ button.chip[aria-pressed="true"] .swatch { background: #fff; }
 
 svg .edge path { fill: none; stroke: #9aa0ac; stroke-width: 1.4; }
 svg .edge.dim path { stroke: #d6d3ca; }
+svg .edge.outside path:not(.hit) { stroke: #dedbd2; stroke-dasharray: 3 4; }
+svg .edge.outside text { display: none; }
+svg .node.outside { opacity: 0.35; }
 svg .edge.hl path, svg .edge.sel path { stroke: var(--accent); stroke-width: 2.6; }
 svg .edge .hit { stroke: transparent; stroke-width: 14; cursor: pointer; }
 svg .edge text { font-size: 10px; fill: #4a5060; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; text-anchor: middle; pointer-events: none; }
@@ -191,3 +194,12 @@ details.reason > summary { cursor: pointer; font-weight: 600; }
   .legend { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* time */
+.timebox { gap: 0.35rem; }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+ol.timeline { list-style: none; margin: 0; padding: 0 0 0 0.9rem; border-left: 2px solid var(--border); display: grid; gap: 0.45rem; }
+ol.timeline li { display: grid; gap: 0.1rem; position: relative; }
+ol.timeline li::before { content: ""; position: absolute; left: -1.22rem; top: 0.38rem; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+ol.timeline li.outside { opacity: 0.55; }
+ol.timeline .when { font-size: 0.78rem; font-weight: 600; color: var(--muted, #6b7280); }
