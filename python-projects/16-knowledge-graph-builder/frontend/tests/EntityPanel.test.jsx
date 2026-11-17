@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import EntityPanel from "../src/components/EntityPanel";
@@ -148,5 +148,73 @@ describe("EntityPanel: merging", () => {
     expect(screen.getByLabelText("Find the other name")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Cancel merging" }));
     expect(screen.queryByLabelText("Find the other name")).not.toBeInTheDocument();
+  });
+});
+
+describe("EntityPanel: timeline", () => {
+  const tl = (over = {}) => ({
+    entity: { id: "n1", name: "Acme Corp", type: "organization" },
+    facts: [
+      { id: "t1", subject: "Maria Lopez", predicate: "was CTO of", object: "Acme Corp", direction: "in", valid_from: "2012", valid_to: "2019" },
+      { id: "t2", subject: "Acme Corp", predicate: "acquired", object: "Beta Systems", direction: "out", valid_from: "2020-03", valid_to: null },
+      { id: "t3", subject: "Acme Corp", predicate: "employs", object: "340 people", direction: "out", valid_from: null, valid_to: null },
+    ], ...over,
+  });
+
+  it("is closed until asked for, then lists the facts in the order the server gives, as sentences", async () => {
+    api.timeline.mockResolvedValue(tl());
+    show();
+    await screen.findByRole("heading", { name: "Acme Corp" });
+    expect(api.timeline).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    const box = await screen.findByLabelText("Timeline");
+    const items = await within(box).findAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      "2012 – 2019Maria Lopez was CTO of Acme Corp", "2020-03Acme Corp acquired Beta Systems", "no dateAcme Corp employs 340 people"]);
+    expect(api.timeline).toHaveBeenCalledWith("n1", "");
+  });
+
+  it("shows what each fact means for the chosen time, and fades those outside", async () => {
+    api.timeline.mockResolvedValue(tl({ window: { label: "2021" }, facts: tl().facts.map((f, i) => ({ ...f, time: ["outside", "open", "undated"][i] })) }));
+    show({ at: "2021" });
+    await userEvent.click(await screen.findByRole("button", { name: "Timeline" }));
+    const box = await screen.findByLabelText("Timeline");
+    expect(within(box).getByRole("heading", { name: "Timeline · 2021" })).toBeInTheDocument();
+    const items = await within(box).findAllByRole("listitem");
+    expect(items[0]).toHaveClass("outside");
+    expect(items[1]).not.toHaveClass("outside");
+    expect(within(items[1]).getByText("no end stated")).toHaveAttribute("title", expect.stringMatching(/may still have held/));
+    expect(within(items[2]).getAllByText("no date")).toHaveLength(1);       // said once, in the date column
+    expect(api.timeline).toHaveBeenCalledWith("n1", "2021");
+  });
+
+  it("loads the timeline again when the chosen time changes", async () => {
+    api.timeline.mockResolvedValue(tl());
+    const { rerender } = show({ at: "2015" });
+    await userEvent.click(await screen.findByRole("button", { name: "Timeline" }));
+    await screen.findByLabelText("Timeline");
+    rerender(<EntityPanel id="n1" at="2021" pathFrom={null} {...h} />);
+    await waitFor(() => expect(api.timeline).toHaveBeenLastCalledWith("n1", "2021"));
+  });
+
+  it("opens a fact from the timeline", async () => {
+    api.timeline.mockResolvedValue(tl());
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Timeline" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Acme Corp acquired Beta Systems" }));
+    expect(h.onSelectFact).toHaveBeenCalledWith("t2");
+  });
+
+  it("says when there are no facts, shows errors, and closes again", async () => {
+    api.timeline.mockResolvedValueOnce(tl({ facts: [] }));
+    show();
+    const btn = await screen.findByRole("button", { name: "Timeline" });
+    await userEvent.click(btn);
+    expect(await screen.findByText("No facts.")).toBeInTheDocument();
+    await userEvent.click(btn);
+    expect(screen.queryByLabelText("Timeline")).not.toBeInTheDocument();
+    api.timeline.mockRejectedValueOnce(new Error("Entity not found"));
+    await userEvent.click(btn);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Entity not found");
   });
 });

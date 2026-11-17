@@ -166,4 +166,43 @@ describe("ForceGraph", () => {
     const { unmount } = show();
     expect(() => unmount()).not.toThrow();
   });
+
+  describe("a chosen time", () => {
+    const timed = (times) => g.edges.map((e, i) => ({ ...e, time: times[i] }));
+
+    it("draws facts dated outside the time faint, and the others as usual", () => {
+      const { container } = render(<ForceGraph nodes={g.nodes} edges={timed(["outside", "during"])} />);
+      expect(container.querySelector('g.edge[data-edge="f1"]')).toHaveClass("outside");
+      expect(container.querySelector('g.edge[data-edge="f2"]')).not.toHaveClass("outside");
+    });
+
+    it("fades an entity only when every fact it has is outside", () => {
+      const { container } = render(<ForceGraph nodes={g.nodes} edges={timed(["outside", "during"])} />);
+      expect(container.querySelector('g.node[data-id="n2"]')).toHaveClass("outside");        // Beta: only the outside fact
+      expect(container.querySelector('g.node[data-id="n1"]')).not.toHaveClass("outside");     // Acme: one fact still holds
+      expect(container.querySelector('g.node[data-id="n3"]')).not.toHaveClass("outside");
+    });
+
+    it("fades nothing for facts that are open or undated", () => {
+      const { container } = render(<ForceGraph nodes={g.nodes} edges={timed(["open", "undated"])} />);
+      expect(container.querySelectorAll(".outside")).toHaveLength(0);
+    });
+
+    it("fades nothing when no time was chosen", () => {
+      const { container } = render(<ForceGraph nodes={g.nodes} edges={g.edges} />);
+      expect(container.querySelectorAll(".outside")).toHaveLength(0);
+    });
+
+    it("shows a selected fact normally even when it is outside the time", () => {
+      const { container } = render(<ForceGraph nodes={g.nodes} edges={timed(["outside", "outside"])} selectedEdgeId="f1" selectedNodeId="n1" />);
+      expect(container.querySelector('g.edge[data-edge="f1"]')).not.toHaveClass("outside");
+      expect(container.querySelector('g.node[data-id="n1"]')).not.toHaveClass("outside");
+      expect(container.querySelector('g.node[data-id="n3"]')).toHaveClass("outside");
+    });
+
+    it("does not fade entities that have no facts at all", () => {
+      const { container } = render(<ForceGraph nodes={[...g.nodes, { id: "n9", name: "Lonely", type: "concept", degree: 0 }]} edges={timed(["outside", "outside"])} />);
+      expect(container.querySelector('g.node[data-id="n9"]')).not.toHaveClass("outside");
+    });
+  });
 });

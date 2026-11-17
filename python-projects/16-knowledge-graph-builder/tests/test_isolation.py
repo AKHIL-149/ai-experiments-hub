@@ -43,7 +43,7 @@ def test_guessing_another_accounts_ids_answers_404_like_an_id_that_does_not_exis
     bob_entity = bob.get("/api/entities?q=zed").json()["entities"][0]["id"]
     bob_fact = next(e["id"] for e in bob.get("/api/graph").json()["edges"])
     missing = "0" * 32
-    for url in (f"/api/documents/{ids['bob']}", f"/api/entities/{bob_entity}", f"/api/entities/{bob_entity}/neighborhood", f"/api/facts/{bob_fact}"):
+    for url in (f"/api/documents/{ids['bob']}", f"/api/entities/{bob_entity}", f"/api/entities/{bob_entity}/neighborhood", f"/api/entities/{bob_entity}/timeline", f"/api/facts/{bob_fact}"):
         foreign, absent = ann.get(url), ann.get(url.replace(ids["bob"], missing).replace(bob_entity, missing).replace(bob_fact, missing))
         assert foreign.status_code == absent.status_code == 404 and foreign.json() == absent.json(), url
     assert ann.get(f"/api/graph?document_id={ids['bob']}").status_code == 404
@@ -188,7 +188,8 @@ def test_writes_of_one_account_do_not_wait_for_a_document_of_another(duplicated)
 def test_deleting_a_document_only_removes_what_only_it_supported(two):
     site, ann, bob, ids = two
     assert ann.delete(f"/api/documents/{ids['ann']}").status_code == 204
-    assert ann.get("/api/graph/stats").json() == {"entities": 0, "entities_by_type": {}, "facts": 0, "sources": 0, "top_predicates": []}
+    assert ann.get("/api/graph/stats").json() == {"entities": 0, "entities_by_type": {}, "facts": 0, "time": {"first_year": None, "last_year": None, "dated_facts": 0, "undated_facts": 0},
+                                                       "sources": 0, "top_predicates": []}
     assert bob.get("/api/graph/stats").json()["facts"] == 2
 
 

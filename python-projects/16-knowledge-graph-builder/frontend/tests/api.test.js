@@ -82,6 +82,21 @@ describe("requests", () => {
   });
 });
 
+describe("time in requests", () => {
+  it("passes the chosen time to the graph, the neighbourhood and the timeline, and leaves it out when there is none", async () => {
+    fetchMock.mockReturnValue(reply(200, {}));
+    await api.graph({ at: "2021" });
+    await api.graph({ at: "" });
+    await api.neighborhood("e1", 1, 200, "2021-03");
+    await api.neighborhood("e1", 1, 200, "");
+    await api.timeline("e1", "now");
+    await api.timeline("e1");
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      "/api/graph?at=2021", "/api/graph", "/api/entities/e1/neighborhood?depth=1&limit=200&at=2021-03", "/api/entities/e1/neighborhood?depth=1&limit=200",
+      "/api/entities/e1/timeline?at=now", "/api/entities/e1/timeline"]);
+  });
+});
+
 describe("errors", () => {
   it("shows the server's message", async () => {
     fetchMock.mockReturnValue(reply(409, { detail: "A document is being read." }));

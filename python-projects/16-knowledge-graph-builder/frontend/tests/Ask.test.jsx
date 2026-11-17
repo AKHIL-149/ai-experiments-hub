@@ -79,7 +79,7 @@ describe("Ask", () => {
     show();
     await ask("In which city is the university?");
     await userEvent.click(await screen.findByRole("button", { name: "Show them in the graph" }));
-    expect(go).toHaveBeenCalledWith("graph", { facts: "f1,f2" });
+    expect(go).toHaveBeenCalledWith("graph", { facts: "f1,f2", at: "" });
   });
 
   it("opens one cited fact in the graph", async () => {
@@ -231,5 +231,96 @@ describe("Ask", () => {
     expect(within(recent).getByText("→ Kellmar")).toBeInTheDocument();
     await userEvent.click(within(recent).getByRole("button", { name: "First question here" }));
     expect(screen.getByLabelText("Your question")).toHaveValue("First question here");
+  });
+});
+
+describe("Ask: time", () => {
+  const timed = (over = {}) => answer({
+    citations: [factCite({ time: "during" }), factCite({ label: "F2", fact_id: "f2", time: "open" })],
+    reasoning: { mode: "graph", facts_considered: 2, passages_considered: 0, seeds: [], steps: [],
+      time: { asked: "in 2021", label: "2021", kind: "in", from: "2021-01-01", to: "2021-12-31", question_used: "Who was the CTO of Acme?", left_out: 2, left_out_examples: [] } },
+    ...over });
+
+  it("tells each citation what its dates say about the time", async () => {
+    api.ask.mockResolvedValue(timed());
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    const holds = await screen.findByText("holds");
+    expect(holds).toHaveAttribute("title", "its dates cover 2021");
+    expect(screen.getByText("no end stated")).toHaveAttribute("title", expect.stringMatching(/no end date is stated/));
+  });
+
+  it("shows no time words when the question names no time", async () => {
+    api.ask.mockResolvedValue(answer());
+    show();
+    await ask("In which city is the university?");
+    await screen.findByText("Kellmar");
+    expect(screen.queryByText("holds")).not.toBeInTheDocument();
+  });
+
+  it("explains which time was read and how many facts were left out", async () => {
+    api.ask.mockResolvedValue(timed());
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    await userEvent.click(await screen.findByText("How this was answered"));
+    expect(screen.getByText("Time asked about")).toBeInTheDocument();
+    expect(screen.getByText(/read from “in 2021”; the question was planned as “Who was the CTO of Acme\?”/)).toBeInTheDocument();
+    expect(screen.getByText(/2 facts dated outside it were left out/)).toBeInTheDocument();
+  });
+
+  it("does not mention left-out facts when none were", async () => {
+    api.ask.mockResolvedValue(timed({ reasoning: { ...timed().reasoning, time: { ...timed().reasoning.time, left_out: 0 } } }));
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    await userEvent.click(await screen.findByText("How this was answered"));
+    expect(screen.getByText("Time asked about")).toBeInTheDocument();
+    expect(screen.queryByText(/left out/)).not.toBeInTheDocument();
+  });
+
+  it("says 1 fact was, not were", async () => {
+    api.ask.mockResolvedValue(timed({ reasoning: { ...timed().reasoning, time: { ...timed().reasoning.time, left_out: 1 } } }));
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    await userEvent.click(await screen.findByText("How this was answered"));
+    expect(screen.getByText(/1 fact dated outside it was left out/)).toBeInTheDocument();
+  });
+
+  it("opens the graph at the question's year", async () => {
+    api.ask.mockResolvedValue(timed());
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    await userEvent.click(await screen.findByRole("button", { name: "Show them in the graph" }));
+    expect(go).toHaveBeenCalledWith("graph", { facts: "f1,f2", at: "2021" });
+  });
+
+  it("does not set a year for a range", async () => {
+    const t = timed();
+    api.ask.mockResolvedValue({ ...t, reasoning: { ...t.reasoning, time: { ...t.reasoning.time, kind: "between", label: "2015 to 2018" } } });
+    show();
+    await ask("Who was the CTO of Acme between 2015 and 2018?");
+    await userEvent.click(await screen.findByRole("button", { name: "Show them in the graph" }));
+    expect(go).toHaveBeenCalledWith("graph", { facts: "f1,f2", at: "" });
+  });
+
+  it("says in plain words when the answer rests on facts that do not confirm the time", async () => {
+    api.ask.mockResolvedValue(timed({ time_caveat: "The fact behind this answer has no date, so the documents do not show when it held." }));
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    expect(await screen.findByRole("note")).toHaveTextContent("has no date, so the documents do not show when it held");
+  });
+
+  it("shows no caveat when the server sends none", async () => {
+    api.ask.mockResolvedValue(timed());
+    show();
+    await ask("Who was the CTO of Acme in 2021?");
+    await screen.findByText("Kellmar");
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("shows why nothing was found when facts exist outside the time", async () => {
+    api.ask.mockResolvedValue({ found: false, answer: "not found", citations: [], note: "The graph has facts about this, but their dates put them outside 2021 (for example: Maria Lopez was CTO of Acme Corp (2012..2019))." });
+    show();
+    await ask("Which company was Maria CTO of in 2021?");
+    expect(await screen.findByText(/their dates put them outside 2021/)).toBeInTheDocument();
   });
 });
