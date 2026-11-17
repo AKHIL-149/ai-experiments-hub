@@ -159,7 +159,7 @@ class ScriptedLLM(FakeLLM):
         if system == ask.PLAN_SYSTEM:
             self.prompts["plan"].append(prompt)
             r = self.plan_fn(prompt)
-        elif system == ask.ANSWER_SYSTEM:
+        elif system.startswith(ask.ANSWER_SYSTEM):
             self.prompts["answer"].append(prompt)
             r = self.answer_fn(prompt)
         else:

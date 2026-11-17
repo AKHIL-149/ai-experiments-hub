@@ -16,6 +16,7 @@ from src.models.graph import Entity, Fact, FactSource
 from src.models.resolution import EntityAlias
 from src.services.embedding import Embedder, cosine_top, fact_text, normalize
 from src.services.resolution import canonical_tokens
+from src.services.temporal import Window, classify
 from src.services.text_utils import entity_key, words
 
 QUESTION_WORDS = {
@@ -40,6 +41,7 @@ class FactView:
     valid_from: str
     valid_to: str
     docs: frozenset = frozenset()
+    time: str = ""      # what its dates say about the question's period (temporal.STATUSES); "" when no period was asked
 
     @property
     def is_value(self) -> bool:
@@ -63,8 +65,14 @@ class Seed:
 class GraphIndex:
     """The whole graph in memory for one question: entities, facts, who points at whom, and a name lookup"""
 
-    def __init__(self, db: Session, document_id: str | None = None, *, owner_id: int | None = None):
+    def __init__(self, db: Session, document_id: str | None = None, *, owner_id: int | None = None, window: Window | None = None):
+        """With a `window` (the period a question asks about) facts dated outside it are left out of every walk, path and
+        search, but their entities can still be named in a question; the others carry what their dates say (`time`)"""
         self.owner_id = owner_id
+        self.window = window
+        self.excluded: list[str] = []          # texts of the facts left out because of their dates
+        self.excluded_facts: list[FactView] = []
+        linkable: set[str] = set()
         self.entities: dict[str, Entity] = {e.id: e for e in db.execute(select(Entity).where(Entity.owner_id == owner_id)).scalars()}
         doc_of = defaultdict(set)
         for fid, did in db.execute(select(FactSource.fact_id, FactSource.document_id).join(Fact, Fact.id == FactSource.fact_id)
@@ -83,11 +91,20 @@ class GraphIndex:
             o = self.entities.get(f.object_id) if f.object_id else None
             fv = FactView(f.id, f.subject_id, s.name, f.predicate, f.object_id, o.name if o else f.object_value,
                           f.valid_from, f.valid_to, docs)
+            if window is not None:
+                fv.time = classify(f.valid_from, f.valid_to, window)
+                if fv.time == "outside":
+                    self.excluded.append(fv.text())
+                    self.excluded_facts.append(fv)
+                    linkable.add(f.subject_id)
+                    if f.object_id:
+                        linkable.add(f.object_id)
+                    continue
             self.facts[f.id] = fv
             self.out[f.subject_id].append(fv)
             if f.object_id:
                 self.inn[f.object_id].append(fv)
-        self.used = {i for i in self.entities if self.out.get(i) or self.inn.get(i)}
+        self.used = {i for i in self.entities if self.out.get(i) or self.inn.get(i)} | (linkable & set(self.entities))
         self.surface: dict[str, set[str]] = defaultdict(set)   # normalised name -> entity ids
         self.token_index: dict[str, set[str]] = defaultdict(set)
         for e in self.entities.values():

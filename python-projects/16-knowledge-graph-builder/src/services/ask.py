@@ -8,12 +8,18 @@ Modes
   hybrid    the `graph` facts plus the closest passages.
   auto      = graph (it was the most reliable in the evaluation, and the best at saying "not found").
 
+Time: a question that names a time ("in 2021", "between 2015 and 2018", "before 2020", "currently") is read by patterns
+(temporal.py), not by the model. The words are taken out before planning, facts whose dates put them outside that
+time are left out of the walk, and every fact the model sees says what its dates say about the time. Passage search
+(`vector`) does not use dates.
+
 Whatever the mode, the model sees numbered facts/passages (F1, P1, ...), must answer only from them, and says which it used.
 Citations the model invents (a label that was not offered) are dropped.
 """
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,6 +27,7 @@ from sqlalchemy.orm import Session
 from src.core.config import Settings
 from src.models.graph import Chunk, Document, FactSource
 from src.services import graph_query as gq
+from src.services import temporal
 from src.services.embedding import Embedder, EmbeddingError, top_chunks
 from src.services.llm import LLMBadOutput, LLMClient
 
@@ -28,6 +35,14 @@ MODES = ("auto", "vector", "subgraph", "graph", "hybrid")
 MAX_STEPS = 4
 QUOTE_CHARS = 220
 PASSAGE_CHARS = 700
+
+TIME_RULES = """
+The question is about a time: {label}. Each fact is tagged with what its dates say about that time:
+- "holds throughout": the stated dates cover it. These answer the question.
+- "overlaps": the dates overlap it only partly, or only to the year. Say so when it matters.
+- "began earlier, no end date stated": it started before that time and the text never says it ended. It may still have held: give it only as "possibly" and say that no end date is stated, never as certain.
+- "no date stated": nothing is known about when. Use it only when no dated fact answers, and say it is undated.
+Facts dated outside that time were removed. If no fact fits, set found to false."""
 
 PLAN_SCHEMA = {
     "type": "object",
@@ -94,6 +109,7 @@ class Evidence:
     facts: list = field(default_factory=list)         # FactViews, in the order they are shown to the model
     passages: list = field(default_factory=list)      # (Chunk, score)
     reasoning: dict = field(default_factory=dict)
+    window: temporal.Window | None = None             # the time the question asks about, when it names one
 
 
 def plan_question(llm: LLMClient, question: str) -> Plan | None:
@@ -219,15 +235,30 @@ def gather_graph(db: Session, index: gq.GraphIndex, question: str, llm: LLMClien
     return ev
 
 
+def _time_report(tq: temporal.TimeQuery, index: gq.GraphIndex) -> dict:
+    counts: dict[str, int] = {}
+    for f in index.facts.values():
+        counts[f.time] = counts.get(f.time, 0) + 1
+    return {"asked": tq.text, **tq.window.to_dict(), "question_used": tq.question, "facts_by_status": counts,
+            "left_out": len(index.excluded), "left_out_examples": index.excluded[:5]}
+
+
 def gather(db: Session, question: str, mode: str, llm: LLMClient, embedder: Embedder | None, settings: Settings,
-           document_id: str | None, owner_id: int | None = None) -> Evidence:
+           document_id: str | None, owner_id: int | None = None, today: date | None = None) -> Evidence:
     if mode == "vector":
         if embedder is None:
             raise EmbeddingError("Passage search needs an embedding model")
         chunks = top_chunks(db, embedder, question, settings.ask_top_chunks, document_id, owner_id=owner_id)
         return Evidence(passages=chunks, reasoning={"seeds": [], "plan": None, "steps": [], "paths": [], "fallback": None})
-    index = gq.GraphIndex(db, document_id, owner_id=owner_id)
-    ev = gather_graph(db, index, question, llm, embedder, settings, use_plan=mode in ("graph", "hybrid"))
+    tq = temporal.parse_time(question, today)
+    index = gq.GraphIndex(db, document_id, owner_id=owner_id, window=tq.window if tq else None)
+    if tq and any(re.search(r"\d{4}", x.matched) for x in index.link(question) if x.how in ("exact", "alias")):
+        tq = None                                    # the year is part of an entity's name ("Expo 2020"), not a time
+        index = gq.GraphIndex(db, document_id, owner_id=owner_id)
+    ev = gather_graph(db, index, tq.question if tq else question, llm, embedder, settings, use_plan=mode in ("graph", "hybrid"))
+    if tq:
+        ev.window = tq.window
+        ev.reasoning["time"] = _time_report(tq, index)
     if mode == "hybrid" and embedder is not None:
         try:
             ev.passages = top_chunks(db, embedder, question, settings.ask_top_chunks, document_id, owner_id=owner_id)
@@ -246,8 +277,10 @@ def build_prompt(db: Session, question: str, ev: Evidence) -> tuple[str, dict[st
     for i, f in enumerate(ev.facts, 1):
         label = f"F{i}"
         q = quotes.get(f.id)
-        labels[label] = {"kind": "fact", "fact_id": f.id, "text": f.text(), **({k: q[k] for k in ("quote", "document_id", "document_title", "verified")} if q else {})}
-        lines.append(f"[{label}] {f.text()}" + (f'   (source: "{q["quote"][:QUOTE_CHARS]}")' if q else ""))
+        labels[label] = {"kind": "fact", "fact_id": f.id, "text": f.text(), **({k: q[k] for k in ("quote", "document_id", "document_title", "verified")} if q else {}),
+                         **({"time": f.time} if ev.window else {})}
+        tag = f"   [{temporal.describe(f.time, ev.window)}]" if ev.window and f.time else ""
+        lines.append(f"[{label}] {f.text()}{tag}" + (f'   (source: "{q["quote"][:QUOTE_CHARS]}")' if q else ""))
     if ev.passages:
         lines.append("\nPassages:")
     for i, (chunk, score) in enumerate(ev.passages, 1):
@@ -263,10 +296,11 @@ def build_prompt(db: Session, question: str, ev: Evidence) -> tuple[str, dict[st
     return f"Question: {question}\n\n{note}" + "\n".join(lines), labels
 
 
-def answer_from(llm: LLMClient, prompt: str) -> dict:
+def answer_from(llm: LLMClient, prompt: str, window: temporal.Window | None = None) -> dict:
+    system = ANSWER_SYSTEM + TIME_RULES.format(label=window.label) if window else ANSWER_SYSTEM
     for attempt in (1, 2):
         try:
-            data = llm.generate_json(ANSWER_SYSTEM, prompt, ANSWER_SCHEMA, max_tokens=768)
+            data = llm.generate_json(system, prompt, ANSWER_SCHEMA, max_tokens=768)
             break
         except LLMBadOutput:
             if attempt == 2:
@@ -276,22 +310,38 @@ def answer_from(llm: LLMClient, prompt: str) -> dict:
             "cited": [str(c).strip().upper().strip("[]") for c in cited]}
 
 
+def _time_caveat(citations: list[dict], window: temporal.Window) -> str:
+    """What the model may not say: when no fact it cited has dates that hold in or overlap the time, the answer rests on
+    facts that are undated, or that began earlier with no end stated. Said by code, so it does not depend on the model's wording."""
+    used = [c["time"] for c in citations if c.get("kind") == "fact" and c.get("time")]
+    if not used or any(t in ("during", "overlaps") for t in used):
+        return ""
+    if all(t == "undated" for t in used):
+        return "The fact behind this answer has no date, so the documents do not show when it held."
+    return (f"The facts behind this answer began before {window.label} (or have no date) and none states an end, "
+            "so it may still have held, but the documents do not confirm it.")
+
+
 def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embedder: Embedder | None, settings: Settings,
-        document_id: str | None = None, owner_id: int | None = None) -> dict:
+        document_id: str | None = None, owner_id: int | None = None, today: date | None = None) -> dict:
     question = question.strip()
     mode_used = "graph" if mode == "auto" else mode
     t0 = time.time()
-    ev = gather(db, question, mode_used, llm, embedder, settings, document_id, owner_id)
+    ev = gather(db, question, mode_used, llm, embedder, settings, document_id, owner_id, today)
     t1 = time.time()
     doc_ids = {d for f in ev.facts for d in f.docs} | {c.document_id for c, _ in ev.passages}
     titles = sorted(t for (t,) in db.execute(select(Document.title).where(Document.id.in_(doc_ids)))) if doc_ids else []
     reasoning = {**ev.reasoning, "mode": mode_used, "facts_considered": len(ev.facts), "passages_considered": len(ev.passages),
                  "evidence_documents": titles}
     if not ev.facts and not ev.passages:
+        note = "Nothing in the graph or the passages relates to this question."
+        if ev.window and reasoning["time"]["left_out"]:
+            note = (f"The graph has facts about this, but their dates put them outside {ev.window.label} "
+                    f"(for example: {'; '.join(reasoning['time']['left_out_examples'][:3])}).")
         return {"question": question, "found": False, "answer": "not found", "citations": [], "reasoning": reasoning,
-                "note": "Nothing in the graph or the passages relates to this question.", "timings_ms": {"retrieve": round((t1 - t0) * 1000)}}
+                "note": note, "timings_ms": {"retrieve": round((t1 - t0) * 1000)}}
     prompt, labels = build_prompt(db, question, ev)
-    result = answer_from(llm, prompt)
+    result = answer_from(llm, prompt, ev.window)
     t2 = time.time()
     citations, dropped = [], []
     for label in dict.fromkeys(result["cited"]):
@@ -302,6 +352,10 @@ def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embed
     out = {"question": question, "found": result["found"] and bool(result["answer"]), "answer": result["answer"] or "not found",
            "citations": citations, "reasoning": reasoning,
            "timings_ms": {"retrieve": round((t1 - t0) * 1000), "answer": round((t2 - t1) * 1000)}}
+    if ev.window and out["found"]:
+        caveat = _time_caveat(citations, ev.window)
+        if caveat:
+            out["time_caveat"] = caveat
     if dropped:
         out["dropped_citations"] = dropped            # labels the model cited that it was never given
     if out["found"] and not citations:
