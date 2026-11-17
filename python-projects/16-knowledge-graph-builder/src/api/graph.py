@@ -7,7 +7,7 @@ from src.api.deps import get_owner
 from src.core.database import get_db
 from src.models.graph import ENTITY_TYPES, Chunk, Document, Entity, Fact, FactSource
 from src.models.resolution import EntityAlias
-from src.services import graph_store
+from src.services import graph_store, temporal
 
 router = APIRouter(prefix="/api", tags=["graph"])
 
@@ -17,19 +17,30 @@ def _check_type(entity_type: str | None) -> None:
         raise HTTPException(422, f"Unknown entity type. Use one of: {', '.join(ENTITY_TYPES)}")
 
 
+def _window(at: str | None, start: str | None, end: str | None):
+    """The period named by ?at= or ?from=&to= (None when neither is given)"""
+    try:
+        return temporal.window_from_params(at, start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 def _entity(e: Entity) -> dict:
     return {"id": e.id, "name": e.name, "type": e.type}
 
 
 @router.get("/graph")
 def get_graph(document_id: str | None = None, type: str | None = None, limit: int = Query(300, ge=1, le=2000),
+              at: str | None = None, start: str | None = Query(None, alias="from"), end: str | None = Query(None, alias="to"),
               db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    """With ?at=2021 (or 2021-03, 2021-03-15, now) or ?from=2015&to=2018 every fact says what its dates say about that period (`time`)"""
     _check_type(type)
+    window = _window(at, start, end)
     if document_id:
         doc = db.get(Document, document_id)
         if doc is None or doc.owner_id != owner:
             raise HTTPException(404, "Document not found")
-    return graph_store.graph_payload(graph_store.build_graph(db, document_id, type, owner_id=owner), limit)
+    return graph_store.graph_payload(graph_store.build_graph(db, document_id, type, owner_id=owner), limit, window)
 
 
 @router.get("/graph/stats")
@@ -58,12 +69,14 @@ def get_entity(entity_id: str, db: Session = Depends(get_db), owner: int | None 
 
 @router.get("/entities/{entity_id}/neighborhood")
 def get_neighborhood(entity_id: str, depth: int = Query(1, ge=1, le=3), limit: int = Query(200, ge=1, le=1000),
+                     at: str | None = None, start: str | None = Query(None, alias="from"), end: str | None = Query(None, alias="to"),
                      db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    window = _window(at, start, end)
     e = db.get(Entity, entity_id)
     if e is None or e.owner_id != owner:
         raise HTTPException(404, "Entity not found")
     g = graph_store.neighborhood(graph_store.build_graph(db, owner_id=owner), entity_id, depth)
-    return graph_store.graph_payload(g, limit)
+    return graph_store.graph_payload(g, limit, window)
 
 
 @router.get("/facts/{fact_id}")
@@ -76,3 +89,28 @@ def get_fact(fact_id: str, db: Session = Depends(get_db), owner: int | None = De
     sources = [{"document_id": s.document_id, "document_title": title, "chunk_id": s.chunk_id, "quote": s.evidence,
                 "passage": passage, "verified": s.verified} for s, title, passage in rows]
     return {**graph_store.fact_to_dict(f, len(sources)), "sources": sources}
+
+
+@router.get("/entities/{entity_id}/timeline")
+def get_timeline(entity_id: str, at: str | None = None, start: str | None = Query(None, alias="from"), end: str | None = Query(None, alias="to"),
+                 db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    """Every fact about an entity in time order (by start, then end; undated ones last). With a period, each says what its dates
+    say about it. Nothing is guessed: a fact without a stated end has none here."""
+    window = _window(at, start, end)
+    e = db.get(Entity, entity_id)
+    if e is None or e.owner_id != owner:
+        raise HTTPException(404, "Entity not found")
+    facts = db.execute(select(Fact).where((Fact.subject_id == e.id) | (Fact.object_id == e.id))).scalars().all()
+    rows = []
+    for f in facts:
+        d = graph_store.fact_to_dict(f)
+        d["direction"] = "out" if f.subject_id == e.id else "in"
+        if window:
+            d["time"] = temporal.classify(f.valid_from, f.valid_to, window)
+        rows.append(d)
+    undated = lambda d: not (d["valid_from"] or d["valid_to"])  # noqa: E731
+    rows.sort(key=lambda d: (undated(d), d["valid_from"] or d["valid_to"] or "", d["valid_to"] or "9999", d["predicate"], d["id"]))
+    out = {"entity": _entity(e), "facts": rows}
+    if window:
+        out["window"] = window.to_dict()
+    return out

@@ -10,6 +10,7 @@ from src.core.database import get_db
 from src.models.embedding import Embedding
 from src.models.graph import Chunk, Document, Fact
 from src.services import ask as ask_service
+from src.services import temporal
 from src.services import graph_query as gq
 from src.services.embedding import EmbeddingError, ensure_chunk_embeddings, ensure_fact_embeddings, get_embedder
 from src.services.llm import LLMError, get_llm
@@ -98,6 +99,39 @@ def chain(body: ChainIn, db: Session = Depends(get_db), owner: int | None = Depe
     return {"start": index.name(start), "ok": w.ok, "reason": w.reason,
             "answers": [index.name(e) for e in w.final_entities] + list(w.final_values),
             "facts": [{"fact_id": f.id, "text": f.text()} for f in w.facts], "steps": ask_service._step_report(index, w)}
+
+
+@router.get("/query/at")
+def at_time(entity: str, at: str | None = None, start: str | None = Query(None, alias="from"), end: str | None = Query(None, alias="to"),
+            relation: str | None = None, direction: str = Query("any", pattern="^(any|out|in)$"),
+            db: Session = Depends(get_db), owner: int | None = Depends(get_owner)):
+    """"Who was CTO of Acme in 2021?" without a model: the facts about an entity (optionally of one relation) that can have held in a period,
+    each with what its dates say (during / overlaps / open / undated), best-founded first. Facts dated outside are only counted."""
+    try:
+        window = temporal.window_from_params(at, start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    if window is None:
+        raise HTTPException(422, "Give a period: at=2021, or from= and to=")
+    index = gq.GraphIndex(db, owner_id=owner, window=window)
+    eid = _entity(index, entity)
+    facts = (index.out.get(eid, []) if direction in ("any", "out") else []) + (index.inn.get(eid, []) if direction in ("any", "in") else [])
+    if relation:
+        settings = get_settings()
+        try:
+            matcher = gq.PredicateMatcher(get_embedder(settings), [f.predicate for f in index.facts.values()])
+            scores = matcher.scores(relation)
+        except EmbeddingError:
+            scores = gq.PredicateMatcher(None, [f.predicate for f in index.facts.values()]).scores(relation)
+        facts = [f for f in facts if scores.get(f.predicate, 0.0) >= settings.predicate_threshold]
+    order = {"during": 0, "overlaps": 1, "open": 2, "undated": 3}
+    facts = sorted({f.id: f for f in facts}.values(), key=lambda f: (order.get(f.time, 9), f.valid_from or "9999", f.id))
+    left_out = [f.text() for f in index.excluded_facts if eid in (f.s_id, f.o_id) and direction in ("any", "out" if f.s_id == eid else "in")]
+    return {"entity": index.name(eid), "window": window.to_dict(),
+            "facts": [{"fact_id": f.id, "text": f.text(), "subject": f.s_name, "predicate": f.predicate, "object": f.o_name, "object_id": f.o_id,
+                       "valid_from": f.valid_from or None, "valid_to": f.valid_to or None, "time": f.time,
+                       "meaning": temporal.describe(f.time, window)} for f in facts],
+            "left_out": len(left_out), "left_out_examples": left_out[:5]}
 
 
 @router.get("/index/status")

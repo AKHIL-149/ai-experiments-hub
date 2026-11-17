@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.models.graph import Entity, Fact, FactSource
+from src.services.temporal import Window, classify, parse_period
 
 
 def fact_to_dict(f: Fact, source_count: int | None = None) -> dict:
@@ -45,17 +46,27 @@ def build_graph(db: Session, document_id: str | None = None, entity_type: str | 
     return g
 
 
-def graph_payload(g: nx.MultiDiGraph, limit: int = 300) -> dict:
-    """The most connected `limit` nodes and the edges between them, ready for the UI"""
+def graph_payload(g: nx.MultiDiGraph, limit: int = 300, window: Window | None = None) -> dict:
+    """The most connected `limit` nodes and the edges between them, ready for the UI. With a `window` every fact (edge and
+    value) says what its dates say about that period (`time`: during, overlaps, open, outside, undated); none is removed,
+    so the picture does not rearrange itself when the period changes."""
     ranked = sorted(g.nodes, key=lambda n: (-g.degree(n), g.nodes[n]["name"].casefold()))
     keep = set(ranked[:limit])
+    status = (lambda d: {"time": classify(d["valid_from"], d["valid_to"], window)}) if window else (lambda d: {})
     nodes = [{"id": n, "name": g.nodes[n]["name"], "type": g.nodes[n]["type"], "degree": g.degree(n),
-              "attributes": g.nodes[n]["attributes"]} for n in ranked[:limit]]
+              "attributes": [{**a, **status(a)} for a in g.nodes[n]["attributes"]]} for n in ranked[:limit]]
     edges = [{"id": d["id"], "source": u, "target": v, "predicate": d["predicate"], "valid_from": d["valid_from"],
-              "valid_to": d["valid_to"], "source_count": d["source_count"]}
+              "valid_to": d["valid_to"], "source_count": d["source_count"], **status(d)}
              for u, v, d in g.edges(data=True) if u in keep and v in keep]
-    return {"nodes": nodes, "edges": edges, "total_nodes": g.number_of_nodes(), "total_edges": g.number_of_edges(),
-            "truncated": g.number_of_nodes() > limit}
+    out = {"nodes": nodes, "edges": edges, "total_nodes": g.number_of_nodes(), "total_edges": g.number_of_edges(),
+           "truncated": g.number_of_nodes() > limit}
+    if window:
+        counts: dict[str, int] = {}
+        for e in edges:
+            counts[e["time"]] = counts.get(e["time"], 0) + 1
+        out["window"] = window.to_dict()
+        out["time_counts"] = counts
+    return out
 
 
 def neighborhood(g: nx.MultiDiGraph, entity_id: str, depth: int = 1) -> nx.MultiDiGraph:
@@ -66,12 +77,28 @@ def neighborhood(g: nx.MultiDiGraph, entity_id: str, depth: int = 1) -> nx.Multi
     return g.subgraph(reach.keys()).copy()
 
 
+def time_span(db: Session, *, owner_id: int | None = None) -> dict:
+    """The years the documents' dates reach (for a time control), and how many facts have dates at all"""
+    rows = db.execute(select(Fact.valid_from, Fact.valid_to).where(Fact.owner_id == owner_id)).all()
+    years, dated = [], 0
+    for a, b in rows:
+        if a or b:
+            dated += 1
+        for v in (a, b):
+            p = parse_period(v)
+            if p:
+                years.append(int(v[:4]))
+    return {"first_year": min(years) if years else None, "last_year": max(years) if years else None,
+            "dated_facts": dated, "undated_facts": len(rows) - dated}
+
+
 def stats(db: Session, *, owner_id: int | None = None) -> dict:
     by_type = dict(db.execute(select(Entity.type, func.count()).where(Entity.owner_id == owner_id).group_by(Entity.type)).all())
     return {
         "entities": sum(by_type.values()),
         "entities_by_type": by_type,
         "facts": db.scalar(select(func.count()).select_from(Fact).where(Fact.owner_id == owner_id)) or 0,
+        "time": time_span(db, owner_id=owner_id),
         "sources": db.scalar(select(func.count()).select_from(FactSource).join(Fact, Fact.id == FactSource.fact_id).where(Fact.owner_id == owner_id)) or 0,
         "top_predicates": [{"predicate": p, "count": c} for p, c in db.execute(
             select(Fact.predicate, func.count().label("c")).where(Fact.owner_id == owner_id).group_by(Fact.predicate).order_by(func.count().desc()).limit(10))],
