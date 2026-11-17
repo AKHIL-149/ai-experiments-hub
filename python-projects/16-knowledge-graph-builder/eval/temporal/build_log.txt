@@ -1,0 +1,43 @@
+h01 completed 30s accepted=3 
+h02 completed 13s accepted=2 
+h03 completed 14s accepted=3 
+h04 completed 11s accepted=2 
+h05 completed 5s accepted=1 
+h06 completed 9s accepted=2 
+t01 completed 17s accepted=4 
+t02 completed 12s accepted=3 
+t03 completed 11s accepted=2 
+t04 completed 15s accepted=3 
+t05 completed 8s accepted=3 
+t06 completed 9s accepted=2 
+entities 39 facts 30
+   Ismene Torvald | led | Brannock Mills | 2003 2009
+   Callum Ferris | led | Brannock Mills | 2009 2018
+   Ravenna Sol | led | Brannock Mills | 2018 
+   Lorcan Adeyemi | a researcher at | Zephyr Institute | 2012-03 2016-08
+   Lorcan Adeyemi | moved to | Calder Observatory | 2016-09 
+   Sable Group | acquired | Pemberly Press | 2001 
+   Sable Group | acquired | Northgate Audio | 2008 
+   Sable Group | acquired | Wick Dynamics | 2015 
+   Ysolde Marchetti | served as mayor of | Carrowmere | 1990 1997
+   Carrowmere | located on | Lessing river |  
+   Fenwick Park University | located in | Ashgrove |  
+   Imogen Strand | studied at | Fenwick Park University | 2008 2012
+   Imogen Strand | joined | Delacroix Textiles |  
+   Halvard Quist | founded | Tessel Robotics | 2009 
+   Halvard Quist | served as chief executive of | Tessel Robotics | 2009 2016
+   Nadia Berrow | served as chief executive of | Tessel Robotics | 2016 2021
+   Corin Vale | led | Tessel Robotics | 2021 
+   Ottoline Reyes | worked at | Brindle Bank | 2011 2015
+   Ottoline Reyes | joined | Marrow Logistics | 2015 2020
+   Ottoline Reyes | joined | Halcyon Foods | 2020 
+   Quillon Systems | its headquarters in | Dunmere | 2004 2012
+   Quillon Systems | moved its headquarters to | Valcross | 2012 
+   Marlow Foods | acquired | Tidewell Media | 2014 
+   Marlow Foods | acquired | Ketterby Labs | 2019 
+   Marlow Foods | acquired | Sunnet Retail | 2022 
+   Pell Hartnoll | the chief technology officer of | Orrin Dynamics |  
+   Orrin Dynamics | makes | irrigation sensors |  
+   Pell Hartnoll | chief technology officer of | Orrin Dynamics |  
+   Desmond Ashgrove | chaired | Vexley Council | 2005 2010
+   Vexley Council | meets in | Hollin |  

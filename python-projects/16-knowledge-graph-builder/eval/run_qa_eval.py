@@ -68,8 +68,10 @@ NOT_FOUND = ("not found", "no information", "not mentioned", "cannot be determin
 
 
 def judge(q: dict, result: dict) -> dict:
-    ans = norm(result["answer"])
-    if not q["gold"]:  # must refuse
+    ans = norm(result["answer"] + " " + result.get("time_caveat", ""))
+    if q["kind"] == "undated":  # the text gives no date: refusing is right, so is the name with the caveat that nothing dates it
+        ok = (not result["found"]) or (all(norm(g) in ans for g in q["gold"]) and bool(re.search(r"undated|no date|not stated|does not (say|state)|no end|unknown when", ans)))
+    elif not q["gold"]:  # must refuse
         ok = (not result["found"]) or any(p in ans for p in NOT_FOUND)
     else:
         ok = result["found"] and all(norm(g) in ans for g in q["gold"])

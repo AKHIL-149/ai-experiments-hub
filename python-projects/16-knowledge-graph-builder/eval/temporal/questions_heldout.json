@@ -1,0 +1,155 @@
+{
+ "note": "Written before the first run of questions.json and before any change made in response to it; run once on the final code.",
+ "questions": [
+  {
+   "id": "h01",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who led Brannock Mills in 2005?",
+   "gold": [
+    "Ismene Torvald"
+   ],
+   "support": [
+    "h01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h02",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who led Brannock Mills in 2014?",
+   "gold": [
+    "Callum Ferris"
+   ],
+   "support": [
+    "h01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h03",
+   "hops": 1,
+   "kind": "now",
+   "question": "Who currently leads Brannock Mills?",
+   "gold": [
+    "Ravenna Sol"
+   ],
+   "support": [
+    "h01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h04",
+   "hops": 1,
+   "kind": "point",
+   "question": "Where did Lorcan Adeyemi work in 2014?",
+   "gold": [
+    "Zephyr Institute"
+   ],
+   "support": [
+    "h02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h05",
+   "hops": 1,
+   "kind": "point",
+   "question": "Where did Lorcan Adeyemi work in 2018?",
+   "gold": [
+    "Calder Observatory"
+   ],
+   "support": [
+    "h02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h06",
+   "hops": 1,
+   "kind": "range",
+   "question": "Which companies did Sable Group acquire before 2010?",
+   "gold": [
+    "Pemberly Press",
+    "Northgate Audio"
+   ],
+   "support": [
+    "h03"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h07",
+   "hops": 1,
+   "kind": "range",
+   "question": "Which company did Sable Group acquire between 2005 and 2012?",
+   "gold": [
+    "Northgate Audio"
+   ],
+   "support": [
+    "h03"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h08",
+   "hops": 1,
+   "kind": "range",
+   "question": "Which companies did Sable Group acquire after 2010?",
+   "gold": [
+    "Wick Dynamics"
+   ],
+   "support": [
+    "h03"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h09",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who was the mayor of Carrowmere in 1995?",
+   "gold": [
+    "Ysolde Marchetti"
+   ],
+   "support": [
+    "h04"
+   ],
+   "note": ""
+  },
+  {
+   "id": "h10",
+   "hops": 1,
+   "kind": "unanswerable",
+   "question": "Who was the mayor of Carrowmere in 2003?",
+   "gold": [],
+   "support": [],
+   "note": "the only mayor served 1990-1997"
+  },
+  {
+   "id": "h11",
+   "hops": 2,
+   "kind": "point",
+   "question": "In which town is the university that Imogen Strand attended in 2010 located?",
+   "gold": [
+    "Ashgrove"
+   ],
+   "support": [
+    "h05",
+    "h06"
+   ],
+   "note": "two documents"
+  },
+  {
+   "id": "h12",
+   "hops": 1,
+   "kind": "unanswerable",
+   "question": "Who currently chairs Vexley Council?",
+   "gold": [],
+   "support": [],
+   "note": "ended in 2010 (document t06 belongs to the development corpus)"
+  }
+ ]
+}

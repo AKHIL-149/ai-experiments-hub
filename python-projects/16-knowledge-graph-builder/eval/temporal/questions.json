@@ -1,0 +1,158 @@
+{
+ "note": "Development questions: the prompts and rules were tuned against these.",
+ "questions": [
+  {
+   "id": "t01",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who was the chief executive of Tessel Robotics in 2018?",
+   "gold": [
+    "Nadia Berrow"
+   ],
+   "support": [
+    "t01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t02",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who was the chief executive of Tessel Robotics in 2012?",
+   "gold": [
+    "Halvard Quist"
+   ],
+   "support": [
+    "t01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t03",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who was the chief executive of Tessel Robotics in 2023?",
+   "gold": [
+    "Corin Vale"
+   ],
+   "support": [
+    "t01"
+   ],
+   "note": "began 2021, no end stated"
+  },
+  {
+   "id": "t04",
+   "hops": 1,
+   "kind": "point",
+   "question": "Where did Ottoline Reyes work in 2013?",
+   "gold": [
+    "Brindle Bank"
+   ],
+   "support": [
+    "t02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t05",
+   "hops": 1,
+   "kind": "point",
+   "question": "Where did Ottoline Reyes work in 2017?",
+   "gold": [
+    "Marrow Logistics"
+   ],
+   "support": [
+    "t02"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t06",
+   "hops": 1,
+   "kind": "point",
+   "question": "Where was Quillon Systems headquartered in 2008?",
+   "gold": [
+    "Dunmere"
+   ],
+   "support": [
+    "t03"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t07",
+   "hops": 1,
+   "kind": "range",
+   "question": "Which companies did Marlow Foods acquire after 2018?",
+   "gold": [
+    "Ketterby Labs",
+    "Sunnet Retail"
+   ],
+   "support": [
+    "t04"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t08",
+   "hops": 1,
+   "kind": "now",
+   "question": "Who currently leads Tessel Robotics?",
+   "gold": [
+    "Corin Vale"
+   ],
+   "support": [
+    "t01"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t09",
+   "hops": 1,
+   "kind": "unanswerable",
+   "question": "Who chaired Vexley Council in 2015?",
+   "gold": [],
+   "support": [],
+   "note": "the only chair served 2005-2010"
+  },
+  {
+   "id": "t10",
+   "hops": 1,
+   "kind": "point",
+   "question": "Who chaired Vexley Council in 2007?",
+   "gold": [
+    "Desmond Ashgrove"
+   ],
+   "support": [
+    "t06"
+   ],
+   "note": ""
+  },
+  {
+   "id": "t11",
+   "hops": 1,
+   "kind": "undated",
+   "question": "Who was the chief technology officer of Orrin Dynamics in 2019?",
+   "gold": [
+    "Pell Hartnoll"
+   ],
+   "support": [
+    "t05"
+   ],
+   "note": "no date in the text: not found, or the name with a caveat that it is undated"
+  },
+  {
+   "id": "t12",
+   "hops": 1,
+   "kind": "now",
+   "question": "Where is Quillon Systems currently headquartered?",
+   "gold": [
+    "Valcross"
+   ],
+   "support": [
+    "t03"
+   ],
+   "note": ""
+  }
+ ]
+}

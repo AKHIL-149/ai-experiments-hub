@@ -4,7 +4,7 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 answers multi-hop questions over it, and shows it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 to 5 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app).** The rest is not built yet.
+**Status: steps 1 to 6 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time).** The rest is not built yet.
 
 | Step | What | State |
 |---|---|---|
@@ -13,7 +13,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | 3 | Queries and graph-RAG (multi-hop questions with cited sources) | done |
 | 4 | Accounts and background job queue (pattern from project 15) | done |
 | 5 | Visual explorer (React + D3.js, "Paper Light" theme) | done |
-| 6 | Temporal facts ("who was CTO in 2021?") | not started |
+| 6 | Temporal facts ("who was CTO in 2021?") | done |
 | 7 | Conflict detection and fact checking | not started |
 | 8 | Export (Cypher, CSV, JSON) and final docs | not started |
 
@@ -207,6 +207,47 @@ Measured live (llama3.1:8b, two accounts, real worker threads): five documents i
 Limits: one server process is the tested setup (the claiming is safe across processes, but I did not run two); a read cannot be interrupted in the middle of a model call, so cancel and shutdown wait for the current call (up to the call's cap, about a minute);
 a very long passage of mixed content can take minutes to read (the model writes many facts and each is double-checked).
 
+## Time (step 6)
+
+A date in a document is stored as the text states it (`2019`, `2019-03`, `2019-03-15`), so each one is a **range of days**: `2019` means any day of 2019. A fact has a start and an end, and either can be missing. For a period, code compares ranges (no language model) and gives each fact one of five statuses:
+
+| Status | Meaning | Example for 2021 |
+|---|---|---|
+| `during` | the stated dates surely cover the whole period | "from 2020 to 2022" |
+| `overlaps` | they overlap it, or might (a year-only date, began or ended inside the period) | "from 2021", "from 2019 to 2021" |
+| `open` | it began earlier and **no end is stated**: it may or may not still have held | "since 2016" |
+| `outside` | it cannot have held then | "from 2012 to 2019", "since 2023" |
+| `undated` | the text gives no date, so nothing can be said | "is the CTO of Orrin Dynamics" |
+
+**Questions.** "Who was the CTO of Acme in 2021?", "... between 2015 and 2018", "... before March 2020", "which companies did Acme buy after 2018", "in the 1990s", "currently" are recognised with patterns, so the time is never a guess by the model. The time words are taken out before the question is planned, facts dated outside the period are left out of the chain walk, and every fact the model sees carries a tag with what its dates say. The model is told what the tags mean, and that an `open` fact is only a "possibly". If every fact the answer rests on is `open` or `undated`, **code** adds a caveat (`time_caveat`) to the answer, so it does not depend on how the model words it. If facts exist but all are dated outside the period the answer says so, with examples ("the graph has facts about this, but their dates put them outside 2021"), instead of a bare "not found". A year inside an entity's name ("Expo 2020", "2020 Summer Games") is not read as a time. Passage search (`vector`) does not use dates.
+
+**Browsing.** The Graph screen has a time control (Any time, Now, or a year with a slider and arrows): facts dated outside the chosen year fade (dotted lines), entities with nothing left fade, and a line says how many facts hold, are open, undated or outside. Nothing is removed, so the picture does not rearrange. An entity's panel has a **Timeline** (its facts in time order, each with its status for the chosen year), Ask shows each citation's status and the time it read, and "Show them in the graph" opens the graph at that year.
+
+### Measured
+
+A small corpus of 12 dated documents read by the real model (`eval/temporal`, `llama3.1:8b`; 30 facts): **every date was extracted correctly** (including month precision and "since 2021" as a start with no end). Two question sets: 12 development questions (the caveat code was added after it showed one failure) and 12 held-out ones written before the first run and run once.
+
+| Correct answers | `vector` (passages) | `subgraph` (facts around) | `graph` (chain) |
+|---|---|---|---|
+| Development (12: 7 "in YEAR", 1 range, 2 "currently", 1 unanswerable, 1 undated) | 8 | **12** | 11 |
+| **Held-out** (12: 6 "in YEAR", 3 ranges, 1 "currently", 2 unanswerable) | 8 | **12** | 11 |
+| Average seconds per answer | 1.5 | 1.7 | 2.3 |
+
+Passage search does not use dates: it answered "not found" to 7 of the 24 questions (all of them "in YEAR" questions whose answer was in the documents) and gave the undated one as a bare name without a caveat. I did not look into why it missed them. The two misses of `graph` (one in each set) are not about reading dates:
+- **Predicate wording** (development): "chief executive" in the question, "led" in the document, so the chain could not be followed ("nothing matches 'chief executive'"). The same weakness limited step 3.
+- **An event looks like a state** (held-out): "which companies did Sable Group acquire after 2010?" gave "Northgate Audio" (acquired in 2008). An acquisition is stored as a fact that starts in 2008 with no end, which is the same shape as "led since 2018", so it is marked `open` ("may still have held") and the model chose it. The tags are right; the model read them wrongly. `subgraph` got this one right.
+
+On these questions `subgraph` was as good as or better than `graph` (they are one-step questions; `graph` earned its place on multi-hop questions in step 3). I did not change the default.
+
+### Limits of time
+
+- **Events and states are not told apart.** "Acquired in 2019" and "led since 2019" are both a start with no end, so for a later year both are `open`. The answer says "no end date is stated"; it cannot say the acquisition ended.
+- **No quarters, seasons, relative dates or "the 1990s" in documents.** "Last year", "since the merger", "Q3 2021" are not resolved (only years, months and days are stored). "In the nineties", "mid-2010s" in a question are not read.
+- **One time per question.** "CEO in 2015 and CTO in 2018" uses the first time only.
+- **Two overlapping holders are both returned.** "Who was CTO in 2021" can list a person who left in 2021 and one who started in 2021; deciding which is right (or that the documents contradict each other) is step 7.
+- A start-only fact tagged `open` can be long over: only the text can say, and it did not.
+- The time words are English.
+
 ## Web app (step 5)
 
 Open `http://127.0.0.1:8016`. The server serves the built app from `frontend/dist`, so the sign-in cookie is same-origin (no CORS, no tokens in JavaScript).
@@ -228,14 +269,14 @@ Security: the page is sent with a strict Content-Security-Policy (scripts only f
 cd frontend
 npm install
 npm run dev        # http://127.0.0.1:5173, proxies /api to the server on 8016
-npm test           # 228 component and unit tests (jsdom)
+npm test           # 274 component and unit tests (jsdom)
 npm run build      # writes frontend/dist, which is committed: rebuild it after every change to frontend/src
 ```
 
-Tested: 228 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
+Tested: 274 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
 Checked by hand in a browser against the real extracted documents (25 entities, 30 facts): signing up, the graph, an entity panel, and the question "In which city is the university attended by the founder of Soro Labs?" answered "Kellmar" with two cited quotes while passage search said "The documents do not say".
 
-Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; the UI has no temporal view, conflict view or export yet (steps 6 to 8); there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
+Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; the UI has no conflict view or export yet (steps 7 and 8); there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
 
 ## API
 
@@ -246,10 +287,11 @@ Limits of the web app: not tested in Safari or Firefox (Chromium-based browser p
 | `POST /api/documents/{id}/reprocess` | read again (a new job; replaces what was read before) |
 | `GET /api/jobs`, `GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel` | your jobs, their place in the queue, cancelling |
 | `DELETE /api/documents/{id}` | remove it and every fact only it supported |
-| `GET /api/graph?document_id=&type=&limit=` | the most connected `limit` entities and links between them |
-| `GET /api/graph/stats` | counts by type, top predicates |
+| `GET /api/graph?document_id=&type=&limit=&at=` | the most connected `limit` entities and links between them. With `at=2021` (or `2021-03`, `2021-03-15`, `now`) or `from=&to=` every fact also says what its dates mean for that period (`time`) |
+| `GET /api/graph/stats` | counts by type, top predicates, the years the dates reach |
 | `GET /api/entities?q=&type=`, `GET /api/entities/{id}` | search; facts going out of and into an entity, and its aliases |
-| `GET /api/entities/{id}/neighborhood?depth=1..3` | everything within N links |
+| `GET /api/entities/{id}/neighborhood?depth=1..3` | everything within N links (also takes `at` / `from` / `to`) |
+| `GET /api/entities/{id}/timeline` | every fact about the entity in time order, undated ones last (also takes `at` / `from` / `to`) |
 | `GET /api/facts/{id}` | the fact, its dates, and every source quote with its passage |
 | `POST /api/resolution/run` (`{"use_llm": false, "auto": true}`) | merge the safe pairs, refresh suggestions |
 | `GET /api/resolution/suggestions?status=pending` | suggested merges with score, reasons, both entities' facts |
@@ -257,6 +299,7 @@ Limits of the web app: not tested in Safari or Firefox (Chromium-based browser p
 | `POST /api/entities/merge` (`{"keep_id", "absorb_id"}`) | merge by hand (refused for different types or entities a fact links) |
 | `GET /api/resolution/merges`, `POST /api/resolution/merges/{id}/undo` | history and undo |
 | `POST /api/ask` | answer a question with citations and the reasoning behind it |
+| `GET /api/query/at?entity=&relation=&at=` (or `from=&to=`) | "who held this relation in that period", no model: facts that can have held, each with what its dates say; facts dated outside are only counted |
 | `GET /api/query/link?q=`, `GET /api/query/path?from=&to=`, `POST /api/query/chain` | entity linking, paths, chains of relations (no model) |
 | `GET /api/index/status`, `POST /api/index/rebuild` | passage and fact embeddings |
 | `GET /api/health` | whether the configured model is reachable and installed |
@@ -317,7 +360,7 @@ How much to trust these numbers:
 ## Tests
 
 ```bash
-python3 -m pytest                 # 578 tests, about 20 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 701 tests, about 20 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
@@ -326,6 +369,8 @@ comparison, skipping a cleanup), and the tests caught all of them (the first rou
 text file decoded as garbage, a duplicate source row that crashed storing a fact seen twice in one batch, and a name rule that
 rejected most sentences saying "Turing" for "Alan Turing", and a word-order check that wrongly rejected
 "Acme, founded by Maria, acquired Beta".
+
+Step 6's code (`temporal.py`, the dated index, the ask changes, the endpoints, the time controls) was break-tested too: about 75 deliberate bugs on the server side (the first round missed 18, one of them an equivalent change; the new tests also exposed a real bug: "In 2021, who led Acme?" left a stray comma in the question given to the planner) and 50 in the frontend (the first round missed 10 and one more after that); each got a test.
 
 ## Layout
 
@@ -343,8 +388,10 @@ src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), ex
                              embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations),
                              job_queue (claiming, fair order, heartbeat, cancel, recovery), cancel
 src/api/                     auth.py, deps.py, documents.py, jobs.py, graph.py, resolution.py, query.py
+src/services/temporal.py     what dates say about a period; the time a question names
 src/web.py                   serves frontend/dist (page fallback, security headers, cached assets)
 frontend/                    React + D3 app: src/ (components, lib, router, api client), tests/ (vitest), dist/ (the committed build)
+eval/temporal/               dated documents, two question sets, results; run_temporal_eval.py
 eval/                        labelled documents (docs/), gold.json, scoring, run_eval.py, rescore.py, saved results;
                              entities.json + run_resolution_eval.py for resolution;
                              qa/ (18 documents, two question sets, saved results) + run_qa_eval.py for questions
