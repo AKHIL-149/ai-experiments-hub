@@ -224,7 +224,7 @@ export default function GraphView({ params, go }) {
         onAsk={(e) => go("ask", { q: `What do we know about ${e.name}?` })} onStartPath={(id) => { setPathFrom((p) => (p === id ? null : id)); setPathNote(null); }}
         onSelectFact={(id) => setSelected({ kind: "edge", id })} onSelectEntity={focusEntity}
         onMerged={async (keepId, name) => { notify(`Merged into “${name}”`); await load(true); setSelected({ kind: "node", id: keepId }); }} />
-    : <FactPanel id={selected.id} onSelectEntity={focusEntity} onClose={() => setSelected(null)} />);
+    : <FactPanel id={selected.id} onSelectEntity={focusEntity} onClose={() => setSelected(null)} onOpenConflicts={() => go("review", { tab: "conflicts" })} />);
 
   const empty = !loading && !error && graph.nodes.length === 0;
 

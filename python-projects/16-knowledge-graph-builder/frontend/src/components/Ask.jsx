@@ -61,6 +61,12 @@ function AnswerCard({ title, result, go }) {
       </p>
       {!result.found && result.note && <p className="muted small">{result.note}</p>}
       {result.warning && <div className="banner warn" role="alert">{result.warning}</div>}
+      {result.conflicts && result.conflicts.length > 0 && (
+        <div className="banner warn" role="note">
+          The documents disagree about part of this: {result.conflicts.map((c) => c.texts.filter(Boolean).join(" ↔ ")).join("; ")}.{" "}
+          <button className="linkbtn" onClick={() => go("review", { tab: "conflicts" })}>Settle it in Review</button>
+        </div>
+      )}
       {result.time_caveat && <div className="banner warn" role="note">{result.time_caveat}</div>}
       {result.dropped_citations && result.dropped_citations.length > 0 && (
         <div className="banner warn">The model cited {result.dropped_citations.join(", ")}, which it was never given; those citations were removed.</div>

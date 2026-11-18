@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-export const ROUTES = ["graph", "documents", "ask", "review"];
+export const ROUTES = ["graph", "documents", "ask", "check", "review"];
 
 /** Parse "#/graph?entity=abc" into { route, params } (unknown routes fall back to the graph) */
 export function parseHash(hash) {

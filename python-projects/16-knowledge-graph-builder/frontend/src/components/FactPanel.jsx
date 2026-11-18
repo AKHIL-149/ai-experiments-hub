@@ -3,7 +3,7 @@ import { useAsync } from "../hooks";
 import { formatPeriod, plural } from "../lib/format";
 import Source from "./Source";
 
-export default function FactPanel({ id, onSelectEntity, onClose }) {
+export default function FactPanel({ id, onSelectEntity, onClose, onOpenConflicts }) {
   const fact = useAsync(() => api.fact(id), [id]);
   const f = fact.data;
   return (
@@ -21,6 +21,13 @@ export default function FactPanel({ id, onSelectEntity, onClose }) {
             <span className="muted"><em>{f.predicate}</em></span>{" "}
             {f.object_is_value ? <strong>{f.object}</strong> : <button className="linkbtn" onClick={() => onSelectEntity(f.object_id)}>{f.object}</button>}
           </p>
+          {f.left_out && <div className="banner warn" role="note">You chose the other side of a conflict, so this fact is left out of the graph and the answers. You can undo that in Review.</div>}
+          {f.conflicts && f.conflicts.length > 0 && (
+            <div className="banner warn" role="note">
+              This may clash with: {f.conflicts.map((c) => c.other.text).join("; ")}.{" "}
+              <button className="linkbtn" onClick={() => onOpenConflicts && onOpenConflicts()}>Settle it in Review</button>
+            </div>
+          )}
           {formatPeriod(f.valid_from, f.valid_to) && <p className="small"><span className="muted">When: </span>{formatPeriod(f.valid_from, f.valid_to)}</p>}
           <div className="sect">
             <h3>{plural(f.sources.length, "source")}</h3>

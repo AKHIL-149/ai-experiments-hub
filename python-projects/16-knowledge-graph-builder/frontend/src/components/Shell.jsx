@@ -6,6 +6,7 @@ import { timeUntil } from "../lib/format";
 import { useRoute } from "../router";
 import Ask from "./Ask";
 import Brand from "./Brand";
+import Check from "./Check";
 import Documents from "./Documents";
 import GraphView from "./GraphView";
 import Review from "./Review";
@@ -14,16 +15,17 @@ const TABS = [
   ["graph", "Graph"],
   ["documents", "Documents"],
   ["ask", "Ask"],
+  ["check", "Check"],
   ["review", "Review"],
 ];
 
 function useCounts() {
   const [counts, setCounts] = useState({ active: 0, suggestions: 0, ready: null, detail: "" });
   const load = async () => {
-    const [jobs, sugg, health] = await Promise.allSettled([api.jobs("active"), api.suggestions("pending"), api.health()]);
+    const [jobs, sugg, clash, health] = await Promise.allSettled([api.jobs("active"), api.suggestions("pending"), api.conflicts("open"), api.health()]);
     setCounts({
       active: jobs.status === "fulfilled" ? jobs.value.jobs.length : 0,
-      suggestions: sugg.status === "fulfilled" ? sugg.value.suggestions.length : 0,
+      suggestions: (sugg.status === "fulfilled" ? sugg.value.suggestions.length : 0) + (clash.status === "fulfilled" && clash.value ? clash.value.conflicts.length : 0),
       ready: health.status === "fulfilled" && health.value.llm ? health.value.llm.ready : null,
       detail: health.status === "fulfilled" && health.value.llm ? health.value.llm.detail : "",
     });
@@ -126,7 +128,8 @@ export default function Shell() {
         {route === "graph" && <GraphView params={params} go={go} />}
         {route === "documents" && <Documents go={go} onChange={reloadCounts} />}
         {route === "ask" && <Ask params={params} go={go} />}
-        {route === "review" && <Review onChange={reloadCounts} go={go} />}
+        {route === "check" && <Check params={params} go={go} />}
+        {route === "review" && <Review onChange={reloadCounts} go={go} params={params} />}
       </main>
     </div>
   );

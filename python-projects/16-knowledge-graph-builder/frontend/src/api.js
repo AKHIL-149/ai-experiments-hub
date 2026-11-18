@@ -95,6 +95,12 @@ export const api = {
   path: (from, to, maxHops) => get("/api/query/path", { from, to, max_hops: maxHops }),
   link: (q) => get("/api/query/link", { q }),
 
+  conflicts: (status = "open") => get("/api/conflicts", { status }),
+  runConflicts: (useLlm) => post("/api/conflicts/run", { use_llm: !!useLlm }),
+  resolveConflict: (id, resolution) => post(`/api/conflicts/${id}/resolve`, { resolution }),
+  reopenConflict: (id) => post(`/api/conflicts/${id}/reopen`),
+  check: (claim) => post("/api/check", { claim }),
+
   ask: (question, mode, documentId) => post("/api/ask", { question, mode, document_id: documentId || undefined }),
 
   suggestions: (status = "pending") => get("/api/resolution/suggestions", { status }),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useAsync, useToast } from "../hooks";
 import { percent, plural } from "../lib/format";
+import Conflicts from "./Conflicts";
 import TypeChip from "./TypeChip";
 
 function Entity({ e }) {
@@ -35,8 +36,9 @@ function SuggestionCard({ s, onDecide, busy }) {
   );
 }
 
-export default function Review({ onChange }) {
-  const [tab, setTab] = useState("pending");
+export default function Review({ onChange, params = {} }) {
+  const [tab, setTab] = useState(["pending", "conflicts", "merged", "rejected"].includes(params.tab) ? params.tab : "pending");
+  const conflictCount = useAsync(() => api.conflicts("open").then((r) => r.conflicts.length), []);
   const pending = useAsync(() => api.suggestions("pending"), []);
   const rejected = useAsync(() => api.suggestions("rejected"), []);
   const merges = useAsync(() => api.merges(true), []);
@@ -74,7 +76,8 @@ export default function Review({ onChange }) {
 
   const list = pending.data ? pending.data.suggestions : [];
   const history = merges.data ? merges.data.merges : [];
-  const tabs = [["pending", `Suggestions${list.length ? ` (${list.length})` : ""}`], ["merged", "Merged"], ["rejected", "Kept apart"]];
+  const tabs = [["pending", `Suggestions${list.length ? ` (${list.length})` : ""}`], ["conflicts", `Conflicts${conflictCount.data ? ` (${conflictCount.data})` : ""}`],
+    ["merged", "Merged"], ["rejected", "Kept apart"]];
 
   return (
     <div className="page stack">
@@ -104,6 +107,8 @@ export default function Review({ onChange }) {
           {list.map((s) => <SuggestionCard key={s.id} s={s} onDecide={decide} busy={busy} />)}
         </div>
       )}
+
+      {tab === "conflicts" && <Conflicts onChange={() => { conflictCount.reload(true); if (onChange) onChange(); }} />}
 
       {tab === "merged" && (
         <div>
