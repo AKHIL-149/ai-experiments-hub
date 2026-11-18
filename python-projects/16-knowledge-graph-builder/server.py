@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.api import auth as auth_api
+from src.api import conflicts as conflicts_api
 from src.api import documents, graph, jobs, query, resolution
 from src.core.auth import current_caller
 from src.core.config import get_settings
@@ -59,6 +60,7 @@ app.include_router(documents.router)
 app.include_router(jobs.router)
 app.include_router(graph.router)
 app.include_router(resolution.router)
+app.include_router(conflicts_api.router)
 app.include_router(query.router)
 
 

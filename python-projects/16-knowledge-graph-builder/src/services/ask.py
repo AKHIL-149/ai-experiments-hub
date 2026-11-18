@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from src.core.config import Settings
 from src.models.graph import Chunk, Document, FactSource
+from src.services import conflicts as conflict_service
 from src.services import graph_query as gq
 from src.services import temporal
 from src.services.embedding import Embedder, EmbeddingError, top_chunks
@@ -110,6 +111,7 @@ class Evidence:
     passages: list = field(default_factory=list)      # (Chunk, score)
     reasoning: dict = field(default_factory=dict)
     window: temporal.Window | None = None             # the time the question asks about, when it names one
+    conflicts: list = field(default_factory=list)     # open conflicts between facts shown to the model
 
 
 def plan_question(llm: LLMClient, question: str) -> Plan | None:
@@ -290,6 +292,11 @@ def build_prompt(db: Session, question: str, ev: Evidence) -> tuple[str, dict[st
                          "text": chunk.text[:PASSAGE_CHARS], "score": round(score, 3)}
         lines.append(f"[{label}] ({title}) {chunk.text[:PASSAGE_CHARS]}")
     notes = [ev.note] if ev.note else []
+    by_fact = {meta["fact_id"]: label for label, meta in labels.items() if meta["kind"] == "fact"}
+    for c in ev.conflicts:
+        if c.fact_a_id in by_fact and c.fact_b_id in by_fact:
+            notes.append(f"[{by_fact[c.fact_a_id]}] and [{by_fact[c.fact_b_id]}] contradict each other. Do not choose between them silently: "
+                         "say that the documents disagree and give both, citing both.")
     if ev.reasoning.get("paths"):
         notes.append("The facts form a chain between the entities of the question. Describe the whole chain, naming every entity on it.")
     note = "".join(f"Note: {n}\n\n" for n in notes)
@@ -340,6 +347,7 @@ def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embed
                     f"(for example: {'; '.join(reasoning['time']['left_out_examples'][:3])}).")
         return {"question": question, "found": False, "answer": "not found", "citations": [], "reasoning": reasoning,
                 "note": note, "timings_ms": {"retrieve": round((t1 - t0) * 1000)}}
+    ev.conflicts = conflict_service.open_conflicts_for(db, [f.id for f in ev.facts], owner_id)
     prompt, labels = build_prompt(db, question, ev)
     result = answer_from(llm, prompt, ev.window)
     t2 = time.time()
@@ -352,6 +360,10 @@ def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embed
     out = {"question": question, "found": result["found"] and bool(result["answer"]), "answer": result["answer"] or "not found",
            "citations": citations, "reasoning": reasoning,
            "timings_ms": {"retrieve": round((t1 - t0) * 1000), "answer": round((t2 - t1) * 1000)}}
+    shown = {f.id: f for f in ev.facts}
+    if ev.conflicts:
+        out["conflicts"] = [{"id": c.id, "kind": c.kind, "severity": c.severity, "fact_ids": [c.fact_a_id, c.fact_b_id],
+                             "texts": [shown[i].text() if i in shown else None for i in (c.fact_a_id, c.fact_b_id)]} for c in ev.conflicts]
     if ev.window and out["found"]:
         caveat = _time_caveat(citations, ev.window)
         if caveat:

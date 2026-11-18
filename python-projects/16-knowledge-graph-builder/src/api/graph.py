@@ -8,6 +8,7 @@ from src.core.database import get_db
 from src.models.graph import ENTITY_TYPES, Chunk, Document, Entity, Fact, FactSource
 from src.models.resolution import EntityAlias
 from src.services import graph_store, temporal
+from src.services.conflicts import open_conflicts_for, overruled_ids
 
 router = APIRouter(prefix="/api", tags=["graph"])
 
@@ -60,8 +61,9 @@ def get_entity(entity_id: str, db: Session = Depends(get_db), owner: int | None 
     e = db.get(Entity, entity_id)
     if e is None or e.owner_id != owner:
         raise HTTPException(404, "Entity not found")
-    out = db.execute(select(Fact).where(Fact.subject_id == e.id).order_by(Fact.predicate)).scalars().all()
-    inc = db.execute(select(Fact).where(Fact.object_id == e.id).order_by(Fact.predicate)).scalars().all()
+    left_out = overruled_ids(db, owner)
+    out = [f for f in db.execute(select(Fact).where(Fact.subject_id == e.id).order_by(Fact.predicate)).scalars().all() if f.id not in left_out]
+    inc = [f for f in db.execute(select(Fact).where(Fact.object_id == e.id).order_by(Fact.predicate)).scalars().all() if f.id not in left_out]
     aliases = db.execute(select(EntityAlias.name).where(EntityAlias.entity_id == e.id).order_by(EntityAlias.name)).scalars().all()
     return {**_entity(e), "aliases": list(aliases), "outgoing": [graph_store.fact_to_dict(f) for f in out],
             "incoming": [graph_store.fact_to_dict(f) for f in inc]}
@@ -88,7 +90,15 @@ def get_fact(fact_id: str, db: Session = Depends(get_db), owner: int | None = De
                       .join(Chunk, Chunk.id == FactSource.chunk_id).where(FactSource.fact_id == f.id)).all()
     sources = [{"document_id": s.document_id, "document_title": title, "chunk_id": s.chunk_id, "quote": s.evidence,
                 "passage": passage, "verified": s.verified} for s, title, passage in rows]
-    return {**graph_store.fact_to_dict(f, len(sources)), "sources": sources}
+    clashes = []
+    for c in open_conflicts_for(db, [f.id], owner):
+        other = db.get(Fact, c.fact_b_id if c.fact_a_id == f.id else c.fact_a_id)
+        if other is not None:
+            clashes.append({"id": c.id, "kind": c.kind, "severity": c.severity,
+                            "other": {"id": other.id, "text": f"{other.subject.name} {other.predicate} {other.object.name if other.object else other.object_value}",
+                                      "valid_from": other.valid_from or None, "valid_to": other.valid_to or None}})
+    return {**graph_store.fact_to_dict(f, len(sources)), "sources": sources, "conflicts": clashes,
+            "left_out": f.id in overruled_ids(db, owner)}
 
 
 @router.get("/entities/{entity_id}/timeline")
@@ -100,7 +110,8 @@ def get_timeline(entity_id: str, at: str | None = None, start: str | None = Quer
     e = db.get(Entity, entity_id)
     if e is None or e.owner_id != owner:
         raise HTTPException(404, "Entity not found")
-    facts = db.execute(select(Fact).where((Fact.subject_id == e.id) | (Fact.object_id == e.id))).scalars().all()
+    left_out = overruled_ids(db, owner)
+    facts = [f for f in db.execute(select(Fact).where((Fact.subject_id == e.id) | (Fact.object_id == e.id))).scalars().all() if f.id not in left_out]
     rows = []
     for f in facts:
         d = graph_store.fact_to_dict(f)
