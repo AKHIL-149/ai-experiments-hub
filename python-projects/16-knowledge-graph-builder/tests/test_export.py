@@ -335,11 +335,11 @@ def test_relationship_types(predicate, expected):
     assert t == expected and re.fullmatch(r"[A-Z][A-Z0-9_]*", t)
 
 
-def test_header_says_what_it_is_and_that_it_was_not_run_on_a_database(rich, db):
+def test_header_says_what_it_is_and_which_database_it_was_tried_on(rich, db):
     head = [ln for ln in ex.to_cypher(ex.collect(db, None), now=NOW).splitlines() if ln.startswith("//")]
     assert head[0] == "// Knowledge Graph Builder export, Cypher" and head[1] == "// 2026-01-02T03:04:05+00:00"
     assert "4 entities, 4 facts between entities, 2 facts with a value" in head[2]
-    assert any("Not run against a live Neo4j or Memgraph" in ln for ln in head) and any("Safe to run again" in ln for ln in head)
+    assert any("Loaded into Neo4j Community 5.26.0 and read back unchanged; not tried on Memgraph" in ln for ln in head) and any("Safe to run again" in ln for ln in head)
 
 
 def test_a_document_title_cannot_break_out_of_the_header_comment(rich, db):

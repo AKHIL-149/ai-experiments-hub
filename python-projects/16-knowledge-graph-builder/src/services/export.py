@@ -1,8 +1,8 @@
 """Export the graph: JSON (everything), CSV (three tables in a zip) and Cypher (a script for Neo4j or any Cypher database).
 
 What is exported is what the app shows: facts left out because a conflict was settled against them are not exported (their count is
-reported), and an entity is exported when it takes part in an exported fact. Nothing here talks to a database server; the Cypher
-output follows the documented syntax but has not been run against a live Neo4j or Memgraph (see the README).
+reported), and an entity is exported when it takes part in an exported fact. Nothing here talks to a database server. The Cypher
+output was loaded into Neo4j Community 5.26.0 and read back unchanged (eval/run_neo4j_check.py); Memgraph and other Neo4j versions were not tried (see the README).
 
 Shape of the graph in Cypher
   every entity           (:Entity:Person {id, name, type, aliases})          label by type: Person, Organization, Place, ...
@@ -142,7 +142,7 @@ def to_cypher(ds: Dataset, *, schema: bool = True, now: datetime | None = None) 
     lines = ["// Knowledge Graph Builder export, Cypher", f"// {when}",
              f"// {c['entities']} entities, {c['entity_facts']} facts between entities, {c['value_facts']} facts with a value (Value nodes)",
              "// Safe to run again: everything is MERGEd on its id. Dates are text (a year, a month or a day).",
-             "// Not run against a live Neo4j or Memgraph by the tool that wrote it; see the README."]
+             "// Loaded into Neo4j Community 5.26.0 and read back unchanged; not tried on Memgraph or other versions. See the README."]
     if ds.document:
         lines.append(f"// Only facts read from the document: {ds.document['title'].splitlines()[0] if ds.document['title'] else ds.document['id']}")
     if ds.left_out:

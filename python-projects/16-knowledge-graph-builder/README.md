@@ -4,7 +4,7 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 answers multi-hop questions over it, and shows it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: all 8 steps are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time; conflicts and claim checking; export).** Two things are not done: the export has not been run against a live graph database, and the Anthropic and OpenAI clients have never run against the live services (see Known limits).
+**Status: all 8 steps are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time; conflicts and claim checking; export).** Not verified: the Anthropic and OpenAI clients have never run against the live services, and the Cypher export was loaded into Neo4j Community 5.26.0 only (not Memgraph or other versions); see Known limits.
 
 | Step | What | State |
 |---|---|---|
@@ -24,7 +24,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | Language | Python backend (FastAPI), JavaScript frontend (React 19 + D3, built with Vite; the build is committed, so Node is only needed to change the UI) |
 | LLM for extraction | Local Ollama `llama3.1:8b` (the newest Llama that runs fast on 64 GB; Llama 4 Scout is 67 GB and does not fit, Llama 3.3 70B fits but is slow). Claude and OpenAI are switchable in settings |
 | Graph engine | NetworkX in memory, built from the database. No graph database server needed |
-| Neo4j / Memgraph | Export only (step 8). Neither is installed here, so the Cypher script was checked by reading it back (see Export) but **never run against a live database** |
+| Neo4j / Memgraph | Export only (step 8). Neither is installed here; for the one check, Neo4j Community 5.26.0 was downloaded, the script loaded into it and read back unchanged (see Export), then removed. **Memgraph was never tried** |
 | Database | SQLite by default (any SQLAlchemy URL works). Alembic migrations run at startup (`alembic/versions`); a database made by steps 1-3 is adopted and upgraded |
 | UI theme | "Paper Light" (background `#F7F6F2`, panels `#FFFFFF`, accent `#2F5FD0`; person `#2F5FD0`, organization `#0F9D8A`, place `#D9822B`, concept `#C2417C`) |
 
@@ -370,16 +370,17 @@ What is exported is what the app shows. Facts left out because you settled a con
 - `evidence` and `evidence_documents` are lists of the same length: the quote at position *i* was read in the document at position *i*.
 - Everything is `MERGE`d on its `id`, so running the script twice changes nothing. Entities and `Value` nodes come first, then the relationships. Each statement is one line ending in `;`, so a line-by-line loader works as well as `cypher-shell` or the Neo4j Browser.
 - Text from the documents goes into the script as quoted strings with backslash, quote and every control character escaped, so no document text can end a string or add a statement. A test feeds it a quote that tries.
-- The two constraint statements use Neo4j 5 syntax. Memgraph and older Neo4j use another syntax: run the script with `schema=false` there and create an index on `Entity(id)` yourself (without one, loading a large graph is slow).
+- The two constraint statements use Neo4j 5 syntax (accepted by 5.26.0). Memgraph and older Neo4j use another syntax (from memory, not tried): run the script with `schema=false` there and create an index on `Entity(id)` yourself (without one, loading a large graph is slow).
 
 ```bash
 curl -b cookies.txt -o graph.cypher 'localhost:8016/api/export?format=cypher'
-cat graph.cypher | cypher-shell -u neo4j -p <password>        # untested here, see below
+cypher-shell -u neo4j -p <password> -f graph.cypher           # tried on Neo4j 5.26 Community, see below
 ```
 
 ### Checked how, and what that does not show
 
-- **A reader for the script's statements.** There is no Neo4j or Memgraph on the machine that wrote this, so the script was never run by a database. The tests read it back with a small reader that understands only the statement shapes the exporter writes, rebuild the graph from it, and compare every entity, fact, date and quote with the source, including quotes with quotes, backslashes, newlines, tabs, control characters and a line trying to end its own string. They also check that running it twice gives the same graph, that nodes come before the relationships that need them and that every statement is one line. This shows the script is well formed *in those shapes* and loses nothing in escaping. It does **not** show that a real database accepts it: the Cypher syntax is from the documentation, not from a run.
+- **A real Neo4j.** On 2026-11-17 I downloaded Neo4j Community 5.26.0 (the official tarball, checksum verified; Java 21, macOS on Apple silicon), started it on localhost with a throwaway password and tried the script two ways with the real `cypher-shell`, then deleted it all. (1) The export of the 16 conflict-corpus documents read by the real model: it loaded without errors into 26 entities, 2 `Value` nodes, 23 relationships and both constraints, exactly what the exporter reported; loading it again changed nothing. (2) `python3 -m eval.run_neo4j_check`, an awkward graph: quotes, backslashes, semicolons, `//` and `/* */`, backticks, `$`, braces, control characters, line and paragraph separators, emoji, CJK, a predicate with no ASCII letters, a predicate that looks like Cypher, a quote that tries to inject `DETACH DELETE`, a 5,000 character quote and plain values. It loaded twice without errors and every entity, alias, label, relationship type, property, date, quote and value read back over Neo4j's HTTP API equal to the source, with no stray nodes (the injection attempt is stored as plain text). The variant without the constraint lines also loaded, and the check can fail: with the escaping of backslashes broken on purpose, Neo4j's own parser rejected the script. The check erases the database it points at, so it refuses a non-empty one unless `--wipe` is given. It is a single run on one version, not a test suite that runs on every change.
+- **A reader for the script's statements.** These checks need a database, so the unit tests do not. They read the script back with a small reader that understands only the statement shapes the exporter writes, rebuild the graph from it, and compare every entity, fact, date and quote with the source, including quotes with quotes, backslashes, newlines, tabs, control characters and a line trying to end its own string. They also check that running it twice gives the same graph, that nodes come before the relationships that need them and that every statement is one line. This runs everywhere and guards against regressions; the Neo4j run above is what shows a real database accepts the script.
 - **A real run of the exporter**: the 16 conflict-corpus documents, read by the real model (26 entities, 23 facts, 2 with plain values), exported in all three formats and read by eye.
 - **Spreadsheet formulas.** Documents are uploaded text, so a quote can start with `=`, `+`, `-` or `@` and a spreadsheet would run it as a formula. CSV cells starting with those characters (or a tab or carriage return) get a leading apostrophe. The cost is that a value such as `-5` is written `'-5`; the CSV README says so. JSON and Cypher are not changed.
 - Downloads are sent as attachments with `Cache-Control: no-store` and `nosniff`, with a plain ASCII file name made from the document title (`knowledge-graph-q3-report.json`).
@@ -387,7 +388,7 @@ cat graph.cypher | cypher-shell -u neo4j -p <password>        # untested here, s
 
 ### Limits of export
 
-- **Not run against a live graph database** (above). If the script fails on your database, the first thing to check is the constraint lines (`schema=false`).
+- **Tried on one database.** Neo4j Community 5.26.0 only (above). Memgraph, other Neo4j versions (4.x, 2025.x), Enterprise features, the Neo4j Browser and large graphs were not tried. If the script fails on yours, the first thing to check is the constraint lines (`schema=false`).
 - **Export only.** Nothing imports an export back. Merge history, conflicts (as records), search vectors, jobs and accounts are not exported; settled conflicts only show as "left out" facts.
 - **Plain values are `Value` nodes**, not properties on the entity. That keeps dates and quotes, but a query for "the number of employees" must follow a relationship to a `Value`.
 - **Relationship types follow the wording.** There is no synonym merging, so two ways of saying the same thing are two types; an export of a graph that was read with varied wording is untidier than the same graph after you merged and settled things.
@@ -465,7 +466,7 @@ How much to trust these numbers:
 ## Known limits
 
 What was never checked (read this first):
-- **The Cypher export has never been run against Neo4j or Memgraph** (neither is installed here). The script was read back by a small reader written for it, which shows it is well formed and loses nothing in escaping, not that a database accepts it. See Export.
+- **The Cypher export was loaded into Neo4j Community 5.26.0 and nothing else.** Memgraph, other Neo4j versions and big graphs were not tried, and the CSV was never loaded into any database (it was only opened as tables). See Export.
 - **Only the local `llama3.1:8b` was used.** The Anthropic and OpenAI clients exist but never ran against the live services, and other local models were not tried.
 - **Every accuracy number comes from small sets I wrote**, some of them tuned on while building (each section says which). They measure the mechanism; they do not predict accuracy on your documents.
 - **The web app was only looked at in the Chromium-based browser pane**, by hand and with component tests that mock the API. No automated test drives a real server through a real browser.
@@ -524,6 +525,7 @@ src/services/temporal.py     what dates say about a period; the time a question 
 src/services/conflicts.py    finding, settling and undoing conflicts between facts
 src/services/factcheck.py    checking a claim against the facts
 src/services/export.py       JSON, CSV (zip) and Cypher output of the graph
+eval/run_neo4j_check.py      loads an awkward graph's Cypher export into a scratch Neo4j and compares it field by field
 src/models/conflict.py       Conflict, PredicateKind
 src/web.py                   serves frontend/dist (page fallback, security headers, cached assets)
 frontend/                    React + D3 app: src/ (components, lib, router, api client), tests/ (vitest), dist/ (the committed build)

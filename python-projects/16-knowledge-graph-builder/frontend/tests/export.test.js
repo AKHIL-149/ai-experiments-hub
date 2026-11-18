@@ -40,8 +40,8 @@ describe("FORMATS", () => {
     expect(FORMATS.map((f) => f.id)).toEqual(["json", "csv", "cypher"]);
     expect(FORMATS.map((f) => f.file)).toEqual(["knowledge-graph.json", "knowledge-graph.zip", "knowledge-graph.cypher"]);
   });
-  it("is honest that the Cypher script has not been tried on a live database", () => {
-    expect(FORMATS.find((f) => f.id === "cypher").blurb).toMatch(/Not yet tried against a live database/);
+  it("says which database the Cypher script was tried on, and which it was not", () => {
+    expect(FORMATS.find((f) => f.id === "cypher").blurb).toMatch(/Neo4j 5\.26 Community; not tried on Memgraph or other versions/);
   });
 });
 

@@ -31,11 +31,11 @@ describe("Export", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("This export holds: 12 entities, 18 facts (3 with a plain value), 21 quotes.");
   });
 
-  it("names the file each card gives and is honest about the Cypher script", async () => {
+  it("names the file each card gives and what the Cypher script was tried on", async () => {
     show();
     await screen.findByRole("link", { name: "Download JSON" });
     expect(within(card("CSV")).getByText("knowledge-graph.zip")).toBeInTheDocument();
-    expect(within(card("Cypher")).getByText(/Not yet tried against a live database/)).toBeInTheDocument();
+    expect(within(card("Cypher")).getByText(/not tried on Memgraph or other versions/)).toBeInTheDocument();
   });
 
   it("limits the export to a document that has been read, and only those", async () => {
