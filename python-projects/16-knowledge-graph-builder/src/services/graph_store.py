@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.models.graph import Entity, Fact, FactSource
+from src.services.conflicts import overruled_ids
 from src.services.temporal import Window, classify, parse_period
 
 
@@ -24,7 +25,8 @@ def fact_to_dict(f: Fact, source_count: int | None = None) -> dict:
 
 def build_graph(db: Session, document_id: str | None = None, entity_type: str | None = None, *, owner_id: int | None = None) -> nx.MultiDiGraph:
     """Entities are nodes, entity-to-entity facts are edges. Facts with a plain value become node attributes."""
-    q = select(Fact).where(Fact.owner_id == owner_id)
+    left_out = overruled_ids(db, owner_id)
+    q = select(Fact).where(Fact.owner_id == owner_id, Fact.id.notin_(left_out)) if left_out else select(Fact).where(Fact.owner_id == owner_id)
     if document_id:
         q = q.where(Fact.id.in_(select(FactSource.fact_id).where(FactSource.document_id == document_id)))
     g = nx.MultiDiGraph()
@@ -79,7 +81,8 @@ def neighborhood(g: nx.MultiDiGraph, entity_id: str, depth: int = 1) -> nx.Multi
 
 def time_span(db: Session, *, owner_id: int | None = None) -> dict:
     """The years the documents' dates reach (for a time control), and how many facts have dates at all"""
-    rows = db.execute(select(Fact.valid_from, Fact.valid_to).where(Fact.owner_id == owner_id)).all()
+    left_out = overruled_ids(db, owner_id)
+    rows = db.execute(select(Fact.valid_from, Fact.valid_to).where(Fact.owner_id == owner_id, Fact.id.notin_(left_out))).all()
     years, dated = [], 0
     for a, b in rows:
         if a or b:
@@ -97,7 +100,7 @@ def stats(db: Session, *, owner_id: int | None = None) -> dict:
     return {
         "entities": sum(by_type.values()),
         "entities_by_type": by_type,
-        "facts": db.scalar(select(func.count()).select_from(Fact).where(Fact.owner_id == owner_id)) or 0,
+        "facts": db.scalar(select(func.count()).select_from(Fact).where(Fact.owner_id == owner_id, Fact.id.notin_(overruled_ids(db, owner_id)))) or 0,
         "time": time_span(db, owner_id=owner_id),
         "sources": db.scalar(select(func.count()).select_from(FactSource).join(Fact, Fact.id == FactSource.fact_id).where(Fact.owner_id == owner_id)) or 0,
         "top_predicates": [{"predicate": p, "count": c} for p, c in db.execute(

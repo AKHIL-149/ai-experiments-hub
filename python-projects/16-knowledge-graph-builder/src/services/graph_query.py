@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.models.graph import Entity, Fact, FactSource
 from src.models.resolution import EntityAlias
 from src.services.embedding import Embedder, cosine_top, fact_text, normalize
+from src.services.conflicts import overruled_ids
 from src.services.resolution import canonical_tokens
 from src.services.temporal import Window, classify
 from src.services.text_utils import entity_key, words
@@ -81,7 +82,10 @@ class GraphIndex:
         self.facts: dict[str, FactView] = {}
         self.out: dict[str, list[FactView]] = defaultdict(list)
         self.inn: dict[str, list[FactView]] = defaultdict(list)
+        left_out = overruled_ids(db, owner_id)          # facts a person gave up on when settling a conflict
         for f in db.execute(select(Fact).where(Fact.owner_id == owner_id)).scalars():
+            if f.id in left_out:
+                continue
             docs = frozenset(doc_of.get(f.id, ()))
             if document_id and document_id not in docs:
                 continue

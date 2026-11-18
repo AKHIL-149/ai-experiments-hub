@@ -16,6 +16,7 @@ from src.services.chunker import chunk_text
 from src.services.embedding import Embedder, EmbeddingError, ensure_chunk_embeddings, get_embedder
 from src.services.extraction import ExtractedFact, extract_chunk
 from src.services.llm import LLMClient, LLMError, get_llm
+from src.services.conflicts import run_detection
 from src.services.resolution import find_by_alias, run_resolution
 from src.services.text_utils import entity_key, strip_article
 
@@ -227,5 +228,14 @@ def _run(db: Session, doc: Document, llm: LLMClient | None, settings: Settings, 
             db.commit()
         except Exception:  # resolution is a bonus step: the document is already read and stored
             log.exception("Entity resolution failed after document %s", doc.id)
+            db.rollback()
+    if settings.auto_detect_conflicts:
+        try:                                    # code only (no model): relation words nobody classified are never flagged
+            found = run_detection(db, owner_id=doc.owner_id)
+            db.commit()
+            doc.stats = {**doc.stats, "conflicts": {"open": found.open, "new": found.new}}
+            db.commit()
+        except Exception:
+            log.exception("Conflict detection failed after document %s", doc.id)
             db.rollback()
     return "completed"

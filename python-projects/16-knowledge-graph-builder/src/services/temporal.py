@@ -198,3 +198,30 @@ def window_from_params(at: str | None = None, start: str | None = None, end: str
             return window_between(start, end)
         return Window(a[0], None, f"since {start}", "after") if a else Window(None, b[1], f"until {end}", "before")
     return None
+
+
+# ---------------------------------------------------------------- two facts and their periods
+
+def _not_after(x: str, y: str) -> bool:
+    """x is not later than y, compared as precisely as both are written ('2019' vs '2019-03' compares the years)"""
+    n = min(len(x), len(y))
+    return x[:n] <= y[:n]
+
+
+def overlap_status(a_from: str | None, a_to: str | None, b_from: str | None, b_to: str | None) -> str:
+    """Can two facts have held at the same time?
+      none      one surely ended before (or when) the other began: a handover, not an overlap ("2012-2019" and "2019-2022")
+      certain   both begin on stated dates, at least one ends on a stated date, and the periods share time
+      possible  they might overlap: a missing start, or neither one states an end ("since 2020" and "since 2023")
+      unknown   neither has any date
+    """
+    a_from, a_to, b_from, b_to = (v or "" for v in (a_from, a_to, b_from, b_to))
+    if not (a_from or a_to or b_from or b_to):
+        return "unknown"
+    if a_to and b_from and _not_after(a_to, b_from):
+        return "none"
+    if b_to and a_from and _not_after(b_to, a_from):
+        return "none"
+    if a_from and b_from and (a_to or b_to):
+        return "certain"
+    return "possible"

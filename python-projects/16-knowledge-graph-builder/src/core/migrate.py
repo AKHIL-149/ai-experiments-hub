@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 BASELINE = "0001"   # the schema of steps 1-3, which was created by create_all with no migrations
 ACCOUNTS = "0002"
 JOBS = "0003"
+CONFLICTS = "0004"
 
 
 def _config(url: str) -> Config:
@@ -25,5 +26,5 @@ def upgrade_to_head(engine) -> None:
     tables = set(inspect(engine).get_table_names())
     cfg = _config(url)
     if tables and "alembic_version" not in tables:
-        command.stamp(cfg, JOBS if "jobs" in tables else ACCOUNTS if "users" in tables else BASELINE)
+        command.stamp(cfg, CONFLICTS if "conflicts" in tables else JOBS if "jobs" in tables else ACCOUNTS if "users" in tables else BASELINE)
     command.upgrade(cfg, "head")
