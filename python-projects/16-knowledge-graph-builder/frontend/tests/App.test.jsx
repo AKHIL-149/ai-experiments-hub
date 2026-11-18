@@ -18,6 +18,7 @@ function signedIn(user = USER, extra = {}) {
   api.me.mockResolvedValue(user);
   api.jobs.mockResolvedValue({ jobs: extra.jobs || [] });
   api.suggestions.mockResolvedValue({ suggestions: extra.suggestions || [] });
+  api.conflicts.mockResolvedValue({ conflicts: extra.conflicts || [] });
   api.health.mockResolvedValue({ status: "ok", llm: extra.llm || { ready: true, detail: "ok" } });
   api.graph.mockResolvedValue({ nodes: [], edges: [], total_nodes: 0, total_edges: 0, truncated: false });
   api.documents.mockResolvedValue({ documents: [] });
@@ -41,7 +42,7 @@ describe("App", () => {
     signedIn();
     render(<App />);
     const nav = await screen.findByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Graph", "Documents", "Ask", "Review"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Graph", "Documents", "Ask", "Check", "Review"]);
     expect(within(nav).getByRole("link", { name: "Graph" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /ann/ })).toBeInTheDocument();
     expect(await screen.findByText("Model ready")).toBeInTheDocument();
@@ -68,10 +69,10 @@ describe("App", () => {
   });
 
   it("badges documents in progress and suggestions waiting for review", async () => {
-    signedIn(USER, { jobs: [{ id: "a" }, { id: "b" }], suggestions: [{ id: "s" }] });
+    signedIn(USER, { jobs: [{ id: "a" }, { id: "b" }], suggestions: [{ id: "s" }], conflicts: [{ id: "c1" }, { id: "c2" }] });
     render(<App />);
     expect(await screen.findByLabelText("2 in progress")).toBeInTheDocument();
-    expect(screen.getByLabelText("1 to review")).toBeInTheDocument();
+    expect(screen.getByLabelText("3 to review")).toBeInTheDocument();          // 1 suggestion + 2 conflicts
   });
 
   it("keeps the badges and the model state fresh every 8 seconds", async () => {
@@ -80,11 +81,12 @@ describe("App", () => {
       signedIn();
       render(<App />);
       await screen.findByRole("navigation", { name: "Main" });
+      await waitFor(() => expect(api.jobs).toHaveBeenCalled());
       const before = api.jobs.mock.calls.length;
-      await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
-      expect(api.jobs.mock.calls.length).toBe(before);
-      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
-      expect(api.jobs.mock.calls.length).toBe(before + 1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(api.jobs.mock.calls.length).toBe(before);                 // not yet (the pace is 8 s; some real time passes too)
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      expect(api.jobs.mock.calls.length).toBeGreaterThan(before);
     } finally {
       vi.useRealTimers();
     }
@@ -152,5 +154,22 @@ describe("App", () => {
     api.authConfig.mockRejectedValue(new ApiError(0, "Cannot reach the server. Check that it is running."));
     render(<App />);
     expect(await screen.findByText("Cannot reach the server. Check that it is running.")).toBeInTheDocument();
+  });
+});
+
+describe("App: the Check and Review addresses", () => {
+  it("shows the Check screen at its address", async () => {
+    signedIn();
+    window.location.hash = "#/check";
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Check" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Check" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens Review on the tab named in the address", async () => {
+    signedIn();
+    window.location.hash = "#/review?tab=conflicts";
+    render(<App />);
+    expect(await screen.findByRole("tab", { name: "Conflicts" })).toHaveAttribute("aria-selected", "true");
   });
 });

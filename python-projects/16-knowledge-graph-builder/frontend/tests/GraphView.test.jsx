@@ -504,3 +504,16 @@ describe("GraphView: time", () => {
     expect(api.graph).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("GraphView: conflicts", () => {
+  it("leads from a fact that may clash to the Conflicts tab of Review", async () => {
+    api.fact.mockResolvedValue({
+      id: "f1", subject_id: "n1", subject: "Acme Corp", predicate: "acquired", object_id: "n2", object: "Beta Systems", object_is_value: false, valid_from: null, valid_to: null,
+      sources: [], left_out: false, conflicts: [{ id: "c1", kind: "reversed", severity: "possible", other: { id: "f9", text: "Beta Systems acquired Acme Corp" } }],
+    });
+    show({ fact: "f1" });
+    const note = await screen.findByRole("note");
+    await userEvent.click(within(note).getByRole("button", { name: "Settle it in Review" }));
+    expect(go).toHaveBeenCalledWith("review", { tab: "conflicts" });
+  });
+});

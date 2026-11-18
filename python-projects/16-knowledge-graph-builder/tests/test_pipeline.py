@@ -281,3 +281,53 @@ def test_a_stop_between_two_model_calls_inside_a_passage_leaves_nothing(factory,
     d = db.get(Document, doc_id)
     assert outcome == "cancelled" and d.status == DocumentStatus.FAILED and d.error == "Cancelled"
     assert counts(db)["Fact"] == 0 and counts(db)["Chunk"] == 0 and llm.count("extract") == 1
+
+
+def test_reading_a_document_looks_for_conflicts_without_a_model(factory, db):
+    from src.models.conflict import Conflict
+    first = add_doc(db, "Acme employs 340 people.", "one")
+    second = add_doc(db, "Acme employs 400 people.", "two")
+    r1 = rel("Acme", "employs", "340 people", "Acme employs 340 people.", otype="value", stype="organization")
+    r2 = rel("Acme", "employs", "400 people", "Acme employs 400 people.", otype="value", stype="organization")
+    pipeline.process_document(first, script(r1), settings())
+    pipeline.process_document(second, script(r2), settings())
+    assert db.scalar(select(func.count()).select_from(Conflict)) == 1
+    db.expire_all()
+    assert db.get(Document, second).stats["conflicts"] == {"open": 1, "new": 1}
+    assert db.get(Document, first).stats["conflicts"] == {"open": 0, "new": 0}
+
+
+def test_conflict_detection_can_be_switched_off(factory, db):
+    from src.models.conflict import Conflict
+    first = add_doc(db, "Acme employs 340 people.", "one")
+    second = add_doc(db, "Acme employs 400 people.", "two")
+    r1 = rel("Acme", "employs", "340 people", "Acme employs 340 people.", otype="value", stype="organization")
+    r2 = rel("Acme", "employs", "400 people", "Acme employs 400 people.", otype="value", stype="organization")
+    pipeline.process_document(first, script(r1), settings(auto_detect_conflicts=False))
+    pipeline.process_document(second, script(r2), settings(auto_detect_conflicts=False))
+    assert db.scalar(select(func.count()).select_from(Conflict)) == 0
+    assert "conflicts" not in db.get(Document, second).stats
+
+
+def test_a_failure_in_conflict_detection_does_not_fail_the_document(factory, db, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("bug")
+    monkeypatch.setattr(pipeline, "run_detection", boom)
+    d = add_doc(db, "Acme employs 340 people.", "one")
+    pipeline.process_document(d, script(rel("Acme", "employs", "340 people", "Acme employs 340 people.", otype="value", stype="organization")), settings())
+    db.expire_all()
+    assert db.get(Document, d).status == DocumentStatus.COMPLETED
+
+
+def test_reading_again_removes_conflicts_of_the_old_facts(factory, db):
+    from src.models.conflict import Conflict
+    first = add_doc(db, "Acme employs 340 people.", "one")
+    second = add_doc(db, "Acme employs 400 people.", "two")
+    r1 = rel("Acme", "employs", "340 people", "Acme employs 340 people.", otype="value", stype="organization")
+    r2 = rel("Acme", "employs", "400 people", "Acme employs 400 people.", otype="value", stype="organization")
+    pipeline.process_document(first, script(r1), settings())
+    pipeline.process_document(second, script(r2), settings())
+    assert db.scalar(select(func.count()).select_from(Conflict)) == 1
+    pipeline.process_document(second, script(), settings())              # read again: nothing is found this time
+    db.expire_all()
+    assert db.scalar(select(func.count()).select_from(Conflict)) == 0

@@ -73,3 +73,34 @@ describe("FactPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Fact not found");
   });
 });
+
+describe("FactPanel: conflicts", () => {
+  it("says a fact may clash with another and leads to Review", async () => {
+    api.fact.mockResolvedValue(fact({ conflicts: [{ id: "c1", kind: "different_value", severity: "possible", other: { id: "f9", text: "Acme employs 400 people" } }], left_out: false }));
+    const onOpenConflicts = vi.fn();
+    render(<FactPanel id="f1" {...handlers} onOpenConflicts={onOpenConflicts} />);
+    const note = await screen.findByRole("note");
+    expect(note).toHaveTextContent("This may clash with: Acme employs 400 people.");
+    await userEvent.click(note.querySelector("button"));
+    expect(onOpenConflicts).toHaveBeenCalled();
+  });
+
+  it("says when the fact was left out by choosing the other side", async () => {
+    api.fact.mockResolvedValue(fact({ conflicts: [], left_out: true }));
+    show();
+    expect(await screen.findByRole("note")).toHaveTextContent("You chose the other side of a conflict");
+  });
+
+  it("shows no note for an ordinary fact", async () => {
+    api.fact.mockResolvedValue(fact({ conflicts: [], left_out: false }));
+    show();
+    await screen.findByRole("button", { name: "Acme Corp" });
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("does not fail when no handler is given", async () => {
+    api.fact.mockResolvedValue(fact({ conflicts: [{ id: "c1", kind: "reversed", severity: "possible", other: { id: "f9", text: "x" } }] }));
+    show();
+    await userEvent.click((await screen.findByRole("note")).querySelector("button"));
+  });
+});

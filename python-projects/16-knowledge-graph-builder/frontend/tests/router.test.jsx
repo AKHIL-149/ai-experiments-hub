@@ -41,3 +41,10 @@ describe("useRoute", () => {
     expect(result.current.params).toEqual({ q: "hi" });
   });
 });
+
+describe("the Check screen", () => {
+  it("has its own address, with the claim in it", () => {
+    expect(parseHash("#/check?claim=Acme%20acquired%20Beta.")).toEqual({ route: "check", params: { claim: "Acme acquired Beta." } });
+    expect(buildHash("review", { tab: "conflicts" })).toBe("#/review?tab=conflicts");
+  });
+});

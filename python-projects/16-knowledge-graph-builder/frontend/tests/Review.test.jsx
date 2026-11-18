@@ -184,3 +184,44 @@ describe("Review: history and kept apart", () => {
     expect(screen.getByRole("tab", { name: "Kept apart" })).toHaveAttribute("aria-selected", "false");
   });
 });
+
+describe("Review: conflicts tab", () => {
+  it("shows how many conflicts are open on the tab and opens it", async () => {
+    setup();
+    api.conflicts.mockImplementation(async (s) => ({ conflicts: s === "open" ? [{ id: "c1", kind: "reversed", severity: "possible", reasons: [], llm_verdict: null, a: { id: "a", text: "A acquired B", sources: [] }, b: { id: "b", text: "B acquired A", sources: [] }, can_end_earlier: false }] : [] }));
+    show();
+    const tab = await screen.findByRole("tab", { name: "Conflicts (1)" });
+    await userEvent.click(tab);
+    expect(await screen.findByRole("button", { name: "Look for conflicts now" })).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: "A acquired B and B acquired A" })).toBeInTheDocument();
+  });
+
+  it("has no number on the tab when nothing is open, and opens on the tab named in the address", async () => {
+    setup();
+    api.conflicts.mockResolvedValue({ conflicts: [] });
+    render(<Review onChange={onChange} params={{ tab: "conflicts" }} />);
+    expect(await screen.findByRole("tab", { name: "Conflicts" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("No open conflicts")).toBeInTheDocument();
+  });
+
+  it("ignores a tab name it does not know", async () => {
+    setup();
+    api.conflicts.mockResolvedValue({ conflicts: [] });
+    render(<Review onChange={onChange} params={{ tab: "nonsense" }} />);
+    expect(await screen.findByRole("tab", { name: /Suggestions/ })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+describe("Review: the conflicts count follows decisions", () => {
+  it("drops the number on the tab when the last conflict is settled", async () => {
+    setup();
+    let open = [{ id: "c1", kind: "reversed", severity: "possible", reasons: [], llm_verdict: null, a: { id: "a", text: "A acquired B", valid_from: null, valid_to: null, sources: [] }, b: { id: "b", text: "B acquired A", valid_from: null, valid_to: null, sources: [] }, can_end_earlier: false }];
+    api.conflicts.mockImplementation(async (s) => ({ conflicts: s === "open" ? open : [] }));
+    api.resolveConflict.mockImplementation(async () => { open = []; return {}; });
+    show();
+    await userEvent.click(await screen.findByRole("tab", { name: "Conflicts (1)" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Both are true" }));
+    expect(await screen.findByRole("tab", { name: "Conflicts" })).toBeInTheDocument();
+    expect(onChange).toHaveBeenCalled();
+  });
+});

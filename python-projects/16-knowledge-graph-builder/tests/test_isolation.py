@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from src.models.graph import Chunk, Document, Entity, Fact
 from src.models.resolution import EntityAlias, MergeRecord, MergeSuggestion
 from src.services import pipeline
-from tests.conftest import ScriptedLLM
+from tests.conftest import FakeEmbedder, ScriptedLLM
 from tests.test_accounts import DOCS, RAWS, site  # noqa: F401  (the fixture)
 
 
@@ -328,3 +328,102 @@ def test_passages_that_were_never_indexed_are_indexed_for_the_caller_when_they_a
     with site.factory() as db:
         mine = {db.get(Chunk, e.chunk_id).document_id for e in db.query(Embedding).all()}
         assert mine == {ids["ann"]}                      # only Ann's passage was indexed; Bob's was left alone
+
+
+@pytest.fixture
+def clashing(site):
+    """Ann and Bob each have an entity "Zed" with two different head counts (a conflict of each one's own)"""
+    ann, bob = site.user("ann"), site.user("bob")
+    ids = {}
+    with site.factory() as db:
+        for who in (ann, bob):
+            o = who.user["id"]
+            doc = Document(owner_id=o, title="d", text="x" * 30, char_count=30)
+            db.add(doc)
+            db.flush()
+            ch = Chunk(document_id=doc.id, index=0, start=0, end=30, text="x" * 30)
+            db.add(ch)
+            e = Entity(owner_id=o, name="Zed Inc", key="zed inc", type="organization")
+            db.add(e)
+            db.flush()
+            from src.models.graph import FactSource
+            fs = []
+            for v in ("340 people", "400 people"):
+                f = Fact(owner_id=o, subject_id=e.id, predicate="employs", object_value=v)
+                db.add(f)
+                db.flush()
+                db.add(FactSource(fact_id=f.id, document_id=doc.id, chunk_id=ch.id, evidence=f"Zed Inc employs {v}."))
+                fs.append(f.id)
+            ids[who.user["username"]] = fs
+        db.commit()
+    return site, ann, bob, ids
+
+
+def test_conflicts_are_found_listed_and_settled_per_account(clashing):
+    site, ann, bob, ids = clashing
+    assert ann.post("/api/conflicts/run").json()["new"] == 1
+    assert bob.get("/api/conflicts").json()["conflicts"] == []                    # Bob has not run it
+    assert len(ann.get("/api/conflicts").json()["conflicts"]) == 1
+    assert bob.post("/api/conflicts/run").json()["new"] == 1
+    cid = ann.get("/api/conflicts").json()["conflicts"][0]["id"]
+    assert cid != bob.get("/api/conflicts").json()["conflicts"][0]["id"]
+    assert bob.post(f"/api/conflicts/{cid}/resolve", json={"resolution": "keep_a"}).status_code == 404
+    assert bob.post(f"/api/conflicts/{cid}/reopen").status_code == 404
+    assert len(ann.get("/api/conflicts").json()["conflicts"]) == 1                 # untouched
+
+
+def test_settling_one_accounts_conflict_leaves_the_others_facts_alone(clashing):
+    site, ann, bob, ids = clashing
+    ann.post("/api/conflicts/run")
+    bob.post("/api/conflicts/run")
+    cid = ann.get("/api/conflicts").json()["conflicts"][0]["id"]
+    assert ann.post(f"/api/conflicts/{cid}/resolve", json={"resolution": "keep_a"}).status_code == 200
+    assert ann.get("/api/graph/stats").json()["facts"] == 1 and bob.get("/api/graph/stats").json()["facts"] == 2
+    assert len(bob.get("/api/conflicts").json()["conflicts"]) == 1                  # still open for Bob
+    assert ann.get("/api/conflicts?status=resolved").json()["conflicts"][0]["id"] == cid
+    assert bob.get("/api/conflicts?status=resolved").json()["conflicts"] == []
+
+
+def test_a_claim_is_checked_against_the_callers_documents_only(clashing, monkeypatch):
+    site, ann, bob, ids = clashing
+    from src.services.llm import LLMBadOutput  # noqa: F401
+    from tests.test_factcheck import ClaimLLM, parsed
+    table = {"Zed Inc employs 340 people.": parsed("Zed Inc", "employs", "340 people")}
+    monkeypatch.setattr("src.api.conflicts.get_llm", lambda settings=None: ClaimLLM(table))
+    monkeypatch.setattr("src.api.conflicts.get_embedder", lambda settings=None: FakeEmbedder())
+    monkeypatch.setattr("src.api.conflicts.get_settings", lambda: __import__("src.core.config", fromlist=["Settings"]).Settings(_env_file=None))
+    r = ann.post("/api/check", json={"claim": "Zed Inc employs 340 people."}).json()
+    assert r["verdict"] == "supported" and {e["fact_id"] for e in r["evidence"]} <= set(ids["ann"])
+    carol = site.user("carol")
+    assert carol.post("/api/check", json={"claim": "Zed Inc employs 340 people."}).json()["verdict"] == "unclear"      # she has no documents
+
+
+def test_deleting_an_account_removes_its_conflicts(clashing):
+    site, ann, bob, ids = clashing
+    ann.post("/api/conflicts/run")
+    bob.post("/api/conflicts/run")
+    from src.models.conflict import Conflict
+    with site.factory() as db:
+        assert db.scalar(select(func.count()).select_from(Conflict)) == 2
+        from sqlalchemy import text
+        db.execute(text("PRAGMA foreign_keys=ON"))
+        from src.models.user import User
+        db.delete(db.get(User, ann.user["id"]))
+        db.commit()
+        assert [c.owner_id for c in db.execute(select(Conflict)).scalars()] == [bob.user["id"]]
+
+
+def test_conflicts_found_while_reading_belong_to_the_reader(site, monkeypatch):
+    from src.models.conflict import Conflict
+    from tests.conftest import rel
+    monkeypatch.setitem(DOCS, "C1", "Zed Inc employs 340 people.")
+    monkeypatch.setitem(DOCS, "C2", "Zed Inc employs 400 people.")
+    monkeypatch.setitem(RAWS, "C1", [rel("Zed Inc", "employs", "340 people", "Zed Inc employs 340 people.", otype="value", stype="organization")])
+    monkeypatch.setitem(RAWS, "C2", [rel("Zed Inc", "employs", "400 people", "Zed Inc employs 400 people.", otype="value", stype="organization")])
+    ann, bob = site.user("ann"), site.user("bob")
+    add(ann, "C1")
+    add(ann, "C2")
+    add(bob, "C1")
+    with site.factory() as db:
+        assert [c.owner_id for c in db.execute(select(Conflict)).scalars()] == [ann.user["id"]]
+    assert len(ann.get("/api/conflicts").json()["conflicts"]) == 1 and bob.get("/api/conflicts").json()["conflicts"] == []

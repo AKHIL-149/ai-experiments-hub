@@ -130,3 +130,25 @@ describe("errors", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("conflicts and claim checks", () => {
+  it("sends the right requests", async () => {
+    fetchMock.mockReturnValue(reply(200, {}));
+    await api.conflicts();
+    await api.conflicts("resolved");
+    await api.runConflicts(true);
+    await api.runConflicts();
+    await api.resolveConflict("c1", "keep_a");
+    await api.reopenConflict("c1");
+    await api.check("Acme acquired Beta.");
+    const calls = fetchMock.mock.calls;
+    expect(calls.map((c) => [c[1].method, c[0]])).toEqual([
+      ["GET", "/api/conflicts?status=open"], ["GET", "/api/conflicts?status=resolved"], ["POST", "/api/conflicts/run"], ["POST", "/api/conflicts/run"],
+      ["POST", "/api/conflicts/c1/resolve"], ["POST", "/api/conflicts/c1/reopen"], ["POST", "/api/check"]]);
+    expect(JSON.parse(calls[2][1].body)).toEqual({ use_llm: true });
+    expect(JSON.parse(calls[3][1].body)).toEqual({ use_llm: false });
+    expect(JSON.parse(calls[4][1].body)).toEqual({ resolution: "keep_a" });
+    expect(calls[5][1].body).toBeUndefined();
+    expect(JSON.parse(calls[6][1].body)).toEqual({ claim: "Acme acquired Beta." });
+  });
+});

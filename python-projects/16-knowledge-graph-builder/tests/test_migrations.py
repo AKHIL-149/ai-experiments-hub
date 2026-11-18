@@ -113,3 +113,35 @@ def test_downgrade_returns_to_the_baseline_schema(tmp_path):
     command.downgrade(cfg, BASELINE)
     insp = inspect(create_engine(f"sqlite:///{path}"))
     assert "users" not in insp.get_table_names() and "owner_id" not in {c["name"] for c in insp.get_columns("entities")}
+
+
+def test_the_conflict_tables_come_with_migration_0004_and_go_with_its_downgrade(tmp_path):
+    path = tmp_path / "c.db"
+    cfg = _config(f"sqlite:///{path}")
+    command.upgrade(cfg, "head")
+    insp = inspect(create_engine(f"sqlite:///{path}"))
+    assert {"conflicts", "predicate_kinds"} <= set(insp.get_table_names())
+    assert {"fact_a_id", "fact_b_id", "severity", "status", "resolution", "data"} <= {c["name"] for c in insp.get_columns("conflicts")}
+    command.downgrade(cfg, "0003")
+    left = set(inspect(create_engine(f"sqlite:///{path}")).get_table_names())
+    assert "conflicts" not in left and "predicate_kinds" not in left and "jobs" in left
+
+
+def test_a_database_with_a_conflicts_table_but_no_history_is_stamped_at_0004(tmp_path):
+    from src import models  # noqa: F401
+    e = create_engine(f"sqlite:///{tmp_path}/n.db")
+    database.Base.metadata.create_all(bind=e)
+    upgrade_to_head(e)
+    with e.connect() as con:
+        assert con.exec_driver_sql("select version_num from alembic_version").scalar() == "0004"
+
+
+def test_a_database_of_step_4_gets_the_conflict_tables_on_upgrade(tmp_path):
+    from src import models  # noqa: F401
+    path = tmp_path / "s4.db"
+    cfg = _config(f"sqlite:///{path}")
+    command.upgrade(cfg, "0003")
+    e = create_engine(f"sqlite:///{path}")
+    assert "conflicts" not in inspect(e).get_table_names()
+    upgrade_to_head(e)
+    assert "conflicts" in inspect(create_engine(f"sqlite:///{path}")).get_table_names()

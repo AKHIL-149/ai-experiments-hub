@@ -324,3 +324,30 @@ describe("Ask: time", () => {
     expect(await screen.findByText(/their dates put them outside 2021/)).toBeInTheDocument();
   });
 });
+
+describe("Ask: conflicts", () => {
+  it("warns when the documents disagree about part of the answer, and leads to Review", async () => {
+    api.ask.mockResolvedValue(answer({ conflicts: [{ id: "c1", kind: "different_value", severity: "possible", fact_ids: ["f1", "f2"], texts: ["Acme employs 340 people", "Acme employs 400 people"] }] }));
+    show();
+    await ask("How many people does Acme employ?");
+    const note = await screen.findByRole("note");
+    expect(note).toHaveTextContent("The documents disagree about part of this: Acme employs 340 people ↔ Acme employs 400 people.");
+    await userEvent.click(within(note).getByRole("button", { name: "Settle it in Review" }));
+    expect(go).toHaveBeenCalledWith("review", { tab: "conflicts" });
+  });
+
+  it("leaves out a side that is not among the facts shown", async () => {
+    api.ask.mockResolvedValue(answer({ conflicts: [{ id: "c1", kind: "different_value", severity: "possible", fact_ids: ["f1", "f2"], texts: ["Acme employs 340 people", null] }] }));
+    show();
+    await ask("How many people does Acme employ?");
+    expect(await screen.findByRole("note")).toHaveTextContent("part of this: Acme employs 340 people.");
+  });
+
+  it("shows no warning when there are no conflicts", async () => {
+    api.ask.mockResolvedValue(answer({ conflicts: [] }));
+    show();
+    await ask("In which city is the university?");
+    await screen.findByText("Kellmar");
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+});
