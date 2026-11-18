@@ -1,0 +1,109 @@
+{
+ "summary": {
+  "new": 5,
+  "removed": 0,
+  "open": 5,
+  "judged": 0
+ },
+ "expected": {
+  "E1": {
+   "found": true,
+   "kind": "different_object",
+   "severity": "possible",
+   "kind_ok": true,
+   "llm": null
+  },
+  "E2": {
+   "found": true,
+   "kind": "different_holder",
+   "severity": "certain",
+   "kind_ok": true,
+   "llm": null
+  },
+  "E3": {
+   "found": true,
+   "kind": "different_value",
+   "severity": "possible",
+   "kind_ok": true,
+   "llm": null
+  },
+  "E4": {
+   "found": true,
+   "kind": "reversed",
+   "severity": "possible",
+   "kind_ok": true,
+   "llm": null
+  },
+  "E5": {
+   "found": true,
+   "kind": "different_object",
+   "severity": "possible",
+   "kind_ok": true,
+   "llm": null
+  }
+ },
+ "lookalikes": {
+  "L1": {
+   "flagged": false,
+   "what": "a handover of leaders (2003-2009, 2009-2018)"
+  },
+  "L2": {
+   "flagged": false,
+   "what": "a handover of mayors (1990-1997, 1997-2004)"
+  },
+  "L3": {
+   "flagged": false,
+   "what": "two places a university is located in (a hierarchy)"
+  },
+  "L4": {
+   "flagged": false,
+   "what": "two founders"
+  },
+  "L5": {
+   "flagged": false,
+   "what": "headquarters moved (2004-2012, then 2012)"
+  },
+  "L6": {
+   "flagged": false,
+   "what": "partnered with, both ways round"
+  }
+ },
+ "unexpected": [],
+ "all": [
+  {
+   "kind": "different_object",
+   "severity": "possible",
+   "a": "Harlow Textiles its headquarters in Valcross (..)",
+   "b": "Harlow Textiles headquartered in Dunmere (..)",
+   "llm": null
+  },
+  {
+   "kind": "different_value",
+   "severity": "possible",
+   "a": "Orrin Dynamics employs 410 people (..)",
+   "b": "Orrin Dynamics employs 340 people (..)",
+   "llm": null
+  },
+  {
+   "kind": "different_object",
+   "severity": "possible",
+   "a": "Lorcan Adeyemi born in Hollin (..)",
+   "b": "Lorcan Adeyemi born in Carrowmere (..)",
+   "llm": null
+  },
+  {
+   "kind": "different_holder",
+   "severity": "certain",
+   "a": "Tomas Verhoven chief executive of Wick Dynamics (2014..2019)",
+   "b": "Rosalind Penge led Wick Dynamics (2010..2016)",
+   "llm": null
+  },
+  {
+   "kind": "reversed",
+   "severity": "possible",
+   "a": "Sable Group acquired Pemberly Press (2001..)",
+   "b": "Pemberly Press acquired Sable Group (2005..)",
+   "llm": null
+  }
+ ]
+}

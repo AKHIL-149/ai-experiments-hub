@@ -1,0 +1,99 @@
+{
+ "note": "Written before the first run. 'expected' are planted conflicts (substrings that must appear in the two facts); 'lookalikes' look similar but must NOT be flagged.",
+ "expected": [
+  {
+   "id": "E1",
+   "kind": "different_object",
+   "a": "Harlow Textiles",
+   "b": "Harlow Textiles",
+   "words": [
+    "Dunmere",
+    "Valcross"
+   ]
+  },
+  {
+   "id": "E2",
+   "kind": "different_holder",
+   "words": [
+    "Rosalind Penge",
+    "Tomas Verhoven"
+   ]
+  },
+  {
+   "id": "E3",
+   "kind": "different_value",
+   "words": [
+    "340",
+    "410"
+   ]
+  },
+  {
+   "id": "E4",
+   "kind": "reversed",
+   "words": [
+    "Sable Group acquired Pemberly Press",
+    "Pemberly Press acquired Sable Group"
+   ]
+  },
+  {
+   "id": "E5",
+   "kind": "different_object",
+   "words": [
+    "Hollin",
+    "Carrowmere"
+   ],
+   "must_contain": "Lorcan Adeyemi"
+  }
+ ],
+ "lookalikes": [
+  {
+   "id": "L1",
+   "what": "a handover of leaders (2003-2009, 2009-2018)",
+   "words": [
+    "Ismene Torvald",
+    "Callum Ferris"
+   ]
+  },
+  {
+   "id": "L2",
+   "what": "a handover of mayors (1990-1997, 1997-2004)",
+   "words": [
+    "Ysolde Marchetti",
+    "Bram Osei"
+   ]
+  },
+  {
+   "id": "L3",
+   "what": "two places a university is located in (a hierarchy)",
+   "words": [
+    "Ashgrove",
+    "Hartley County"
+   ]
+  },
+  {
+   "id": "L4",
+   "what": "two founders",
+   "words": [
+    "Imogen Strand",
+    "Idris Kempe"
+   ]
+  },
+  {
+   "id": "L5",
+   "what": "headquarters moved (2004-2012, then 2012)",
+   "words": [
+    "Quillon Systems",
+    "Quillon Systems"
+   ],
+   "must_contain": "Quillon"
+  },
+  {
+   "id": "L6",
+   "what": "partnered with, both ways round",
+   "words": [
+    "Marlow Foods",
+    "Tidewell Media"
+   ]
+  }
+ ]
+}

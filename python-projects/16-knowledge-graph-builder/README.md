@@ -4,7 +4,7 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 answers multi-hop questions over it, and shows it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 to 6 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time).** The rest is not built yet.
+**Status: steps 1 to 7 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time; conflicts and claim checking).** The rest is not built yet.
 
 | Step | What | State |
 |---|---|---|
@@ -14,7 +14,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | 4 | Accounts and background job queue (pattern from project 15) | done |
 | 5 | Visual explorer (React + D3.js, "Paper Light" theme) | done |
 | 6 | Temporal facts ("who was CTO in 2021?") | done |
-| 7 | Conflict detection and fact checking | not started |
+| 7 | Conflict detection and fact checking | done |
 | 8 | Export (Cypher, CSV, JSON) and final docs | not started |
 
 ## Decisions
@@ -248,6 +248,68 @@ On these questions `subgraph` was as good as or better than `graph` (they are on
 - A start-only fact tagged `open` can be long over: only the text can say, and it did not.
 - The time words are English.
 
+## Conflicts and claim checking (step 7)
+
+### Conflicts
+
+Code looks for facts that cannot both be true. A person settles each one. Four shapes:
+
+| Kind | Example |
+|---|---|
+| `different_object` | one subject, a relation that has one object at a time: "Harlow Textiles is headquartered in Dunmere" / "... in Valcross"; "Lorcan Adeyemi was born in Hollin" / "... in Carrowmere" |
+| `different_value` | "Orrin Dynamics employs 340 people" / "... 410 people" |
+| `different_holder` | a role with one holder at a time: "Rosalind Penge led Wick Dynamics (2010-2016)" / "Tomas Verhoven was chief executive of Wick Dynamics (2014-2019)" |
+| `reversed` | the same relation written both ways round: "Sable acquired Pemberly" / "Pemberly acquired Sable" (also catches a direction the model got wrong) |
+
+Which relations have "one at a time" is a **built-in list** of common ones (headquartered in, born / died in, CEO / CTO / CFO of, led, chaired, mayor / president of; written in different words they count as the same relation: "led" and "served as chief executive of"). A relation not in the list is asked about **once, as a bare word**, only when you tick "Ask the model too", and the answer is remembered (`predicate_kinds`); until then it is treated as "several are possible", so nothing is flagged by guesswork. "Founded", "acquired", "employs", "located in" (a city is in a region and a country), "studied at", "partnered with" are never flagged as having two answers.
+
+Two facts only conflict if they can have held at the same time (`temporal.overlap_status`):
+- a **handover** is not a conflict ("2012 to 2019" then "2019 to 2022"; "2019-06 to 2020-03" then "2020-03"): the comparison is as precise as both dates are written;
+- both dates surely share time: **certain**;
+- "since 2020" and "since 2023" with no end stated, a missing date, or no dates at all: **possible** (usually one replaced the other, or two documents disagree).
+
+**Settling.** For each conflict you can: *trust the first* or *trust the second* (the other fact is left out of the graph, the lists, the timeline and answers, and stays in the database), *both are true* (dismissed, never flagged again), or, when one began clearly before the other and states no end, *the earlier one ended when the later began* (its end date is set to the later start). Every choice can be reopened and the old dates come back. Detection also runs after each document is read (code only, no model); an open conflict that no longer applies is removed, a settled one never is.
+
+**Answers** built on facts that conflict say so: the model is told which facts contradict each other and to give both, and the response lists the conflicts (`conflicts`). The fact panel shows the conflicts a fact is in, or that it was left out.
+
+### Checking a claim
+
+`POST /api/check` or the **Check** screen: "Dana Reyes was CTO of Acme in 2021." The model only reads the claim into *subject - relation - object - dates* (a date that is not in the claim's own words is dropped; "X was founded by Y" is turned into "Y founded X"). **Code** then decides:
+
+| Verdict | When |
+|---|---|
+| `supported` | a stored fact says the same (same relation, even in other words) with dates that do not clash |
+| `supported_other_dates` | such a fact exists, but its dates do not fit the claim's |
+| `contradicted` | the relation exists the other way round; a different value; or another object / another holder for a relation that has one at a time (the claim may name a person or place the documents do not know) |
+| `not_found` | the documents do not say. Never "false". If they connect the two things another way, that fact is shown as `related` |
+| `unclear` | the claim could not be read, or its subject is not in the documents |
+
+Every verdict lists the facts and quotes it rests on.
+
+### Measured
+
+A small corpus of 16 documents with **planted conflicts and look-alikes** read by the real model (`eval/conflicts`, `llama3.1:8b`; 23 facts, every one extracted as written). I wrote the documents, the built-in list and the expectations, so this is a check of the mechanism on a small hand-made set, not a measurement of how well it does on real documents.
+
+| | Result |
+|---|---|
+| Planted conflicts found (5) | **5 of 5**, each with the right kind (one has dates that surely overlap: certain; the other four are possible) |
+| Look-alikes wrongly flagged (6: two handovers of leaders and mayors, a headquarters move, two founders, two "located in", partnered-with both ways) | **0 of 6** |
+| Other conflicts flagged | 0 |
+| The model's own opinion of each pair (`Ask the model too`) | 3 of 5 said they contradict; for the other two (a headquarters pair, and the two chief executives whose dates surely overlap) it said they are compatible. Its opinion is shown but never decides anything |
+| The model's classification of the unfamiliar relation words (employs, acquired, founded, located in, partnered with, "and") | all "several possible", which is right for each |
+
+Claim checks (8 development claims, 7 held-out written before the first run): development 8 of 8. **Held-out, first run: 5 of 7.** Both misses were one real bug that this run exposed: a claim in the passive ("Wick Dynamics was led by Greta Lund", "Delacroix Textiles was founded by Imogen Strand") was read as subject *Wick*, relation *was led by*, so it never matched the stored active fact (the second was even reported as "the other way round"). I fixed it by turning passive claims round the way the extraction already does, which left one claim (an unknown person named as a holder) as "the claim's subject is not in the documents", so I also made a holder the documents do not know clash with the holders they name. After both fixes the held-out claims give 7 of 7 and the development claims 8 of 8, **but the 7 of 7 is no longer a held-out number.** One claim was dropped before any run because whether "acquired in 2010" fits a fact starting in 2001 depends on reading an acquisition as an event or a state, which the system cannot tell apart.
+
+### Limits
+
+- **Which relations exclude each other is a short list plus the model's guess for the rest.** A relation outside the list (and not classified) is never flagged, so real conflicts in unusual wording are missed; and the model's classification of a word is a guess (not checked beyond the six words above).
+- **A conflict needs overlapping or unknown time.** Facts that are only possible conflicts (no dates) are many on real documents; expect false alarms where two documents describe different moments without dates.
+- **Facts that disagree only through a chain** ("A is in B", "B is in C", "A is in D") are not found. Neither are conflicts between a fact and the passage text.
+- **Dates in claims.** A claim naming one date fits a fact that had begun by then and states no end (the text does not say it stopped). For an *event* ("acquired in 2020" against "acquired 2018, no end stated") that is wrong, for the same reason as in step 6.
+- **A claim is checked against the facts that were extracted**, which miss about a quarter of what the text says (see Measured accuracy): "not in the documents" can mean "not extracted".
+- Claims with two statements, or about quantities in other units ("3.4 thousand"), are read as one statement and compared as written (only the first number of a value is compared).
+- The model reads the claim: a wrong reading gives a wrong verdict. The reading is shown ("Read as: ...") so you can see it.
+
 ## Web app (step 5)
 
 Open `http://127.0.0.1:8016`. The server serves the built app from `frontend/dist`, so the sign-in cookie is same-origin (no CORS, no tokens in JavaScript).
@@ -258,7 +320,8 @@ Open `http://127.0.0.1:8016`. The server serves the built app from `frontend/dis
 | **Documents** | drop or choose files, or paste text; each card shows waiting / reading (passages done) / read / failed / cancelled, with the place in the queue; cancel, read again, delete (asks first), "View graph" for one document. Follows running jobs every 2 s |
 | **Graph** | the knowledge graph, coloured by type (Paper Light palette), arrows from subject to object. Drag to move, scroll to zoom, double-click (or press `E`) to bring in a node's neighbours. Click an entity for its facts (details, links from and to it, aliases), a line for the fact with every source quote and its passage. Search (what is on screen and the whole graph), filter by type and document, find the shortest path between two entities, merge two entities, ask about an entity, or switch to a **List** (tables of the same data, which is also the text version for screen readers) |
 | **Ask** | a question, a mode (graph / facts around / graph + passages / passages only) and a document to look in. "Compare with passage search" shows both answers side by side. Every citation shows its quote; "Show them in the graph" highlights the cited facts and dims the rest. "How this was answered" lists the entities found, the planned chain and each step |
-| **Review** | run the duplicate search (with or without the model's second opinion), merge a suggested pair keeping either name or mark it "different things", the merge history with Undo, and the pairs kept apart |
+| **Check** | type a claim; get supported / contradicted / not in the documents with the facts and quotes behind it (see Conflicts and claim checking) |
+| **Review** | run the duplicate search (with or without the model's second opinion), merge a suggested pair keeping either name or mark it "different things", the merge history with Undo, the pairs kept apart, and the **Conflicts** tab: facts that cannot both be true, with both quotes, to trust one, keep both or end the earlier one |
 
 How it is built: d3-force computes the layout, d3-zoom and d3-drag handle the pointer, and React draws the SVG (so labels, focus and clicks are ordinary DOM). Nodes keep their place when more of the graph is loaded. Screens are addressed by the URL fragment (`#/graph?entity=...`, `#/ask?q=...`), so reload, back and bookmarks work. Every graph node can be reached and operated with the keyboard (Tab, Enter or Space to select, `E` to expand).
 
@@ -269,14 +332,14 @@ Security: the page is sent with a strict Content-Security-Policy (scripts only f
 cd frontend
 npm install
 npm run dev        # http://127.0.0.1:5173, proxies /api to the server on 8016
-npm test           # 274 component and unit tests (jsdom)
+npm test           # 329 component and unit tests (jsdom)
 npm run build      # writes frontend/dist, which is committed: rebuild it after every change to frontend/src
 ```
 
-Tested: 274 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
+Tested: 329 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
 Checked by hand in a browser against the real extracted documents (25 entities, 30 facts): signing up, the graph, an entity panel, and the question "In which city is the university attended by the founder of Soro Labs?" answered "Kellmar" with two cited quotes while passage search said "The documents do not say".
 
-Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; the UI has no conflict view or export yet (steps 7 and 8); there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
+Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; the UI has no export yet (step 8); there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
 
 ## API
 
@@ -300,6 +363,9 @@ Limits of the web app: not tested in Safari or Firefox (Chromium-based browser p
 | `GET /api/resolution/merges`, `POST /api/resolution/merges/{id}/undo` | history and undo |
 | `POST /api/ask` | answer a question with citations and the reasoning behind it |
 | `GET /api/query/at?entity=&relation=&at=` (or `from=&to=`) | "who held this relation in that period", no model: facts that can have held, each with what its dates say; facts dated outside are only counted |
+| `POST /api/conflicts/run` (`{"use_llm": false}`), `GET /api/conflicts?status=open\|resolved\|dismissed` | look for facts that cannot both be true; list them with both facts, dates and quotes |
+| `POST /api/conflicts/{id}/resolve` (`{"resolution": "keep_a\|keep_b\|both\|succession"}`), `POST /api/conflicts/{id}/reopen` | settle one (nothing is deleted) or undo it |
+| `POST /api/check` (`{"claim": "..."}`) | supported / contradicted / not in the documents, with the facts and quotes behind the verdict |
 | `GET /api/query/link?q=`, `GET /api/query/path?from=&to=`, `POST /api/query/chain` | entity linking, paths, chains of relations (no model) |
 | `GET /api/index/status`, `POST /api/index/rebuild` | passage and fact embeddings |
 | `GET /api/health` | whether the configured model is reachable and installed |
@@ -310,7 +376,7 @@ running, the document fails with "Cannot reach Ollama ... (ollama serve)" instea
 ## Settings (`.env`)
 
 See `.env.template`. The ones that matter: `LLM_PROVIDER` (ollama, anthropic, openai), `OLLAMA_MODEL`, `VERIFY_FACTS`,
-`GLEANING_PASSES`, `AUTO_RESOLVE`, `RESOLUTION_USE_LLM`, `MAX_CONCURRENT_DOCUMENTS`, `MAX_QUEUED_JOBS_PER_USER`, `JOB_STALE_SECONDS`, `LLM_MAX_TOKENS`, `EMBEDDING_MODEL`, `INDEX_CHUNKS`, `ASK_MAX_FACTS`, `ASK_TOP_CHUNKS`, `ASK_MAX_HOPS`, `PREDICATE_THRESHOLD`, `CHUNK_CHARS`, `MAX_DOCUMENT_CHARS` (100,000), `MAX_UPLOAD_MB`. The Anthropic and OpenAI clients exist
+`GLEANING_PASSES`, `AUTO_RESOLVE`, `RESOLUTION_USE_LLM`, `AUTO_DETECT_CONFLICTS`, `MAX_CONCURRENT_DOCUMENTS`, `MAX_QUEUED_JOBS_PER_USER`, `JOB_STALE_SECONDS`, `LLM_MAX_TOKENS`, `EMBEDDING_MODEL`, `INDEX_CHUNKS`, `ASK_MAX_FACTS`, `ASK_TOP_CHUNKS`, `ASK_MAX_HOPS`, `PREDICATE_THRESHOLD`, `CHUNK_CHARS`, `MAX_DOCUMENT_CHARS` (100,000), `MAX_UPLOAD_MB`. The Anthropic and OpenAI clients exist
 but were **never run against the live services**.
 
 ## Measured accuracy
@@ -360,7 +426,7 @@ How much to trust these numbers:
 ## Tests
 
 ```bash
-python3 -m pytest                 # 701 tests, about 20 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 853 tests, about 25 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
@@ -369,6 +435,8 @@ comparison, skipping a cleanup), and the tests caught all of them (the first rou
 text file decoded as garbage, a duplicate source row that crashed storing a fact seen twice in one batch, and a name rule that
 rejected most sentences saying "Turing" for "Alan Turing", and a word-order check that wrongly rejected
 "Acme, founded by Maria, acquired Beta".
+
+Step 7's code (`conflicts.py`, `factcheck.py`, the endpoints, the screens) was break-tested too: about 115 deliberate bugs on the server side (the first round missed 32: boundary cases such as the mixed month/year comparison, the "president" entry of the list, a fact left out being compared again, and unscoped or unlocked endpoints; 5 of those are changes that cannot alter behaviour, the rest got tests) and 60 in the frontend (the first round missed 15, mostly wiring such as which address opens which screen and which parameters a request sends; each got a test).
 
 Step 6's code (`temporal.py`, the dated index, the ask changes, the endpoints, the time controls) was break-tested too: about 75 deliberate bugs on the server side (the first round missed 18, one of them an equivalent change; the new tests also exposed a real bug: "In 2021, who led Acme?" left a stray comma in the question given to the planner) and 50 in the frontend (the first round missed 10 and one more after that); each got a test.
 
@@ -382,15 +450,19 @@ src/models/resolution.py     EntityAlias, MergeSuggestion, MergeRecord
 src/models/embedding.py      Embedding (passage and fact vectors)
 src/models/user.py           User, UserSession
 src/models/job.py            Job
-alembic/                     migrations (0001 baseline of steps 1-3, 0002 accounts, 0003 jobs)
+alembic/                     migrations (0001 baseline of steps 1-3, 0002 accounts, 0003 jobs, 0004 conflicts)
 src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), extraction (prompts + checks),
                              pipeline (document -> graph), resolution (merge/suggest/undo), graph_store (NetworkX views), text_utils,
                              embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations),
                              job_queue (claiming, fair order, heartbeat, cancel, recovery), cancel
 src/api/                     auth.py, deps.py, documents.py, jobs.py, graph.py, resolution.py, query.py
-src/services/temporal.py     what dates say about a period; the time a question names
+src/services/temporal.py     what dates say about a period; the time a question names; whether two periods can overlap
+src/services/conflicts.py    finding, settling and undoing conflicts between facts
+src/services/factcheck.py    checking a claim against the facts
+src/models/conflict.py       Conflict, PredicateKind
 src/web.py                   serves frontend/dist (page fallback, security headers, cached assets)
 frontend/                    React + D3 app: src/ (components, lib, router, api client), tests/ (vitest), dist/ (the committed build)
+eval/conflicts/              documents with planted conflicts, claims, results; run_conflict_eval.py
 eval/temporal/               dated documents, two question sets, results; run_temporal_eval.py
 eval/                        labelled documents (docs/), gold.json, scoring, run_eval.py, rescore.py, saved results;
                              entities.json + run_resolution_eval.py for resolution;

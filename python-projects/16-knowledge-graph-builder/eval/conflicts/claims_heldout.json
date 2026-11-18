@@ -1,0 +1,47 @@
+{
+ "note": "Written before the first run; run once on the final code. (h06 was dropped before any run: whether 'acquired in 2010' fits a fact that starts in 2001 with no end depends on reading an acquisition as an event or a state, which this system cannot tell apart.)",
+ "claims": [
+  {
+   "id": "h01",
+   "claim": "Wick Dynamics was led by Greta Lund in 2015.",
+   "gold": "contradicted",
+   "note": ""
+  },
+  {
+   "id": "h02",
+   "claim": "Delacroix Textiles was founded by Imogen Strand.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "h03",
+   "claim": "Ysolde Marchetti was mayor of Hollin.",
+   "gold": "not_found",
+   "note": ""
+  },
+  {
+   "id": "h04",
+   "claim": "Quillon Systems is headquartered in Valcross.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "h05",
+   "claim": "Pemberly Press acquired Sable Group in 2005.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "h07",
+   "claim": "Bram Osei was mayor of Carrowmere in 2000.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "h08",
+   "claim": "Callum Ferris was chief executive of Brannock Mills in 2020.",
+   "gold": "supported_other_dates",
+   "note": "the stored fact ended in 2018"
+  }
+ ]
+}

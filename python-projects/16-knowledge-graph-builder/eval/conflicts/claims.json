@@ -1,0 +1,53 @@
+{
+ "note": "development claims",
+ "claims": [
+  {
+   "id": "k01",
+   "claim": "Ismene Torvald led Brannock Mills in 2005.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "k02",
+   "claim": "Callum Ferris led Brannock Mills from 2009 to 2018.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "k03",
+   "claim": "Ismene Torvald led Brannock Mills in 2012.",
+   "gold": "supported_other_dates",
+   "note": "the stored fact ended in 2009"
+  },
+  {
+   "id": "k04",
+   "claim": "Orrin Dynamics employs 340 people.",
+   "gold": "supported",
+   "note": ""
+  },
+  {
+   "id": "k05",
+   "claim": "Orrin Dynamics employs 500 people.",
+   "gold": "contradicted",
+   "note": "the documents give 340 and 410"
+  },
+  {
+   "id": "k06",
+   "claim": "Harlow Textiles is headquartered in Brindle.",
+   "gold": "contradicted",
+   "note": ""
+  },
+  {
+   "id": "k07",
+   "claim": "Tidewell Media acquired Marlow Foods.",
+   "gold": "not_found",
+   "note": "the documents say they partnered"
+  },
+  {
+   "id": "k08",
+   "claim": "Zorn Capital acquired Pemberly Press.",
+   "gold": "unclear",
+   "note": "Zorn Capital is not in the documents"
+  }
+ ]
+}

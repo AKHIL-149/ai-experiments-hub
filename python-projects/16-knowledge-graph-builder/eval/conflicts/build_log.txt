@@ -1,0 +1,40 @@
+c01 completed 11s accepted=1 
+c02 completed 4s accepted=1 
+c03 completed 14s accepted=2 
+c04 completed 7s accepted=1 
+c05 completed 6s accepted=1 
+c06 completed 6s accepted=1 
+c07 completed 5s accepted=1 
+c08 completed 5s accepted=1 
+c09 completed 5s accepted=1 
+c10 completed 8s accepted=3 
+c11 completed 12s accepted=2 
+c12 completed 10s accepted=2 
+c13 completed 5s accepted=1 
+c14 completed 5s accepted=1 
+c15 completed 11s accepted=2 
+c16 completed 10s accepted=2 
+entities 26 facts 23
+   Harlow Textiles | headquartered in | Dunmere |  
+   Harlow Textiles | its headquarters in | Valcross |  
+   Ismene Torvald | led | Brannock Mills | 2003 2009
+   Callum Ferris | led | Brannock Mills | 2009 2018
+   Rosalind Penge | led | Wick Dynamics | 2010 2016
+   Tomas Verhoven | chief executive of | Wick Dynamics | 2014 2019
+   Orrin Dynamics | employs | 340 people |  
+   Orrin Dynamics | employs | 410 people |  
+   Sable Group | acquired | Pemberly Press | 2001 
+   Pemberly Press | acquired | Sable Group | 2005 
+   Imogen Strand | founded | Delacroix Textiles |  
+   Idris Kempe | founded | Delacroix Textiles |  
+   Imogen Strand | and | Idris Kempe |  
+   Ysolde Marchetti | served as mayor of | Carrowmere | 1990 1997
+   Bram Osei | served as mayor of | Carrowmere | 1997 2004
+   Fenwick Park University | located in | Ashgrove |  
+   Fenwick Park University | located in | Hartley County |  
+   Lorcan Adeyemi | born in | Hollin |  
+   Lorcan Adeyemi | born in | Carrowmere |  
+   Quillon Systems | its headquarters in | Dunmere | 2004 2012
+   Quillon Systems | moved its headquarters to | Valcross | 2012 
+   Marlow Foods | partnered with | Tidewell Media |  
+   Tidewell Media | partnered with | Marlow Foods |  

@@ -1,0 +1,118 @@
+{
+ "correct": 7,
+ "total": 7,
+ "results": [
+  {
+   "id": "h01",
+   "claim": "Wick Dynamics was led by Greta Lund in 2015.",
+   "gold": "contradicted",
+   "verdict": "contradicted",
+   "ok": true,
+   "summary": "The documents name someone else: Rosalind Penge led Wick Dynamics (2010..2016).",
+   "parsed": {
+    "subject": "Greta Lund",
+    "relation": "led",
+    "object": "Wick Dynamics",
+    "start": "2015",
+    "end": null
+   },
+   "seconds": 1.3
+  },
+  {
+   "id": "h02",
+   "claim": "Delacroix Textiles was founded by Imogen Strand.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Imogen Strand founded Delacroix Textiles.",
+   "parsed": {
+    "subject": "Imogen Strand",
+    "relation": "founded",
+    "object": "Delacroix Textiles",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.1
+  },
+  {
+   "id": "h03",
+   "claim": "Ysolde Marchetti was mayor of Hollin.",
+   "gold": "not_found",
+   "verdict": "not_found",
+   "ok": true,
+   "summary": "The documents do not say this.",
+   "parsed": {
+    "subject": "Ysolde Marchetti",
+    "relation": "was mayor of",
+    "object": "Hollin",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.1
+  },
+  {
+   "id": "h04",
+   "claim": "Quillon Systems is headquartered in Valcross.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Quillon Systems moved its headquarters to Valcross (2012..).",
+   "parsed": {
+    "subject": "Quillon Systems",
+    "relation": "is headquartered in",
+    "object": "Valcross",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.0
+  },
+  {
+   "id": "h05",
+   "claim": "Pemberly Press acquired Sable Group in 2005.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Pemberly Press acquired Sable Group (2005..).",
+   "parsed": {
+    "subject": "Pemberly Press",
+    "relation": "acquired",
+    "object": "Sable Group",
+    "start": "2005",
+    "end": null
+   },
+   "seconds": 1.1
+  },
+  {
+   "id": "h07",
+   "claim": "Bram Osei was mayor of Carrowmere in 2000.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Bram Osei served as mayor of Carrowmere (1997..2004).",
+   "parsed": {
+    "subject": "Bram Osei",
+    "relation": "was mayor of",
+    "object": "Carrowmere",
+    "start": "2000",
+    "end": null
+   },
+   "seconds": 1.3
+  },
+  {
+   "id": "h08",
+   "claim": "Callum Ferris was chief executive of Brannock Mills in 2020.",
+   "gold": "supported_other_dates",
+   "verdict": "supported_other_dates",
+   "ok": true,
+   "summary": "The documents say this happened, but with other dates: Callum Ferris led Brannock Mills (2009..2018).",
+   "parsed": {
+    "subject": "Callum Ferris",
+    "relation": "was chief executive of",
+    "object": "Brannock Mills",
+    "start": "2020",
+    "end": null
+   },
+   "seconds": 1.5
+  }
+ ]
+}

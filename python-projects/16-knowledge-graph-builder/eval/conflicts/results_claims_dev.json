@@ -1,0 +1,134 @@
+{
+ "correct": 8,
+ "total": 8,
+ "results": [
+  {
+   "id": "k01",
+   "claim": "Ismene Torvald led Brannock Mills in 2005.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Ismene Torvald led Brannock Mills (2003..2009).",
+   "parsed": {
+    "subject": "Ismene Torvald",
+    "relation": "led",
+    "object": "Brannock Mills",
+    "start": "2005",
+    "end": null
+   },
+   "seconds": 2.0
+  },
+  {
+   "id": "k02",
+   "claim": "Callum Ferris led Brannock Mills from 2009 to 2018.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Callum Ferris led Brannock Mills (2009..2018).",
+   "parsed": {
+    "subject": "Callum Ferris",
+    "relation": "led",
+    "object": "Brannock Mills",
+    "start": "2009",
+    "end": "2018"
+   },
+   "seconds": 1.2
+  },
+  {
+   "id": "k03",
+   "claim": "Ismene Torvald led Brannock Mills in 2012.",
+   "gold": "supported_other_dates",
+   "verdict": "supported_other_dates",
+   "ok": true,
+   "summary": "The documents say this happened, but with other dates: Ismene Torvald led Brannock Mills (2003..2009).",
+   "parsed": {
+    "subject": "Ismene Torvald",
+    "relation": "led",
+    "object": "Brannock Mills",
+    "start": "2012",
+    "end": null
+   },
+   "seconds": 1.2
+  },
+  {
+   "id": "k04",
+   "claim": "Orrin Dynamics employs 340 people.",
+   "gold": "supported",
+   "verdict": "supported",
+   "ok": true,
+   "summary": "The documents say this: Orrin Dynamics employs 340 people.",
+   "parsed": {
+    "subject": "Orrin Dynamics",
+    "relation": "employs",
+    "object": "340 people",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.1
+  },
+  {
+   "id": "k05",
+   "claim": "Orrin Dynamics employs 500 people.",
+   "gold": "contradicted",
+   "verdict": "contradicted",
+   "ok": true,
+   "summary": "The documents give a different value: Orrin Dynamics employs 340 people.",
+   "parsed": {
+    "subject": "Orrin Dynamics",
+    "relation": "employs",
+    "object": "500 people",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.0
+  },
+  {
+   "id": "k06",
+   "claim": "Harlow Textiles is headquartered in Brindle.",
+   "gold": "contradicted",
+   "verdict": "contradicted",
+   "ok": true,
+   "summary": "The documents name something else: Harlow Textiles headquartered in Dunmere.",
+   "parsed": {
+    "subject": "Harlow Textiles",
+    "relation": "is headquartered in",
+    "object": "Brindle",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.3
+  },
+  {
+   "id": "k07",
+   "claim": "Tidewell Media acquired Marlow Foods.",
+   "gold": "not_found",
+   "verdict": "not_found",
+   "ok": true,
+   "summary": "The documents do not say this. They do connect the two in another way (shown below).",
+   "parsed": {
+    "subject": "Tidewell Media",
+    "relation": "acquired",
+    "object": "Marlow Foods",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.3
+  },
+  {
+   "id": "k08",
+   "claim": "Zorn Capital acquired Pemberly Press.",
+   "gold": "unclear",
+   "verdict": "unclear",
+   "ok": true,
+   "summary": "\u201cZorn Capital\u201d is not in the documents, so nothing can be checked.",
+   "parsed": {
+    "subject": "Zorn Capital",
+    "relation": "acquired",
+    "object": "Pemberly Press",
+    "start": null,
+    "end": null
+   },
+   "seconds": 1.3
+  }
+ ]
+}
