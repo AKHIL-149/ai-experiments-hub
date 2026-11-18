@@ -42,7 +42,7 @@ describe("App", () => {
     signedIn();
     render(<App />);
     const nav = await screen.findByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Graph", "Documents", "Ask", "Check", "Review"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Graph", "Documents", "Ask", "Check", "Review", "Export"]);
     expect(within(nav).getByRole("link", { name: "Graph" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /ann/ })).toBeInTheDocument();
     expect(await screen.findByText("Model ready")).toBeInTheDocument();
@@ -164,6 +164,26 @@ describe("App: the Check and Review addresses", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Check" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Check" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("shows the Export screen at its address", async () => {
+    signedIn();
+    api.exportSummary.mockResolvedValue({ entities: 1, facts: 1, value_facts: 0, entity_facts: 1, sources: 1, left_out: 0, document: null });
+    window.location.hash = "#/export";
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Export" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Export" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens Export limited to the document named in the address", async () => {
+    signedIn();
+    api.documents.mockResolvedValue({ documents: [{ id: "d1", title: "Annual report", status: "completed", char_count: 10, chunk_count: 1, chunks_done: 1, stats: {}, job: null }] });
+    api.exportSummary.mockResolvedValue({ entities: 1, facts: 1, value_facts: 0, entity_facts: 1, sources: 1, left_out: 0, document: null });
+    window.location.hash = "#/export?doc=d1";
+    render(<App />);
+    const select = await screen.findByLabelText("What to include");
+    await waitFor(() => expect(select).toHaveValue("d1"));          // once the document list has arrived the option exists
+    expect(api.exportSummary).toHaveBeenCalledWith("d1");
   });
 
   it("opens Review on the tab named in the address", async () => {

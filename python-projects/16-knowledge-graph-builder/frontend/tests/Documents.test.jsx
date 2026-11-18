@@ -48,7 +48,7 @@ describe("Documents", () => {
     list(doc({ id: "a", title: "Done doc" }), doc({ id: "c", title: "Busy doc", status: "processing", chunks_done: 1, chunk_count: 4, job: { id: "jc", cancel_requested: false } }));
     show();
     const done = await screen.findByRole("article", { name: "Done doc" });
-    expect(within(done).getAllByRole("button").map((b) => b.textContent)).toEqual(["View graph", "Read again", "Delete"]);
+    expect(within(done).getAllByRole("button").map((b) => b.textContent)).toEqual(["View graph", "Export", "Read again", "Delete"]);
     const busy = screen.getByRole("article", { name: "Busy doc" });
     expect(within(busy).getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel"]);
   });
@@ -58,6 +58,20 @@ describe("Documents", () => {
     show();
     await userEvent.click(await screen.findByRole("button", { name: "View graph" }));
     expect(go).toHaveBeenCalledWith("graph", { doc: "d1" });
+  });
+
+  it("opens the export limited to that document", async () => {
+    list(doc());
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Export" }));
+    expect(go).toHaveBeenCalledWith("export", { doc: "d1" });
+  });
+
+  it("offers no export for a document that is not read", async () => {
+    list(doc({ status: "pending", chunks_done: 0, job: { id: "jb", status: "pending", position: 1, cancel_requested: false } }));
+    show();
+    await screen.findByText("Waiting");
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
   });
 
   it("cancels a running document, and shows that it is stopping", async () => {

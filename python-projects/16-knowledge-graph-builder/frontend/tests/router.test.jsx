@@ -7,6 +7,10 @@ describe("parseHash", () => {
     expect(parseHash("#/graph?entity=abc&fact=f1")).toEqual({ route: "graph", params: { entity: "abc", fact: "f1" } });
     expect(parseHash("#/documents")).toEqual({ route: "documents", params: {} });
   });
+  it("knows every screen, including export", () => {
+    for (const r of ["graph", "documents", "ask", "check", "review", "export"]) expect(parseHash(`#/${r}`).route).toBe(r);
+    expect(parseHash("#/export?doc=d1")).toEqual({ route: "export", params: { doc: "d1" } });
+  });
   it("falls back to the graph for an empty or unknown address", () => {
     expect(parseHash("").route).toBe("graph");
     expect(parseHash("#/").route).toBe("graph");
