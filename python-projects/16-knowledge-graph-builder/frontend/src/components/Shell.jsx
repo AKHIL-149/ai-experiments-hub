@@ -8,6 +8,7 @@ import Ask from "./Ask";
 import Brand from "./Brand";
 import Check from "./Check";
 import Documents from "./Documents";
+import Export from "./Export";
 import GraphView from "./GraphView";
 import Review from "./Review";
 
@@ -17,6 +18,7 @@ const TABS = [
   ["ask", "Ask"],
   ["check", "Check"],
   ["review", "Review"],
+  ["export", "Export"],
 ];
 
 function useCounts() {
@@ -130,6 +132,7 @@ export default function Shell() {
         {route === "ask" && <Ask params={params} go={go} />}
         {route === "check" && <Check params={params} go={go} />}
         {route === "review" && <Review onChange={reloadCounts} go={go} params={params} />}
+        {route === "export" && <Export params={params} />}
       </main>
     </div>
   );

@@ -60,6 +60,11 @@ async function request(method, path, { body, params, form } = {}) {
   return data;
 }
 
+/** The address of a download: a plain link, so the browser saves the file and the signed-in cookie goes with it */
+export function exportUrl(format, { documentId, sources = true, schema = true } = {}) {
+  return "/api/export" + query({ format, document_id: documentId || undefined, sources: sources ? undefined : "false", schema: format === "cypher" && !schema ? "false" : undefined });
+}
+
 const get = (path, params) => request("GET", path, { params });
 const post = (path, body, params) => request("POST", path, { body, params });
 
@@ -100,6 +105,8 @@ export const api = {
   resolveConflict: (id, resolution) => post(`/api/conflicts/${id}/resolve`, { resolution }),
   reopenConflict: (id) => post(`/api/conflicts/${id}/reopen`),
   check: (claim) => post("/api/check", { claim }),
+
+  exportSummary: (documentId) => get("/api/export/summary", { document_id: documentId || undefined }),
 
   ask: (question, mode, documentId) => post("/api/ask", { question, mode, document_id: documentId || undefined }),
 

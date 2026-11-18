@@ -42,6 +42,7 @@ function DocumentCard({ doc, onChanged, go, notify }) {
       </div>
       <div className="row wrap">
         {doc.status === "completed" && <button className="btn small" onClick={() => go("graph", { doc: doc.id })}>View graph</button>}
+        {doc.status === "completed" && <button className="btn small" onClick={() => go("export", { doc: doc.id })}>Export</button>}
         {active && doc.job && (
           <button className="btn small" disabled={busy || doc.job.cancel_requested} onClick={() => act(() => api.cancelJob(doc.job.id), "Cancelling…")}>
             {doc.job.cancel_requested ? "Stopping…" : "Cancel"}

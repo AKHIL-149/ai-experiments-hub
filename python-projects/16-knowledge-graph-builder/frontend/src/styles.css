@@ -51,6 +51,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- buttons, inputs ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 8px; border: 1px solid var(--border-strong);
   background: var(--panel); cursor: pointer; font-weight: 500; line-height: 1.2; min-height: 36px; }
+a.btn { text-decoration: none; }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
