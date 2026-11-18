@@ -120,14 +120,14 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - WebSocket progress tracking with granular per-scene updates during processing
 - _Note: Ingestion (YouTube/local upload/streaming), the full analysis pipeline, all search modes, highlights, and clip creation are real and verified end-to-end through the actual UI - not stubs. CPU-only local inference makes longer videos slow to process. Backend-only (no UI yet): chapters view, timeline, similar-videos search, and highlight reels._
 
-**16. Knowledge Graph Builder & Query System** (Full-stack) - Planned
-- Automatic entity and relationship extraction
-- Dynamic knowledge graph from unstructured data
-- Graph-based RAG with multi-hop reasoning
-- Visual graph exploration UI
-- Temporal knowledge tracking
-- Conflict resolution and fact verification
-- Export to Neo4j/NetworkX
+**16. Knowledge Graph Builder & Query System** (Full-stack) ✅ Working
+- Reads documents (txt, md, pdf, docx) with a local Ollama model and builds a knowledge graph: entities, relationships, dates, and the exact quote behind every fact (facts the quote does not back up are refused in code)
+- Entity resolution ("Acme Corp" = "ACME"), with merge suggestions you can accept, reject or undo
+- Graph-RAG questions with cited quotes, compared side by side with plain passage search; time-aware ("who was CTO in 2021?")
+- Conflict detection (facts that cannot both be true) with settle-and-undo, and a claim checker that answers supported / contradicted / not in the documents, with the evidence
+- Web app (React + D3 force graph), accounts, a background job queue, and export to JSON, CSV and a Cypher script for Neo4j
+- 📖 [README](python-projects/16-knowledge-graph-builder/README.md) - how it works, measured accuracy on small hand-made sets, and known limits
+- _Note: the accuracy numbers come from small sets I wrote and partly tuned on, so they measure the mechanism, not your documents. The Cypher export was checked by reading the script back, but has never been run against a live Neo4j or Memgraph, and the Anthropic and OpenAI model clients have never run against the live services. Only the local Ollama model was used._
 
 ## Tech Stack
 
@@ -217,7 +217,7 @@ ai-experiments-hub/
 - [x] Project 13: AI Code Review Assistant ⚠️ (Core complete, needs monitoring)
 - [x] Project 14: Multi-Agent Orchestrator ✅ (Task execution, DAG workflow step-advancement, and dashboard verified end-to-end with real local Ollama calls; cross-step data passing between workflow steps is a known gap - see [usage guide](python-projects/14-multi-agent-orchestrator/USAGE_GUIDE.md))
 - [x] Project 15: Video Understanding Platform ✅ (Ingestion, analysis pipeline, search, highlights, and clip creation working end-to-end; chapters/timeline/similar-videos/highlight-reels are backend-only, no UI yet)
-- [ ] Project 16: Knowledge Graph Builder (Planned)
+- [x] Project 16: Knowledge Graph Builder ✅ (Extraction with checked quotes, entity resolution, graph-RAG, time, conflicts and claim checking, web app and export working with a local Ollama model; Cypher export not run against a live Neo4j, cloud model clients never run live - see [README](python-projects/16-knowledge-graph-builder/README.md))
 
 ## Learning Resources
 

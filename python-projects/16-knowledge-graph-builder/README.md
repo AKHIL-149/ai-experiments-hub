@@ -4,7 +4,7 @@ Turns unstructured documents into a knowledge graph (entities, relationships, da
 answers multi-hop questions over it, and shows it in a visual explorer.
 Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
-**Status: steps 1 to 7 of 8 are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time; conflicts and claim checking).** The rest is not built yet.
+**Status: all 8 steps are built (extraction and graph store; entity resolution; questions and graph-RAG; accounts and a background job queue; the web app; time; conflicts and claim checking; export).** Two things are not done: the export has not been run against a live graph database, and the Anthropic and OpenAI clients have never run against the live services (see Known limits).
 
 | Step | What | State |
 |---|---|---|
@@ -15,7 +15,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | 5 | Visual explorer (React + D3.js, "Paper Light" theme) | done |
 | 6 | Temporal facts ("who was CTO in 2021?") | done |
 | 7 | Conflict detection and fact checking | done |
-| 8 | Export (Cypher, CSV, JSON) and final docs | not started |
+| 8 | Export (Cypher, CSV, JSON) and final docs | done |
 
 ## Decisions
 
@@ -24,7 +24,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | Language | Python backend (FastAPI), JavaScript frontend (React 19 + D3, built with Vite; the build is committed, so Node is only needed to change the UI) |
 | LLM for extraction | Local Ollama `llama3.1:8b` (the newest Llama that runs fast on 64 GB; Llama 4 Scout is 67 GB and does not fit, Llama 3.3 70B fits but is slow). Claude and OpenAI are switchable in settings |
 | Graph engine | NetworkX in memory, built from the database. No graph database server needed |
-| Neo4j / Memgraph | Export only (step 8). Neither is installed here, so the export will be checked for valid syntax but **not against a live database** |
+| Neo4j / Memgraph | Export only (step 8). Neither is installed here, so the Cypher script was checked by reading it back (see Export) but **never run against a live database** |
 | Database | SQLite by default (any SQLAlchemy URL works). Alembic migrations run at startup (`alembic/versions`); a database made by steps 1-3 is adopted and upgraded |
 | UI theme | "Paper Light" (background `#F7F6F2`, panels `#FFFFFF`, accent `#2F5FD0`; person `#2F5FD0`, organization `#0F9D8A`, place `#D9822B`, concept `#C2417C`) |
 
@@ -44,6 +44,7 @@ curl -c cookies.txt -H 'Content-Type: application/json' -d '{"username":"ann","p
 curl -b cookies.txt -F "file=@report.pdf" localhost:8016/api/documents        # .txt .md .pdf .docx
 curl -b cookies.txt localhost:8016/api/documents/<id>                         # status, progress, stats
 curl -b cookies.txt localhost:8016/api/graph                                  # nodes + edges
+curl -b cookies.txt -OJ 'localhost:8016/api/export?format=csv'                # a zip of entities, facts and quotes (also json, cypher)
 ```
 
 On your own machine you can skip sign-in with `REQUIRE_LOGIN=false` (everything then belongs to one local user).
@@ -322,6 +323,7 @@ Open `http://127.0.0.1:8016`. The server serves the built app from `frontend/dis
 | **Ask** | a question, a mode (graph / facts around / graph + passages / passages only) and a document to look in. "Compare with passage search" shows both answers side by side. Every citation shows its quote; "Show them in the graph" highlights the cited facts and dims the rest. "How this was answered" lists the entities found, the planned chain and each step |
 | **Check** | type a claim; get supported / contradicted / not in the documents with the facts and quotes behind it (see Conflicts and claim checking) |
 | **Review** | run the duplicate search (with or without the model's second opinion), merge a suggested pair keeping either name or mark it "different things", the merge history with Undo, the pairs kept apart, and the **Conflicts** tab: facts that cannot both be true, with both quotes, to trust one, keep both or end the earlier one |
+| **Export** | download the graph as JSON, CSV or a Cypher script, for everything or for one document, with or without the quotes; says first how many entities, facts and quotes the file will hold and how many facts are left out by settled conflicts (see Export) |
 
 How it is built: d3-force computes the layout, d3-zoom and d3-drag handle the pointer, and React draws the SVG (so labels, focus and clicks are ordinary DOM). Nodes keep their place when more of the graph is loaded. Screens are addressed by the URL fragment (`#/graph?entity=...`, `#/ask?q=...`), so reload, back and bookmarks work. Every graph node can be reached and operated with the keyboard (Tab, Enter or Space to select, `E` to expand).
 
@@ -332,14 +334,65 @@ Security: the page is sent with a strict Content-Security-Policy (scripts only f
 cd frontend
 npm install
 npm run dev        # http://127.0.0.1:5173, proxies /api to the server on 8016
-npm test           # 329 component and unit tests (jsdom)
+npm test           # 360 component and unit tests (jsdom)
 npm run build      # writes frontend/dist, which is committed: rebuild it after every change to frontend/src
 ```
 
-Tested: 329 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
+Tested: 360 frontend tests (every screen, the graph drawing, the router and hooks, the API client) and 30 server tests for serving the app (`tests/test_web.py`: page, fallback, headers, assets, the gate still closed on `/api`). They were break-tested: 84 deliberate small bugs in the frontend sources and 32 in `src/web.py`, one at a time. The first round of the frontend missed 15 (the limit of 8 recent questions, the file input reset, the 8 second polling, the order of the list view, and similar); each got a test.
 Checked by hand in a browser against the real extracted documents (25 entities, 30 facts): signing up, the graph, an entity panel, and the question "In which city is the university attended by the founder of Soro Labs?" answered "Kellmar" with two cited quotes while passage search said "The documents do not say".
 
-Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; the UI has no export yet (step 8); there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
+Limits of the web app: not tested in Safari or Firefox (Chromium-based browser pane only); the graph is drawn as SVG, which stays smooth to a few hundred entities (it loads the 300 best connected and says so; the rest are reached by search or "Show neighbours") but would need canvas drawing for thousands; there are layout rules for narrow screens, but nothing was tried on a real phone (including dragging nodes with a finger); no automated browser test drives a real server end to end (the component tests mock the API, and the real run was by hand).
+
+## Export (step 8)
+
+Take the graph with you. Web app: the **Export** tab (or "Export" on a read document's card). API: `GET /api/export?format=json|csv|cypher`.
+
+| Format | What you get |
+|---|---|
+| **JSON** (`knowledge-graph.json`) | everything in one file: entities (with their other names), facts (subject, predicate, object or plain value, dates, number of sources) and, under each fact, every quote with its document and whether the double-check confirmed it. Counts and scope are at the top. Best for your own code |
+| **CSV** (`knowledge-graph.zip`) | three tables and a short README: `entities.csv`, `facts.csv`, `sources.csv` (one row per quote). Opens in a spreadsheet; the ids tie the tables together |
+| **Cypher** (`knowledge-graph.cypher`) | a script that builds the graph in Neo4j or another Cypher database (below) |
+
+Options (all formats): `document_id=` exports only the facts read from one document (with only that document's quotes) and `sources=false` leaves the quotes out. Cypher also takes `schema=false`, which leaves out the two `CREATE CONSTRAINT` lines. `GET /api/export/summary` says what a download would hold (entities, facts, plain-value facts, quotes, and how many facts are left out) without making it; the web app shows it before you download.
+
+What is exported is what the app shows. Facts left out because you settled a conflict against them are not exported (their number is reported, and reopening the conflict brings them back). An entity is exported when it takes part in an exported fact; an entity with no facts is not. The same graph always gives the same bytes (everything is sorted), apart from the time written in the JSON and Cypher headers. Exports are made from the signed-in account's data only.
+
+### The Cypher script
+
+```
+(:Entity:Person {id, name, type, aliases})                                         one node per entity; the second label is its type
+(a)-[:LED {id, predicate, valid_from, valid_to, source_count, evidence, evidence_documents}]->(b)
+(a)-[:EMPLOYS {...}]->(:Value {id, value})                                         a fact whose object is a plain value gets its own Value node
+```
+
+- The relationship type is the predicate in capitals ("was CTO of" becomes `WAS_CTO_OF`); the exact wording is kept in the `predicate` property. A predicate with no ASCII letters or digits becomes `RELATED_TO`. Different wordings are different types: "led" and "was CEO of" are not merged.
+- Dates stay text (`'2019'`, `'2019-03'`): a period may be only a year, which no Cypher date type can say. Undated facts have no `valid_from` / `valid_to` at all.
+- `evidence` and `evidence_documents` are lists of the same length: the quote at position *i* was read in the document at position *i*.
+- Everything is `MERGE`d on its `id`, so running the script twice changes nothing. Entities and `Value` nodes come first, then the relationships. Each statement is one line ending in `;`, so a line-by-line loader works as well as `cypher-shell` or the Neo4j Browser.
+- Text from the documents goes into the script as quoted strings with backslash, quote and every control character escaped, so no document text can end a string or add a statement. A test feeds it a quote that tries.
+- The two constraint statements use Neo4j 5 syntax. Memgraph and older Neo4j use another syntax: run the script with `schema=false` there and create an index on `Entity(id)` yourself (without one, loading a large graph is slow).
+
+```bash
+curl -b cookies.txt -o graph.cypher 'localhost:8016/api/export?format=cypher'
+cat graph.cypher | cypher-shell -u neo4j -p <password>        # untested here, see below
+```
+
+### Checked how, and what that does not show
+
+- **A reader for the script's statements.** There is no Neo4j or Memgraph on the machine that wrote this, so the script was never run by a database. The tests read it back with a small reader that understands only the statement shapes the exporter writes, rebuild the graph from it, and compare every entity, fact, date and quote with the source, including quotes with quotes, backslashes, newlines, tabs, control characters and a line trying to end its own string. They also check that running it twice gives the same graph, that nodes come before the relationships that need them and that every statement is one line. This shows the script is well formed *in those shapes* and loses nothing in escaping. It does **not** show that a real database accepts it: the Cypher syntax is from the documentation, not from a run.
+- **A real run of the exporter**: the 16 conflict-corpus documents, read by the real model (26 entities, 23 facts, 2 with plain values), exported in all three formats and read by eye.
+- **Spreadsheet formulas.** Documents are uploaded text, so a quote can start with `=`, `+`, `-` or `@` and a spreadsheet would run it as a formula. CSV cells starting with those characters (or a tab or carriage return) get a leading apostrophe. The cost is that a value such as `-5` is written `'-5`; the CSV README says so. JSON and Cypher are not changed.
+- Downloads are sent as attachments with `Cache-Control: no-store` and `nosniff`, with a plain ASCII file name made from the document title (`knowledge-graph-q3-report.json`).
+- Tests: 100 server tests (`tests/test_export.py`) and 31 frontend tests (`Export.test.jsx`, `export.test.js` and additions to the router, App and Documents tests), including that accounts never see each other's export and that every export URL answers 401 when signed out. They were break-tested: 125 deliberate bugs in the export code (every escape, the sorting, each spreadsheet-formula character, the file names, the options passed through, the owner check) and 54 in the screen. The first round missed 24 on the server (7 were redundant code or changes that cannot alter the output: 6 of them were simplified away, and one, the `charset` on the Cypher media type, is added by the framework anyway; the other 17 were real gaps: raw control characters left in a string passed my own reader, the order of quotes and aliases, the timestamp in the header, the zip's fixed time, trimming of file names) and 4 of 54 in the frontend (the address of the summary request, the Cypher default, choosing "All documents" again, passing the address's document to the screen); each got a test. It also found that the Cypher-only `schema` option was being added to the JSON and CSV links.
+
+### Limits of export
+
+- **Not run against a live graph database** (above). If the script fails on your database, the first thing to check is the constraint lines (`schema=false`).
+- **Export only.** Nothing imports an export back. Merge history, conflicts (as records), search vectors, jobs and accounts are not exported; settled conflicts only show as "left out" facts.
+- **Plain values are `Value` nodes**, not properties on the entity. That keeps dates and quotes, but a query for "the number of employees" must follow a relationship to a `Value`.
+- **Relationship types follow the wording.** There is no synonym merging, so two ways of saying the same thing are two types; an export of a graph that was read with varied wording is untidier than the same graph after you merged and settled things.
+- **The whole export is built in memory**, and the Cypher script has one statement per entity and per fact. That is fine for the sizes this tool reads (it takes hours per hundred thousand characters), and untested on millions of facts.
+- Only English predicates produce readable relationship types.
 
 ## API
 
@@ -366,6 +419,7 @@ Limits of the web app: not tested in Safari or Firefox (Chromium-based browser p
 | `POST /api/conflicts/run` (`{"use_llm": false}`), `GET /api/conflicts?status=open\|resolved\|dismissed` | look for facts that cannot both be true; list them with both facts, dates and quotes |
 | `POST /api/conflicts/{id}/resolve` (`{"resolution": "keep_a\|keep_b\|both\|succession"}`), `POST /api/conflicts/{id}/reopen` | settle one (nothing is deleted) or undo it |
 | `POST /api/check` (`{"claim": "..."}`) | supported / contradicted / not in the documents, with the facts and quotes behind the verdict |
+| `GET /api/export?format=json\|csv\|cypher&document_id=&sources=&schema=`, `GET /api/export/summary?document_id=` | download the graph as a file (JSON, a zip of CSV tables, or a Cypher script); what a download would hold |
 | `GET /api/query/link?q=`, `GET /api/query/path?from=&to=`, `POST /api/query/chain` | entity linking, paths, chains of relations (no model) |
 | `GET /api/index/status`, `POST /api/index/rebuild` | passage and fact embeddings |
 | `GET /api/health` | whether the configured model is reachable and installed |
@@ -410,6 +464,16 @@ How much to trust these numbers:
 
 ## Known limits
 
+What was never checked (read this first):
+- **The Cypher export has never been run against Neo4j or Memgraph** (neither is installed here). The script was read back by a small reader written for it, which shows it is well formed and loses nothing in escaping, not that a database accepts it. See Export.
+- **Only the local `llama3.1:8b` was used.** The Anthropic and OpenAI clients exist but never ran against the live services, and other local models were not tried.
+- **Every accuracy number comes from small sets I wrote**, some of them tuned on while building (each section says which). They measure the mechanism; they do not predict accuracy on your documents.
+- **The web app was only looked at in the Chromium-based browser pane**, by hand and with component tests that mock the API. No automated test drives a real server through a real browser.
+- **The background job queue was only partly break-tested** (a first sample of its code, not all of it); its behaviour is covered by tests, but fewer deliberate bugs were tried on it than on the rest.
+- **Large inputs were not timed or load-tested**: long documents, thousands of entities, millions of facts in an export.
+
+Limits of how it works:
+
 - **Pronouns and long reference chains.** A fact is kept only if the subject and object are in the quote, or the sentence right
   before it. "He ... There he ..." chains lose facts. This is deliberate: guessing who "he" is would add wrong facts.
 - **Speed.** About 25-45 seconds per short passage with the double-check and the second pass on an M1 Max. 100,000 characters
@@ -426,7 +490,7 @@ How much to trust these numbers:
 ## Tests
 
 ```bash
-python3 -m pytest                 # 853 tests, about 25 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 953 tests, about 25 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
@@ -455,10 +519,11 @@ src/services/                readers, chunker, llm (Ollama/Anthropic/OpenAI), ex
                              pipeline (document -> graph), resolution (merge/suggest/undo), graph_store (NetworkX views), text_utils,
                              embedding (Ollama vectors, stored), graph_query (linking, paths, chain walk), ask (plan, answer, citations),
                              job_queue (claiming, fair order, heartbeat, cancel, recovery), cancel
-src/api/                     auth.py, deps.py, documents.py, jobs.py, graph.py, resolution.py, query.py
+src/api/                     auth.py, deps.py, documents.py, jobs.py, graph.py, resolution.py, query.py, conflicts.py, export.py
 src/services/temporal.py     what dates say about a period; the time a question names; whether two periods can overlap
 src/services/conflicts.py    finding, settling and undoing conflicts between facts
 src/services/factcheck.py    checking a claim against the facts
+src/services/export.py       JSON, CSV (zip) and Cypher output of the graph
 src/models/conflict.py       Conflict, PredicateKind
 src/web.py                   serves frontend/dist (page fallback, security headers, cached assets)
 frontend/                    React + D3 app: src/ (components, lib, router, api client), tests/ (vitest), dist/ (the committed build)
