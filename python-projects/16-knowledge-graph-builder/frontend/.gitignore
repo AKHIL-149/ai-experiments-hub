@@ -1,2 +1,4 @@
 node_modules/
 *.log
+# the repo-root .gitignore ignores every lib/ (a Python template rule); this app keeps its helpers in src/lib/
+!src/lib/
