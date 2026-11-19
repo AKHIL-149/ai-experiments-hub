@@ -134,6 +134,8 @@ def test_every_call_is_capped_and_a_smaller_cap_can_be_asked_for(monkeypatch):
     ('{"relations": [{"s": "a", "n": {"x": 1}}, {"s": "b", "n"', {"relations": [{"s": "a", "n": {"x": 1}}]}),
     ('{"relations": [{"s": "a } ] {"}, {"s": "b', {"relations": [{"s": "a } ] {"}]}),                     # braces inside a string are not structure
     ('{"relations": [{"s": "say \\"hi\\""}, {"s":', {"relations": [{"s": 'say "hi"'}]}),                     # an escaped quote does not end the string
+    ('{"relations": [{"s": "x \\"}\\" y"}, {"s": "b', {"relations": [{"s": 'x "}" y'}]}),              # a brace between two escaped quotes is still inside the string
+    ('{"relations": [{"s": "path C:\\\\"}, {"s": "b', {"relations": [{"s": "path C:\\"}]}),                # an escaped backslash right before the closing quote
     ('```json\n{"relations": [{"s": "a"}, {"s": "b', {"relations": [{"s": "a"}]}),
 ])
 def test_a_reply_cut_off_by_the_token_cap_keeps_its_complete_elements(text, expected):

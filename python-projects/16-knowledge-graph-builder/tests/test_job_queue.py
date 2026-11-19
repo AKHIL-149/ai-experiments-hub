@@ -111,6 +111,14 @@ def test_fair_order_gives_each_account_a_turn():
     assert ids(job_queue.fair_order(a + b, {})) == ["1.0", "2.0", "1.1", "1.2"]        # B does not wait for all of A's
 
 
+def test_fair_order_does_not_depend_on_the_order_the_jobs_arrive_in():
+    a, b = jobs_at(1, 0, 3), jobs_at(2, 5, 2)
+    want = ids(job_queue.fair_order(a + b, {}))
+    assert want == ["1.0", "2.0", "1.1", "2.1", "1.2"]
+    assert ids(job_queue.fair_order(list(reversed(a)) + list(reversed(b)), {})) == want                    # as a database may return them
+    assert ids(job_queue.fair_order([a[2], b[1], a[0], b[0], a[1]], {})) == want
+
+
 def test_fair_order_serves_the_account_that_waited_longest_since_its_last_turn():
     base = datetime(2026, 1, 1, tzinfo=UTC)
     a, b, c = jobs_at(1, 0, 2), jobs_at(2, 1, 2), jobs_at(3, 2, 2)
@@ -437,6 +445,29 @@ def test_old_finished_jobs_are_forgotten_but_active_ones_are_not(db):
     db.commit()
     assert job_queue.purge_old_jobs(30) == 1
     assert {j.id for j in db.execute(select(Job)).scalars()} == {ja.id, jr.id}
+
+
+def test_purging_never_touches_a_waiting_or_running_job_even_with_a_stale_finish_time(db):
+    """A job that is still active has no finish time; if one ever had an old one it must still not be deleted"""
+    a, b = make_doc(db, title="a"), make_doc(db, title="b")
+    old = datetime.now(UTC) - timedelta(days=90)
+    queued = make_job(db, a, status="queued", finished_at=old)
+    running = make_job(db, b, status="running", finished_at=old)
+    db.commit()
+    assert job_queue.purge_old_jobs(30) == 0
+    assert {j.id for j in db.execute(select(Job)).scalars()} == {queued.id, running.id}
+
+
+def test_a_run_that_finds_it_lost_the_job_puts_it_back_without_using_a_try(db, queue_env, monkeypatch):
+    d = make_doc(db)
+    job_queue.enqueue(db, d)
+    db.commit()
+    monkeypatch.setattr(job_queue.pipeline, "process_document", lambda *a, **k: "lost")
+    claimed = job_queue.claim_next(db, "w1")
+    assert job_queue.run_job(claimed.id, "w1") == "lost"
+    db.expire_all()
+    j = job_of(db, d)
+    assert j.status == "queued" and j.attempts == 0 and j.worker is None and j.started_at is None and j.heartbeat_at is None
 
 
 # ---------------------------------------------------------------- the heartbeat and the worker threads

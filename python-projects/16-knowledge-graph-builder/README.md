@@ -470,7 +470,6 @@ What was never checked (read this first):
 - **Only the local `llama3.1:8b` was used.** The Anthropic and OpenAI clients exist but never ran against the live services, and other local models were not tried.
 - **Every accuracy number comes from small sets I wrote**, some of them tuned on while building (each section says which). They measure the mechanism; they do not predict accuracy on your documents.
 - **The web app was only looked at in the Chromium-based browser pane**, by hand and with component tests that mock the API. No automated test drives a real server through a real browser.
-- **The background job queue was only partly break-tested** (a first sample of its code, not all of it); its behaviour is covered by tests, but fewer deliberate bugs were tried on it than on the rest.
 - **Large inputs were not timed or load-tested**: long documents, thousands of entities, millions of facts in an export.
 
 Limits of how it works:
@@ -491,7 +490,7 @@ Limits of how it works:
 ## Tests
 
 ```bash
-python3 -m pytest                 # 953 tests, about 25 s, no model needed (a scripted fake model stands in)
+python3 -m pytest                 # 962 tests, about 25 s, no model needed (a scripted fake model stands in)
 python3 -m pytest -m ollama -s    # one live test against your local model (about 20 s)
 ```
 
@@ -500,6 +499,8 @@ comparison, skipping a cleanup), and the tests caught all of them (the first rou
 text file decoded as garbage, a duplicate source row that crashed storing a fact seen twice in one batch, and a name rule that
 rejected most sentences saying "Turing" for "Alan Turing", and a word-order check that wrongly rejected
 "Acme, founded by Maria, acquired Beta".
+
+The step 4 job queue and its callers (`job_queue.py`, `api/jobs.py`, the model-call caps in `llm.py`, the cancellation checkpoints in `pipeline.py`, `api/documents.py`) were break-tested last, in one pass over 78 deliberate bugs: 68 were caught at once, 6 survived and 4 had to be re-aimed because the code had moved when accounts were added (3 of those were then caught, 1 survived). Of the 7 that got through, 5 were real gaps and each got a test: the queue order when jobs arrive out of age order, the JSON repair of a cut-off reply when an escaped quote is followed by a brace, the two cancellation checks between "read" and "search index" and between "search index" and "resolve names" (a stop there must undo the whole read), and, the one that mattered, **the owner in the lookup of an account's merged names**: the code was right, but deleting it went unnoticed because the tests ran as one user, and with it gone a later document using a merged name would create a duplicate entity for any signed-in account. The other 2 were guards that cannot trigger today (a job that still has a finish time cannot be purged; the "lost" outcome requeue is only reachable in a race); they got tests that pin them anyway.
 
 Step 7's code (`conflicts.py`, `factcheck.py`, the endpoints, the screens) was break-tested too: about 115 deliberate bugs on the server side (the first round missed 32: boundary cases such as the mixed month/year comparison, the "president" entry of the list, a fact left out being compared again, and unscoped or unlocked endpoints; 5 of those are changes that cannot alter behaviour, the rest got tests) and 60 in the frontend (the first round missed 15, mostly wiring such as which address opens which screen and which parameters a request sends; each got a test).
 

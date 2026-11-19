@@ -283,6 +283,70 @@ def test_a_stop_between_two_model_calls_inside_a_passage_leaves_nothing(factory,
     assert counts(db)["Fact"] == 0 and counts(db)["Chunk"] == 0 and llm.count("extract") == 1
 
 
+def test_a_name_merged_into_another_entity_lands_on_it_for_its_own_account_only(factory, db):
+    """An account's alias ("ACME" -> "Acme Corp") is found when that account's next document uses it, and is invisible to others"""
+    from src.models.resolution import EntityAlias
+    from src.models.user import User
+    from src.services.text_utils import entity_key
+    ann, bob = User(username="ann", password_hash="x"), User(username="bob", password_hash="x")
+    db.add_all([ann, bob])
+    db.flush()
+    acme_ann = pipeline.get_or_create_entity(db, "Acme Corp", "organization", ann.id)
+    acme_bob = pipeline.get_or_create_entity(db, "Acme Corp", "organization", bob.id)
+    acme_local = pipeline.get_or_create_entity(db, "Acme Corp", "organization", None)
+    db.add(EntityAlias(owner_id=ann.id, entity_id=acme_ann.id, key=entity_key("ACME"), name="ACME"))
+    db.commit()
+    assert pipeline.get_or_create_entity(db, "ACME", "organization", ann.id).id == acme_ann.id          # Ann's alias is used
+    other = pipeline.get_or_create_entity(db, "ACME", "organization", bob.id)
+    assert other.id not in (acme_ann.id, acme_bob.id) and other.owner_id == bob.id                       # Bob does not see it
+    local = pipeline.get_or_create_entity(db, "ACME", "organization", None)
+    assert local.id not in (acme_ann.id, acme_local.id) and local.owner_id is None
+
+
+def _stop_at(db, k, monkeypatch):
+    """Read a one-passage document, asking the checkpoint to stop at its k-th call. Returns (outcome, checkpoint calls, embedder calls, resolutions run)"""
+    from src.services.cancel import JobCancelled
+    from tests.conftest import FakeEmbedder
+    embedder, resolutions = FakeEmbedder(), []
+    monkeypatch.setattr(pipeline, "get_embedder", lambda settings=None: embedder)
+    real = pipeline.run_resolution
+    monkeypatch.setattr(pipeline, "run_resolution", lambda *a, **kw: resolutions.append(1) or real(*a, **kw))
+    calls = {"n": 0}
+
+    def checkpoint():
+        calls["n"] += 1
+        if calls["n"] == k:
+            raise JobCancelled("cancelled")
+
+    doc_id = add_doc(db, S1)
+    outcome = pipeline.process_document(doc_id, script(ACQ), Settings(_env_file=None, verify_facts=False, gleaning_passes=0, auto_resolve=True,
+                                                                      index_chunks=True), checkpoint=checkpoint)
+    db.expire_all()
+    return doc_id, outcome, calls["n"], embedder.calls, resolutions
+
+
+def test_a_one_passage_document_checks_five_times_while_it_is_read(factory, db, monkeypatch):
+    """start, the passage, the model call, then once before the search index and once before resolving names"""
+    _, outcome, n, _, _ = _stop_at(db, 999, monkeypatch)
+    assert outcome == "completed" and n == 5
+
+
+def test_a_stop_after_the_passages_are_read_but_before_the_search_index_undoes_the_read(factory, db, monkeypatch):
+    doc_id, outcome, n, embedder_calls, resolutions = _stop_at(db, 4, monkeypatch)
+    d = db.get(Document, doc_id)
+    assert outcome == "cancelled" and n == 4 and d.status == DocumentStatus.FAILED and d.error == "Cancelled"
+    assert counts(db)["Fact"] == 0 and counts(db)["Chunk"] == 0
+    assert embedder_calls == [] and resolutions == []                         # neither later step started
+
+
+def test_a_stop_after_the_search_index_but_before_resolving_names_undoes_the_read(factory, db, monkeypatch):
+    doc_id, outcome, n, embedder_calls, resolutions = _stop_at(db, 5, monkeypatch)
+    d = db.get(Document, doc_id)
+    assert outcome == "cancelled" and n == 5 and d.status == DocumentStatus.FAILED
+    assert counts(db)["Fact"] == 0 and counts(db)["Chunk"] == 0
+    assert embedder_calls != [] and resolutions == []                          # the index was built (then thrown away), resolution never began
+
+
 def test_reading_a_document_looks_for_conflicts_without_a_model(factory, db):
     from src.models.conflict import Conflict
     first = add_doc(db, "Acme employs 340 people.", "one")
