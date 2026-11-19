@@ -11,6 +11,10 @@ Which relations have "one at a time" is a built-in list of common ones (headquar
 for any other relation the model can be asked once and the answer is remembered (it is only ever asked about the word, never
 about your documents). A relation nobody classified is treated as "many", so nothing is flagged by guesswork.
 
+Two values read from one sentence are a list, not a contradiction ("tested on 100 patients, 12 providers, and 8 pharmacies"
+gives "tested 100 patients" and "tested 12 providers"): facts whose evidence is the same quote, or quotes from the same sentence of
+the same document, are never paired as different values, objects or holders. Facts from different sentences, or different documents, still are.
+
 Two facts only conflict if they can have held at the same time (temporal.overlap_status): a handover ("2012 to 2019" and
 "2019 to 2022") is not a conflict, "since 2020" and "since 2023" with no end stated is a possible one (probably one replaced the other),
 and two facts with dates that surely share time are a certain one. Nothing is ever deleted: choosing one fact leaves the other out of
@@ -26,7 +30,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.models.conflict import Conflict, ConflictStatus, PredicateKind
-from src.models.graph import Fact, FactSource
+from src.models.graph import Document, Fact, FactSource
 from src.services.llm import LLMBadOutput, LLMClient, LLMError
 from src.services.temporal import _not_after, overlap_status
 
@@ -113,6 +117,7 @@ class Item:
     key: str           # the relation's group key
     kind: str          # one_object | one_subject | many
     docs: set = field(default_factory=set)
+    sources: list = field(default_factory=list)       # (document id, the quote the fact was read from)
 
     @property
     def identity(self) -> str:
@@ -138,6 +143,11 @@ def overruled_ids(db: Session, owner_id: int | None) -> set[str]:
 def _label(f: Fact) -> str:
     when = f" ({f.valid_from or ''}..{f.valid_to or ''})" if (f.valid_from or f.valid_to) else ""
     return f"{f.subject.name} {f.predicate} {f.object.name if f.object else f.object_value}{when}"
+
+
+def fact_label(f: Fact) -> str:
+    """A fact in words, as answers and conflicts show it: 'Acme employs 340 people (2020..)'"""
+    return _label(f)
 
 
 def _period(f: Fact) -> str:
@@ -174,15 +184,17 @@ def _reason(kind: str, a: Item, b: Item, overlap: str) -> list[str]:
 
 def _load(db: Session, owner_id: int | None, llm: LLMClient | None) -> list[Item]:
     skip = overruled_ids(db, owner_id)
-    docs = defaultdict(set)
-    for fid, did in db.execute(select(FactSource.fact_id, FactSource.document_id).join(Fact, Fact.id == FactSource.fact_id).where(Fact.owner_id == owner_id)).all():
+    docs, sources = defaultdict(set), defaultdict(list)
+    for fid, did, quote in db.execute(select(FactSource.fact_id, FactSource.document_id, FactSource.evidence)
+                                      .join(Fact, Fact.id == FactSource.fact_id).where(Fact.owner_id == owner_id)).all():
         docs[fid].add(did)
+        sources[fid].append((did, quote))
     items = []
     for f in db.execute(select(Fact).where(Fact.owner_id == owner_id)).scalars():
         if f.id in skip:
             continue
         key, kind = predicate_kind(db, f.predicate, llm)
-        items.append(Item(f, key, kind, docs.get(f.id, set())))
+        items.append(Item(f, key, kind, docs.get(f.id, set()), sources.get(f.id, [])))
     return items
 
 
@@ -214,13 +226,79 @@ def _pairs(items: list[Item]):
                 yield "reversed", a, b
 
 
+# ---------------------------------------------------------------- one sentence is not a disagreement
+
+SENTENCE_END = re.compile(r"""[.!?]["')\]]*\s+(?=["'(\[]?[A-Z0-9])|\n\s*\n""")
+
+
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _locate(text: str, quote: str) -> tuple[int, int] | None:
+    """Where the quote stands in the document text (whitespace may differ), or None when it cannot be found"""
+    words = quote.split()
+    if not words:
+        return None
+    m = re.search(r"\s+".join(re.escape(w) for w in words), text)
+    return (m.start(), m.end()) if m else None
+
+
+ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "fig", "figs", "no", "al", "etc", "e.g", "i.e", "approx", "inc", "ltd", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
+
+
+def _in_one_sentence(text: str, start: int, end: int) -> bool:
+    """No sentence ends between start and end ('Dr. Lee', 'et al. Smith' and '44.4' do not end one)"""
+    for m in SENTENCE_END.finditer(text, start, end):
+        words = text[start:m.start()].split()
+        abbreviation = text[m.start()] == "." and bool(words) and words[-1].casefold().strip("([\"'") in ABBREVIATIONS
+        if not abbreviation:
+            return False
+    return True
+
+
+class _DocText:
+    """Document texts, read only for the pairs that need them"""
+
+    def __init__(self, db: Session):
+        self.db, self.cache = db, {}
+
+    def get(self, document_id: str) -> str:
+        if document_id not in self.cache:
+            self.cache[document_id] = self.db.scalar(select(Document.text).where(Document.id == document_id)) or ""
+        return self.cache[document_id]
+
+
+def same_sentence(a: Item, b: Item, texts: _DocText) -> bool:
+    """True when both facts were read from the same place in one document: the very same quote (even a long one: it cannot say
+    which part backs which fact), one quote cut shorter than the other, or two different quotes that lie in the same sentence
+    of the document text (found by looking the quotes up in it)."""
+    for doc_a, quote_a in a.sources:
+        for doc_b, quote_b in b.sources:
+            if doc_a != doc_b:
+                continue
+            qa, qb = _squash(quote_a), _squash(quote_b)
+            if not qa or not qb:
+                continue
+            if qa in qb or qb in qa:                     # the same quote, or one cut shorter than the other
+                return True
+            text = texts.get(doc_a)
+            pa, pb = _locate(text, qa), _locate(text, qb)
+            if pa and pb and _in_one_sentence(text, min(pa[0], pb[0]), max(pa[1], pb[1])):
+                return True
+    return False
+
+
 def find_pairs(db: Session, owner_id: int | None, llm: LLMClient | None = None) -> list[tuple[str, str, Item, Item, str]]:
     """(kind, severity, a, b, overlap) for every pair that looks contradictory. Pair order is fixed (smaller fact id first)."""
     out = []
+    texts = _DocText(db)
     for kind, a, b in _pairs(_load(db, owner_id, llm)):
         overlap = overlap_status(a.fact.valid_from, a.fact.valid_to, b.fact.valid_from, b.fact.valid_to)
         if overlap == "none":
             continue
+        if kind != "reversed" and same_sentence(a, b, texts):
+            continue                                     # a list read from one sentence, not two statements that disagree
         if a.fact.id > b.fact.id:
             a, b = b, a
         out.append((kind, "certain" if overlap == "certain" else "possible", a, b, overlap))

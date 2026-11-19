@@ -362,6 +362,84 @@ describe("GraphView: finding a path", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Maria Lopez,/ }));
     expect(api.path).not.toHaveBeenCalled();
   });
+
+  describe("every way of choosing the second entity completes the path", () => {
+    const finished = async (container) => {
+      const note = await screen.findByRole("status", { name: "Path found" });
+      expect(note).toHaveTextContent("Maria Lopez → Beta Systems: 2 steps");
+      expect(container.querySelectorAll("g.edge.hl")).toHaveLength(2);
+      expect(screen.queryByText("Pick the entity to connect to")).not.toBeInTheDocument();
+    };
+
+    it("from the search box, for an entity on screen", async () => {
+      api.path.mockResolvedValue(path);
+      api.neighborhood.mockResolvedValue(graph());
+      const { container } = show();
+      await startPathFromMaria();
+      await userEvent.type(screen.getByLabelText("Find an entity"), "beta");
+      const list = await screen.findByRole("list", { name: "Matching entities" });
+      await userEvent.click(within(list).getByRole("button", { name: /Beta Systems/ }));
+      expect(api.path).toHaveBeenCalledWith("n3", "n2", 4);
+      await finished(container);
+      expect(screen.getByLabelText("Find an entity")).toHaveValue("");
+    });
+
+    it("from the search box, for an entity that is not on screen yet", async () => {
+      api.entities.mockResolvedValue({ entities: [{ id: "n7", name: "Gamma Works", type: "organization" }] });
+      api.path.mockResolvedValue({ from: "Maria Lopez", to: "Gamma Works", paths: [[{ fact_id: "f2", text: "", from: "Maria Lopez", predicate: "founded", to: "Gamma Works" }]] });
+      api.neighborhood.mockResolvedValue({ nodes: [{ id: "n7", name: "Gamma Works", type: "organization", degree: 1 }], edges: [] });
+      show();
+      await startPathFromMaria();
+      await userEvent.type(screen.getByLabelText("Find an entity"), "gamma");
+      await userEvent.click(await screen.findByRole("button", { name: /Gamma Works/ }));
+      expect(api.path).toHaveBeenCalledWith("n3", "n7", 4);
+      expect(await screen.findByRole("status", { name: "Path found" })).toHaveTextContent("Maria Lopez → Gamma Works: 1 step");
+      expect(screen.queryByText("Pick the entity to connect to")).not.toBeInTheDocument();
+      expect(await nodeButton("Gamma Works")).toBeInTheDocument();                   // brought in so the path can be drawn
+    });
+
+    it("from an entity linked in the panel", async () => {
+      api.path.mockResolvedValue(path);
+      api.neighborhood.mockResolvedValue(graph());
+      api.entity.mockResolvedValue(entityDetail({ id: "n3", name: "Maria Lopez", type: "person", incoming: [],
+        outgoing: [{ id: "f2", subject_id: "n3", subject: "Maria Lopez", predicate: "founded", object_id: "n2", object: "Beta Systems", object_is_value: false, valid_from: null, valid_to: null, source_count: 1 }] }));
+      const { container } = show();
+      fireEvent.click(await nodeButton("Maria Lopez"));
+      await userEvent.click(await screen.findByRole("button", { name: "Find a path to…" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Beta Systems" }));          // the panel's link, not the drawing
+      expect(api.path).toHaveBeenCalledWith("n3", "n2", 4);
+      await finished(container);
+    });
+
+    it("from an entity linked in a fact's panel", async () => {
+      api.path.mockResolvedValue(path);
+      api.neighborhood.mockResolvedValue(graph());
+      const { container } = show();
+      await startPathFromMaria();
+      fireEvent.click(container.querySelector('g.edge[data-edge="f1"] path.hit'));          // Acme Corp acquired Beta Systems
+      await userEvent.click(await screen.findByRole("button", { name: "Beta Systems" }));
+      expect(api.path).toHaveBeenCalledWith("n3", "n2", 4);
+      await finished(container);
+    });
+
+    it("choosing the entity the path starts from, by search, does not start a path to itself", async () => {
+      show();
+      await startPathFromMaria();
+      await userEvent.type(screen.getByLabelText("Find an entity"), "maria");
+      const list = await screen.findByRole("list", { name: "Matching entities" });
+      await userEvent.click(within(list).getByRole("button", { name: /Maria Lopez/ }));
+      expect(api.path).not.toHaveBeenCalled();
+    });
+
+    it("without path mode, search still just selects", async () => {
+      show();
+      await nodeButton("Acme Corp");
+      await userEvent.type(screen.getByLabelText("Find an entity"), "beta");
+      await userEvent.click(within(await screen.findByRole("list", { name: "Matching entities" })).getByRole("button", { name: /Beta Systems/ }));
+      expect(api.path).not.toHaveBeenCalled();
+      expect(api.entity).toHaveBeenCalledWith("n2");
+    });
+  });
 });
 
 describe("GraphView: time", () => {

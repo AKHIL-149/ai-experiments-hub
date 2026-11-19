@@ -56,6 +56,12 @@ describe("holdsText", () => {
   it("leaves out the plain-value part when there are none", () => {
     expect(holdsText(c({ value_facts: 0 }))).toBe("12 entities, 18 facts, 21 quotes");
   });
+  it("does not count quotes that the download will not have", () => {
+    expect(holdsText(c(), false)).toBe("12 entities, 18 facts (3 with a plain value), no quotes (you switched them off)");
+    expect(holdsText(c({ sources: 0 }), false)).toBe("12 entities, 18 facts (3 with a plain value), no quotes (you switched them off)");
+    expect(holdsText(c(), true)).toBe(holdsText(c()));
+    expect(holdsText(null, false)).toBe("");
+  });
   it("says zeros and says nothing before the counts arrive", () => {
     expect(holdsText(c({ entities: 0, facts: 0, value_facts: 0, sources: 0 }))).toBe("0 entities, 0 facts, 0 quotes");
     expect(holdsText(null)).toBe("");

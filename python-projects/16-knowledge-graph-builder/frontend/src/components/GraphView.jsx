@@ -132,10 +132,31 @@ export default function GraphView({ params, go }) {
     }
   }, [notify]);
 
+  // ---- "Find a path to…": the second entity may be chosen on the canvas, from the search box or from a link in a panel
+  const completePath = useCallback(async (from, id) => {
+    try {
+      const r = await api.path(from, id, 4);
+      if (!r.paths.length) { setPathNote({ text: "No connection within 4 links.", steps: [] }); setHighlight({ nodeIds: new Set([from, id]), edgeIds: new Set() }); }
+      else {
+        const depth = Math.min(2, Math.ceil(r.paths[0].length / 2));
+        const a = await api.neighborhood(from, depth, 200, atRef.current), b = await api.neighborhood(id, depth, 200, atRef.current);
+        const merged = mergeGraph(mergeGraph(graphRef.current, a), b);
+        graphRef.current = merged;
+        setGraph(merged);
+        setHighlight(pathHighlight(r.paths, merged.nodes));
+        setPathNote({ text: `${r.from} → ${r.to}: ${plural(r.paths[0].length, "step")}`, steps: r.paths[0] });
+      }
+    } catch (e) {
+      notify(e.message);
+    }
+    setPathFrom(null);
+  }, [notify]);
+
   const focusEntity = useCallback(async (id) => {
+    if (pathFrom && pathFrom !== id) { await completePath(pathFrom, id); return; }
     if (!graphRef.current.nodes.some((n) => n.id === id)) await expand(id);
     setSelected({ kind: "node", id });
-  }, [expand]);
+  }, [expand, pathFrom, completePath]);
 
   // ---- arrive from another screen: ?entity=ID, ?fact=ID, ?facts=ID,ID (the facts an answer cited)
   const handled = useRef("");
@@ -174,27 +195,9 @@ export default function GraphView({ params, go }) {
 
   // ---- selecting things
   const selectNode = useCallback(async (id) => {
-    if (pathFrom && pathFrom !== id) {
-      try {
-        const r = await api.path(pathFrom, id, 4);
-        if (!r.paths.length) { setPathNote({ text: "No connection within 4 links.", steps: [] }); setHighlight({ nodeIds: new Set([pathFrom, id]), edgeIds: new Set() }); }
-        else {
-          const depth = Math.min(2, Math.ceil(r.paths[0].length / 2));
-          const a = await api.neighborhood(pathFrom, depth, 200, atRef.current), b = await api.neighborhood(id, depth, 200, atRef.current);
-          const merged = mergeGraph(mergeGraph(graphRef.current, a), b);
-          graphRef.current = merged;
-          setGraph(merged);
-          setHighlight(pathHighlight(r.paths, merged.nodes));
-          setPathNote({ text: `${r.from} → ${r.to}: ${plural(r.paths[0].length, "step")}`, steps: r.paths[0] });
-        }
-      } catch (e) {
-        notify(e.message);
-      }
-      setPathFrom(null);
-      return;
-    }
+    if (pathFrom && pathFrom !== id) { await completePath(pathFrom, id); return; }
     setSelected({ kind: "node", id });
-  }, [pathFrom, notify]);
+  }, [pathFrom, completePath]);
 
   const clearHighlights = () => { setHighlight({ nodeIds: new Set(), edgeIds: new Set() }); setPathNote(null); setPathFrom(null); };
 

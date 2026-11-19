@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.config import Settings
-from src.models.graph import Chunk, Document, FactSource
+from src.models.graph import Chunk, Document, Fact, FactSource
 from src.services import conflicts as conflict_service
 from src.services import graph_query as gq
 from src.services import temporal
@@ -329,6 +329,28 @@ def _time_caveat(citations: list[dict], window: temporal.Window) -> str:
             "so it may still have held, but the documents do not confirm it.")
 
 
+def _disputes_behind(db: Session, ev: Evidence, citations: list[dict]) -> list[dict]:
+    """The open conflicts an answer rests on: those with a fact the answer cited. Conflicts among the other facts the model was
+    shown (the closest in wording, say, for a question the documents do not answer) say nothing about this answer. Always both sides:
+    the one that was not shown to the model is read from the graph."""
+    cited = {c["fact_id"] for c in citations if c.get("kind") == "fact"}
+    shown = {f.id: f.text() for f in ev.facts}
+    out = []
+    for c in ev.conflicts:
+        if c.fact_a_id not in cited and c.fact_b_id not in cited:
+            continue
+        texts = []
+        for fid in (c.fact_a_id, c.fact_b_id):
+            if fid not in shown:
+                fact = db.get(Fact, fid)
+                shown[fid] = conflict_service.fact_label(fact) if fact is not None else None
+            texts.append(shown[fid])
+        if None in texts:
+            continue                                    # a fact that no longer exists: never show one side alone
+        out.append({"id": c.id, "kind": c.kind, "severity": c.severity, "fact_ids": [c.fact_a_id, c.fact_b_id], "texts": texts})
+    return out
+
+
 def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embedder: Embedder | None, settings: Settings,
         document_id: str | None = None, owner_id: int | None = None, today: date | None = None) -> dict:
     question = question.strip()
@@ -360,10 +382,9 @@ def ask(db: Session, question: str, *, mode: str = "auto", llm: LLMClient, embed
     out = {"question": question, "found": result["found"] and bool(result["answer"]), "answer": result["answer"] or "not found",
            "citations": citations, "reasoning": reasoning,
            "timings_ms": {"retrieve": round((t1 - t0) * 1000), "answer": round((t2 - t1) * 1000)}}
-    shown = {f.id: f for f in ev.facts}
-    if ev.conflicts:
-        out["conflicts"] = [{"id": c.id, "kind": c.kind, "severity": c.severity, "fact_ids": [c.fact_a_id, c.fact_b_id],
-                             "texts": [shown[i].text() if i in shown else None for i in (c.fact_a_id, c.fact_b_id)]} for c in ev.conflicts]
+    disputes = _disputes_behind(db, ev, citations) if out["found"] else []
+    if disputes:
+        out["conflicts"] = disputes
     if ev.window and out["found"]:
         caveat = _time_caveat(citations, ev.window)
         if caveat:

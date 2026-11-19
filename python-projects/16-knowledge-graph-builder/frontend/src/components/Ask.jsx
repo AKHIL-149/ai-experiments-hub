@@ -53,6 +53,8 @@ function Reasoning({ r, timings }) {
 function AnswerCard({ title, result, go }) {
   const cited = result.citations || [];
   const factIds = cited.filter((c) => c.kind === "fact").map((c) => c.fact_id);
+  // a disagreement is only worth showing next to an answer, and only with both sides: one side alone reads as a fact
+  const disputes = result.found ? (result.conflicts || []).filter((c) => c.texts && c.texts.length > 0 && c.texts.every(Boolean)) : [];
   return (
     <section className="card stack" aria-label={title || "Answer"}>
       {title && <div className="row"><h2 className="grow">{title}</h2></div>}
@@ -61,9 +63,9 @@ function AnswerCard({ title, result, go }) {
       </p>
       {!result.found && result.note && <p className="muted small">{result.note}</p>}
       {result.warning && <div className="banner warn" role="alert">{result.warning}</div>}
-      {result.conflicts && result.conflicts.length > 0 && (
+      {disputes.length > 0 && (
         <div className="banner warn" role="note">
-          The documents disagree about part of this: {result.conflicts.map((c) => c.texts.filter(Boolean).join(" ↔ ")).join("; ")}.{" "}
+          The documents disagree about part of this: {disputes.map((c) => c.texts.join(" ↔ ")).join("; ")}.{" "}
           <button className="linkbtn" onClick={() => go("review", { tab: "conflicts" })}>Settle it in Review</button>
         </div>
       )}

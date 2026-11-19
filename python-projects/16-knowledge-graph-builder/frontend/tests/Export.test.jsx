@@ -66,6 +66,17 @@ describe("Export", () => {
     expect(await screen.findByRole("link", { name: "Download CSV" })).toHaveAttribute("href", "/api/export?format=csv&document_id=d1");
   });
 
+  it("stops counting quotes when they are switched off, and counts them again when they are switched on", async () => {
+    show();
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("21 quotes");
+    await userEvent.click(screen.getByLabelText("Include the quote each fact was read from"));
+    expect(status).toHaveTextContent("This export holds: 12 entities, 18 facts (3 with a plain value), no quotes (you switched them off).");
+    expect(status).not.toHaveTextContent("21 quotes");
+    await userEvent.click(screen.getByLabelText("Include the quote each fact was read from"));
+    expect(status).toHaveTextContent("12 entities, 18 facts (3 with a plain value), 21 quotes.");
+  });
+
   it("can leave the quotes out", async () => {
     show();
     await userEvent.click(await screen.findByLabelText("Include the quote each fact was read from"));

@@ -27,7 +27,7 @@ export default function Export({ params = {} }) {
         </div>
         <label className="row"><input type="checkbox" checked={sources} onChange={(e) => setSources(e.target.checked)} /> Include the quote each fact was read from</label>
         {summary.error && <div className="banner error" role="alert">{summary.error}</div>}
-        {counts && <p role="status" className="small"><strong>This export holds:</strong> {holdsText(counts)}.</p>}
+        {counts && <p role="status" className="small"><strong>This export holds:</strong> {holdsText(counts, sources)}.</p>}
         {counts && leftOutText(counts) && <p className="small muted">{leftOutText(counts)}</p>}
       </section>
       {empty && <div className="empty"><h2>Nothing to export yet</h2><p>Add a document on the Documents screen. Once it is read, its facts can be exported here.</p></div>}

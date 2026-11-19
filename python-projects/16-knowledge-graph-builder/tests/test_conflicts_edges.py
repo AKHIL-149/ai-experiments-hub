@@ -229,3 +229,133 @@ def test_a_claim_with_a_bad_reading_twice_is_unclear(firm):
     from src.services.llm import LLMBadOutput
     r = check(firm, "Gibberish claim here.", {"Gibberish claim here.": LLMBadOutput("x")})
     assert r["verdict"] == "unclear" and r["parsed"] is None
+
+
+# ---------------------------------------------------------------- values read from one sentence are a list, not a disagreement
+
+LIST_SENTENCE = "The pilot was tested on a simulated cohort of 100 patients, 12 providers, and 8 pharmacies."
+
+
+def _list_doc(w, text):
+    from src.models.graph import Document
+    w.db.get(Document, w.doc).text = text
+    w.db.commit()
+
+
+def test_values_read_from_one_sentence_are_a_list_not_a_conflict(world):
+    w = world
+    pilot = w.ent("Pilot")
+    w.fact(pilot, "tested", value="100 patients", quote=LIST_SENTENCE)
+    w.fact(pilot, "tested", value="12 providers", quote=LIST_SENTENCE)
+    w.fact(pilot, "tested", value="8 pharmacies", quote=LIST_SENTENCE)
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 0
+
+
+def test_the_same_quote_with_other_spacing_is_still_the_same_quote(world):
+    w = world
+    pilot = w.ent("Pilot")
+    w.fact(pilot, "tested", value="100 patients", quote="tested on 100 patients,\n12 providers")
+    w.fact(pilot, "tested", value="12 providers", quote="tested on 100  patients, 12 providers")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 0
+
+
+def test_one_quote_cut_shorter_than_the_other_is_the_same_place(world):
+    w = world
+    pilot = w.ent("Pilot")
+    w.fact(pilot, "tested", value="100 patients", quote="Adherence rose in 45 (64.3%), and the mean change was +8.4 points.")
+    w.fact(pilot, "tested", value="12 providers", quote="Adherence rose in 45 (64.3%),")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 0
+
+
+def test_two_different_quotes_inside_one_sentence_are_one_sentence(world):
+    w = world
+    pilot = w.ent("Pilot")
+    _list_doc(w, "Intro text. " + LIST_SENTENCE + " Next sentence follows.")
+    w.fact(pilot, "tested", value="100 patients", quote="a simulated cohort of 100 patients")
+    w.fact(pilot, "tested", value="12 providers", quote="12 providers, and 8 pharmacies")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 0
+
+
+def test_different_values_in_different_sentences_of_one_document_are_still_flagged(world):
+    w = world
+    acme = w.ent("Acme")
+    _list_doc(w, "Acme employs 340 people. Later on, Acme employs 410 people. That is all.")
+    w.fact(acme, "employs", value="340 people", quote="Acme employs 340 people.")
+    w.fact(acme, "employs", value="410 people", quote="Later on, Acme employs 410 people.")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 1
+
+
+def test_a_decimal_point_or_an_abbreviation_does_not_end_a_sentence_but_a_full_stop_does(world):
+    w = world
+    pilot = w.ent("Pilot")
+    _list_doc(w, "Adherence was 44.4 at the start and 64.3 at the end, as Dr. Lee noted. Another sentence.")
+    w.fact(pilot, "adherence", value="44.4", quote="Adherence was 44.4 at the start")
+    w.fact(pilot, "adherence", value="64.3", quote="64.3 at the end, as Dr. Lee noted.")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 0
+    from src.models.graph import FactSource
+    # the same two facts, read from two sentences: flagged
+    _list_doc(w, "Adherence was 44.4 at the start. Adherence was 64.3 at the end.")
+    for src, q in zip(w.db.execute(select(FactSource).order_by(FactSource.created_at)).scalars(), ("Adherence was 44.4 at the start.", "Adherence was 64.3 at the end.")):
+        src.evidence = q
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 1
+
+
+def test_the_same_sentence_in_two_documents_is_still_a_conflict_between_documents(world):
+    w = world
+    acme = w.ent("Acme")
+    w.fact(acme, "employs", value="340 people", quote="Acme employs a number of people.", title="a")
+    w.fact(acme, "employs", value="410 people", quote="Acme employs a number of people.", title="b")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 1
+
+
+def test_a_quote_that_is_not_in_the_document_text_is_compared_as_written(world):
+    w = world
+    acme = w.ent("Acme")
+    _list_doc(w, "Something else entirely.")
+    w.fact(acme, "employs", value="340 people", quote="Acme employs 340 people.")
+    w.fact(acme, "employs", value="410 people", quote="Acme employs 410 people.")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 1
+
+
+def test_a_reversed_pair_with_one_quote_is_still_flagged(world):
+    w = world
+    a, b = w.ent("Veltra"), w.ent("Soro")
+    q = "Veltra and Soro: one bought the other."
+    w.fact(a, "acquired", b, quote=q)
+    w.fact(b, "acquired", a, quote=q)
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 1
+
+
+def test_same_quote_holders_and_places_are_not_flagged_either(world):
+    w = world
+    acme, quillon = w.ent("Acme"), w.ent("Quillon")
+    d, v = w.ent("Dunmere", "place"), w.ent("Valcross", "place")
+    m, k = w.ent("Maria", "person"), w.ent("Kim", "person")
+    q = "Quillon has offices in Dunmere and Valcross and Acme is led by Maria and Kim."
+    w.fact(quillon, "headquartered in", d, quote=q)
+    w.fact(quillon, "headquartered in", v, quote=q)
+    w.fact(m, "was CEO of", acme, quote=q)
+    w.fact(k, "was CEO of", acme, quote=q)
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 0
+
+
+@pytest.mark.parametrize("between", ["Is that so? ", "It rose! ", "Was it a no? ", "Was it Dr! ", "\n\n"])
+def test_a_question_mark_an_exclamation_mark_or_a_blank_line_ends_a_sentence(world, between):
+    w = world
+    acme = w.ent("Acme")
+    _list_doc(w, f"Acme employs 340 people{between}Acme employs 410 people.")
+    w.fact(acme, "employs", value="340 people", quote="Acme employs 340 people")
+    w.fact(acme, "employs", value="410 people", quote="Acme employs 410 people.")
+    w.db.commit()
+    assert cf.run_detection(w.db, owner_id=None).new == 1

@@ -336,11 +336,35 @@ describe("Ask: conflicts", () => {
     expect(go).toHaveBeenCalledWith("review", { tab: "conflicts" });
   });
 
-  it("leaves out a side that is not among the facts shown", async () => {
+  it("never prints one side of a conflict alone: a conflict with a side missing is left out", async () => {
     api.ask.mockResolvedValue(answer({ conflicts: [{ id: "c1", kind: "different_value", severity: "possible", fact_ids: ["f1", "f2"], texts: ["Acme employs 340 people", null] }] }));
     show();
     await ask("How many people does Acme employ?");
-    expect(await screen.findByRole("note")).toHaveTextContent("part of this: Acme employs 340 people.");
+    await screen.findByText("Kellmar");
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+    expect(screen.queryByText(/disagree/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the complete conflicts when another one has a side missing", async () => {
+    api.ask.mockResolvedValue(answer({ conflicts: [
+      { id: "c1", kind: "different_value", severity: "possible", fact_ids: ["f1", "f2"], texts: ["Acme employs 340 people", null] },
+      { id: "c2", kind: "different_value", severity: "possible", fact_ids: ["f3", "f4"], texts: ["Acme founded 2001", "Acme founded 2003"] },
+    ] }));
+    show();
+    await ask("How many people does Acme employ?");
+    const note = await screen.findByRole("note");
+    expect(note).toHaveTextContent("part of this: Acme founded 2001 ↔ Acme founded 2003.");
+    expect(note).not.toHaveTextContent("340");
+  });
+
+  it("shows no disagreement next to a 'not found' answer, whatever the server attached", async () => {
+    api.ask.mockResolvedValue({ found: false, answer: "not found", citations: [], reasoning: { mode: "graph", facts_considered: 30, passages_considered: 0 },
+      conflicts: [{ id: "c1", kind: "different_value", severity: "possible", fact_ids: ["f1", "f2"], texts: ["Pilot tested 28 days", "Pilot tested January 1 –28, 2024"] }] });
+    show();
+    await ask("Who is the current president of Brazil?");
+    expect(await screen.findByText("The documents do not say.")).toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+    expect(screen.queryByText(/disagree/)).not.toBeInTheDocument();
   });
 
   it("shows no warning when there are no conflicts", async () => {

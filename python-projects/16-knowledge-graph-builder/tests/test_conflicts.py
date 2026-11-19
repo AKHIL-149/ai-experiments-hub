@@ -381,6 +381,83 @@ def test_questions_without_conflicts_have_no_conflict_field(disputes):
     assert "conflicts" not in asked(disputes, "Who founded Soro Labs?", llm)
 
 
+def _labels_of(d, question, *fact_texts):
+    """The labels (F1, ...) the model is given for the facts with these texts, found by asking once and reading the prompt"""
+    llm = ScriptedLLM(answer=lambda p: {"found": False, "answer": "not found", "cited": []})
+    asked(d, question, llm)
+    prompt = llm.prompts["answer"][0]
+    return [next(line[1:line.index("]")] for line in prompt.splitlines() if line.startswith("[F") and t in line) for t in fact_texts]
+
+
+def test_a_not_found_answer_carries_no_conflicts_even_when_conflicting_facts_were_shown(disputes):
+    d = disputes
+    conflict_of(d, d.e1, d.e2)
+    llm = ScriptedLLM(answer=lambda p: {"found": False, "answer": "not found", "cited": []})
+    r = asked(d, "How many people does Acme Corp employ?", llm)
+    assert "340" in llm.prompts["answer"][0] and "400" in llm.prompts["answer"][0]      # the model did see both sides
+    assert r["found"] is False and "conflicts" not in r
+
+
+def test_a_not_found_answer_that_cites_conflicting_facts_still_carries_no_conflicts(disputes):
+    d = disputes
+    conflict_of(d, d.e1, d.e2)
+    llm = ScriptedLLM(answer=lambda p: {"found": False, "answer": "", "cited": ["F1", "F2"]})
+    assert "conflicts" not in asked(d, "How many people does Acme Corp employ?", llm)
+
+
+def test_a_conflict_among_facts_the_answer_did_not_cite_is_left_out(disputes):
+    d = disputes
+    conflict_of(d, d.e1, d.e2)
+    other = _labels_of(d, "How many people does Acme Corp employ?", "Acme Corp partnered with Veltra Dynamics")[0]
+    llm = ScriptedLLM(answer=lambda p: {"found": True, "answer": "They partner.", "cited": [other]})
+    r = asked(d, "How many people does Acme Corp employ?", llm)
+    assert r["found"] is True and "conflicts" not in r
+
+
+def test_citing_one_side_of_a_conflict_is_enough_and_both_sides_are_shown(disputes):
+    d = disputes
+    conflict_of(d, d.e1, d.e2)
+    one = _labels_of(d, "How many people does Acme Corp employ?", "employs 340 people")[0]
+    llm = ScriptedLLM(answer=lambda p: {"found": True, "answer": "340", "cited": [one]})
+    r = asked(d, "How many people does Acme Corp employ?", llm)
+    assert sorted(r["conflicts"][0]["texts"]) == ["Acme Corp employs 340 people", "Acme Corp employs 400 people"]
+
+
+def test_a_side_the_model_was_never_shown_is_read_from_the_graph_not_left_blank(disputes, monkeypatch):
+    d = disputes
+    conflict_of(d, d.e1, d.e2)
+    real_gather = ask_mod.gather
+
+    def without_400(*args, **kw):
+        ev = real_gather(*args, **kw)
+        ev.facts = [f for f in ev.facts if f.id != d.e2.id]
+        return ev
+    monkeypatch.setattr(ask_mod, "gather", without_400)
+    llm = ScriptedLLM(answer=lambda p: {"found": True, "answer": "340", "cited": ["F1"]})
+    r = asked(d, "How many people does Acme Corp employ?", llm)
+    assert "400" not in llm.prompts["answer"][0]
+    assert None not in r["conflicts"][0]["texts"]
+    assert sorted(r["conflicts"][0]["texts"]) == ["Acme Corp employs 340 people", "Acme Corp employs 400 people"]
+
+
+def test_a_conflict_whose_other_fact_cannot_be_read_is_left_out_rather_than_shown_one_sided(disputes):
+    from types import SimpleNamespace
+    d = disputes
+    gone = SimpleNamespace(id="c1", kind="different_value", severity="possible", fact_a_id=d.e1.id, fact_b_id="nosuchfact")
+    ev = ask_mod.Evidence(facts=[], conflicts=[gone])
+    cited = [{"kind": "fact", "fact_id": d.e1.id}]
+    assert ask_mod._disputes_behind(d.db, ev, cited) == []
+
+
+def test_citing_a_passage_alongside_a_fact_does_not_break_the_conflict_notice(disputes):
+    d = disputes
+    c = conflict_of(d, d.e1, d.e2)
+    ev = ask_mod.Evidence(facts=[], conflicts=[c])
+    cited = [{"kind": "passage", "chunk_id": "x"}, {"kind": "fact", "fact_id": d.e1.id}]
+    assert len(ask_mod._disputes_behind(d.db, ev, cited)) == 1
+    assert ask_mod._disputes_behind(d.db, ev, [{"kind": "passage", "chunk_id": "x"}]) == []
+
+
 # ---------------------------------------------------------------- the API
 
 @pytest.fixture
