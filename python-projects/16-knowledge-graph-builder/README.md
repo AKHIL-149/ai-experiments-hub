@@ -17,6 +17,27 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 | 7 | Conflict detection and fact checking | done |
 | 8 | Export (Cypher, CSV, JSON) and final docs | done |
 
+## Video tour
+
+[![Walkthrough of the app: a guest adds three documents, explores the graph, asks, checks, reviews and exports](docs/knowledge-graph-tour.jpg)](docs/knowledge-graph-tour.mp4)
+
+A 3-minute-32-second narrated walkthrough ([`docs/knowledge-graph-tour.mp4`](docs/knowledge-graph-tour.mp4), 8.9 MB, 1280x720). It was recorded in a scripted headless
+browser against the running app and the real local model (`llama3.1:8b`), as a fresh guest with three short documents:
+
+1. Documents: choose two files, paste a third, and the model reads them (about a minute here; that wait is sped up in the video).
+2. Graph: search, the entity panel and its timeline, the sentence behind a fact, the year slider.
+3. Ask: "Who founded the company that acquired Tessel AI?", with its cited fact and the trace of how it was answered.
+4. Check: one statement that is not in the documents, one that is supported.
+5. Review: a 55% merge suggestion ("Nordwind Robotics AS" and "Nordwind Robotics") accepted, the merge list, and the Conflicts tab (none found).
+6. Export: the three formats, and a JSON download.
+
+What it is not: the voice is Microsoft's online "Ava" voice (`en-US-AvaNeural`, through the `edge-tts` package), so the narration text was sent to that service
+when it was made; nothing from the documents was. The video shows the cases that worked, and I picked the Ask question after a first choice
+("who became CTO of the company that acquired Tessel AI") was answered correctly but with a warning that the chain could not be followed (the predicate-wording
+gap in [Limits of time](#limits-of-time)). It also leaves out that a claim with a wrong year for a fact with no end date ("founded in 2015" when the document says
+2012) is reported as supported (the date limits under Conflicts and claim checking). See also [Known limits](#known-limits).
+The video is a recording of one run, not a test: it will go out of date if the screens change.
+
 ## Decisions
 
 | Topic | Decision |
@@ -531,6 +552,7 @@ src/services/temporal.py     what dates say about a period; the time a question 
 src/services/conflicts.py    finding, settling and undoing conflicts between facts
 src/services/factcheck.py    checking a claim against the facts
 src/services/export.py       JSON, CSV (zip) and Cypher output of the graph
+docs/                        knowledge-graph-tour.mp4 (the narrated walkthrough) and its poster image
 eval/run_neo4j_check.py      loads an awkward graph's Cypher export into a scratch Neo4j and compares it field by field
 src/models/conflict.py       Conflict, PredicateKind
 src/web.py                   serves frontend/dist (page fallback, security headers, cached assets)

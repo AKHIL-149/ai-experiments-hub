@@ -1,0 +1,2 @@
+# the repo-root .gitignore ignores every *.mp4; the walkthrough video of this project is kept on purpose
+!*.mp4
