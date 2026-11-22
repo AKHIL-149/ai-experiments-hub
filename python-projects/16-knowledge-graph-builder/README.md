@@ -19,6 +19,8 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
 ## Video tour
 
+<video src="https://github.com/AKHIL-149/ai-experiments-hub/raw/main/python-projects/16-knowledge-graph-builder/docs/knowledge-graph-tour.mp4" controls width="100%"></video>
+
 [![Walkthrough of the app: a guest adds three documents, explores the graph, asks, checks, reviews and exports](docs/knowledge-graph-tour.jpg)](docs/knowledge-graph-tour.mp4)
 
 A 3-minute-32-second narrated walkthrough ([`docs/knowledge-graph-tour.mp4`](docs/knowledge-graph-tour.mp4), 8.9 MB, 1280x720). It was recorded in a scripted headless
