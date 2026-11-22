@@ -127,6 +127,9 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 - Conflict detection (facts that cannot both be true) with settle-and-undo, and a claim checker that answers supported / contradicted / not in the documents, with the evidence
 - Web app (React + D3 force graph), accounts, a background job queue, and export to JSON, CSV and a Cypher script for Neo4j
 - 📖 [README](python-projects/16-knowledge-graph-builder/README.md) - how it works, measured accuracy on small hand-made sets, and known limits
+- 🎬 [Video tour](python-projects/16-knowledge-graph-builder/docs/knowledge-graph-tour.mp4) - 3½-minute narrated walkthrough of every tab, recorded against the running app (click the picture to play):
+
+  [![Walkthrough of the Knowledge Graph Builder: a guest adds three documents, explores the graph, asks, checks, reviews and exports](python-projects/16-knowledge-graph-builder/docs/knowledge-graph-tour.jpg)](python-projects/16-knowledge-graph-builder/docs/knowledge-graph-tour.mp4)
 - _Note: the accuracy numbers come from small sets I wrote and partly tuned on, so they measure the mechanism, not your documents. The Cypher export was loaded into Neo4j Community 5.26.0 and read back unchanged, but not tried on Memgraph or other versions, and the Anthropic and OpenAI model clients have never run against the live services. Only the local Ollama model was used._
 
 ## Tech Stack
