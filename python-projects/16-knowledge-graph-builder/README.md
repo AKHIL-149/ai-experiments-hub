@@ -19,7 +19,7 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
 ## Video tour
 
-<video src="https://github.com/user-attachments/assets/04a92551-2163-4014-888b-cad49878d112" controls width="100%"></video>
+https://github.com/user-attachments/assets/04a92551-2163-4014-888b-cad49878d112
 
 [![Walkthrough of the app: a guest adds three documents, explores the graph, asks, checks, reviews and exports](docs/knowledge-graph-tour.jpg)](docs/knowledge-graph-tour.mp4)
 
