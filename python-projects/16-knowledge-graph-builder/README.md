@@ -21,8 +21,6 @@ Advanced evolution of Project 4 (RAG Knowledge Assistant).
 
 https://github.com/user-attachments/assets/04a92551-2163-4014-888b-cad49878d112
 
-[![Walkthrough of the app: a guest adds three documents, explores the graph, asks, checks, reviews and exports](docs/knowledge-graph-tour.jpg)](docs/knowledge-graph-tour.mp4)
-
 A 3-minute-32-second narrated walkthrough ([`docs/knowledge-graph-tour.mp4`](docs/knowledge-graph-tour.mp4), 8.9 MB, 1280x720). It was recorded in a scripted headless
 browser against the running app and the real local model (`llama3.1:8b`), as a fresh guest with three short documents:
 

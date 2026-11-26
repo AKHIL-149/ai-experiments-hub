@@ -132,8 +132,6 @@ Cloud APIs (Anthropic Claude, OpenAI) are available as an option for projects th
 
 https://github.com/user-attachments/assets/04a92551-2163-4014-888b-cad49878d112
 
-[![Walkthrough of the Knowledge Graph Builder: a guest adds three documents, explores the graph, asks, checks, reviews and exports](python-projects/16-knowledge-graph-builder/docs/knowledge-graph-tour.jpg)](python-projects/16-knowledge-graph-builder/docs/knowledge-graph-tour.mp4)
-
 ## Tech Stack
 
 **Languages:** Python 3.11+, JavaScript (Node.js 18+)
